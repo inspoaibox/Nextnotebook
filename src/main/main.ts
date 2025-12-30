@@ -79,11 +79,6 @@ function registerShortcuts(): void {
     sendToRenderer('menu-action', 'find');
   });
 
-  // Ctrl+B: 切换侧边栏
-  globalShortcut.register('CommandOrControl+B', () => {
-    sendToRenderer('menu-action', 'toggle-sidebar');
-  });
-
   // Ctrl+S: 保存/同步
   globalShortcut.register('CommandOrControl+S', () => {
     sendToRenderer('menu-action', 'save-note');
@@ -133,6 +128,11 @@ function registerShortcuts(): void {
   globalShortcut.register('Escape', () => {
     sendToRenderer('menu-action', 'escape');
   });
+
+  // Ctrl+L: 锁定应用
+  globalShortcut.register('CommandOrControl+L', () => {
+    sendToRenderer('menu-action', 'lock-app');
+  });
 }
 
 function createMenu(): void {
@@ -166,11 +166,11 @@ function createMenu(): void {
     {
       label: '视图',
       submenu: [
-        { label: '切换侧边栏', accelerator: 'CmdOrCtrl+B', click: () => sendToRenderer('toggle-sidebar') },
+        { label: '浅色主题', click: () => sendToRenderer('menu-action', 'theme-light') },
+        { label: '深色主题', click: () => sendToRenderer('menu-action', 'theme-dark') },
+        { label: '跟随系统', click: () => sendToRenderer('menu-action', 'theme-system') },
         { type: 'separator' },
-        { label: '浅色主题', click: () => sendToRenderer('theme-light') },
-        { label: '深色主题', click: () => sendToRenderer('theme-dark') },
-        { label: '跟随系统', click: () => sendToRenderer('theme-system') },
+        { label: '锁定应用', accelerator: 'CmdOrCtrl+L', click: () => sendToRenderer('menu-action', 'lock-app') },
         { type: 'separator' },
         { label: '开发者工具', accelerator: 'F12', role: 'toggleDevTools' },
       ],

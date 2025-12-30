@@ -10,6 +10,8 @@ import WelcomeGuide from './components/WelcomeGuide';
 import AIAssistantPanel from './components/AIAssistantPanel';
 import TodoPanel from './components/TodoPanel';
 import VaultPanel from './components/VaultPanel';
+import VaultLockScreen from './components/VaultLockScreen';
+import LockScreen from './components/LockScreen';
 import BookmarkPanel from './components/BookmarkPanel';
 import { useNotes, useNote } from './hooks/useNotes';
 import { useFolders } from './hooks/useFolders';
@@ -57,8 +59,28 @@ const App: React.FC = () => {
     return !localStorage.getItem('mucheng-welcome-shown');
   });
   const [currentTool, setCurrentTool] = useState<string | null>(null);
+  const [vaultUnlocked, setVaultUnlocked] = useState(false);
+  const [isAppLocked, setIsAppLocked] = useState(false);
 
-  const { syncConfig } = useSettings();
+  // 使用 ref 保存最新的回调函数和状态
+  const callbacksRef = React.useRef<{
+    handleQuickCreateNote: () => void;
+    handleSync: () => void;
+    handleDeleteNote: (id: string) => void;
+    handleDuplicateNote: (id: string) => void;
+    handleTogglePin: (id: string, isPinned: boolean) => void;
+    updateSettings: (updates: any) => void;
+  }>();
+  
+  const stateRef = React.useRef<{
+    currentTool: string | null;
+    selectedNoteId: string | null;
+    selectedView: string;
+    currentNote: any;
+    filteredNotes: any[];
+  }>();
+
+  const { syncConfig, updateSettings, isDarkMode } = useSettings();
   const { settings: featureSettings } = useFeatureSettings();
   const { notes, createNote, updateNote, deleteNote, searchNotes, refresh } = useNotes(selectedFolderId);
   const { note: currentNote } = useNote(selectedNoteId, selectedView === 'trash');
@@ -70,15 +92,18 @@ const App: React.FC = () => {
     const api = (window as any).electronAPI;
     if (api?.onMenuAction) {
       api.onMenuAction((action: string) => {
+        const state = stateRef.current;
+        const callbacks = callbacksRef.current;
+        
         switch (action) {
           case 'new-note':
-            if (!currentTool) {
+            if (!state?.currentTool) {
               setTemplateSelectorOpen(true);
             }
             break;
           case 'quick-new-note':
-            if (!currentTool) {
-              handleQuickCreateNote();
+            if (!state?.currentTool) {
+              callbacks?.handleQuickCreateNote();
             }
             break;
           case 'new-folder':
@@ -95,50 +120,50 @@ const App: React.FC = () => {
             message.success('笔记已保存');
             break;
           case 'sync-now':
-            handleSync();
+            callbacks?.handleSync();
             break;
           case 'open-settings':
           case 'sync-settings':
             setSettingsOpen(true);
             break;
           case 'delete-note':
-            if (selectedNoteId && !currentTool && selectedView !== 'trash') {
+            if (state?.selectedNoteId && !state?.currentTool && state?.selectedView !== 'trash') {
               Modal.confirm({
                 title: '删除笔记',
                 content: '确定要删除这篇笔记吗？',
                 okText: '删除',
                 okType: 'danger',
                 cancelText: '取消',
-                onOk: () => handleDeleteNote(selectedNoteId),
+                onOk: () => callbacks?.handleDeleteNote(state.selectedNoteId!),
               });
             }
             break;
           case 'duplicate-note':
-            if (selectedNoteId && !currentTool) {
-              handleDuplicateNote(selectedNoteId);
+            if (state?.selectedNoteId && !state?.currentTool) {
+              callbacks?.handleDuplicateNote(state.selectedNoteId);
             }
             break;
           case 'toggle-edit-mode':
             // 编辑器内部处理
             break;
           case 'toggle-star':
-            if (selectedNoteId && currentNote && !currentTool) {
-              handleTogglePin(selectedNoteId, !currentNote.isPinned);
+            if (state?.selectedNoteId && state?.currentNote && !state?.currentTool) {
+              callbacks?.handleTogglePin(state.selectedNoteId, !state.currentNote.isPinned);
             }
             break;
           case 'prev-note':
-            if (!currentTool && filteredNotes.length > 0) {
-              const currentIndex = filteredNotes.findIndex(n => n.id === selectedNoteId);
+            if (!state?.currentTool && state?.filteredNotes && state.filteredNotes.length > 0) {
+              const currentIndex = state.filteredNotes.findIndex((n: any) => n.id === state.selectedNoteId);
               if (currentIndex > 0) {
-                setSelectedNoteId(filteredNotes[currentIndex - 1].id);
+                setSelectedNoteId(state.filteredNotes[currentIndex - 1].id);
               }
             }
             break;
           case 'next-note':
-            if (!currentTool && filteredNotes.length > 0) {
-              const currentIndex = filteredNotes.findIndex(n => n.id === selectedNoteId);
-              if (currentIndex < filteredNotes.length - 1) {
-                setSelectedNoteId(filteredNotes[currentIndex + 1].id);
+            if (!state?.currentTool && state?.filteredNotes && state.filteredNotes.length > 0) {
+              const currentIndex = state.filteredNotes.findIndex((n: any) => n.id === state.selectedNoteId);
+              if (currentIndex < state.filteredNotes.length - 1) {
+                setSelectedNoteId(state.filteredNotes[currentIndex + 1].id);
               }
             }
             break;
@@ -146,8 +171,35 @@ const App: React.FC = () => {
             setSearchFocused(false);
             break;
           case 'theme-light':
+            callbacks?.updateSettings({ theme: 'light' });
+            message.success('已切换到浅色主题');
+            break;
           case 'theme-dark':
+            callbacks?.updateSettings({ theme: 'dark' });
+            message.success('已切换到深色主题');
+            break;
           case 'theme-system':
+            callbacks?.updateSettings({ theme: 'system' });
+            message.success('已切换到跟随系统');
+            break;
+          case 'lock-app':
+            const securitySettings = localStorage.getItem('mucheng-security');
+            if (securitySettings) {
+              try {
+                const settings = JSON.parse(securitySettings);
+                if (settings.appLockEnabled && settings.lockPassword) {
+                  setIsAppLocked(true);
+                  setVaultUnlocked(false);
+                  message.info('应用已锁定');
+                } else {
+                  message.warning('请先在设置中启用应用锁定');
+                }
+              } catch {
+                message.warning('请先在设置中启用应用锁定');
+              }
+            } else {
+              message.warning('请先在设置中启用应用锁定');
+            }
             break;
         }
       });
@@ -412,12 +464,112 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // 锁定应用
+  const handleLockApp = useCallback(() => {
+    const securitySettings = localStorage.getItem('mucheng-security');
+    if (securitySettings) {
+      try {
+        const settings = JSON.parse(securitySettings);
+        if (settings.appLockEnabled && settings.lockPassword) {
+          setIsAppLocked(true);
+          setVaultUnlocked(false); // 同时锁定密码库
+          message.info('应用已锁定');
+        } else {
+          message.warning('请先在设置中启用应用锁定');
+        }
+      } catch {
+        message.warning('请先在设置中启用应用锁定');
+      }
+    } else {
+      message.warning('请先在设置中启用应用锁定');
+    }
+  }, []);
+
+  // 解锁应用
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+
+  const handleUnlockApp = useCallback((password: string): boolean => {
+    const securitySettings = localStorage.getItem('mucheng-security');
+    if (securitySettings) {
+      try {
+        const settings = JSON.parse(securitySettings);
+        if (password === settings.lockPassword) {
+          setIsAppLocked(false);
+          setFailedAttempts(0);
+          return true;
+        }
+      } catch { /* ignore */ }
+    }
+    
+    const newAttempts = failedAttempts + 1;
+    setFailedAttempts(newAttempts);
+    
+    // 5次失败后锁定30秒
+    if (newAttempts >= 5) {
+      setLockedUntil(Date.now() + 30000);
+      setTimeout(() => {
+        setLockedUntil(null);
+        setFailedAttempts(0);
+      }, 30000);
+    }
+    
+    return false;
+  }, [failedAttempts]);
+
+  // 启动时检查是否需要锁定
+  useEffect(() => {
+    const securitySettings = localStorage.getItem('mucheng-security');
+    if (securitySettings) {
+      try {
+        const settings = JSON.parse(securitySettings);
+        if (settings.appLockEnabled && settings.lockPassword) {
+          setIsAppLocked(true);
+        }
+      } catch { /* ignore */ }
+    }
+  }, []);
+
+  // 更新 ref 以保持最新的回调函数
+  React.useEffect(() => {
+    callbacksRef.current = {
+      handleQuickCreateNote,
+      handleSync,
+      handleDeleteNote,
+      handleDuplicateNote,
+      handleTogglePin,
+      updateSettings,
+    };
+  }, [handleQuickCreateNote, handleSync, handleDeleteNote, handleDuplicateNote, handleTogglePin, updateSettings]);
+
+  // 更新 ref 以保持最新的状态
+  React.useEffect(() => {
+    stateRef.current = {
+      currentTool,
+      selectedNoteId,
+      selectedView,
+      currentNote,
+      filteredNotes,
+    };
+  }, [currentTool, selectedNoteId, selectedView, currentNote, filteredNotes]);
+
+  // 如果应用被锁定，显示锁定界面
+  if (isAppLocked) {
+    return (
+      <LockScreen 
+        onUnlock={handleUnlockApp}
+        failedAttempts={failedAttempts}
+        lockedUntil={lockedUntil}
+      />
+    );
+  }
+
   return (
     <Layout style={{ height: '100vh' }}>
       <Sider
         width={180}
-        theme="light"
-        style={{ borderRight: '1px solid #eee', background: '#fafafa' }}
+        theme={isDarkMode ? 'dark' : 'light'}
+        style={{ borderRight: `1px solid ${isDarkMode ? '#303030' : '#eee'}`, background: isDarkMode ? '#141414' : '#fafafa' }}
       >
         <Sidebar
           selectedFolderId={selectedFolderId}
@@ -447,16 +599,28 @@ const App: React.FC = () => {
         {currentTool === 'ai' ? (
           <AIAssistantPanel />
         ) : currentTool === 'todo' ? (
-          <Content style={{ background: '#fff' }}>
+          <Content style={{ background: isDarkMode ? '#141414' : '#fff' }}>
             <TodoPanel />
           </Content>
         ) : currentTool === 'vault' ? (
-          <VaultPanel />
+          (() => {
+            const hasVaultPassword = !!localStorage.getItem('mucheng-vault-password');
+            if (hasVaultPassword && !vaultUnlocked) {
+              return (
+                <VaultLockScreen 
+                  hasPassword={true}
+                  onUnlock={() => setVaultUnlocked(true)}
+                  onSetPassword={() => setSettingsOpen(true)}
+                />
+              );
+            }
+            return <VaultPanel />;
+          })()
         ) : currentTool === 'bookmark' ? (
           <BookmarkPanel />
         ) : (
           <>
-            <Sider width={260} theme="light" style={{ borderRight: '1px solid #eee' }}>
+            <Sider width={260} theme={isDarkMode ? 'dark' : 'light'} style={{ borderRight: `1px solid ${isDarkMode ? '#303030' : '#eee'}` }}>
               <NoteList
                 notes={filteredNotes}
                 selectedNoteId={selectedNoteId}
@@ -473,7 +637,7 @@ const App: React.FC = () => {
               />
             </Sider>
             <Layout>
-              <Content style={{ padding: 0, background: '#fff' }}>
+              <Content style={{ padding: 0, background: isDarkMode ? '#141414' : '#fff' }}>
                 <Editor
                   noteId={selectedNoteId}
                   note={currentNote}
@@ -489,8 +653,8 @@ const App: React.FC = () => {
               </Content>
               <Footer style={{ 
                 padding: '4px 16px', 
-                background: '#fafafa', 
-                borderTop: '1px solid #f0f0f0',
+                background: isDarkMode ? '#1f1f1f' : '#fafafa', 
+                borderTop: `1px solid ${isDarkMode ? '#303030' : '#f0f0f0'}`,
                 display: 'flex',
                 justifyContent: 'flex-end',
                 alignItems: 'center',

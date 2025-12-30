@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConfigProvider, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
@@ -9,6 +9,15 @@ import './styles/global.css';
 // 主题包装组件
 const ThemedApp: React.FC = () => {
   const { isDarkMode } = useSettings();
+
+  // 同步 body class 以支持全局 CSS 深色模式
+  useEffect(() => {
+    if (isDarkMode) {
+      document.body.classList.add('dark-mode');
+    } else {
+      document.body.classList.remove('dark-mode');
+    }
+  }, [isDarkMode]);
 
   return (
     <ConfigProvider

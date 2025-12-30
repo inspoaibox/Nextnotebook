@@ -52,6 +52,7 @@ const SHORTCUTS = [
   { category: '同步与设置', items: [
     { key: 'Ctrl+Shift+S', description: '立即同步' },
     { key: 'Ctrl+,', description: '打开设置' },
+    { key: 'Ctrl+L', description: '锁定应用' },
   ]},
 ];
 
@@ -92,6 +93,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
   const [showPasswordInput, setShowPasswordInput] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // 密码库锁定设置
+  const [vaultPassword, setVaultPassword] = useState(() => localStorage.getItem('mucheng-vault-password') || '');
+  const [showVaultPasswordInput, setShowVaultPasswordInput] = useState(false);
+  const [newVaultPassword, setNewVaultPassword] = useState('');
+  const [confirmVaultPassword, setConfirmVaultPassword] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -563,6 +570,75 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                 }}>移除应用锁定</Button>
               </>
             )}
+
+            <Divider style={{ margin: '24px 0' }} />
+
+            {/* 密码库锁定 */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontWeight: 500 }}>密码库锁定</span>
+                {vaultPassword && <span style={{ color: '#52c41a', fontSize: 12 }}><CheckCircleOutlined /> 已设置</span>}
+              </div>
+              <p style={{ color: '#888', fontSize: 13, margin: '0 0 12px' }}>
+                为密码库设置独立密码，每次访问密码库需要验证
+              </p>
+              
+              {showVaultPasswordInput ? (
+                <div style={{ background: '#f5f5f5', padding: 16, borderRadius: 8 }}>
+                  <p style={{ margin: '0 0 12px', fontWeight: 500 }}>
+                    {vaultPassword ? '修改密码库密码' : '设置密码库密码'}
+                  </p>
+                  <Input.Password 
+                    placeholder="输入密码（至少4位）" 
+                    value={newVaultPassword} 
+                    onChange={e => setNewVaultPassword(e.target.value)}
+                    style={{ marginBottom: 12 }}
+                  />
+                  <Input.Password 
+                    placeholder="确认密码" 
+                    value={confirmVaultPassword} 
+                    onChange={e => setConfirmVaultPassword(e.target.value)}
+                    style={{ marginBottom: 12 }}
+                  />
+                  <Space>
+                    <Button type="primary" size="small" onClick={() => {
+                      if (!newVaultPassword || newVaultPassword.length < 4) {
+                        message.error('密码至少需要4位');
+                        return;
+                      }
+                      if (newVaultPassword !== confirmVaultPassword) {
+                        message.error('两次密码不一致');
+                        return;
+                      }
+                      localStorage.setItem('mucheng-vault-password', newVaultPassword);
+                      setVaultPassword(newVaultPassword);
+                      setShowVaultPasswordInput(false);
+                      setNewVaultPassword('');
+                      setConfirmVaultPassword('');
+                      message.success('密码库密码已设置');
+                    }}>确定</Button>
+                    <Button size="small" onClick={() => { 
+                      setShowVaultPasswordInput(false); 
+                      setNewVaultPassword(''); 
+                      setConfirmVaultPassword(''); 
+                    }}>取消</Button>
+                  </Space>
+                </div>
+              ) : (
+                <Space>
+                  <Button size="small" onClick={() => setShowVaultPasswordInput(true)}>
+                    {vaultPassword ? '修改密码' : '设置密码'}
+                  </Button>
+                  {vaultPassword && (
+                    <Button danger size="small" onClick={() => {
+                      localStorage.removeItem('mucheng-vault-password');
+                      setVaultPassword('');
+                      message.success('已移除密码库密码');
+                    }}>移除密码</Button>
+                  )}
+                </Space>
+              )}
+            </div>
           </div>
         );
 
