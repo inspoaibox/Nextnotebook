@@ -1,4 +1,5 @@
 const path = require('path');
+const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = [
   // Main process
@@ -27,6 +28,13 @@ module.exports = [
         },
       ],
     },
+    plugins: [
+      new CopyPlugin({
+        patterns: [
+          { from: 'icons', to: '../icons' },
+        ],
+      }),
+    ],
     externals: {
       'better-sqlite3': 'commonjs better-sqlite3',
       keytar: 'commonjs keytar',

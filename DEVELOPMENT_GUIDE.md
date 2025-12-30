@@ -425,8 +425,14 @@ npm run build          # 构建
 npm start              # 运行
 
 # 打包
+## 1. 先构建项目
+npm run build
+
+## 2. 设置 Electron 镜像（加速下载）
 $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
-npm run dist:win       # Windows 打包
+
+## 3. 打包 Windows 版本
+npm run dist:win
 
 # 测试
 npm test               # 运行测试

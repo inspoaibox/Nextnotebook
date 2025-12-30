@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Layout, message } from 'antd';
+import { Layout, message, Modal } from 'antd';
 import Sidebar from './components/Sidebar';
 import NoteList from './components/NoteList';
 import Editor from './components/Editor';
@@ -41,7 +41,6 @@ function itemToNote(item: ItemBase) {
 type ViewType = 'all' | 'starred' | 'trash' | 'folder' | 'tag';
 
 const App: React.FC = () => {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   const [selectedView, setSelectedView] = useState<ViewType>('all');
@@ -73,23 +72,78 @@ const App: React.FC = () => {
       api.onMenuAction((action: string) => {
         switch (action) {
           case 'new-note':
-            setTemplateSelectorOpen(true);
+            if (!currentTool) {
+              setTemplateSelectorOpen(true);
+            }
+            break;
+          case 'quick-new-note':
+            if (!currentTool) {
+              handleQuickCreateNote();
+            }
             break;
           case 'new-folder':
-            message.info('请在侧边栏中点击文件夹旁的 + 按钮创建文件夹');
+            message.info('请在侧边栏中点击笔记目录旁的 + 按钮创建目录');
             break;
           case 'find':
             setSearchFocused(true);
             break;
           case 'toggle-sidebar':
-            setSidebarCollapsed(prev => !prev);
+            // 侧边栏不再支持收缩
+            break;
+          case 'save-note':
+            // 触发保存当前笔记（编辑器会自动保存）
+            message.success('笔记已保存');
             break;
           case 'sync-now':
-            // 同步由 handleSync 处理，但需要延迟调用
+            handleSync();
             break;
           case 'open-settings':
           case 'sync-settings':
             setSettingsOpen(true);
+            break;
+          case 'delete-note':
+            if (selectedNoteId && !currentTool && selectedView !== 'trash') {
+              Modal.confirm({
+                title: '删除笔记',
+                content: '确定要删除这篇笔记吗？',
+                okText: '删除',
+                okType: 'danger',
+                cancelText: '取消',
+                onOk: () => handleDeleteNote(selectedNoteId),
+              });
+            }
+            break;
+          case 'duplicate-note':
+            if (selectedNoteId && !currentTool) {
+              handleDuplicateNote(selectedNoteId);
+            }
+            break;
+          case 'toggle-edit-mode':
+            // 编辑器内部处理
+            break;
+          case 'toggle-star':
+            if (selectedNoteId && currentNote && !currentTool) {
+              handleTogglePin(selectedNoteId, !currentNote.isPinned);
+            }
+            break;
+          case 'prev-note':
+            if (!currentTool && filteredNotes.length > 0) {
+              const currentIndex = filteredNotes.findIndex(n => n.id === selectedNoteId);
+              if (currentIndex > 0) {
+                setSelectedNoteId(filteredNotes[currentIndex - 1].id);
+              }
+            }
+            break;
+          case 'next-note':
+            if (!currentTool && filteredNotes.length > 0) {
+              const currentIndex = filteredNotes.findIndex(n => n.id === selectedNoteId);
+              if (currentIndex < filteredNotes.length - 1) {
+                setSelectedNoteId(filteredNotes[currentIndex + 1].id);
+              }
+            }
+            break;
+          case 'escape':
+            setSearchFocused(false);
             break;
           case 'theme-light':
           case 'theme-dark':
@@ -362,9 +416,6 @@ const App: React.FC = () => {
     <Layout style={{ height: '100vh' }}>
       <Sider
         width={180}
-        collapsible
-        collapsed={sidebarCollapsed}
-        onCollapse={setSidebarCollapsed}
         theme="light"
         style={{ borderRight: '1px solid #eee', background: '#fafafa' }}
       >
@@ -417,6 +468,7 @@ const App: React.FC = () => {
                 onDuplicateNote={handleDuplicateNote}
                 onMoveToFolder={handleMoveToFolder}
                 onCreateNote={handleQuickCreateNote}
+                onCreateTemplateNote={handleCreateNote}
                 isTrashView={selectedView === 'trash'}
               />
             </Sider>

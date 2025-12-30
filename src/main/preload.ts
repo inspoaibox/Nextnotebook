@@ -10,10 +10,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 菜单事件监听
   onMenuAction: (callback: (action: string) => void) => {
+    // 监听统一的 menu-action 事件
+    ipcRenderer.on('menu-action', (_event, action: string) => callback(action));
+    
+    // 兼容旧的单独事件（菜单栏点击）
     const actions = [
-      'new-note', 'new-folder', 'import', 'export', 'find',
+      'new-note', 'quick-new-note', 'new-folder', 'import', 'export', 'find',
       'toggle-sidebar', 'theme-light', 'theme-dark', 'theme-system',
-      'sync-now', 'sync-settings', 'open-settings', 'about'
+      'sync-now', 'sync-settings', 'open-settings', 'about',
+      'save-note', 'delete-note', 'duplicate-note', 'toggle-edit-mode',
+      'toggle-star', 'prev-note', 'next-note', 'escape'
     ];
     actions.forEach(action => {
       ipcRenderer.on(action, () => callback(action));

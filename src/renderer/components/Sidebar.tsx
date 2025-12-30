@@ -3,6 +3,7 @@ import { Menu, Button, Dropdown, Input, Modal, message, Tooltip } from 'antd';
 import {
   FileTextOutlined,
   FolderOutlined,
+  FolderOpenOutlined,
   FolderAddOutlined,
   TagOutlined,
   StarOutlined,
@@ -15,6 +16,7 @@ import {
   CheckSquareOutlined,
   KeyOutlined,
   LinkOutlined,
+  BookOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Folder } from '../hooks/useFolders';
@@ -72,12 +74,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
   const [renameFolderName, setRenameFolderName] = useState('');
 
-  // 文件夹右键菜单
+  // 目录右键菜单
   const getFolderContextMenu = (folder: Folder): MenuProps['items'] => [
     {
       key: 'newSubfolder',
       icon: <FolderAddOutlined />,
-      label: '新建子文件夹',
+      label: '新建子目录',
       onClick: (e) => {
         e.domEvent.stopPropagation();
         setNewFolderParentId(folder.id);
@@ -104,8 +106,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       onClick: (e) => {
         e.domEvent.stopPropagation();
         Modal.confirm({
-          title: '删除文件夹',
-          content: `确定要删除文件夹 "${folder.name}" 吗？文件夹内的笔记不会被删除。`,
+          title: '删除目录',
+          content: `确定要删除目录 "${folder.name}" 吗？目录内的笔记不会被删除。`,
           okText: '删除',
           okType: 'danger',
           cancelText: '取消',
@@ -136,34 +138,35 @@ const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
-  // 构建文件夹树形结构（支持多级目录）
-  const buildFolderTree = (parentId: string | null = null): MenuProps['items'] => {
+  // 递归构建子目录
+  const buildSubFolderItems = (parentId: string): MenuProps['items'] => {
     const childFolders = folders.filter(f => f.parentId === parentId);
     
     if (childFolders.length === 0) {
-      return parentId === null ? [{ key: 'no-folders', label: '暂无文件夹', disabled: true }] : undefined;
+      return undefined;
     }
 
     return childFolders.map(folder => {
-      const subFolders = buildFolderTree(folder.id);
-      const hasChildren = subFolders && subFolders.length > 0;
+      const subFolders = buildSubFolderItems(folder.id);
+      const isSelected = selectedFolderId === folder.id;
 
       return {
         key: `folder-${folder.id}`,
-        icon: <FolderOutlined style={{ color: folder.color || undefined }} />,
+        icon: isSelected ? <FolderOpenOutlined style={{ color: folder.color || '#1890ff' }} /> : <FolderOutlined style={{ color: folder.color || undefined }} />,
         label: (
           <Dropdown menu={{ items: getFolderContextMenu(folder) }} trigger={['contextMenu']}>
             <span style={{ display: 'block' }}>{folder.name}</span>
           </Dropdown>
         ),
-        children: hasChildren ? subFolders : undefined,
+        children: subFolders,
       };
     });
   };
 
-  const folderChildren = buildFolderTree(null);
+  // 获取一级目录
+  const rootFolders = folders.filter(f => f.parentId === null);
 
-  // 构建标签子菜单（带右键菜单）
+  // 构建标签子菜单
   const tagChildren = tags.map(tag => ({
     key: `tag-${tag.id}`,
     icon: <TagOutlined style={{ color: tag.color || '#1890ff' }} />,
@@ -174,27 +177,66 @@ const Sidebar: React.FC<SidebarProps> = ({
     ),
   }));
 
+  // 构建一级目录列表
+  const buildRootFolderItems = (): MenuProps['items'] => {
+    return rootFolders.map(folder => {
+      const subFolders = buildSubFolderItems(folder.id);
+      const isSelected = selectedFolderId === folder.id;
+
+      return {
+        key: `folder-${folder.id}`,
+        icon: isSelected ? <FolderOpenOutlined style={{ color: folder.color || '#1890ff' }} /> : <FolderOutlined style={{ color: folder.color || undefined }} />,
+        label: (
+          <Dropdown menu={{ items: getFolderContextMenu(folder) }} trigger={['contextMenu']}>
+            <span style={{ display: 'block' }}>{folder.name}</span>
+          </Dropdown>
+        ),
+        children: subFolders,
+      };
+    });
+  };
+
+  // 构建菜单项
   const menuItems: MenuProps['items'] = [
-    { key: 'all', icon: <FileTextOutlined />, label: '所有笔记' },
-    { key: 'starred', icon: <StarOutlined />, label: '星标笔记' },
-    { type: 'divider' },
+    // 笔记目录标题（带新建按钮）
     { 
-      key: 'folders-group', 
-      icon: <FolderOutlined />, 
+      key: 'notes-directory-header', 
+      type: 'group',
       label: (
-        <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          文件夹
+        <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
+          <span style={{ fontWeight: 500, color: '#666' }}>
+            <BookOutlined style={{ marginRight: 8 }} />
+            笔记目录
+          </span>
           <FolderAddOutlined 
             onClick={(e) => {
               e.stopPropagation();
+              setNewFolderParentId(null);
               setNewFolderModalOpen(true);
             }}
-            style={{ marginLeft: 8 }}
+            style={{ cursor: 'pointer', color: '#1890ff' }}
           />
         </span>
       ),
-      children: folderChildren,
     },
+    // 所有笔记
+    { 
+      key: 'all', 
+      icon: <FileTextOutlined />, 
+      label: '所有笔记',
+    },
+    // 未分类
+    {
+      key: 'uncategorized',
+      icon: <FolderOutlined style={{ color: '#999' }} />,
+      label: '未分类',
+    },
+    // 一级目录
+    ...(buildRootFolderItems() || []),
+    { type: 'divider' },
+    // 星标笔记
+    { key: 'starred', icon: <StarOutlined />, label: '星标笔记' },
+    // 标签
     { 
       key: 'tags-group', 
       icon: <TagOutlined />, 
@@ -204,6 +246,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     { type: 'divider' },
+    // 回收站
     { key: 'trash', icon: <DeleteOutlined />, label: '回收站' },
   ];
 
@@ -213,12 +256,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
-    // 点击笔记相关菜单时，清除当前工具选择，切换回笔记视图
+    // 点击笔记相关菜单时，清除当前工具选择
     if (currentTool) {
       onSelectTool?.(null);
     }
     
     if (key === 'all') {
+      onSelectView('all');
+      onSelectFolder(null);
+    } else if (key === 'uncategorized') {
+      // 未分类 - 显示没有文件夹的笔记
       onSelectView('all');
       onSelectFolder(null);
     } else if (key === 'starred') {
@@ -236,7 +283,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
-      message.warning('请输入文件夹名称');
+      message.warning('请输入目录名称');
       return;
     }
     if (onCreateFolder) {
@@ -244,13 +291,13 @@ const Sidebar: React.FC<SidebarProps> = ({
       setNewFolderName('');
       setNewFolderParentId(null);
       setNewFolderModalOpen(false);
-      message.success('文件夹已创建');
+      message.success('目录已创建');
     }
   };
 
   const handleRenameFolder = async () => {
     if (!renameFolderName.trim()) {
-      message.warning('请输入文件夹名称');
+      message.warning('请输入目录名称');
       return;
     }
     if (onRenameFolder && renameFolderId) {
@@ -258,7 +305,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       setRenameFolderName('');
       setRenameFolderId(null);
       setRenameFolderModalOpen(false);
-      message.success('文件夹已重命名');
+      message.success('目录已重命名');
     }
   };
 
@@ -269,6 +316,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (selectedFolderId) return [`folder-${selectedFolderId}`];
     return ['all'];
   };
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fafafa' }}>
@@ -316,12 +364,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </Tooltip>
           )}
           <Tooltip title="更多工具">
-            <Button
-              type="text"
-              icon={<AppstoreOutlined />}
-              size="small"
-              disabled
-            />
+            <Button type="text" icon={<AppstoreOutlined />} size="small" disabled />
           </Tooltip>
         </div>
       )}
@@ -345,6 +388,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           style={{ background: 'transparent', borderRight: 0 }}
         />
       </div>
+      
       <div style={{ padding: '8px 12px', borderTop: '1px solid #f0f0f0' }}>
         <Button
           type="text"
@@ -358,7 +402,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <Modal
-        title={newFolderParentId ? "新建子文件夹" : "新建文件夹"}
+        title={newFolderParentId ? "新建子目录" : "新建目录"}
         open={newFolderModalOpen}
         onOk={handleCreateFolder}
         onCancel={() => {
@@ -370,7 +414,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         cancelText="取消"
       >
         <Input
-          placeholder="文件夹名称"
+          placeholder="目录名称"
           value={newFolderName}
           onChange={e => setNewFolderName(e.target.value)}
           onPressEnter={handleCreateFolder}
@@ -379,7 +423,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </Modal>
 
       <Modal
-        title="重命名文件夹"
+        title="重命名目录"
         open={renameFolderModalOpen}
         onOk={handleRenameFolder}
         onCancel={() => {
@@ -391,7 +435,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         cancelText="取消"
       >
         <Input
-          placeholder="文件夹名称"
+          placeholder="目录名称"
           value={renameFolderName}
           onChange={e => setRenameFolderName(e.target.value)}
           onPressEnter={handleRenameFolder}

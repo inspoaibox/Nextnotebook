@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Select, Switch, InputNumber, Input, Button, Space, message, Divider, List, Popconfirm, Tag } from 'antd';
+import { Modal, Form, Select, Switch, InputNumber, Input, Button, Space, message, Divider, List, Popconfirm, Tag, Typography } from 'antd';
 import {
   SettingOutlined,
   CloudOutlined,
@@ -11,12 +11,15 @@ import {
   DeleteOutlined,
   EditOutlined,
   AppstoreOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAISettings } from '../hooks/useAI';
 import { useFeatureSettings } from '../hooks/useFeatureSettings';
 import { AIChannel, AIModel } from '@shared/types';
 import { PRESET_CHANNELS } from '../services/aiApi';
+
+const { Text } = Typography;
 
 interface SettingsModalProps {
   open: boolean;
@@ -29,7 +32,30 @@ interface SecuritySettings {
   lockPassword: string;
 }
 
-type TabKey = 'general' | 'features' | 'sync' | 'security' | 'ai' | 'about';
+// 快捷键配置
+const SHORTCUTS = [
+  { category: '笔记操作', items: [
+    { key: 'Ctrl+N', description: '新建笔记' },
+    { key: 'Ctrl+Shift+N', description: '从模板新建' },
+    { key: 'Ctrl+S', description: '保存笔记' },
+    { key: 'Ctrl+D', description: '删除笔记' },
+    { key: 'Ctrl+Shift+D', description: '复制笔记' },
+    { key: 'Ctrl+P', description: '星标/取消星标' },
+    { key: 'Ctrl+↑', description: '上一篇笔记' },
+    { key: 'Ctrl+↓', description: '下一篇笔记' },
+  ]},
+  { category: '搜索与导航', items: [
+    { key: 'Ctrl+F', description: '搜索笔记' },
+    { key: 'Ctrl+B', description: '切换侧边栏' },
+    { key: 'Esc', description: '退出搜索' },
+  ]},
+  { category: '同步与设置', items: [
+    { key: 'Ctrl+Shift+S', description: '立即同步' },
+    { key: 'Ctrl+,', description: '打开设置' },
+  ]},
+];
+
+type TabKey = 'general' | 'features' | 'sync' | 'security' | 'ai' | 'shortcuts' | 'about';
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
   const { settings, syncConfig, updateSettings, updateSyncConfig, resetSettings } = useSettings();
@@ -178,6 +204,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
     { key: 'sync', icon: <CloudOutlined />, label: '同步设置' },
     { key: 'security', icon: <LockOutlined />, label: '安全设置' },
     { key: 'ai', icon: <RobotOutlined />, label: 'AI 设置' },
+    { key: 'shortcuts', icon: <ThunderboltOutlined />, label: '快捷键' },
     { key: 'about', icon: <InfoCircleOutlined />, label: '关于' },
   ];
 
@@ -761,6 +788,44 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                 </div>
               </>
             )}
+          </div>
+        );
+
+      case 'shortcuts':
+        return (
+          <div>
+            <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 500 }}>快捷键</h3>
+            <p style={{ color: '#888', fontSize: 13, marginBottom: 24 }}>
+              使用快捷键可以更高效地操作暮城笔记
+            </p>
+            {SHORTCUTS.map((group, groupIndex) => (
+              <div key={groupIndex} style={{ marginBottom: 24 }}>
+                <div style={{ fontWeight: 500, marginBottom: 12, color: '#1890ff' }}>
+                  {group.category}
+                </div>
+                <div style={{ background: '#fafafa', borderRadius: 8, padding: '4px 0' }}>
+                  {group.items.map((shortcut, index) => (
+                    <div 
+                      key={index}
+                      style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        padding: '8px 16px',
+                        borderBottom: index < group.items.length - 1 ? '1px solid #f0f0f0' : 'none',
+                      }}
+                    >
+                      <Text>{shortcut.description}</Text>
+                      <Text keyboard style={{ fontFamily: 'monospace' }}>{shortcut.key}</Text>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <Divider />
+            <p style={{ color: '#888', fontSize: 12 }}>
+              提示：Mac 用户请将 Ctrl 替换为 Cmd
+            </p>
           </div>
         );
 

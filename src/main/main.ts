@@ -7,6 +7,29 @@ let mainWindow: BrowserWindow | null = null;
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// 获取应用图标路径
+function getIconPath(): string {
+  if (isDev) {
+    // 开发模式下使用项目根目录的图标
+    if (process.platform === 'win32') {
+      return path.join(__dirname, '../../icons/icon.ico');
+    } else if (process.platform === 'darwin') {
+      return path.join(__dirname, '../../icons/icon.icns');
+    } else {
+      return path.join(__dirname, '../../icons/icon.png');
+    }
+  } else {
+    // 生产模式
+    if (process.platform === 'win32') {
+      return path.join(__dirname, '../../icons/icon.ico');
+    } else if (process.platform === 'darwin') {
+      return path.join(__dirname, '../../icons/icon.icns');
+    } else {
+      return path.join(__dirname, '../../icons/icon.png');
+    }
+  }
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -14,6 +37,7 @@ function createWindow(): void {
     minWidth: 800,
     minHeight: 600,
     title: '暮城笔记',
+    icon: getIconPath(),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -40,34 +64,74 @@ function createWindow(): void {
 }
 
 function registerShortcuts(): void {
-  // Ctrl+N: 新建笔记
+  // Ctrl+N: 新建空白笔记
   globalShortcut.register('CommandOrControl+N', () => {
-    sendToRenderer('new-note');
+    sendToRenderer('menu-action', 'quick-new-note');
   });
 
-  // Ctrl+Shift+N: 新建文件夹
+  // Ctrl+Shift+N: 从模板新建笔记
   globalShortcut.register('CommandOrControl+Shift+N', () => {
-    sendToRenderer('new-folder');
+    sendToRenderer('menu-action', 'new-note');
   });
 
   // Ctrl+F: 搜索
   globalShortcut.register('CommandOrControl+F', () => {
-    sendToRenderer('find');
+    sendToRenderer('menu-action', 'find');
   });
 
   // Ctrl+B: 切换侧边栏
   globalShortcut.register('CommandOrControl+B', () => {
-    sendToRenderer('toggle-sidebar');
+    sendToRenderer('menu-action', 'toggle-sidebar');
   });
 
-  // Ctrl+S: 同步
+  // Ctrl+S: 保存/同步
   globalShortcut.register('CommandOrControl+S', () => {
-    sendToRenderer('sync-now');
+    sendToRenderer('menu-action', 'save-note');
+  });
+
+  // Ctrl+Shift+S: 立即同步
+  globalShortcut.register('CommandOrControl+Shift+S', () => {
+    sendToRenderer('menu-action', 'sync-now');
   });
 
   // Ctrl+,: 打开设置
   globalShortcut.register('CommandOrControl+,', () => {
-    sendToRenderer('open-settings');
+    sendToRenderer('menu-action', 'open-settings');
+  });
+
+  // Ctrl+D: 删除当前笔记
+  globalShortcut.register('CommandOrControl+D', () => {
+    sendToRenderer('menu-action', 'delete-note');
+  });
+
+  // Ctrl+Shift+D: 复制当前笔记
+  globalShortcut.register('CommandOrControl+Shift+D', () => {
+    sendToRenderer('menu-action', 'duplicate-note');
+  });
+
+  // Ctrl+E: 切换编辑/预览模式
+  globalShortcut.register('CommandOrControl+E', () => {
+    sendToRenderer('menu-action', 'toggle-edit-mode');
+  });
+
+  // Ctrl+P: 星标/取消星标
+  globalShortcut.register('CommandOrControl+P', () => {
+    sendToRenderer('menu-action', 'toggle-star');
+  });
+
+  // Ctrl+上箭头: 上一篇笔记
+  globalShortcut.register('CommandOrControl+Up', () => {
+    sendToRenderer('menu-action', 'prev-note');
+  });
+
+  // Ctrl+下箭头: 下一篇笔记
+  globalShortcut.register('CommandOrControl+Down', () => {
+    sendToRenderer('menu-action', 'next-note');
+  });
+
+  // Escape: 退出搜索/关闭弹窗
+  globalShortcut.register('Escape', () => {
+    sendToRenderer('menu-action', 'escape');
   });
 }
 
@@ -76,8 +140,9 @@ function createMenu(): void {
     {
       label: '文件',
       submenu: [
-        { label: '新建笔记', accelerator: 'CmdOrCtrl+N', click: () => sendToRenderer('new-note') },
-        { label: '新建文件夹', click: () => sendToRenderer('new-folder') },
+        { label: '新建笔记', accelerator: 'CmdOrCtrl+N', click: () => sendToRenderer('menu-action', 'quick-new-note') },
+        { label: '从模板新建', accelerator: 'CmdOrCtrl+Shift+N', click: () => sendToRenderer('menu-action', 'new-note') },
+        { label: '新建目录', click: () => sendToRenderer('menu-action', 'new-folder') },
         { type: 'separator' },
         { label: '导入', click: () => sendToRenderer('import') },
         { label: '导出', click: () => sendToRenderer('export') },

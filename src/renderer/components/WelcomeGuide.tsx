@@ -51,10 +51,17 @@ const features = [
 
 const shortcuts = [
   { key: 'Ctrl+N', description: '新建笔记' },
-  { key: 'Ctrl+S', description: '同步' },
-  { key: 'Ctrl+F', description: '搜索' },
+  { key: 'Ctrl+Shift+N', description: '从模板新建' },
+  { key: 'Ctrl+S', description: '保存笔记' },
+  { key: 'Ctrl+Shift+S', description: '立即同步' },
+  { key: 'Ctrl+F', description: '搜索笔记' },
   { key: 'Ctrl+B', description: '切换侧边栏' },
+  { key: 'Ctrl+P', description: '星标/取消星标' },
+  { key: 'Ctrl+D', description: '删除笔记' },
+  { key: 'Ctrl+Shift+D', description: '复制笔记' },
+  { key: 'Ctrl+↑/↓', description: '上/下一篇笔记' },
   { key: 'Ctrl+,', description: '打开设置' },
+  { key: 'Esc', description: '退出搜索' },
 ];
 
 const WelcomeGuide: React.FC<WelcomeGuideProps> = ({ open, onClose }) => {
