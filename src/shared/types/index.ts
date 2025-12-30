@@ -114,6 +114,7 @@ export interface FeatureSettings {
   todo_enabled: boolean;
   vault_enabled: boolean;
   bookmark_enabled: boolean;
+  toolbox_enabled: boolean;
 }
 
 // 书签 payload

@@ -569,6 +569,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                 />
               </div>
             </div>
+
+            <Divider style={{ margin: '16px 0' }} />
+
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div>
+                  <span style={{ fontWeight: 500 }}>工具箱</span>
+                  <p style={{ color: '#888', fontSize: 12, margin: '4px 0 0' }}>常用工具集合，包含编码转换、二维码生成等</p>
+                </div>
+                <Switch 
+                  checked={featureSettings.toolbox_enabled} 
+                  onChange={(checked) => updateFeatureSettings({ toolbox_enabled: checked })} 
+                />
+              </div>
+            </div>
           </div>
         );
 

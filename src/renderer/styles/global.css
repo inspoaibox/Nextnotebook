@@ -1023,3 +1023,68 @@ body.dark-mode .ant-message-error .anticon {
 body.dark-mode .ant-message-notice-content span {
   color: rgba(255, 255, 255, 0.85) !important;
 }
+
+
+/* ========== TinyMCE 编辑器样式 ========== */
+
+/* 移除 TinyMCE 编辑器的蓝色聚焦边框 */
+.tox-tinymce {
+  border: 1px solid #d9d9d9 !important;
+  border-radius: 6px !important;
+}
+
+.tox-tinymce:focus-within {
+  border-color: #d9d9d9 !important;
+  box-shadow: none !important;
+}
+
+/* TinyMCE 工具栏样式 */
+.tox .tox-toolbar-overlord,
+.tox .tox-toolbar__primary {
+  background: #fafafa !important;
+}
+
+.tox .tox-menubar {
+  background: #fafafa !important;
+}
+
+/* 深色模式 - TinyMCE */
+body.dark-mode .tox-tinymce {
+  border-color: #434343 !important;
+}
+
+body.dark-mode .tox .tox-toolbar-overlord,
+body.dark-mode .tox .tox-toolbar__primary {
+  background: #262626 !important;
+}
+
+body.dark-mode .tox .tox-menubar {
+  background: #262626 !important;
+}
+
+body.dark-mode .tox .tox-mbtn {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode .tox .tox-tbtn {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode .tox .tox-tbtn:hover {
+  background: #303030 !important;
+}
+
+body.dark-mode .tox .tox-edit-area__iframe {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .tox .tox-statusbar {
+  background: #262626 !important;
+  border-color: #434343 !important;
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+body.dark-mode .tox .tox-statusbar__wordcount,
+body.dark-mode .tox .tox-statusbar__path-item {
+  color: rgba(255, 255, 255, 0.45) !important;
+}

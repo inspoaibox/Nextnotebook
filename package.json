@@ -114,6 +114,7 @@
     "@ant-design/icons": "^5.2.6",
     "@faker-js/faker": "^10.1.0",
     "@monaco-editor/react": "^4.6.0",
+    "@tinymce/tinymce-react": "^6.3.0",
     "antd": "^5.11.4",
     "better-sqlite3": "^9.1.1",
     "crypto-js": "^4.2.0",
@@ -126,9 +127,11 @@
     "mime-types": "^2.1.35",
     "otpauth": "^9.4.1",
     "pinyin-pro": "^3.27.0",
+    "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^9.0.1",
+    "tinymce": "^8.3.1",
     "uuid": "^9.0.1",
     "webdav": "^5.3.0"
   }

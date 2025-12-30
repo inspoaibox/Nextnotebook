@@ -31,6 +31,7 @@ interface SidebarProps {
   todoEnabled?: boolean;
   vaultEnabled?: boolean;
   bookmarkEnabled?: boolean;
+  toolboxEnabled?: boolean;
   currentTool?: string | null;
   onSelectFolder: (folderId: string | null) => void;
   onSelectView: (view: 'all' | 'starred' | 'trash') => void;
@@ -56,6 +57,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   todoEnabled,
   vaultEnabled,
   bookmarkEnabled,
+  toolboxEnabled,
   currentTool,
   onSelectFolder,
   onSelectView,
@@ -359,14 +361,16 @@ const Sidebar: React.FC<SidebarProps> = ({
               />
             </Tooltip>
           )}
-          <Tooltip title="工具箱">
-            <Button
-              type={currentTool === 'toolbox' ? 'primary' : 'text'}
-              icon={<AppstoreOutlined />}
-              size="small"
-              onClick={() => onSelectTool?.(currentTool === 'toolbox' ? null : 'toolbox')}
-            />
-          </Tooltip>
+          {toolboxEnabled && (
+            <Tooltip title="工具箱">
+              <Button
+                type={currentTool === 'toolbox' ? 'primary' : 'text'}
+                icon={<AppstoreOutlined />}
+                size="small"
+                onClick={() => onSelectTool?.(currentTool === 'toolbox' ? null : 'toolbox')}
+              />
+            </Tooltip>
+          )}
         </div>
       </div>
       

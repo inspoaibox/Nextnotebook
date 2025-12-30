@@ -60,6 +60,7 @@ const tools: Tool[] = [
   { id: 'timestamp', name: '时间戳转换', icon: <FieldTimeOutlined />, category: 'code' },
   { id: 'hash', name: 'Hash计算', icon: <KeyOutlined />, category: 'code' },
   { id: 'uuid', name: 'UUID生成', icon: <KeyOutlined />, category: 'code' },
+  { id: 'html-editor', name: 'HTML编辑器', icon: <CodeOutlined />, category: 'code' },
   // 格式转换
   { id: 'md-html', name: 'MD转HTML', icon: <FileTextOutlined />, category: 'convert' },
   // 其他工具
@@ -120,6 +121,8 @@ const ToolboxPanel: React.FC = () => {
         return <ColorTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'md-html':
         return <MdHtmlTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
+      case 'html-editor':
+        return <HtmlEditorTool />;
       default:
         return <div>请选择工具</div>;
     }
@@ -574,36 +577,416 @@ const UuidTool: React.FC<{ output: string; setOutput: (v: string) => void }> = (
   );
 };
 
-// 二维码生成工具
+// 二维码生成工具 - 使用 qrcode.react 库
 const QrcodeTool: React.FC<{ input: string; setInput: (v: string) => void }> = ({ input, setInput }) => {
-  const [qrUrl, setQrUrl] = useState('');
+  // 基础设置
+  const [size, setSize] = useState(256);
+  const [level, setLevel] = useState<'L' | 'M' | 'Q' | 'H'>('M');
+  const [fgColor, setFgColor] = useState('#000000');
+  const [bgColor, setBgColor] = useState('#FFFFFF');
+  const [marginSize, setMarginSize] = useState(2);
+  
+  // 内容类型
+  const [contentType, setContentType] = useState<'text' | 'url' | 'wifi' | 'vcard' | 'email' | 'phone' | 'sms'>('text');
+  
+  // WiFi 设置
+  const [wifiSSID, setWifiSSID] = useState('');
+  const [wifiPassword, setWifiPassword] = useState('');
+  const [wifiEncryption, setWifiEncryption] = useState<'WPA' | 'WEP' | 'nopass'>('WPA');
+  const [wifiHidden, setWifiHidden] = useState(false);
+  
+  // vCard 设置
+  const [vcardName, setVcardName] = useState('');
+  const [vcardPhone, setVcardPhone] = useState('');
+  const [vcardEmail, setVcardEmail] = useState('');
+  const [vcardOrg, setVcardOrg] = useState('');
+  const [vcardTitle, setVcardTitle] = useState('');
+  const [vcardAddress, setVcardAddress] = useState('');
+  const [vcardWebsite, setVcardWebsite] = useState('');
+  
+  // Email 设置
+  const [emailTo, setEmailTo] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  
+  // SMS 设置
+  const [smsPhone, setSmsPhone] = useState('');
+  const [smsMessage, setSmsMessage] = useState('');
+  
+  // Logo 设置
+  const [logoEnabled, setLogoEnabled] = useState(false);
+  const [logoUrl, setLogoUrl] = useState('');
+  const [logoSize, setLogoSize] = useState(50);
+  
+  // 引用 canvas/svg 用于下载
+  const qrRef = React.useRef<HTMLDivElement>(null);
 
-  const generate = () => {
-    if (!input.trim()) {
-      message.warning('请输入内容');
-      return;
+  // 生成二维码内容
+  const getQRValue = (): string => {
+    switch (contentType) {
+      case 'url':
+        return input.startsWith('http') ? input : `https://${input}`;
+      case 'wifi':
+        // WiFi 格式: WIFI:T:WPA;S:mynetwork;P:mypass;H:true;;
+        return `WIFI:T:${wifiEncryption};S:${wifiSSID};P:${wifiPassword};H:${wifiHidden};;`;
+      case 'vcard':
+        // vCard 3.0 格式
+        const vcard = [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          vcardName ? `FN:${vcardName}` : '',
+          vcardName ? `N:${vcardName.split(' ').reverse().join(';')};;;` : '',
+          vcardPhone ? `TEL:${vcardPhone}` : '',
+          vcardEmail ? `EMAIL:${vcardEmail}` : '',
+          vcardOrg ? `ORG:${vcardOrg}` : '',
+          vcardTitle ? `TITLE:${vcardTitle}` : '',
+          vcardAddress ? `ADR:;;${vcardAddress};;;;` : '',
+          vcardWebsite ? `URL:${vcardWebsite}` : '',
+          'END:VCARD',
+        ].filter(Boolean).join('\n');
+        return vcard;
+      case 'email':
+        // mailto 格式
+        const params = [];
+        if (emailSubject) params.push(`subject=${encodeURIComponent(emailSubject)}`);
+        if (emailBody) params.push(`body=${encodeURIComponent(emailBody)}`);
+        return `mailto:${emailTo}${params.length ? '?' + params.join('&') : ''}`;
+      case 'phone':
+        return `tel:${input}`;
+      case 'sms':
+        return `sms:${smsPhone}${smsMessage ? `?body=${encodeURIComponent(smsMessage)}` : ''}`;
+      default:
+        return input;
     }
-    // 使用 QR Server API 生成二维码
-    const url = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(input)}`;
-    setQrUrl(url);
   };
+
+  const qrValue = getQRValue();
+  const hasContent = qrValue.trim().length > 0;
+
+  // 下载二维码
+  const downloadQR = (format: 'png' | 'svg') => {
+    if (!qrRef.current) return;
+    
+    if (format === 'svg') {
+      const svg = qrRef.current.querySelector('svg');
+      if (svg) {
+        const svgData = new XMLSerializer().serializeToString(svg);
+        const blob = new Blob([svgData], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'qrcode.svg';
+        a.click();
+        URL.revokeObjectURL(url);
+        message.success('SVG 已下载');
+      }
+    } else {
+      const svg = qrRef.current.querySelector('svg');
+      if (svg) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const svgData = new XMLSerializer().serializeToString(svg);
+        const img = new Image();
+        img.onload = () => {
+          canvas.width = size;
+          canvas.height = size;
+          ctx?.drawImage(img, 0, 0);
+          const pngUrl = canvas.toDataURL('image/png');
+          const a = document.createElement('a');
+          a.href = pngUrl;
+          a.download = 'qrcode.png';
+          a.click();
+          message.success('PNG 已下载');
+        };
+        img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+      }
+    }
+  };
+
+  // 复制到剪贴板
+  const copyQR = async () => {
+    if (!qrRef.current) return;
+    const svg = qrRef.current.querySelector('svg');
+    if (svg) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const img = new Image();
+      img.onload = async () => {
+        canvas.width = size;
+        canvas.height = size;
+        ctx?.drawImage(img, 0, 0);
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            try {
+              await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': blob })
+              ]);
+              message.success('已复制到剪贴板');
+            } catch {
+              message.error('复制失败');
+            }
+          }
+        });
+      };
+      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+    }
+  };
+
+  // 渲染内容输入区域
+  const renderContentInput = () => {
+    switch (contentType) {
+      case 'wifi':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Input placeholder="WiFi 名称 (SSID)" value={wifiSSID} onChange={e => setWifiSSID(e.target.value)} />
+            <Input.Password placeholder="WiFi 密码" value={wifiPassword} onChange={e => setWifiPassword(e.target.value)} />
+            <Space>
+              <span>加密方式:</span>
+              <Select value={wifiEncryption} onChange={setWifiEncryption} style={{ width: 100 }}>
+                <Select.Option value="WPA">WPA/WPA2</Select.Option>
+                <Select.Option value="WEP">WEP</Select.Option>
+                <Select.Option value="nopass">无密码</Select.Option>
+              </Select>
+              <Checkbox checked={wifiHidden} onChange={e => setWifiHidden(e.target.checked)}>隐藏网络</Checkbox>
+            </Space>
+          </Space>
+        );
+      case 'vcard':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Input placeholder="姓名" value={vcardName} onChange={e => setVcardName(e.target.value)} />
+            <Input placeholder="电话" value={vcardPhone} onChange={e => setVcardPhone(e.target.value)} />
+            <Input placeholder="邮箱" value={vcardEmail} onChange={e => setVcardEmail(e.target.value)} />
+            <Input placeholder="公司" value={vcardOrg} onChange={e => setVcardOrg(e.target.value)} />
+            <Input placeholder="职位" value={vcardTitle} onChange={e => setVcardTitle(e.target.value)} />
+            <Input placeholder="地址" value={vcardAddress} onChange={e => setVcardAddress(e.target.value)} />
+            <Input placeholder="网站" value={vcardWebsite} onChange={e => setVcardWebsite(e.target.value)} />
+          </Space>
+        );
+      case 'email':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Input placeholder="收件人邮箱" value={emailTo} onChange={e => setEmailTo(e.target.value)} />
+            <Input placeholder="主题" value={emailSubject} onChange={e => setEmailSubject(e.target.value)} />
+            <TextArea rows={3} placeholder="邮件内容" value={emailBody} onChange={e => setEmailBody(e.target.value)} />
+          </Space>
+        );
+      case 'sms':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Input placeholder="手机号码" value={smsPhone} onChange={e => setSmsPhone(e.target.value)} />
+            <TextArea rows={3} placeholder="短信内容" value={smsMessage} onChange={e => setSmsMessage(e.target.value)} />
+          </Space>
+        );
+      default:
+        return (
+          <TextArea 
+            rows={4} 
+            value={input} 
+            onChange={e => setInput(e.target.value)} 
+            placeholder={contentType === 'url' ? '输入网址...' : contentType === 'phone' ? '输入电话号码...' : '输入文本内容...'} 
+          />
+        );
+    }
+  };
+
+  // 动态导入 QRCodeSVG
+  const [QRCodeSVG, setQRCodeSVG] = useState<any>(null);
+  React.useEffect(() => {
+    import('qrcode.react').then(mod => {
+      setQRCodeSVG(() => mod.QRCodeSVG);
+    });
+  }, []);
 
   return (
     <Row gutter={16}>
+      {/* 左侧配置区域 */}
       <Col span={12}>
-        <Text strong>输入内容</Text>
-        <TextArea rows={6} value={input} onChange={e => setInput(e.target.value)} placeholder="输入要生成二维码的文本或链接..." />
-        <Button type="primary" onClick={generate} style={{ marginTop: 8 }}>生成二维码</Button>
+        <Card size="small" title="内容类型" style={{ marginBottom: 12 }}>
+          <Select value={contentType} onChange={setContentType} style={{ width: '100%' }}>
+            <Select.Option value="text">纯文本</Select.Option>
+            <Select.Option value="url">网址链接</Select.Option>
+            <Select.Option value="wifi">WiFi 连接</Select.Option>
+            <Select.Option value="vcard">电子名片</Select.Option>
+            <Select.Option value="email">电子邮件</Select.Option>
+            <Select.Option value="phone">电话号码</Select.Option>
+            <Select.Option value="sms">短信</Select.Option>
+          </Select>
+        </Card>
+
+        <Card size="small" title="内容" style={{ marginBottom: 12 }}>
+          {renderContentInput()}
+        </Card>
+
+        <Card size="small" title="样式设置" style={{ marginBottom: 12 }}>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 60 }}>尺寸:</span>
+              <Select value={size} onChange={setSize} style={{ width: 100 }}>
+                <Select.Option value={128}>128px</Select.Option>
+                <Select.Option value={200}>200px</Select.Option>
+                <Select.Option value={256}>256px</Select.Option>
+                <Select.Option value={300}>300px</Select.Option>
+                <Select.Option value={400}>400px</Select.Option>
+                <Select.Option value={512}>512px</Select.Option>
+              </Select>
+              <span style={{ width: 60 }}>容错:</span>
+              <Tooltip title="L=7%, M=15%, Q=25%, H=30%">
+                <Select value={level} onChange={setLevel} style={{ width: 80 }}>
+                  <Select.Option value="L">L (7%)</Select.Option>
+                  <Select.Option value="M">M (15%)</Select.Option>
+                  <Select.Option value="Q">Q (25%)</Select.Option>
+                  <Select.Option value="H">H (30%)</Select.Option>
+                </Select>
+              </Tooltip>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 60 }}>前景色:</span>
+              <input type="color" value={fgColor} onChange={e => setFgColor(e.target.value)} style={{ width: 40, height: 28, cursor: 'pointer' }} />
+              <Input value={fgColor} onChange={e => setFgColor(e.target.value)} style={{ width: 90 }} />
+              <span style={{ width: 60 }}>背景色:</span>
+              <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} style={{ width: 40, height: 28, cursor: 'pointer' }} />
+              <Input value={bgColor} onChange={e => setBgColor(e.target.value)} style={{ width: 90 }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 60 }}>边距:</span>
+              <Select value={marginSize} onChange={setMarginSize} style={{ width: 100 }}>
+                <Select.Option value={0}>无边距</Select.Option>
+                <Select.Option value={1}>1 模块</Select.Option>
+                <Select.Option value={2}>2 模块</Select.Option>
+                <Select.Option value={4}>4 模块</Select.Option>
+              </Select>
+            </div>
+          </Space>
+        </Card>
+
+        <Card size="small" title="Logo 设置">
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Checkbox checked={logoEnabled} onChange={e => setLogoEnabled(e.target.checked)}>
+              添加 Logo
+            </Checkbox>
+            {logoEnabled && (
+              <>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <Button
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = 'image/*';
+                      input.onchange = (e) => {
+                        const file = (e.target as HTMLInputElement).files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (ev) => {
+                            setLogoUrl(ev.target?.result as string);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      };
+                      input.click();
+                    }}
+                  >
+                    选择图片
+                  </Button>
+                  {logoUrl && (
+                    <Button type="text" danger onClick={() => setLogoUrl('')}>
+                      清除
+                    </Button>
+                  )}
+                </div>
+                {logoUrl && (
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 8,
+                    padding: 8,
+                    background: '#f5f5f5',
+                    borderRadius: 4,
+                  }}>
+                    <img 
+                      src={logoUrl} 
+                      alt="Logo 预览" 
+                      style={{ 
+                        width: 40, 
+                        height: 40, 
+                        objectFit: 'contain',
+                        borderRadius: 4,
+                      }} 
+                    />
+                    <span style={{ fontSize: 12, color: '#888' }}>Logo 已选择</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>Logo 尺寸:</span>
+                  <Select value={logoSize} onChange={setLogoSize} style={{ width: 100 }}>
+                    <Select.Option value={30}>30px</Select.Option>
+                    <Select.Option value={40}>40px</Select.Option>
+                    <Select.Option value={50}>50px</Select.Option>
+                    <Select.Option value={60}>60px</Select.Option>
+                    <Select.Option value={80}>80px</Select.Option>
+                  </Select>
+                </div>
+              </>
+            )}
+          </Space>
+        </Card>
       </Col>
+
+      {/* 右侧预览区域 */}
       <Col span={12}>
-        <Text strong>二维码</Text>
-        <div style={{ marginTop: 8, padding: 16, background: '#f5f5f5', borderRadius: 8, textAlign: 'center', minHeight: 232 }}>
-          {qrUrl ? (
-            <img src={qrUrl} alt="QR Code" style={{ maxWidth: '100%' }} />
-          ) : (
-            <Text type="secondary">点击生成按钮生成二维码</Text>
+        <Card size="small" title="二维码预览">
+          <div 
+            ref={qrRef}
+            style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              alignItems: 'center',
+              padding: 16, 
+              background: bgColor, 
+              borderRadius: 8,
+              minHeight: 280,
+            }}
+          >
+            {hasContent && QRCodeSVG ? (
+              <QRCodeSVG
+                value={qrValue}
+                size={size}
+                level={level}
+                fgColor={fgColor}
+                bgColor={bgColor}
+                marginSize={marginSize}
+                imageSettings={logoEnabled && logoUrl ? {
+                  src: logoUrl,
+                  height: logoSize,
+                  width: logoSize,
+                  excavate: true,
+                } : undefined}
+              />
+            ) : (
+              <Text type="secondary">请输入内容生成二维码</Text>
+            )}
+          </div>
+          
+          {hasContent && (
+            <Space style={{ marginTop: 12, width: '100%', justifyContent: 'center' }}>
+              <Button icon={<CopyOutlined />} onClick={copyQR}>复制</Button>
+              <Button onClick={() => downloadQR('png')}>下载 PNG</Button>
+              <Button onClick={() => downloadQR('svg')}>下载 SVG</Button>
+            </Space>
           )}
-        </div>
+        </Card>
+
+        {hasContent && (
+          <Card size="small" title="二维码内容" style={{ marginTop: 12 }}>
+            <TextArea 
+              rows={4} 
+              value={qrValue} 
+              readOnly 
+              style={{ background: '#f5f5f5', fontFamily: 'monospace', fontSize: 12 }} 
+            />
+          </Card>
+        )}
       </Col>
     </Row>
   );
@@ -871,6 +1254,198 @@ const MdHtmlTool: React.FC<ToolProps> = ({ input, setInput, output, setOutput })
         <Button onClick={() => navigator.clipboard.writeText(output)} style={{ marginTop: 8 }} icon={<CopyOutlined />}>复制</Button>
       </Col>
     </Row>
+  );
+};
+
+// HTML 编辑器工具 - 使用 TinyMCE（本地部署，不使用 CDN）
+const HtmlEditorTool: React.FC = () => {
+  const [content, setContent] = useState('');
+  const [viewMode, setViewMode] = useState<'editor' | 'source' | 'preview'>('editor');
+  const [sourceCode, setSourceCode] = useState('');
+  const [TinyMCEEditor, setTinyMCEEditor] = useState<any>(null);
+  const [tinymceReady, setTinymceReady] = useState(false);
+
+  // 动态加载 TinyMCE
+  React.useEffect(() => {
+    const loadTinyMCE = async () => {
+      try {
+        // 加载 TinyMCE 核心（包含所有必要模块）
+        const tinymce = await import('tinymce');
+        
+        // 设置 TinyMCE 基础路径（用于加载皮肤等资源）
+        // 在 Electron 环境中，使用相对路径
+        if (tinymce.default) {
+          (tinymce.default as any).baseURL = './tinymce';
+        }
+        
+        setTinymceReady(true);
+        
+        // 加载 React 组件
+        const mod = await import('@tinymce/tinymce-react');
+        setTinyMCEEditor(() => mod.Editor);
+      } catch (err) {
+        console.error('Failed to load TinyMCE:', err);
+      }
+    };
+    
+    loadTinyMCE();
+  }, []);
+
+  // 同步源代码和编辑器内容
+  const handleEditorChange = (newContent: string) => {
+    setContent(newContent);
+    setSourceCode(newContent);
+  };
+
+  const handleSourceChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setSourceCode(e.target.value);
+  };
+
+  const applySourceCode = () => {
+    setContent(sourceCode);
+    message.success('已应用源代码');
+  };
+
+  const formatHtml = () => {
+    try {
+      // 简单的 HTML 格式化
+      let formatted = sourceCode
+        .replace(/></g, '>\n<')
+        .replace(/(<[^/][^>]*>)/g, '\n$1')
+        .replace(/(<\/[^>]+>)/g, '$1\n')
+        .split('\n')
+        .filter(line => line.trim())
+        .join('\n');
+      
+      // 添加缩进
+      let indent = 0;
+      formatted = formatted.split('\n').map(line => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('</')) {
+          indent = Math.max(0, indent - 1);
+        }
+        const result = '  '.repeat(indent) + trimmed;
+        if (trimmed.startsWith('<') && !trimmed.startsWith('</') && !trimmed.endsWith('/>') && !trimmed.includes('</')) {
+          indent++;
+        }
+        return result;
+      }).join('\n');
+      
+      setSourceCode(formatted);
+      message.success('已格式化');
+    } catch {
+      message.error('格式化失败');
+    }
+  };
+
+  const copyContent = () => {
+    navigator.clipboard.writeText(viewMode === 'source' ? sourceCode : content);
+    message.success('已复制');
+  };
+
+  const clearContent = () => {
+    setContent('');
+    setSourceCode('');
+  };
+
+  return (
+    <div style={{ height: 'calc(100vh - 180px)', display: 'flex', flexDirection: 'column' }}>
+      {/* 工具栏 */}
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Space>
+          <Button 
+            type={viewMode === 'editor' ? 'primary' : 'default'}
+            onClick={() => setViewMode('editor')}
+          >
+            可视化编辑
+          </Button>
+          <Button 
+            type={viewMode === 'source' ? 'primary' : 'default'}
+            onClick={() => setViewMode('source')}
+          >
+            源代码
+          </Button>
+          <Button 
+            type={viewMode === 'preview' ? 'primary' : 'default'}
+            onClick={() => setViewMode('preview')}
+          >
+            预览
+          </Button>
+        </Space>
+        <Space>
+          {viewMode === 'source' && (
+            <>
+              <Button onClick={formatHtml}>格式化</Button>
+              <Button type="primary" onClick={applySourceCode}>应用</Button>
+            </>
+          )}
+          <Button icon={<CopyOutlined />} onClick={copyContent}>复制</Button>
+          <Button icon={<ClearOutlined />} onClick={clearContent}>清空</Button>
+        </Space>
+      </div>
+
+      {/* 编辑区域 */}
+      <div style={{ flex: 1, border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden' }}>
+        {viewMode === 'editor' && TinyMCEEditor && tinymceReady && (
+          <TinyMCEEditor
+            value={content}
+            onEditorChange={handleEditorChange}
+            init={{
+              height: '100%',
+              menubar: true,
+              plugins: [
+                'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
+                'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+                'insertdatetime', 'media', 'table', 'help', 'wordcount'
+              ],
+              toolbar: 'undo redo | blocks | ' +
+                'bold italic forecolor | alignleft aligncenter ' +
+                'alignright alignjustify | bullist numlist outdent indent | ' +
+                'removeformat | code | help',
+              content_style: 'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; }',
+              // 本地部署配置
+              base_url: './tinymce',
+              suffix: '.min',
+              language: 'zh_CN', // 中文界面
+              promotion: false,
+              branding: false,
+              license_key: 'gpl', // 使用 GPL 开源许可
+            }}
+          />
+        )}
+        {viewMode === 'editor' && (!TinyMCEEditor || !tinymceReady) && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <Text type="secondary">加载编辑器中...</Text>
+          </div>
+        )}
+        {viewMode === 'source' && (
+          <TextArea
+            value={sourceCode}
+            onChange={handleSourceChange}
+            style={{ 
+              height: '100%', 
+              fontFamily: 'monospace', 
+              fontSize: 13,
+              border: 'none',
+              borderRadius: 0,
+              resize: 'none',
+            }}
+            placeholder="在这里编辑 HTML 源代码..."
+          />
+        )}
+        {viewMode === 'preview' && (
+          <div 
+            style={{ 
+              height: '100%', 
+              padding: 16, 
+              overflow: 'auto',
+              background: '#fff',
+            }}
+            dangerouslySetInnerHTML={{ __html: content }}
+          />
+        )}
+      </div>
+    </div>
   );
 };
 

@@ -423,8 +423,10 @@ if (config.type === 'your_type') {
 # 开发
 npm run build          # 构建
 npm start              # 运行
+或者
+npm run dev 直接运行开发服务器
 
-# 打包
+# 打
 ## 1. 先构建项目
 npm run build
 

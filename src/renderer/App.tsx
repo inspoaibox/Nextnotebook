@@ -713,6 +713,7 @@ const App: React.FC = () => {
           todoEnabled={featureSettings.todo_enabled}
           vaultEnabled={featureSettings.vault_enabled}
           bookmarkEnabled={featureSettings.bookmark_enabled}
+          toolboxEnabled={featureSettings.toolbox_enabled}
           currentTool={currentTool}
           onSelectFolder={handleSelectFolder}
           onSelectView={handleSelectView}

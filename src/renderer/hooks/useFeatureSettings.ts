@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS: FeatureSettings = {
   todo_enabled: true,
   vault_enabled: true,
   bookmark_enabled: true,
+  toolbox_enabled: true,
 };
 
 function getSettings(): FeatureSettings {
