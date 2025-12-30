@@ -9,6 +9,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   auto_save_interval: 30,
   show_line_numbers: true,
   spell_check: false,
+  auto_launch: false,
+  close_to_tray: false,
 };
 
 const DEFAULT_SYNC_CONFIG: SyncConfig = {

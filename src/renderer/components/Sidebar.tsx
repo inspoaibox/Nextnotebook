@@ -17,6 +17,7 @@ import {
   KeyOutlined,
   LinkOutlined,
   BookOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Folder } from '../hooks/useFolders';
@@ -43,6 +44,8 @@ interface SidebarProps {
   onRenameFolder?: (folderId: string, newName: string) => Promise<void>;
   onDeleteTag?: (tagId: string) => Promise<void>;
   onOpenSettings?: () => void;
+  onSync?: () => void;
+  syncStatus?: 'idle' | 'syncing' | 'error' | 'offline';
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -66,6 +69,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onRenameFolder,
   onDeleteTag,
   onOpenSettings,
+  onSync,
+  syncStatus,
 }) => {
   const [newFolderModalOpen, setNewFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -389,16 +394,26 @@ const Sidebar: React.FC<SidebarProps> = ({
         />
       </div>
       
-      <div style={{ padding: '8px 12px', borderTop: '1px solid #f0f0f0' }}>
-        <Button
-          type="text"
-          icon={<SettingOutlined />}
-          onClick={onOpenSettings}
-          size="small"
-          style={{ width: '100%', textAlign: 'left', color: '#666' }}
-        >
-          设置
-        </Button>
+      <div style={{ padding: '8px 12px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8 }}>
+        <Tooltip title="设置">
+          <Button
+            type="text"
+            icon={<SettingOutlined />}
+            onClick={onOpenSettings}
+            size="small"
+            style={{ color: '#666' }}
+          />
+        </Tooltip>
+        <Tooltip title={syncStatus === 'syncing' ? '同步中...' : '立即同步'}>
+          <Button
+            type="text"
+            icon={<SyncOutlined spin={syncStatus === 'syncing'} />}
+            onClick={onSync}
+            size="small"
+            style={{ color: syncStatus === 'error' ? '#ff4d4f' : '#666' }}
+            disabled={syncStatus === 'syncing'}
+          />
+        </Tooltip>
       </div>
 
       <Modal

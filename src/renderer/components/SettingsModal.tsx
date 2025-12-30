@@ -24,6 +24,7 @@ const { Text } = Typography;
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  defaultTab?: string;
 }
 
 interface SecuritySettings {
@@ -58,13 +59,20 @@ const SHORTCUTS = [
 
 type TabKey = 'general' | 'features' | 'sync' | 'security' | 'ai' | 'shortcuts' | 'about';
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab }) => {
   const { settings, syncConfig, updateSettings, updateSyncConfig, resetSettings } = useSettings();
   const { settings: aiSettings, updateSettings: updateAISettings, addChannel, updateChannel, deleteChannel, addModelToChannel, deleteModelFromChannel } = useAISettings();
   const { settings: featureSettings, updateSettings: updateFeatureSettings } = useFeatureSettings();
   const [form] = Form.useForm();
   const [syncForm] = Form.useForm();
-  const [activeTab, setActiveTab] = useState<TabKey>('general');
+  const [activeTab, setActiveTab] = useState<TabKey>(defaultTab as TabKey || 'general');
+  
+  // 当 defaultTab 变化时更新 activeTab
+  useEffect(() => {
+    if (defaultTab && open) {
+      setActiveTab(defaultTab as TabKey);
+    }
+  }, [defaultTab, open]);
   
   // AI 设置状态
   const [editingChannel, setEditingChannel] = useState<AIChannel | null>(null);
@@ -354,6 +362,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose }) => {
                 <InputNumber min={10} max={300} addonAfter="秒" style={{ width: 120 }} />
               </Form.Item>
               <Form.Item name="show_line_numbers" label="显示行号" valuePropName="checked">
+                <Switch />
+              </Form.Item>
+              <Divider style={{ margin: '16px 0' }} />
+              <Form.Item name="auto_launch" label="开机自启动" valuePropName="checked" tooltip="开启后系统启动时自动运行暮城笔记">
+                <Switch onChange={async (checked) => {
+                  try {
+                    const api = (window as any).electronAPI;
+                    if (api?.setAutoLaunch) {
+                      await api.setAutoLaunch(checked);
+                    }
+                  } catch (e) {
+                    console.error('设置开机启动失败:', e);
+                  }
+                }} />
+              </Form.Item>
+              <Form.Item name="close_to_tray" label="关闭到托盘" valuePropName="checked" tooltip="开启后点击关闭按钮将最小化到系统托盘而非退出">
                 <Switch />
               </Form.Item>
               <Divider style={{ margin: '16px 0' }} />

@@ -8,6 +8,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 使用系统默认浏览器打开链接
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   
+  // 开机启动设置
+  setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('set-auto-launch', enabled),
+  getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
+  
+  // 窗口操作
+  minimizeToTray: () => ipcRenderer.send('window-minimize-to-tray'),
+  quitApp: () => ipcRenderer.send('window-quit'),
+  
+  // 窗口关闭请求监听
+  onWindowCloseRequest: (callback: () => void) => {
+    ipcRenderer.on('window-close-request', () => callback());
+  },
+  
   // 菜单事件监听
   onMenuAction: (callback: (action: string) => void) => {
     // 监听统一的 menu-action 事件

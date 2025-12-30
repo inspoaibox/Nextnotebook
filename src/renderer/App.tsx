@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const [selectedView, setSelectedView] = useState<ViewType>('all');
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<string>('general');
   const [templateSelectorOpen, setTemplateSelectorOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error' | 'offline'>('idle');
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
@@ -80,12 +81,38 @@ const App: React.FC = () => {
     filteredNotes: any[];
   }>();
 
-  const { syncConfig, updateSettings, isDarkMode } = useSettings();
+  const { syncConfig, updateSettings, isDarkMode, settings } = useSettings();
   const { settings: featureSettings } = useFeatureSettings();
   const { notes, createNote, updateNote, deleteNote, searchNotes, refresh } = useNotes(selectedFolderId);
   const { note: currentNote } = useNote(selectedNoteId, selectedView === 'trash');
   const { folders, createFolder, updateFolder, deleteFolder: deleteFolderApi } = useFolders();
   const { tags, createTag, deleteTag: deleteTagApi } = useTags();
+
+  // 监听窗口关闭请求
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (api?.onWindowCloseRequest) {
+      api.onWindowCloseRequest(() => {
+        // 从 localStorage 读取最新设置
+        const savedSettings = localStorage.getItem('mucheng-settings');
+        let closeToTray = false;
+        if (savedSettings) {
+          try {
+            const parsed = JSON.parse(savedSettings);
+            closeToTray = parsed.close_to_tray || false;
+          } catch { /* ignore */ }
+        }
+        
+        if (closeToTray) {
+          // 最小化到托盘
+          api.minimizeToTray?.();
+        } else {
+          // 退出应用
+          api.quitApp?.();
+        }
+      });
+    }
+  }, []);
 
   // 监听菜单/快捷键事件
   useEffect(() => {
@@ -200,6 +227,35 @@ const App: React.FC = () => {
             } else {
               message.warning('请先在设置中启用应用锁定');
             }
+            break;
+          // 设置菜单
+          case 'settings-general':
+            setSettingsTab('general');
+            setSettingsOpen(true);
+            break;
+          case 'settings-features':
+            setSettingsTab('features');
+            setSettingsOpen(true);
+            break;
+          case 'settings-sync':
+            setSettingsTab('sync');
+            setSettingsOpen(true);
+            break;
+          case 'settings-security':
+            setSettingsTab('security');
+            setSettingsOpen(true);
+            break;
+          case 'settings-ai':
+            setSettingsTab('ai');
+            setSettingsOpen(true);
+            break;
+          case 'settings-shortcuts':
+            setSettingsTab('shortcuts');
+            setSettingsOpen(true);
+            break;
+          case 'settings-about':
+            setSettingsTab('about');
+            setSettingsOpen(true);
             break;
         }
       });
@@ -592,6 +648,8 @@ const App: React.FC = () => {
           onRenameFolder={handleRenameFolder}
           onDeleteTag={handleDeleteTag}
           onOpenSettings={() => setSettingsOpen(true)}
+          onSync={handleSync}
+          syncStatus={syncStatus}
         />
       </Sider>
       <Layout>
@@ -672,7 +730,7 @@ const App: React.FC = () => {
         )}
       </Layout>
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} defaultTab={settingsTab} />
       <TemplateSelector
         open={templateSelectorOpen}
         onClose={() => setTemplateSelectorOpen(false)}

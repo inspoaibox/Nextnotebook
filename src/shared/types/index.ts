@@ -240,4 +240,6 @@ export interface AppSettings {
   auto_save_interval: number;
   show_line_numbers: boolean;
   spell_check: boolean;
+  auto_launch: boolean;
+  close_to_tray: boolean;
 }

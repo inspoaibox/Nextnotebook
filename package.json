@@ -33,12 +33,18 @@
       "dist/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "icons",
+        "to": "icons"
+      }
+    ],
     "win": {
       "target": [
         "nsis",
         "portable"
       ],
-      "icon": "logo.png"
+      "icon": "icons/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -48,14 +54,14 @@
     },
     "mac": {
       "target": "dmg",
-      "icon": "logo.png"
+      "icon": "icons/icon.icns"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "icon": "logo.png"
+      "icon": "icons/icon.png"
     }
   },
   "keywords": [
