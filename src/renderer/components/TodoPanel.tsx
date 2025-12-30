@@ -52,12 +52,11 @@ const TodoItem: React.FC<TodoItemProps> = ({ todo, onToggle, onEdit, onDelete, o
     <div
       draggable
       onDragStart={(e) => onDragStart(e, todo)}
+      className="todo-item"
       style={{
         padding: '8px 12px',
-        background: '#fff',
         borderRadius: 6,
         marginBottom: 8,
-        boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
         cursor: 'grab',
         display: 'flex',
         alignItems: 'flex-start',
@@ -155,26 +154,25 @@ const QuadrantBox: React.FC<QuadrantBoxProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      className={`quadrant-box quadrant-${quadrant}`}
       style={{
         flex: 1,
         minWidth: 0,
         minHeight: 200,
-        background: isDragOver ? config.bgColor : '#fafafa',
         borderRadius: 8,
-        border: `2px ${isDragOver ? 'dashed' : 'solid'} ${isDragOver ? config.color : '#f0f0f0'}`,
+        border: `2px ${isDragOver ? 'dashed' : 'solid'} ${isDragOver ? config.color : 'var(--border-color, #f0f0f0)'}`,
         display: 'flex',
         flexDirection: 'column',
         transition: 'all 0.2s',
       }}
     >
       {/* 标题栏 */}
-      <div style={{
+      <div className={`quadrant-header quadrant-header-${quadrant}`} style={{
         padding: '10px 12px',
-        borderBottom: '1px solid #f0f0f0',
+        borderBottom: '1px solid var(--border-color, #f0f0f0)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        background: config.bgColor,
         borderRadius: '6px 6px 0 0',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -373,11 +371,11 @@ const TodoPanel: React.FC = () => {
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fff' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }} className="todo-panel">
       {/* 标题栏 */}
-      <div style={{
+      <div className="todo-header" style={{
         padding: '12px 16px',
-        borderBottom: '1px solid #f0f0f0',
+        borderBottom: '1px solid var(--border-color, #f0f0f0)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',

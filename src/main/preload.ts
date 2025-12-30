@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
   // 应用路径
   getAppPath: () => ipcRenderer.invoke('get-app-path'),
+  getAppPaths: () => ipcRenderer.invoke('get-app-paths'),
   
   // 使用系统默认浏览器打开链接
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
@@ -47,6 +48,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getByType: (type: string) => ipcRenderer.invoke('items:getByType', type),
     update: (id: string, payload: object) => ipcRenderer.invoke('items:update', id, payload),
     delete: (id: string) => ipcRenderer.invoke('items:delete', id),
+    hardDelete: (id: string) => ipcRenderer.invoke('items:hardDelete', id),
     restore: (id: string) => ipcRenderer.invoke('items:restore', id),
     search: (query: string, type?: string) => ipcRenderer.invoke('items:search', query, type),
     getNotesByFolder: (folderId: string | null) => ipcRenderer.invoke('items:getNotesByFolder', folderId),

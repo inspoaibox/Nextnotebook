@@ -58,6 +58,11 @@ function registerIpcHandlers(): void {
     return getItemsManager().softDelete(id);
   });
 
+  // 永久删除 Item（从回收站彻底删除）
+  ipcMain.handle('items:hardDelete', (_event: IpcMainInvokeEvent, id: string) => {
+    return getItemsManager().hardDelete(id);
+  });
+
   // 恢复 Item
   ipcMain.handle('items:restore', (_event: IpcMainInvokeEvent, id: string) => {
     return getItemsManager().restore(id);

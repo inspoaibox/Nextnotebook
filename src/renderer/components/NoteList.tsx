@@ -135,8 +135,8 @@ const NoteList: React.FC<NoteListProps> = ({
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff' }}>
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 8, alignItems: 'center' }}>
+    <div className="note-list-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-color, #f0f0f0)', display: 'flex', gap: 8, alignItems: 'center' }}>
         <Search
           placeholder="搜索笔记..."
           prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
@@ -168,13 +168,12 @@ const NoteList: React.FC<NoteListProps> = ({
                 <div onContextMenu={(e) => e.stopPropagation()}>
                   <Dropdown menu={{ items: getContextMenuItems(note) }} trigger={['contextMenu']}>
                     <List.Item
-                      className="note-list-item"
+                      className={`note-list-item ${selectedNoteId === note.id ? 'selected' : ''}`}
                       onClick={() => onSelectNote(note.id)}
                       style={{
                         padding: '10px 12px',
                         margin: '2px 6px',
                         cursor: 'pointer',
-                        background: selectedNoteId === note.id ? '#e6f4ff' : 'transparent',
                         borderRadius: 6,
                         border: 'none',
                       }}

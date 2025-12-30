@@ -14,9 +14,8 @@ import {
   RobotOutlined,
   AppstoreOutlined,
   CheckSquareOutlined,
-  KeyOutlined,
+  SafetyOutlined,
   LinkOutlined,
-  BookOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
@@ -203,16 +202,13 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // 构建菜单项
   const menuItems: MenuProps['items'] = [
-    // 笔记目录标题（带新建按钮）
+    // 所有笔记（带添加目录按钮）
     { 
-      key: 'notes-directory-header', 
-      type: 'group',
+      key: 'all', 
+      icon: <FileTextOutlined />, 
       label: (
-        <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
-          <span style={{ fontWeight: 500, color: '#666' }}>
-            <BookOutlined style={{ marginRight: 8 }} />
-            笔记目录
-          </span>
+        <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <span>所有笔记</span>
           <FolderAddOutlined 
             onClick={(e) => {
               e.stopPropagation();
@@ -220,15 +216,10 @@ const Sidebar: React.FC<SidebarProps> = ({
               setNewFolderModalOpen(true);
             }}
             style={{ cursor: 'pointer', color: '#1890ff' }}
+            title="添加目录"
           />
         </span>
       ),
-    },
-    // 所有笔记
-    { 
-      key: 'all', 
-      icon: <FileTextOutlined />, 
-      label: '所有笔记',
     },
     // 未分类
     {
@@ -324,10 +315,10 @@ const Sidebar: React.FC<SidebarProps> = ({
 
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fafafa' }}>
-      {/* 工具栏区域 */}
-      {(aiEnabled || todoEnabled || vaultEnabled || bookmarkEnabled) && (
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 4 }}>
+    <div className="sidebar-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* 工具栏区域 - 单行布局 */}
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color, #f0f0f0)' }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {aiEnabled && (
             <Tooltip title="智能助理">
               <Button
@@ -352,7 +343,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <Tooltip title="密码库">
               <Button
                 type={currentTool === 'vault' ? 'primary' : 'text'}
-                icon={<KeyOutlined />}
+                icon={<SafetyOutlined />}
                 size="small"
                 onClick={() => onSelectTool?.(currentTool === 'vault' ? null : 'vault')}
               />
@@ -368,11 +359,16 @@ const Sidebar: React.FC<SidebarProps> = ({
               />
             </Tooltip>
           )}
-          <Tooltip title="更多工具">
-            <Button type="text" icon={<AppstoreOutlined />} size="small" disabled />
+          <Tooltip title="工具箱">
+            <Button
+              type={currentTool === 'toolbox' ? 'primary' : 'text'}
+              icon={<AppstoreOutlined />}
+              size="small"
+              onClick={() => onSelectTool?.(currentTool === 'toolbox' ? null : 'toolbox')}
+            />
           </Tooltip>
         </div>
-      )}
+      </div>
       
       {/* 新建笔记按钮 */}
       <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0' }}>

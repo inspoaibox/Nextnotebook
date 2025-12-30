@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ItemBase, SyncStatus } from '@shared/types';
+import { ItemBase } from '@shared/types';
 import { StorageAdapter, RemoteChange } from './StorageAdapter';
 import { ItemsManager } from '../database/ItemsManager';
 import { CryptoEngine } from '../crypto/CryptoEngine';
@@ -17,6 +17,9 @@ export interface SyncOptions {
   encryptionEnabled: boolean;
   conflictStrategy: 'remote-wins' | 'local-wins' | 'create-copy';
 }
+
+// 敏感数据类型 - 这些类型始终需要加密同步
+const SENSITIVE_TYPES = ['vault_entry', 'vault_folder'];
 
 export class SyncEngine {
   private adapter: StorageAdapter;
@@ -108,12 +111,17 @@ export class SyncEngine {
 
     for (const item of pendingItems) {
       try {
-        // 加密 payload（如果启用）
+        // 判断是否需要加密
+        // 1. 敏感数据类型（密码库）始终加密
+        // 2. 其他数据根据用户设置决定
+        const isSensitive = SENSITIVE_TYPES.includes(item.type);
+        const shouldEncrypt = (this.options.encryptionEnabled || isSensitive) && this.cryptoEngine;
+        
         let itemToUpload = item;
-        if (this.options.encryptionEnabled && this.cryptoEngine) {
+        if (shouldEncrypt) {
           itemToUpload = {
             ...item,
-            payload: this.cryptoEngine.encryptPayload(item.payload),
+            payload: this.cryptoEngine!.encryptPayload(item.payload),
             encryption_applied: 1,
           };
         }

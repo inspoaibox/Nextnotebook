@@ -40,6 +40,11 @@ export const itemsApi = {
     return api?.items?.delete(id) ?? Promise.resolve(false);
   },
 
+  hardDelete: (id: string): Promise<boolean> => {
+    const api = getElectronAPI();
+    return api?.items?.hardDelete(id) ?? Promise.resolve(false);
+  },
+
   restore: (id: string): Promise<boolean> => {
     const api = getElectronAPI();
     return api?.items?.restore(id) ?? Promise.resolve(false);

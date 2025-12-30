@@ -8,11 +8,20 @@ interface VaultLockScreenProps {
   hasPassword: boolean;
 }
 
+// 密码哈希函数
+const hashPassword = async (password: string): Promise<string> => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + 'mucheng-salt-2024');
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
 const VaultLockScreen: React.FC<VaultLockScreenProps> = ({ onUnlock, onSetPassword, hasPassword }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleUnlock = () => {
+  const handleUnlock = async () => {
     if (!password) {
       message.warning('请输入密码');
       return;
@@ -20,9 +29,14 @@ const VaultLockScreen: React.FC<VaultLockScreenProps> = ({ onUnlock, onSetPasswo
 
     setLoading(true);
     
-    // 验证密码
+    // 延迟以防止暴力破解
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // 验证密码（使用哈希比较）
     const savedPassword = localStorage.getItem('mucheng-vault-password');
-    if (password === savedPassword) {
+    const hashedInput = await hashPassword(password);
+    
+    if (hashedInput === savedPassword) {
       message.success('密码库已解锁');
       onUnlock();
     } else {

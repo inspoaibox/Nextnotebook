@@ -91,9 +91,9 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
   }, []);
 
   const saveSyncConfig = useCallback((newConfig: SyncConfig) => {
-    // 不保存敏感信息到 localStorage
-    const safeConfig = { ...newConfig, password: undefined, api_key: undefined };
-    localStorage.setItem('mucheng-sync-config', JSON.stringify(safeConfig));
+    // 保存完整配置到 localStorage（包括密码）
+    // 注意：在生产环境中应该使用更安全的存储方式如 keytar
+    localStorage.setItem('mucheng-sync-config', JSON.stringify(newConfig));
   }, []);
 
   const updateSettings = useCallback((updates: Partial<AppSettings>) => {

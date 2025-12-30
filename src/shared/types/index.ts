@@ -243,3 +243,92 @@ export interface AppSettings {
   auto_launch: boolean;
   close_to_tray: boolean;
 }
+
+// ==================== 密码/资料生成器类型 ====================
+
+// 支持的国家/地区代码
+export type GeneratorCountryCode = 'en_US' | 'zh_CN' | 'ja' | 'ko' | 'en_GB' | 'de' | 'fr' | 'ru';
+
+// 性别选项
+export type GeneratorGender = 'random' | 'male' | 'female';
+
+// 密码生成选项
+export interface PasswordOptions {
+  length: number;           // 密码长度，默认 16，范围 8-64
+  uppercase: boolean;       // 包含大写字母，默认 true
+  lowercase: boolean;       // 包含小写字母，默认 true
+  numbers: boolean;         // 包含数字，默认 true
+  symbols: boolean;         // 包含特殊符号，默认 true
+}
+
+// 可选字段配置
+export interface GeneratorIncludeFields {
+  name: boolean;            // 姓名
+  address: boolean;         // 地址
+  phone: boolean;           // 电话
+  email: boolean;           // 邮箱
+  company: boolean;         // 工作单位
+}
+
+// 生成器配置选项
+export interface GeneratorOptions {
+  country: GeneratorCountryCode;
+  gender: GeneratorGender;
+  quantity: number;
+  includeFields: GeneratorIncludeFields;
+  passwordOptions: PasswordOptions;
+}
+
+// 生成的用户资料
+export interface GeneratedProfile {
+  id: string;              // UUID
+  username: string;        // 生成的用户名
+  password: string;        // 生成的密码
+  firstName?: string;      // 名
+  lastName?: string;       // 姓
+  fullName?: string;       // 全名（根据国家格式化）
+  address?: string;        // 完整地址
+  phone?: string;          // 电话号码
+  email?: string;          // 邮箱地址
+  company?: string;        // 公司名称
+  generatedAt: number;     // 生成时间戳
+}
+
+// 国家配置
+export interface CountryConfig {
+  label: string;           // 中文名称
+  fakerLocale: string;     // Faker locale 代码
+}
+
+// 默认生成器配置
+export const DEFAULT_GENERATOR_OPTIONS: GeneratorOptions = {
+  country: 'en_US',
+  gender: 'random',
+  quantity: 1,
+  includeFields: {
+    name: false,
+    address: false,
+    phone: false,
+    email: false,
+    company: false,
+  },
+  passwordOptions: {
+    length: 16,
+    uppercase: true,
+    lowercase: true,
+    numbers: true,
+    symbols: true,
+  },
+};
+
+// 国家配置映射
+export const COUNTRY_CONFIG: Record<GeneratorCountryCode, CountryConfig> = {
+  'en_US': { label: '美国', fakerLocale: 'en_US' },
+  'zh_CN': { label: '中国', fakerLocale: 'zh_CN' },
+  'ja': { label: '日本', fakerLocale: 'ja' },
+  'ko': { label: '韩国', fakerLocale: 'ko' },
+  'en_GB': { label: '英国', fakerLocale: 'en_GB' },
+  'de': { label: '德国', fakerLocale: 'de' },
+  'fr': { label: '法国', fakerLocale: 'fr' },
+  'ru': { label: '俄罗斯', fakerLocale: 'ru' },
+};

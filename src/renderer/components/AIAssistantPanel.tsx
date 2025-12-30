@@ -148,22 +148,12 @@ const AIAssistantPanel: React.FC = () => {
     }
   };
 
-  if (!settings.enabled) {
-    return (
-      <Content style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff' }}>
-        <Empty description="AI 功能未启用" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-          <p style={{ color: '#888' }}>请在设置中启用 AI 功能并配置渠道</p>
-        </Empty>
-      </Content>
-    );
-  }
-
   return (
     <Layout style={{ height: '100%' }}>
       {/* 左侧对话列表 */}
-      <Sider width={220} theme="light" style={{ borderRight: '1px solid #f0f0f0', background: '#fafafa' }}>
+      <Sider width={260} theme="light" className="ai-sider" style={{ borderRight: '1px solid var(--border-color, #f0f0f0)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0' }}>
+          <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color, #f0f0f0)' }}>
             <Button type="primary" icon={<PlusOutlined />} block size="small" onClick={handleNewConversation}>
               新建对话
             </Button>
@@ -176,10 +166,11 @@ const AIAssistantPanel: React.FC = () => {
                 <div
                   key={conv.id}
                   onClick={() => setSelectedConversationId(conv.id)}
+                  className="ai-conversation-item"
                   style={{
                     padding: '10px 12px',
                     cursor: 'pointer',
-                    background: selectedConversationId === conv.id ? '#e6f4ff' : 'transparent',
+                    background: selectedConversationId === conv.id ? 'var(--item-selected-bg, #e6f4ff)' : 'transparent',
                     borderLeft: selectedConversationId === conv.id ? '3px solid #1890ff' : '3px solid transparent',
                     display: 'flex',
                     alignItems: 'center',
@@ -224,7 +215,7 @@ const AIAssistantPanel: React.FC = () => {
       {/* 右侧聊天区域 */}
       <Layout>
         {/* 顶部工具栏 */}
-        <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12, background: '#fff' }}>
+        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color, #f0f0f0)', display: 'flex', alignItems: 'center', gap: 12 }}>
           <RobotOutlined style={{ fontSize: 18, color: '#1890ff' }} />
           <span style={{ fontWeight: 500 }}>智能助理</span>
           <div style={{ flex: 1 }} />
@@ -246,7 +237,7 @@ const AIAssistantPanel: React.FC = () => {
 
         {/* 设置面板 */}
         {showSettings && (
-          <div style={{ padding: 16, borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+          <div style={{ padding: 16, borderBottom: '1px solid var(--border-color, #f0f0f0)' }}>
             <div style={{ marginBottom: 12 }}>
               <label style={{ display: 'block', marginBottom: 4, fontSize: 12, color: '#666' }}>系统提示词</label>
               <TextArea
@@ -278,10 +269,10 @@ const AIAssistantPanel: React.FC = () => {
         )}
 
         {/* 消息列表 */}
-        <Content style={{ overflow: 'auto', padding: 16, background: '#fff' }}>
+        <Content style={{ overflow: 'auto', padding: 16 }}>
           {!selectedConversationId && messages.length === 0 ? (
-            <div style={{ textAlign: 'center', paddingTop: 100, color: '#888' }}>
-              <RobotOutlined style={{ fontSize: 48, marginBottom: 16, color: '#d9d9d9' }} />
+            <div style={{ textAlign: 'center', paddingTop: 100, color: 'var(--text-secondary, #888)' }}>
+              <RobotOutlined style={{ fontSize: 48, marginBottom: 16, color: 'var(--text-disabled, #d9d9d9)' }} />
               <p>选择一个对话或创建新对话开始聊天</p>
             </div>
           ) : (
@@ -305,8 +296,8 @@ const AIAssistantPanel: React.FC = () => {
                       margin: msg.role === 'user' ? '0 12px 0 0' : '0 0 0 12px',
                       padding: '10px 14px',
                       borderRadius: 12,
-                      background: msg.role === 'user' ? '#1890ff' : '#f5f5f5',
-                      color: msg.role === 'user' ? '#fff' : '#333',
+                      background: msg.role === 'user' ? '#1890ff' : 'var(--msg-bg, #f5f5f5)',
+                      color: msg.role === 'user' ? '#fff' : 'var(--text-primary, #333)',
                       whiteSpace: 'pre-wrap',
                       wordBreak: 'break-word',
                       lineHeight: 1.6,
@@ -325,7 +316,7 @@ const AIAssistantPanel: React.FC = () => {
                       margin: '0 0 0 12px',
                       padding: '10px 14px',
                       borderRadius: 12,
-                      background: '#f5f5f5',
+                      background: 'var(--msg-bg, #f5f5f5)',
                       whiteSpace: 'pre-wrap',
                       wordBreak: 'break-word',
                       lineHeight: 1.6,
@@ -341,7 +332,7 @@ const AIAssistantPanel: React.FC = () => {
         </Content>
 
         {/* 输入区域 */}
-        <div style={{ padding: 16, borderTop: '1px solid #f0f0f0', background: '#fff' }}>
+        <div style={{ padding: 16, borderTop: '1px solid var(--border-color, #f0f0f0)' }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <TextArea
               value={inputValue}

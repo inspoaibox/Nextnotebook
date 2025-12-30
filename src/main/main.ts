@@ -178,6 +178,7 @@ function createMenu(): void {
         { label: '同步设置', click: () => sendToRenderer('menu-action', 'settings-sync') },
         { label: '安全设置', click: () => sendToRenderer('menu-action', 'settings-security') },
         { label: 'AI 设置', click: () => sendToRenderer('menu-action', 'settings-ai') },
+        { label: '数据', click: () => sendToRenderer('menu-action', 'settings-data') },
         { label: '快捷键', click: () => sendToRenderer('menu-action', 'settings-shortcuts') },
         { type: 'separator' },
         { label: '关于', click: () => sendToRenderer('menu-action', 'settings-about') },
@@ -289,6 +290,26 @@ app.on('activate', () => {
 // IPC handlers
 ipcMain.handle('get-app-path', () => app.getPath('userData'));
 ipcMain.handle('open-external', (_event, url: string) => shell.openExternal(url));
+
+// 获取应用路径信息
+ipcMain.handle('get-app-paths', () => {
+  return {
+    // 安装目录（可执行文件所在目录）
+    installPath: isDev ? process.cwd() : path.dirname(app.getPath('exe')),
+    // 可执行文件路径
+    exePath: app.getPath('exe'),
+    // 用户数据目录（数据库、配置等）
+    userDataPath: app.getPath('userData'),
+    // 日志目录
+    logsPath: app.getPath('logs'),
+    // 临时目录
+    tempPath: app.getPath('temp'),
+    // 应用版本
+    appVersion: app.getVersion(),
+    // 是否开发模式
+    isDev: isDev,
+  };
+});
 
 // 开机启动设置
 ipcMain.handle('set-auto-launch', (_event, enabled: boolean) => {

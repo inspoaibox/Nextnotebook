@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConfigProvider, theme } from 'antd';
+import { StyleProvider } from '@ant-design/cssinjs';
 import zhCN from 'antd/locale/zh_CN';
 import App from './App';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
@@ -20,17 +21,19 @@ const ThemedApp: React.FC = () => {
   }, [isDarkMode]);
 
   return (
-    <ConfigProvider
-      locale={zhCN}
-      theme={{
-        algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
-        token: {
-          colorPrimary: '#1890ff',
-        },
-      }}
-    >
-      <App />
-    </ConfigProvider>
+    <StyleProvider hashPriority="high">
+      <ConfigProvider
+        locale={zhCN}
+        theme={{
+          algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
+          token: {
+            colorPrimary: '#1890ff',
+          },
+        }}
+      >
+        <App />
+      </ConfigProvider>
+    </StyleProvider>
   );
 };
 

@@ -72,13 +72,21 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       return false;
     }
 
-    // 创建加密引擎（如果启用）
-    if (config.encryptionEnabled && config.encryptionKey) {
-      cryptoEngine = new CryptoEngine();
-      const { key, salt } = cryptoEngine.deriveKeyFromPassword(config.encryptionKey);
+    // 创建加密引擎
+    // 注意：即使用户不开启全局加密，也需要创建加密引擎用于敏感数据（密码库）
+    // 如果用户提供了加密密钥，使用用户密钥；否则使用默认密钥
+    cryptoEngine = new CryptoEngine();
+    const fixedSalt = Buffer.from('mucheng-sync-salt-2024-fixed-key', 'utf8');
+    
+    if (config.encryptionKey) {
+      // 使用用户提供的密钥
+      const { key } = cryptoEngine.deriveKeyFromPassword(config.encryptionKey, fixedSalt);
       cryptoEngine.setMasterKey(key);
     } else {
-      cryptoEngine = null;
+      // 使用默认密钥（仅用于密码库等敏感数据的基本保护）
+      // 注意：这不如用户自定义密钥安全，但比明文好
+      const { key } = cryptoEngine.deriveKeyFromPassword('mucheng-default-vault-key-2024', fixedSalt);
+      cryptoEngine.setMasterKey(key);
     }
 
     // 创建同步引擎

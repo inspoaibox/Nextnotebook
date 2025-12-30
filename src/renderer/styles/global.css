@@ -15,6 +15,165 @@ body.dark-mode {
   color: rgba(255, 255, 255, 0.85);
 }
 
+/* 深色模式 - 侧边栏 */
+body.dark-mode .ant-layout-sider {
+  background: #141414 !important;
+}
+
+body.dark-mode .ant-menu {
+  background: transparent !important;
+}
+
+body.dark-mode .ant-menu-item,
+body.dark-mode .ant-menu-submenu-title {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - 内容区域 */
+body.dark-mode .ant-layout-content {
+  background: #141414 !important;
+}
+
+/* 深色模式 - 卡片和面板 */
+body.dark-mode .ant-card {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+body.dark-mode .ant-card-head {
+  border-color: #303030 !important;
+}
+
+/* 深色模式 - 输入框 */
+body.dark-mode .ant-input,
+body.dark-mode .ant-input-affix-wrapper,
+body.dark-mode .ant-select-selector,
+body.dark-mode .ant-input-number,
+body.dark-mode .ant-picker {
+  background: #1f1f1f !important;
+  border-color: #434343 !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode .ant-input::placeholder,
+body.dark-mode .ant-input-affix-wrapper input::placeholder {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+/* 深色模式 - 按钮 */
+body.dark-mode .ant-btn-default {
+  background: #1f1f1f !important;
+  border-color: #434343 !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode .ant-btn-text {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode .ant-btn-text:hover {
+  background: #303030 !important;
+}
+
+/* 深色模式 - 列表 */
+body.dark-mode .ant-list-item {
+  border-color: #303030 !important;
+}
+
+body.dark-mode .ant-list-item:hover {
+  background: #262626 !important;
+}
+
+/* 深色模式 - 分割线 */
+body.dark-mode .ant-divider {
+  border-color: #303030 !important;
+}
+
+/* 深色模式 - 模态框 */
+body.dark-mode .ant-modal-content {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .ant-modal-header {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+body.dark-mode .ant-modal-footer {
+  border-color: #303030 !important;
+}
+
+/* 深色模式 - 标签页 */
+body.dark-mode .ant-tabs-nav {
+  background: transparent !important;
+}
+
+body.dark-mode .ant-tabs-tab {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+body.dark-mode .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #1890ff !important;
+}
+
+/* 深色模式 - 下拉菜单 */
+body.dark-mode .ant-dropdown-menu {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .ant-dropdown-menu-item {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode .ant-dropdown-menu-item:hover {
+  background: #303030 !important;
+}
+
+/* 深色模式 - 表格 */
+body.dark-mode .ant-table {
+  background: transparent !important;
+}
+
+body.dark-mode .ant-table-thead > tr > th {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+body.dark-mode .ant-table-tbody > tr > td {
+  border-color: #303030 !important;
+}
+
+body.dark-mode .ant-table-tbody > tr:hover > td {
+  background: #262626 !important;
+}
+
+/* 深色模式 - 空状态 */
+body.dark-mode .ant-empty-description {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+/* 深色模式 - 工具提示 */
+body.dark-mode .ant-tooltip-inner {
+  background: #434343 !important;
+}
+
+/* 深色模式 - 选择器下拉 */
+body.dark-mode .ant-select-dropdown {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .ant-select-item {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode .ant-select-item-option-active {
+  background: #303030 !important;
+}
+
+body.dark-mode .ant-select-item-option-selected {
+  background: #111d2c !important;
+}
+
 /* 滚动条样式 */
 ::-webkit-scrollbar {
   width: 6px;
@@ -124,4 +283,743 @@ body.dark-mode .sidebar-menu .ant-menu-submenu-title:hover {
 
 body.dark-mode .note-list-item:hover {
   background: #262626 !important;
+}
+
+/* 笔记列表容器 */
+.note-list-container {
+  background: #fff;
+}
+
+body.dark-mode .note-list-container {
+  background: #141414 !important;
+}
+
+/* 笔记列表项选中状态 */
+.note-list-item.selected {
+  background: #e6f4ff !important;
+}
+
+body.dark-mode .note-list-item.selected {
+  background: #111d2c !important;
+}
+
+
+/* CSS 变量 - 浅色模式 */
+:root {
+  --border-color: #f0f0f0;
+  --bg-primary: #fff;
+  --bg-secondary: #fafafa;
+  --bg-tertiary: #f5f5f5;
+  --text-primary: #333;
+  --text-secondary: #888;
+  --text-disabled: #d9d9d9;
+  --item-selected-bg: #e6f4ff;
+  --item-hover-bg: #f5f5f5;
+  --msg-bg: #f5f5f5;
+}
+
+/* CSS 变量 - 深色模式 */
+body.dark-mode {
+  --border-color: #303030;
+  --bg-primary: #141414;
+  --bg-secondary: #1f1f1f;
+  --bg-tertiary: #262626;
+  --text-primary: rgba(255, 255, 255, 0.85);
+  --text-secondary: rgba(255, 255, 255, 0.45);
+  --text-disabled: rgba(255, 255, 255, 0.25);
+  --item-selected-bg: #111d2c;
+  --item-hover-bg: #262626;
+  --msg-bg: #262626;
+}
+
+/* 深色模式 - 工具箱只读文本框 */
+body.dark-mode textarea[style*="background: #f5f5f5"],
+body.dark-mode .ant-input[style*="background: #f5f5f5"] {
+  background: #262626 !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - 主布局 */
+body.dark-mode .ant-layout {
+  background: #141414 !important;
+}
+
+body.dark-mode .ant-layout-content {
+  background: #141414 !important;
+}
+
+body.dark-mode .ant-layout-footer {
+  background: #1f1f1f !important;
+}
+
+/* 深色模式 - 所有 Sider */
+body.dark-mode .ant-layout-sider {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .ant-layout-sider-light {
+  background: #1f1f1f !important;
+}
+
+/* 深色模式 - 文本颜色 */
+body.dark-mode,
+body.dark-mode .ant-typography,
+body.dark-mode h1, body.dark-mode h2, body.dark-mode h3, body.dark-mode h4, body.dark-mode h5, body.dark-mode h6,
+body.dark-mode p, body.dark-mode span, body.dark-mode div, body.dark-mode label {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+body.dark-mode .ant-typography.ant-typography-secondary {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+/* 深色模式 - 面板通用样式 */
+body.dark-mode [style*="background: #fff"],
+body.dark-mode [style*="background:#fff"],
+body.dark-mode [style*="background: white"],
+body.dark-mode [style*="background: rgb(255, 255, 255)"] {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode [style*="background: #fafafa"],
+body.dark-mode [style*="background:#fafafa"],
+body.dark-mode [style*="background: #f8f9fa"],
+body.dark-mode [style*="background: #f5f5f5"] {
+  background: #141414 !important;
+}
+
+/* 深色模式 - 边框颜色 */
+body.dark-mode [style*="border-color: #f0f0f0"],
+body.dark-mode [style*="border: 1px solid #f0f0f0"],
+body.dark-mode [style*="border: 1px solid #e8e8e8"] {
+  border-color: #303030 !important;
+}
+
+/* 深色模式 - 待办面板 */
+body.dark-mode .todo-item,
+body.dark-mode [style*="boxShadow"] {
+  background: #262626 !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+}
+
+/* 深色模式 - 书签卡片 */
+body.dark-mode .bookmark-card {
+  background: #262626 !important;
+  border-color: #303030 !important;
+}
+
+/* 深色模式 - 密码库面板 */
+body.dark-mode .vault-panel {
+  background: #141414 !important;
+}
+
+/* 深色模式 - 进度条 */
+body.dark-mode .ant-progress-text {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - Segmented */
+body.dark-mode .ant-segmented {
+  background: #262626 !important;
+}
+
+body.dark-mode .ant-segmented-item {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+body.dark-mode .ant-segmented-item-selected {
+  background: #1f1f1f !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - Checkbox */
+body.dark-mode .ant-checkbox-wrapper {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - DatePicker */
+body.dark-mode .ant-picker-panel-container {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .ant-picker-header,
+body.dark-mode .ant-picker-content th,
+body.dark-mode .ant-picker-cell {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode .ant-picker-cell:hover .ant-picker-cell-inner {
+  background: #303030 !important;
+}
+
+/* 深色模式 - Switch */
+body.dark-mode .ant-switch {
+  background: #434343 !important;
+}
+
+body.dark-mode .ant-switch-checked {
+  background: #1890ff !important;
+}
+
+/* 深色模式 - Notification */
+body.dark-mode .ant-notification-notice {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .ant-notification-notice-message,
+body.dark-mode .ant-notification-notice-description {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - Popconfirm */
+body.dark-mode .ant-popconfirm .ant-popover-inner {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .ant-popconfirm .ant-popover-message-title {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - Form */
+body.dark-mode .ant-form-item-label > label {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - Tag */
+body.dark-mode .ant-tag {
+  background: #262626 !important;
+  border-color: #434343 !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - TOTP 显示 */
+body.dark-mode [style*="background: #f6ffed"] {
+  background: #162312 !important;
+  border-color: #274916 !important;
+}
+
+/* 深色模式 - 悬停效果 */
+/* 深色模式 - 密码库面板 */
+body.dark-mode .ant-layout-sider[style*="background: #fafafa"],
+body.dark-mode .ant-layout-sider[style*="background:#fafafa"] {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .ant-layout-sider[style*="background: #fff"],
+body.dark-mode .ant-layout-sider[style*="background:#fff"] {
+  background: #141414 !important;
+}
+
+body.dark-mode .ant-layout-content[style*="background: #fff"],
+body.dark-mode .ant-layout-content[style*="background:#fff"],
+body.dark-mode .ant-layout-content[style*="background: white"] {
+  background: #141414 !important;
+}
+
+body.dark-mode .ant-layout-content[style*="background: #f8f9fa"],
+body.dark-mode .ant-layout-content[style*="background:#f8f9fa"] {
+  background: #141414 !important;
+}
+
+/* 深色模式 - 待办面板四象限 */
+body.dark-mode div[style*="background: #fafafa"] {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode div[style*="background: #fff2f0"] {
+  background: #2a1215 !important;
+}
+
+body.dark-mode div[style*="background: #fffbe6"] {
+  background: #2b2111 !important;
+}
+
+body.dark-mode div[style*="background: #e6f7ff"] {
+  background: #111d2c !important;
+}
+
+body.dark-mode div[style*="background: #f6ffed"] {
+  background: #162312 !important;
+}
+
+/* 深色模式 - 书签卡片悬停 */
+body.dark-mode div[style*="background: #f0f7ff"] {
+  background: #111d2c !important;
+}
+
+/* 深色模式 - 列表项选中状态 */
+body.dark-mode div[style*="background: #e6f4ff"] {
+  background: #111d2c !important;
+}
+
+/* 深色模式 - 输入框只读背景 */
+body.dark-mode div[style*="background: #f5f5f5"] {
+  background: #262626 !important;
+}
+
+/* 深色模式 - 密码库条目列表项 */
+body.dark-mode div[style*="borderLeft: 3px solid transparent"],
+body.dark-mode div[style*="border-left: 3px solid transparent"] {
+  background: transparent !important;
+}
+
+/* 深色模式 - 分割线 */
+body.dark-mode div[style*="borderBottom: 1px solid #f0f0f0"],
+body.dark-mode div[style*="border-bottom: 1px solid #f0f0f0"] {
+  border-bottom-color: #303030 !important;
+}
+
+body.dark-mode div[style*="borderRight: 1px solid #f0f0f0"],
+body.dark-mode div[style*="border-right: 1px solid #f0f0f0"] {
+  border-right-color: #303030 !important;
+}
+
+/* 深色模式 - 文本颜色覆盖 */
+body.dark-mode div[style*="color: #333"],
+body.dark-mode span[style*="color: #333"] {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode div[style*="color: #666"],
+body.dark-mode span[style*="color: #666"],
+body.dark-mode label[style*="color: #666"] {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+body.dark-mode div[style*="color: #888"],
+body.dark-mode span[style*="color: #888"] {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+body.dark-mode div[style*="color: #999"],
+body.dark-mode span[style*="color: #999"] {
+  color: rgba(255, 255, 255, 0.35) !important;
+}
+
+/* 深色模式 - 边框颜色覆盖 */
+body.dark-mode div[style*="border: 1px solid #e8e8e8"] {
+  border-color: #303030 !important;
+}
+
+body.dark-mode div[style*="border: 2px solid #f0f0f0"],
+body.dark-mode div[style*="border: 2px dashed"] {
+  border-color: #303030 !important;
+}
+
+/* 深色模式 - 阴影调整 */
+body.dark-mode div[style*="boxShadow: 0 1px 2px"],
+body.dark-mode div[style*="box-shadow: 0 1px 2px"] {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+body.dark-mode div[style*="boxShadow: 0 2px 8px"],
+body.dark-mode div[style*="box-shadow: 0 2px 8px"] {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* 深色模式 - 标题颜色 */
+body.dark-mode h2[style*="margin: 0"],
+body.dark-mode h3[style*="margin: 0"],
+body.dark-mode h4[style*="margin: 0"] {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - 空状态 */
+body.dark-mode .ant-empty {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+/* 深色模式 - 图标颜色 */
+body.dark-mode .anticon {
+  color: inherit;
+}
+
+/* 深色模式 - 工具箱只读文本框 */
+body.dark-mode textarea[style*="background: #f5f5f5"],
+body.dark-mode .ant-input[style*="background: #f5f5f5"] {
+  background: #262626 !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 深色模式 - 颜色选择器预览 */
+body.dark-mode div[style*="border: 1px solid #d9d9d9"] {
+  border-color: #434343 !important;
+}
+
+/* 深色模式 - 二维码背景 */
+body.dark-mode div[style*="background: #f5f5f5"][style*="borderRadius: 8px"] {
+  background: #262626 !important;
+}
+
+/* 深色模式 - 密码库 TOTP 显示 */
+body.dark-mode div[style*="border: 1px solid #b7eb8f"] {
+  border-color: #274916 !important;
+  background: #162312 !important;
+}
+
+/* 深色模式 - 书签图标背景 */
+body.dark-mode div[style*="background: #f5f5f5"][style*="borderRadius: 8px"][style*="width: 40"] {
+  background: #262626 !important;
+}
+
+/* ========== 面板深色模式样式 ========== */
+
+/* 密码库面板 */
+.vault-folder-sider {
+  background: #fafafa;
+}
+
+body.dark-mode .vault-folder-sider {
+  background: #1f1f1f !important;
+}
+
+.vault-entry-sider {
+  background: #fff;
+}
+
+body.dark-mode .vault-entry-sider {
+  background: #141414 !important;
+}
+
+.vault-detail-content {
+  background: #fff;
+}
+
+body.dark-mode .vault-detail-content {
+  background: #141414 !important;
+}
+
+/* 密码库条目项 */
+.vault-entry-item {
+  background: transparent;
+}
+
+.vault-entry-item.selected {
+  background: #e6f4ff;
+}
+
+.vault-entry-item:hover:not(.selected) {
+  background: #f5f5f5;
+}
+
+body.dark-mode .vault-entry-item.selected {
+  background: #111d2c !important;
+}
+
+body.dark-mode .vault-entry-item:hover:not(.selected) {
+  background: #262626 !important;
+}
+
+/* 密码库文件夹项 */
+.vault-folder-item {
+  background: transparent;
+}
+
+.vault-folder-item.selected {
+  background: #e6f4ff;
+}
+
+.vault-folder-item:hover:not(.selected) {
+  background: #f5f5f5;
+}
+
+body.dark-mode .vault-folder-item.selected {
+  background: #111d2c !important;
+}
+
+body.dark-mode .vault-folder-item:hover:not(.selected) {
+  background: #262626 !important;
+}
+
+/* 书签面板 */
+.bookmark-folder-sider {
+  background: #fafafa;
+}
+
+body.dark-mode .bookmark-folder-sider {
+  background: #1f1f1f !important;
+}
+
+.bookmark-content {
+  background: #f8f9fa;
+}
+
+body.dark-mode .bookmark-content {
+  background: #141414 !important;
+}
+
+/* 书签卡片 */
+.bookmark-card {
+  background: #fff;
+}
+
+.bookmark-card:hover {
+  background: #f0f7ff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+body.dark-mode .bookmark-card {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .bookmark-card:hover {
+  background: #262626 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+}
+
+/* 书签文件夹项 */
+.bookmark-folder-item {
+  background: transparent;
+}
+
+.bookmark-folder-item.selected {
+  background: #e6f4ff;
+}
+
+.bookmark-folder-item:hover:not(.selected) {
+  background: #f5f5f5;
+}
+
+body.dark-mode .bookmark-folder-item.selected {
+  background: #111d2c !important;
+}
+
+body.dark-mode .bookmark-folder-item:hover:not(.selected) {
+  background: #262626 !important;
+}
+
+/* 书签工具栏 */
+.bookmark-toolbar {
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+
+body.dark-mode .bookmark-toolbar {
+  background: #1f1f1f !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2) !important;
+}
+
+/* 待办面板 */
+.todo-panel {
+  background: #fff;
+}
+
+body.dark-mode .todo-panel {
+  background: #141414 !important;
+}
+
+/* 待办项 */
+.todo-item {
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+body.dark-mode .todo-item {
+  background: #262626 !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+}
+
+/* 象限框 */
+.quadrant-box {
+  background: #fafafa;
+}
+
+body.dark-mode .quadrant-box {
+  background: #1f1f1f !important;
+}
+
+/* 象限标题栏 - 紧急且重要 */
+.quadrant-header-urgent-important {
+  background: #fff2f0;
+}
+
+body.dark-mode .quadrant-header-urgent-important {
+  background: #2a1215 !important;
+}
+
+/* 象限标题栏 - 重要不紧急 */
+.quadrant-header-not-urgent-important {
+  background: #fffbe6;
+}
+
+body.dark-mode .quadrant-header-not-urgent-important {
+  background: #2b2111 !important;
+}
+
+/* 象限标题栏 - 紧急不重要 */
+.quadrant-header-urgent-not-important {
+  background: #e6f7ff;
+}
+
+body.dark-mode .quadrant-header-urgent-not-important {
+  background: #111d2c !important;
+}
+
+/* 象限标题栏 - 不紧急不重要 */
+.quadrant-header-not-urgent-not-important {
+  background: #f6ffed;
+}
+
+body.dark-mode .quadrant-header-not-urgent-not-important {
+  background: #162312 !important;
+}
+
+/* 工具箱面板 */
+.toolbox-sider {
+  background: #fafafa;
+}
+
+body.dark-mode .toolbox-sider {
+  background: #1f1f1f !important;
+}
+
+/* AI 面板 */
+body.dark-mode .ai-sider {
+  background: #1f1f1f !important;
+}
+
+/* 侧边栏容器 */
+.sidebar-container {
+  background: #fafafa;
+}
+
+body.dark-mode .sidebar-container {
+  background: #141414 !important;
+}
+
+
+/* ========== 设置模态框深色模式 ========== */
+
+/* 设置模态框左侧菜单 */
+body.dark-mode .ant-modal-content div[style*="background: #fafafa"][style*="width: 160"] {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+/* 设置模态框表单区域 */
+body.dark-mode .ant-modal-content div[style*="background: #f5f5f5"] {
+  background: #262626 !important;
+}
+
+/* 设置模态框添加渠道表单 */
+body.dark-mode .ant-modal-content div[style*="background: #f6ffed"] {
+  background: #162312 !important;
+  border-color: #274916 !important;
+}
+
+/* 设置模态框编辑渠道表单 */
+body.dark-mode .ant-modal-content div[style*="background: #fffbe6"] {
+  background: #2b2111 !important;
+  border-color: #594214 !important;
+}
+
+/* 快捷键列表 */
+body.dark-mode .ant-modal-content div[style*="background: #fafafa"][style*="borderRadius: 8px"] {
+  background: #1f1f1f !important;
+}
+
+/* 设置模态框标题 */
+body.dark-mode .ant-modal-title {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 设置模态框关闭按钮 */
+body.dark-mode .ant-modal-close-x {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+body.dark-mode .ant-modal-close:hover .ant-modal-close-x {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* AI 对话项悬停 */
+body.dark-mode .ai-conversation-item:hover {
+  background: #262626 !important;
+}
+
+/* 只读输入框 */
+body.dark-mode .ant-input[readonly],
+body.dark-mode textarea[readonly],
+body.dark-mode .ant-input-affix-wrapper-readonly {
+  background: #262626 !important;
+}
+
+
+/* ========== 设置模态框样式 ========== */
+
+/* 设置左侧菜单 */
+.settings-menu {
+  background: #fafafa;
+}
+
+body.dark-mode .settings-menu {
+  background: #1f1f1f !important;
+}
+
+/* 设置菜单项 */
+.settings-menu-item {
+  color: #666;
+  background: transparent;
+}
+
+.settings-menu-item:hover {
+  background: #f0f0f0;
+}
+
+.settings-menu-item.active {
+  color: #1890ff;
+  background: #e6f4ff;
+}
+
+body.dark-mode .settings-menu-item {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+body.dark-mode .settings-menu-item:hover {
+  background: #262626 !important;
+}
+
+body.dark-mode .settings-menu-item.active {
+  color: #1890ff;
+  background: #111d2c !important;
+}
+
+/* 设置内容区域 */
+.settings-content {
+  background: #fff;
+}
+
+body.dark-mode .settings-content {
+  background: #141414 !important;
+}
+
+/* 设置内容区域标题 */
+body.dark-mode .settings-content h3 {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 设置内容区域文本 */
+body.dark-mode .settings-content p {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+body.dark-mode .settings-content span {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Message 提示框深色模式 */
+body.dark-mode .ant-message-notice-content {
+  background: #1f1f1f !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5) !important;
+}
+
+body.dark-mode .ant-message-success .anticon,
+body.dark-mode .ant-message-info .anticon,
+body.dark-mode .ant-message-warning .anticon,
+body.dark-mode .ant-message-error .anticon {
+  color: inherit;
+}
+
+body.dark-mode .ant-message-notice-content span {
+  color: rgba(255, 255, 255, 0.85) !important;
 }

@@ -5,7 +5,7 @@ import { LockOutlined, UnlockOutlined } from '@ant-design/icons';
 const { Title, Text } = Typography;
 
 interface LockScreenProps {
-  onUnlock: (password: string) => boolean;
+  onUnlock: (password: string) => Promise<boolean>;
   failedAttempts: number;
   lockedUntil: number | null;
 }
@@ -25,10 +25,10 @@ const LockScreen: React.FC<LockScreenProps> = ({ onUnlock, failedAttempts, locke
 
     setLoading(true);
     
-    // 模拟延迟以防止暴力破解
+    // 延迟以防止暴力破解
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    const success = onUnlock(password);
+    const success = await onUnlock(password);
     setLoading(false);
 
     if (!success) {

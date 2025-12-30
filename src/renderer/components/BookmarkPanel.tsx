@@ -67,16 +67,15 @@ const BookmarkCard: React.FC<{
       onClick={() => openInBrowser(bookmark.url)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      className="bookmark-card"
       style={{
         display: 'flex',
         alignItems: 'center',
         padding: '12px 16px',
-        background: hovered ? '#f0f7ff' : '#fff',
         borderRadius: 8,
         cursor: 'pointer',
         transition: 'all 0.2s',
-        border: '1px solid #e8e8e8',
-        boxShadow: hovered ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
+        border: '1px solid var(--border-color, #e8e8e8)',
         position: 'relative',
       }}
     >
@@ -221,11 +220,11 @@ const BookmarkPanel: React.FC = () => {
       <div
         key={folder.id}
         onClick={() => setSelectedFolderId(folder.id)}
+        className={`bookmark-folder-item ${selectedFolderId === folder.id ? 'selected' : ''}`}
         style={{
           padding: '8px 12px',
           paddingLeft: 12 + level * 16,
           cursor: 'pointer',
-          background: selectedFolderId === folder.id ? '#e6f4ff' : 'transparent',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -349,21 +348,21 @@ const BookmarkPanel: React.FC = () => {
   );
 
   return (
-    <Layout style={{ height: '100%' }}>
+    <Layout style={{ height: '100%' }} className="bookmark-panel">
       {/* 左侧文件夹列表 */}
-      <Sider width={200} theme="light" style={{ borderRight: '1px solid #f0f0f0', background: '#fafafa' }}>
+      <Sider width={260} theme="light" className="bookmark-folder-sider" style={{ borderRight: '1px solid var(--border-color, #f0f0f0)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color, #f0f0f0)', display: 'flex', alignItems: 'center', gap: 8 }}>
             <LinkOutlined style={{ fontSize: 16, color: '#1890ff' }} />
             <span style={{ fontWeight: 500 }}>书签收藏</span>
           </div>
           <div style={{ flex: 1, overflow: 'auto', paddingTop: 8 }}>
             <div
               onClick={() => setSelectedFolderId('all')}
+              className={`bookmark-folder-item ${selectedFolderId === 'all' ? 'selected' : ''}`}
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
-                background: selectedFolderId === 'all' ? '#e6f4ff' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -376,10 +375,10 @@ const BookmarkPanel: React.FC = () => {
             </div>
             <div
               onClick={() => setSelectedFolderId(null)}
+              className={`bookmark-folder-item ${selectedFolderId === null ? 'selected' : ''}`}
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
-                background: selectedFolderId === null ? '#e6f4ff' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -392,7 +391,7 @@ const BookmarkPanel: React.FC = () => {
             </div>
             <Divider style={{ margin: '12px 0 8px' }} />
             <div style={{ padding: '4px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>分类文件夹</span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary, #888)', fontWeight: 500 }}>分类文件夹</span>
               <Tooltip title="新建文件夹">
                 <Button type="text" size="small" icon={<FolderAddOutlined />} onClick={() => { setNewFolderParentId(null); setFolderModalOpen(true); }} />
               </Tooltip>
@@ -403,16 +402,14 @@ const BookmarkPanel: React.FC = () => {
       </Sider>
 
       {/* 右侧书签内容 */}
-      <Content style={{ background: '#f8f9fa', display: 'flex', flexDirection: 'column' }}>
+      <Content className="bookmark-content" style={{ display: 'flex', flexDirection: 'column' }}>
         {/* 工具栏 */}
-        <div style={{ 
+        <div className="bookmark-toolbar" style={{ 
           padding: '12px 20px', 
-          background: '#fff', 
-          borderBottom: '1px solid #f0f0f0', 
+          borderBottom: '1px solid var(--border-color, #f0f0f0)', 
           display: 'flex', 
           gap: 12, 
           alignItems: 'center',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
         }}>
           <Input
             placeholder="搜索书签..."

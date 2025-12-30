@@ -13,6 +13,7 @@ import VaultPanel from './components/VaultPanel';
 import VaultLockScreen from './components/VaultLockScreen';
 import LockScreen from './components/LockScreen';
 import BookmarkPanel from './components/BookmarkPanel';
+import ToolboxPanel from './components/ToolboxPanel';
 import { useNotes, useNote } from './hooks/useNotes';
 import { useFolders } from './hooks/useFolders';
 import { useTags } from './hooks/useTags';
@@ -249,6 +250,10 @@ const App: React.FC = () => {
             setSettingsTab('ai');
             setSettingsOpen(true);
             break;
+          case 'settings-data':
+            setSettingsTab('data');
+            setSettingsOpen(true);
+            break;
           case 'settings-shortcuts':
             setSettingsTab('shortcuts');
             setSettingsOpen(true);
@@ -265,8 +270,20 @@ const App: React.FC = () => {
   // 初始化同步服务
   useEffect(() => {
     const initSync = async () => {
-      if (syncConfig.enabled && syncConfig.url) {
+      // 如果同步未启用或没有 URL，重置状态
+      if (!syncConfig.enabled || !syncConfig.url) {
+        setSyncInitialized(false);
+        return;
+      }
+      
+      try {
         const encryptionKey = localStorage.getItem('mucheng-sync-key') || undefined;
+        console.log('Initializing sync service...', { 
+          enabled: syncConfig.enabled, 
+          url: syncConfig.url,
+          type: syncConfig.type 
+        });
+        
         const success = await syncApi.initialize({
           enabled: syncConfig.enabled,
           type: syncConfig.type,
@@ -283,11 +300,18 @@ const App: React.FC = () => {
         if (success) {
           await syncApi.start();
           setSyncInitialized(true);
+          console.log('Sync service initialized successfully');
+        } else {
+          setSyncInitialized(false);
+          console.error('Failed to initialize sync service');
         }
+      } catch (error) {
+        console.error('Error initializing sync service:', error);
+        setSyncInitialized(false);
       }
     };
     initSync();
-  }, [syncConfig]);
+  }, [syncConfig.enabled, syncConfig.url, syncConfig.type, syncConfig.username, syncConfig.password, syncConfig.sync_path, syncConfig.encryption_enabled, syncConfig.sync_interval, syncConfig.api_key]);
 
   // 定期更新同步状态
   useEffect(() => {
@@ -407,6 +431,22 @@ const App: React.FC = () => {
     message.success('笔记已移至回收站');
   }, [deleteNote, selectedNoteId]);
 
+  // 永久删除笔记（从回收站彻底删除）
+  const handlePermanentDeleteNote = useCallback(async (id: string) => {
+    const success = await itemsApi.hardDelete(id);
+    if (success) {
+      // 刷新回收站视图
+      const deletedItems = await itemsApi.getDeleted('note');
+      if (deletedItems) {
+        setFilteredNotes(deletedItems.map(itemToNote));
+      }
+      if (selectedNoteId === id) {
+        setSelectedNoteId(null);
+      }
+      message.success('笔记已永久删除');
+    }
+  }, [selectedNoteId]);
+
   const handleRestoreNote = useCallback(async (id: string) => {
     const success = await itemsApi.restore(id);
     if (success) {
@@ -479,9 +519,36 @@ const App: React.FC = () => {
       return;
     }
 
+    // 如果同步服务未初始化，尝试重新初始化
     if (!syncInitialized) {
-      message.warning('同步服务未初始化');
-      return;
+      message.loading({ content: '正在初始化同步服务...', key: 'sync-init' });
+      try {
+        const encryptionKey = localStorage.getItem('mucheng-sync-key') || undefined;
+        const success = await syncApi.initialize({
+          enabled: syncConfig.enabled,
+          type: syncConfig.type,
+          url: syncConfig.url,
+          syncPath: syncConfig.sync_path || '/mucheng-notes',
+          username: syncConfig.username,
+          password: syncConfig.password,
+          apiKey: syncConfig.api_key,
+          encryptionEnabled: syncConfig.encryption_enabled,
+          encryptionKey,
+          syncInterval: syncConfig.sync_interval,
+        });
+        
+        if (success) {
+          await syncApi.start();
+          setSyncInitialized(true);
+          message.destroy('sync-init');
+        } else {
+          message.error({ content: '同步服务初始化失败，请检查配置', key: 'sync-init' });
+          return;
+        }
+      } catch (error) {
+        message.error({ content: '同步服务初始化出错', key: 'sync-init' });
+        return;
+      }
     }
     
     setSyncStatus('syncing');
@@ -509,7 +576,7 @@ const App: React.FC = () => {
       setSyncStatus('error');
       message.error('同步出错');
     }
-  }, [syncConfig.enabled, syncInitialized, refresh]);
+  }, [syncConfig, syncInitialized, refresh]);
 
   // 选择工具
   const handleSelectTool = useCallback((tool: string | null) => {
@@ -545,12 +612,22 @@ const App: React.FC = () => {
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
 
-  const handleUnlockApp = useCallback((password: string): boolean => {
+  // 密码哈希函数
+  const hashPassword = async (password: string): Promise<string> => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + 'mucheng-salt-2024');
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const handleUnlockApp = useCallback(async (password: string): Promise<boolean> => {
     const securitySettings = localStorage.getItem('mucheng-security');
     if (securitySettings) {
       try {
         const settings = JSON.parse(securitySettings);
-        if (password === settings.lockPassword) {
+        const hashedInput = await hashPassword(password);
+        if (hashedInput === settings.lockPassword) {
           setIsAppLocked(false);
           setFailedAttempts(0);
           return true;
@@ -676,6 +753,10 @@ const App: React.FC = () => {
           })()
         ) : currentTool === 'bookmark' ? (
           <BookmarkPanel />
+        ) : currentTool === 'toolbox' ? (
+          <Content style={{ background: isDarkMode ? '#141414' : '#fff' }}>
+            <ToolboxPanel />
+          </Content>
         ) : (
           <>
             <Sider width={260} theme={isDarkMode ? 'dark' : 'light'} style={{ borderRight: `1px solid ${isDarkMode ? '#303030' : '#eee'}` }}>
@@ -684,7 +765,7 @@ const App: React.FC = () => {
                 selectedNoteId={selectedNoteId}
                 onSelectNote={setSelectedNoteId}
                 onSearch={searchNotes}
-                onDeleteNote={handleDeleteNote}
+                onDeleteNote={selectedView === 'trash' ? handlePermanentDeleteNote : handleDeleteNote}
                 onRestoreNote={selectedView === 'trash' ? handleRestoreNote : undefined}
                 onToggleStar={handleTogglePin}
                 onDuplicateNote={handleDuplicateNote}

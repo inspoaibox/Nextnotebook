@@ -12,6 +12,9 @@ import {
   EditOutlined,
   AppstoreOutlined,
   ThunderboltOutlined,
+  DatabaseOutlined,
+  FolderOpenOutlined,
+  CopyOutlined,
 } from '@ant-design/icons';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAISettings } from '../hooks/useAI';
@@ -57,7 +60,7 @@ const SHORTCUTS = [
   ]},
 ];
 
-type TabKey = 'general' | 'features' | 'sync' | 'security' | 'ai' | 'shortcuts' | 'about';
+type TabKey = 'general' | 'features' | 'sync' | 'security' | 'ai' | 'data' | 'shortcuts' | 'about';
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab }) => {
   const { settings, syncConfig, updateSettings, updateSyncConfig, resetSettings } = useSettings();
@@ -99,14 +102,58 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     return { appLockEnabled: false, autoLockTimeout: 5, lockPassword: '' };
   });
   const [showPasswordInput, setShowPasswordInput] = useState(false);
+  const [passwordInputMode, setPasswordInputMode] = useState<'set' | 'change' | 'remove'>('set');
+  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   
   // 密码库锁定设置
   const [vaultPassword, setVaultPassword] = useState(() => localStorage.getItem('mucheng-vault-password') || '');
   const [showVaultPasswordInput, setShowVaultPasswordInput] = useState(false);
+  const [vaultPasswordMode, setVaultPasswordMode] = useState<'set' | 'change' | 'remove'>('set');
+  const [oldVaultPassword, setOldVaultPassword] = useState('');
   const [newVaultPassword, setNewVaultPassword] = useState('');
   const [confirmVaultPassword, setConfirmVaultPassword] = useState('');
+
+  // 数据路径信息
+  const [appPaths, setAppPaths] = useState<{
+    installPath: string;
+    exePath: string;
+    userDataPath: string;
+    logsPath: string;
+    tempPath: string;
+    appVersion: string;
+    isDev: boolean;
+  } | null>(null);
+
+  // 加载应用路径信息
+  useEffect(() => {
+    if (open && activeTab === 'data') {
+      const loadPaths = async () => {
+        const api = (window as any).electronAPI;
+        if (api?.getAppPaths) {
+          const paths = await api.getAppPaths();
+          setAppPaths(paths);
+        }
+      };
+      loadPaths();
+    }
+  }, [open, activeTab]);
+
+  // 简单的密码哈希函数（使用 SHA-256）
+  const hashPassword = async (password: string): Promise<string> => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + 'mucheng-salt-2024');
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  // 验证密码
+  const verifyPassword = async (input: string, stored: string): Promise<boolean> => {
+    const hashed = await hashPassword(input);
+    return hashed === stored;
+  };
 
   useEffect(() => {
     if (open) {
@@ -121,41 +168,115 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
   };
 
-  const handleSaveSettings = () => {
-    updateSettings(form.getFieldsValue());
+  const handleSaveSettings = async () => {
+    const values = form.getFieldsValue();
+    updateSettings(values);
+    
+    // 同步开机启动设置到系统
+    try {
+      const api = (window as any).electronAPI;
+      if (api?.setAutoLaunch) {
+        await api.setAutoLaunch(values.auto_launch || false);
+      }
+    } catch (e) {
+      console.error('设置开机启动失败:', e);
+    }
+    
     message.success('设置已保存');
   };
 
   const handleSaveSyncConfig = () => {
     const values = syncForm.getFieldsValue();
-    updateSyncConfig(values);
-    if (values.encryption_enabled && !localStorage.getItem('mucheng-sync-key')) {
+    // 确保所有字段都被保存
+    const configToSave = {
+      enabled: values.enabled || false,
+      type: values.type || 'webdav',
+      url: values.url || '',
+      sync_path: values.sync_path || '/mucheng-notes',
+      username: values.username || '',
+      password: values.password || '',
+      encryption_enabled: values.encryption_enabled || false,
+      sync_interval: values.sync_interval || 5,
+    };
+    updateSyncConfig(configToSave);
+    if (configToSave.encryption_enabled && !localStorage.getItem('mucheng-sync-key')) {
       localStorage.setItem('mucheng-sync-key', generateSyncKey());
       message.info('已自动生成同步密钥');
     }
     message.success('同步设置已保存');
   };
 
-  const handleSaveSecuritySettings = () => {
-    if (!newPassword || newPassword.length < 4) {
-      message.error('密码至少需要4位');
-      return;
+  const handleSaveSecuritySettings = async () => {
+    if (passwordInputMode === 'set') {
+      // 设置新密码
+      if (!newPassword || newPassword.length < 4) {
+        message.error('密码至少需要4位');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        message.error('两次密码不一致');
+        return;
+      }
+      const hashedPassword = await hashPassword(newPassword);
+      const newSettings = { ...securitySettings, appLockEnabled: true, lockPassword: hashedPassword };
+      setSecuritySettings(newSettings);
+      localStorage.setItem('mucheng-security', JSON.stringify(newSettings));
+      message.success('密码已设置');
+    } else if (passwordInputMode === 'change') {
+      // 修改密码 - 需要验证旧密码
+      if (!oldPassword) {
+        message.error('请输入当前密码');
+        return;
+      }
+      const isValid = await verifyPassword(oldPassword, securitySettings.lockPassword);
+      if (!isValid) {
+        message.error('当前密码错误');
+        return;
+      }
+      if (!newPassword || newPassword.length < 4) {
+        message.error('新密码至少需要4位');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        message.error('两次密码不一致');
+        return;
+      }
+      const hashedPassword = await hashPassword(newPassword);
+      const newSettings = { ...securitySettings, lockPassword: hashedPassword };
+      setSecuritySettings(newSettings);
+      localStorage.setItem('mucheng-security', JSON.stringify(newSettings));
+      message.success('密码已修改');
+    } else if (passwordInputMode === 'remove') {
+      // 移除密码 - 需要验证当前密码
+      if (!oldPassword) {
+        message.error('请输入当前密码');
+        return;
+      }
+      const isValid = await verifyPassword(oldPassword, securitySettings.lockPassword);
+      if (!isValid) {
+        message.error('密码错误');
+        return;
+      }
+      const newSettings = { ...securitySettings, appLockEnabled: false, lockPassword: '' };
+      setSecuritySettings(newSettings);
+      localStorage.setItem('mucheng-security', JSON.stringify(newSettings));
+      message.success('已移除应用锁定');
     }
-    if (newPassword !== confirmPassword) {
-      message.error('两次密码不一致');
-      return;
-    }
-    const newSettings = { ...securitySettings, appLockEnabled: true, lockPassword: newPassword };
-    setSecuritySettings(newSettings);
-    localStorage.setItem('mucheng-security', JSON.stringify(newSettings));
+    
     setShowPasswordInput(false);
+    setOldPassword('');
     setNewPassword('');
     setConfirmPassword('');
-    message.success('密码已设置');
   };
 
   const handleToggleAppLock = (enabled: boolean) => {
     if (enabled && !securitySettings.lockPassword) {
+      // 启用锁定 - 设置新密码
+      setPasswordInputMode('set');
+      setShowPasswordInput(true);
+    } else if (!enabled && securitySettings.lockPassword) {
+      // 禁用锁定 - 需要验证密码
+      setPasswordInputMode('remove');
       setShowPasswordInput(true);
     } else {
       const newSettings = { ...securitySettings, appLockEnabled: enabled };
@@ -219,6 +340,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     { key: 'sync', icon: <CloudOutlined />, label: '同步设置' },
     { key: 'security', icon: <LockOutlined />, label: '安全设置' },
     { key: 'ai', icon: <RobotOutlined />, label: 'AI 设置' },
+    { key: 'data', icon: <DatabaseOutlined />, label: '数据' },
     { key: 'shortcuts', icon: <ThunderboltOutlined />, label: '快捷键' },
     { key: 'about', icon: <InfoCircleOutlined />, label: '关于' },
   ];
@@ -366,16 +488,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
               </Form.Item>
               <Divider style={{ margin: '16px 0' }} />
               <Form.Item name="auto_launch" label="开机自启动" valuePropName="checked" tooltip="开启后系统启动时自动运行暮城笔记">
-                <Switch onChange={async (checked) => {
-                  try {
-                    const api = (window as any).electronAPI;
-                    if (api?.setAutoLaunch) {
-                      await api.setAutoLaunch(checked);
-                    }
-                  } catch (e) {
-                    console.error('设置开机启动失败:', e);
-                  }
-                }} />
+                <Switch />
               </Form.Item>
               <Form.Item name="close_to_tray" label="关闭到托盘" valuePropName="checked" tooltip="开启后点击关闭按钮将最小化到系统托盘而非退出">
                 <Switch />
@@ -467,41 +580,54 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
               <Form.Item name="enabled" label="启用同步" valuePropName="checked">
                 <Switch />
               </Form.Item>
-              <Form.Item name="type" label="同步方式">
-                <Select style={{ width: 200 }} options={[
-                  { value: 'webdav', label: 'WebDAV' },
-                  { value: 'server', label: '自建服务器' },
-                ]} />
-              </Form.Item>
-              <Form.Item name="url" label="服务器地址">
-                <Input placeholder="https://example.com/dav" />
-              </Form.Item>
-              <Form.Item 
-                name="sync_path" 
-                label="同步目录" 
-                tooltip="数据将同步到此目录下，避免与其他数据混淆"
-              >
-                <Input placeholder="/mucheng-notes" />
-              </Form.Item>
-              <Form.Item name="username" label="用户名">
-                <Input placeholder="可选" style={{ width: 200 }} />
-              </Form.Item>
-              <Form.Item name="password" label="密码">
-                <Input.Password placeholder="可选" style={{ width: 200 }} />
-              </Form.Item>
-              <Divider style={{ margin: '16px 0' }} />
-              <Form.Item name="encryption_enabled" label="端到端加密" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-              <Form.Item name="sync_interval" label="同步间隔">
-                <InputNumber min={1} max={60} addonAfter="分钟" style={{ width: 120 }} />
-              </Form.Item>
-              <Divider style={{ margin: '16px 0' }} />
-              <Form.Item wrapperCol={{ offset: 6 }}>
-                <Space>
-                  <Button type="primary" onClick={handleSaveSyncConfig}>保存设置</Button>
-                  <Button onClick={handleTestConnection}>测试连接</Button>
-                </Space>
+              
+              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.enabled !== cur.enabled}>
+                {({ getFieldValue }) => 
+                  getFieldValue('enabled') ? (
+                    <>
+                      <Form.Item name="type" label="同步方式">
+                        <Select style={{ width: 200 }} options={[
+                          { value: 'webdav', label: 'WebDAV' },
+                          { value: 'server', label: '自建服务器' },
+                        ]} />
+                      </Form.Item>
+                      <Form.Item name="url" label="服务器地址" rules={[{ required: true, message: '请填写服务器地址' }]}>
+                        <Input placeholder="https://example.com/dav" />
+                      </Form.Item>
+                      <Form.Item 
+                        name="sync_path" 
+                        label="同步目录" 
+                        tooltip="数据将同步到此目录下，避免与其他数据混淆"
+                      >
+                        <Input placeholder="/mucheng-notes" />
+                      </Form.Item>
+                      <Form.Item name="username" label="用户名">
+                        <Input placeholder="可选" style={{ width: 200 }} />
+                      </Form.Item>
+                      <Form.Item name="password" label="密码">
+                        <Input.Password placeholder="可选" style={{ width: 200 }} />
+                      </Form.Item>
+                      <Divider style={{ margin: '16px 0' }} />
+                      <Form.Item name="encryption_enabled" label="端到端加密" valuePropName="checked">
+                        <Switch />
+                      </Form.Item>
+                      <Form.Item name="sync_interval" label="同步间隔">
+                        <InputNumber min={1} max={60} addonAfter="分钟" style={{ width: 120 }} />
+                      </Form.Item>
+                      <Divider style={{ margin: '16px 0' }} />
+                      <Form.Item wrapperCol={{ offset: 6 }}>
+                        <Space>
+                          <Button type="primary" onClick={handleSaveSyncConfig}>保存设置</Button>
+                          <Button onClick={handleTestConnection}>测试连接</Button>
+                        </Space>
+                      </Form.Item>
+                    </>
+                  ) : (
+                    <Form.Item wrapperCol={{ offset: 6 }}>
+                      <Button type="primary" onClick={handleSaveSyncConfig}>保存设置</Button>
+                    </Form.Item>
+                  )
+                }
               </Form.Item>
             </Form>
           </div>
@@ -522,48 +648,82 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
 
             {showPasswordInput && (
               <div style={{ background: '#f5f5f5', padding: 16, borderRadius: 8, marginBottom: 24 }}>
-                <p style={{ margin: '0 0 12px', fontWeight: 500 }}>设置锁定密码</p>
-                <Input.Password 
-                  placeholder="输入密码（至少4位）" 
-                  value={newPassword} 
-                  onChange={e => setNewPassword(e.target.value)}
-                  style={{ marginBottom: 12 }}
-                />
-                <Input.Password 
-                  placeholder="确认密码" 
-                  value={confirmPassword} 
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  style={{ marginBottom: 12 }}
-                />
+                <p style={{ margin: '0 0 12px', fontWeight: 500 }}>
+                  {passwordInputMode === 'set' ? '设置锁定密码' : 
+                   passwordInputMode === 'change' ? '修改锁定密码' : '验证密码以移除锁定'}
+                </p>
+                {(passwordInputMode === 'change' || passwordInputMode === 'remove') && (
+                  <Input.Password 
+                    placeholder="输入当前密码" 
+                    value={oldPassword} 
+                    onChange={e => setOldPassword(e.target.value)}
+                    style={{ marginBottom: 12 }}
+                  />
+                )}
+                {passwordInputMode !== 'remove' && (
+                  <>
+                    <Input.Password 
+                      placeholder={passwordInputMode === 'change' ? '输入新密码（至少4位）' : '输入密码（至少4位）'}
+                      value={newPassword} 
+                      onChange={e => setNewPassword(e.target.value)}
+                      style={{ marginBottom: 12 }}
+                    />
+                    <Input.Password 
+                      placeholder="确认密码" 
+                      value={confirmPassword} 
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      style={{ marginBottom: 12 }}
+                    />
+                  </>
+                )}
                 <Space>
-                  <Button type="primary" size="small" onClick={handleSaveSecuritySettings}>确定</Button>
-                  <Button size="small" onClick={() => { setShowPasswordInput(false); setNewPassword(''); setConfirmPassword(''); }}>取消</Button>
+                  <Button type="primary" size="small" onClick={handleSaveSecuritySettings}>
+                    {passwordInputMode === 'remove' ? '确认移除' : '确定'}
+                  </Button>
+                  <Button size="small" onClick={() => { 
+                    setShowPasswordInput(false); 
+                    setOldPassword('');
+                    setNewPassword(''); 
+                    setConfirmPassword(''); 
+                  }}>取消</Button>
                 </Space>
               </div>
             )}
 
             {securitySettings.appLockEnabled && !showPasswordInput && (
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 500 }}>自动锁定时间</span>
-                  <Select 
-                    value={securitySettings.autoLockTimeout} 
-                    onChange={v => {
-                      const s = { ...securitySettings, autoLockTimeout: v };
-                      setSecuritySettings(s);
-                      localStorage.setItem('mucheng-security', JSON.stringify(s));
-                    }}
-                    style={{ width: 120 }}
-                    options={[
-                      { value: 1, label: '1 分钟' },
-                      { value: 5, label: '5 分钟' },
-                      { value: 15, label: '15 分钟' },
-                      { value: 30, label: '30 分钟' },
-                      { value: 0, label: '从不' },
-                    ]} 
-                  />
+              <>
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontWeight: 500 }}>自动锁定时间</span>
+                    <Select 
+                      value={securitySettings.autoLockTimeout} 
+                      onChange={v => {
+                        const s = { ...securitySettings, autoLockTimeout: v };
+                        setSecuritySettings(s);
+                        localStorage.setItem('mucheng-security', JSON.stringify(s));
+                      }}
+                      style={{ width: 120 }}
+                      options={[
+                        { value: 1, label: '1 分钟' },
+                        { value: 5, label: '5 分钟' },
+                        { value: 15, label: '15 分钟' },
+                        { value: 30, label: '30 分钟' },
+                        { value: 0, label: '从不' },
+                      ]} 
+                    />
+                  </div>
                 </div>
-              </div>
+                <Space>
+                  <Button size="small" onClick={() => {
+                    setPasswordInputMode('change');
+                    setShowPasswordInput(true);
+                  }}>修改密码</Button>
+                  <Button danger size="small" onClick={() => {
+                    setPasswordInputMode('remove');
+                    setShowPasswordInput(true);
+                  }}>移除锁定</Button>
+                </Space>
+              </>
             )}
 
             <Divider style={{ margin: '16px 0' }} />
@@ -583,18 +743,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
               </Space>
             </div>
 
-            {securitySettings.appLockEnabled && securitySettings.lockPassword && !showPasswordInput && (
-              <>
-                <Divider style={{ margin: '16px 0' }} />
-                <Button danger size="small" onClick={() => {
-                  const s = { ...securitySettings, appLockEnabled: false, lockPassword: '' };
-                  setSecuritySettings(s);
-                  localStorage.setItem('mucheng-security', JSON.stringify(s));
-                  message.success('已移除应用锁定');
-                }}>移除应用锁定</Button>
-              </>
-            )}
-
             <Divider style={{ margin: '24px 0' }} />
 
             {/* 密码库锁定 */}
@@ -610,39 +758,94 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
               {showVaultPasswordInput ? (
                 <div style={{ background: '#f5f5f5', padding: 16, borderRadius: 8 }}>
                   <p style={{ margin: '0 0 12px', fontWeight: 500 }}>
-                    {vaultPassword ? '修改密码库密码' : '设置密码库密码'}
+                    {vaultPasswordMode === 'set' ? '设置密码库密码' : 
+                     vaultPasswordMode === 'change' ? '修改密码库密码' : '验证密码以移除'}
                   </p>
-                  <Input.Password 
-                    placeholder="输入密码（至少4位）" 
-                    value={newVaultPassword} 
-                    onChange={e => setNewVaultPassword(e.target.value)}
-                    style={{ marginBottom: 12 }}
-                  />
-                  <Input.Password 
-                    placeholder="确认密码" 
-                    value={confirmVaultPassword} 
-                    onChange={e => setConfirmVaultPassword(e.target.value)}
-                    style={{ marginBottom: 12 }}
-                  />
+                  {(vaultPasswordMode === 'change' || vaultPasswordMode === 'remove') && (
+                    <Input.Password 
+                      placeholder="输入当前密码" 
+                      value={oldVaultPassword} 
+                      onChange={e => setOldVaultPassword(e.target.value)}
+                      style={{ marginBottom: 12 }}
+                    />
+                  )}
+                  {vaultPasswordMode !== 'remove' && (
+                    <>
+                      <Input.Password 
+                        placeholder={vaultPasswordMode === 'change' ? '输入新密码（至少4位）' : '输入密码（至少4位）'}
+                        value={newVaultPassword} 
+                        onChange={e => setNewVaultPassword(e.target.value)}
+                        style={{ marginBottom: 12 }}
+                      />
+                      <Input.Password 
+                        placeholder="确认密码" 
+                        value={confirmVaultPassword} 
+                        onChange={e => setConfirmVaultPassword(e.target.value)}
+                        style={{ marginBottom: 12 }}
+                      />
+                    </>
+                  )}
                   <Space>
-                    <Button type="primary" size="small" onClick={() => {
-                      if (!newVaultPassword || newVaultPassword.length < 4) {
-                        message.error('密码至少需要4位');
-                        return;
+                    <Button type="primary" size="small" onClick={async () => {
+                      if (vaultPasswordMode === 'set') {
+                        if (!newVaultPassword || newVaultPassword.length < 4) {
+                          message.error('密码至少需要4位');
+                          return;
+                        }
+                        if (newVaultPassword !== confirmVaultPassword) {
+                          message.error('两次密码不一致');
+                          return;
+                        }
+                        const hashed = await hashPassword(newVaultPassword);
+                        localStorage.setItem('mucheng-vault-password', hashed);
+                        setVaultPassword(hashed);
+                        message.success('密码库密码已设置');
+                      } else if (vaultPasswordMode === 'change') {
+                        if (!oldVaultPassword) {
+                          message.error('请输入当前密码');
+                          return;
+                        }
+                        const isValid = await verifyPassword(oldVaultPassword, vaultPassword);
+                        if (!isValid) {
+                          message.error('当前密码错误');
+                          return;
+                        }
+                        if (!newVaultPassword || newVaultPassword.length < 4) {
+                          message.error('新密码至少需要4位');
+                          return;
+                        }
+                        if (newVaultPassword !== confirmVaultPassword) {
+                          message.error('两次密码不一致');
+                          return;
+                        }
+                        const hashed = await hashPassword(newVaultPassword);
+                        localStorage.setItem('mucheng-vault-password', hashed);
+                        setVaultPassword(hashed);
+                        message.success('密码库密码已修改');
+                      } else if (vaultPasswordMode === 'remove') {
+                        if (!oldVaultPassword) {
+                          message.error('请输入当前密码');
+                          return;
+                        }
+                        const isValid = await verifyPassword(oldVaultPassword, vaultPassword);
+                        if (!isValid) {
+                          message.error('密码错误');
+                          return;
+                        }
+                        localStorage.removeItem('mucheng-vault-password');
+                        setVaultPassword('');
+                        message.success('已移除密码库密码');
                       }
-                      if (newVaultPassword !== confirmVaultPassword) {
-                        message.error('两次密码不一致');
-                        return;
-                      }
-                      localStorage.setItem('mucheng-vault-password', newVaultPassword);
-                      setVaultPassword(newVaultPassword);
                       setShowVaultPasswordInput(false);
+                      setOldVaultPassword('');
                       setNewVaultPassword('');
                       setConfirmVaultPassword('');
-                      message.success('密码库密码已设置');
-                    }}>确定</Button>
+                    }}>
+                      {vaultPasswordMode === 'remove' ? '确认移除' : '确定'}
+                    </Button>
                     <Button size="small" onClick={() => { 
                       setShowVaultPasswordInput(false); 
+                      setOldVaultPassword('');
                       setNewVaultPassword(''); 
                       setConfirmVaultPassword(''); 
                     }}>取消</Button>
@@ -650,15 +853,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                 </div>
               ) : (
                 <Space>
-                  <Button size="small" onClick={() => setShowVaultPasswordInput(true)}>
-                    {vaultPassword ? '修改密码' : '设置密码'}
-                  </Button>
-                  {vaultPassword && (
-                    <Button danger size="small" onClick={() => {
-                      localStorage.removeItem('mucheng-vault-password');
-                      setVaultPassword('');
-                      message.success('已移除密码库密码');
-                    }}>移除密码</Button>
+                  {vaultPassword ? (
+                    <>
+                      <Button size="small" onClick={() => {
+                        setVaultPasswordMode('change');
+                        setShowVaultPasswordInput(true);
+                      }}>修改密码</Button>
+                      <Button danger size="small" onClick={() => {
+                        setVaultPasswordMode('remove');
+                        setShowVaultPasswordInput(true);
+                      }}>移除密码</Button>
+                    </>
+                  ) : (
+                    <Button size="small" onClick={() => {
+                      setVaultPasswordMode('set');
+                      setShowVaultPasswordInput(true);
+                    }}>设置密码</Button>
                   )}
                 </Space>
               )}
@@ -891,6 +1101,140 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
           </div>
         );
 
+      case 'data':
+        return (
+          <div>
+            <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 500 }}>数据</h3>
+            <p style={{ color: '#888', fontSize: 13, marginBottom: 24 }}>
+              查看应用的安装目录和数据存储位置
+            </p>
+
+            {appPaths ? (
+              <>
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                    <FolderOpenOutlined style={{ marginRight: 8, color: '#1890ff' }} />
+                    <span style={{ fontWeight: 500 }}>安装目录</span>
+                  </div>
+                  <div style={{ 
+                    background: '#f5f5f5', 
+                    padding: '8px 12px', 
+                    borderRadius: 6, 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <Text style={{ fontSize: 13, wordBreak: 'break-all' }}>{appPaths.installPath}</Text>
+                    <Button 
+                      type="text" 
+                      size="small" 
+                      icon={<CopyOutlined />}
+                      onClick={() => {
+                        navigator.clipboard.writeText(appPaths.installPath);
+                        message.success('已复制到剪贴板');
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                    <DatabaseOutlined style={{ marginRight: 8, color: '#52c41a' }} />
+                    <span style={{ fontWeight: 500 }}>数据目录</span>
+                  </div>
+                  <div style={{ 
+                    background: '#f5f5f5', 
+                    padding: '8px 12px', 
+                    borderRadius: 6, 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <Text style={{ fontSize: 13, wordBreak: 'break-all' }}>{appPaths.userDataPath}</Text>
+                    <Button 
+                      type="text" 
+                      size="small" 
+                      icon={<CopyOutlined />}
+                      onClick={() => {
+                        navigator.clipboard.writeText(appPaths.userDataPath);
+                        message.success('已复制到剪贴板');
+                      }}
+                    />
+                  </div>
+                  <p style={{ color: '#888', fontSize: 12, margin: '8px 0 0' }}>
+                    数据库、配置文件等存储在此目录
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                    <FolderOpenOutlined style={{ marginRight: 8, color: '#faad14' }} />
+                    <span style={{ fontWeight: 500 }}>日志目录</span>
+                  </div>
+                  <div style={{ 
+                    background: '#f5f5f5', 
+                    padding: '8px 12px', 
+                    borderRadius: 6, 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <Text style={{ fontSize: 13, wordBreak: 'break-all' }}>{appPaths.logsPath}</Text>
+                    <Button 
+                      type="text" 
+                      size="small" 
+                      icon={<CopyOutlined />}
+                      onClick={() => {
+                        navigator.clipboard.writeText(appPaths.logsPath);
+                        message.success('已复制到剪贴板');
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <Divider style={{ margin: '16px 0' }} />
+
+                <div style={{ marginBottom: 16 }}>
+                  <Space>
+                    <Button 
+                      onClick={async () => {
+                        const api = (window as any).electronAPI;
+                        if (api?.openExternal) {
+                          // 在文件管理器中打开数据目录
+                          await api.openExternal(`file://${appPaths.userDataPath}`);
+                        }
+                      }}
+                    >
+                      打开数据目录
+                    </Button>
+                    <Button 
+                      onClick={async () => {
+                        const api = (window as any).electronAPI;
+                        if (api?.openExternal) {
+                          await api.openExternal(`file://${appPaths.installPath}`);
+                        }
+                      }}
+                    >
+                      打开安装目录
+                    </Button>
+                  </Space>
+                </div>
+
+                <Divider style={{ margin: '16px 0' }} />
+
+                <div style={{ color: '#888', fontSize: 12 }}>
+                  <p style={{ margin: '0 0 4px' }}>应用版本: {appPaths.appVersion}</p>
+                  <p style={{ margin: 0 }}>运行模式: {appPaths.isDev ? '开发模式' : '生产模式'}</p>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
+                加载中...
+              </div>
+            )}
+          </div>
+        );
+
       case 'shortcuts':
         return (
           <div>
@@ -967,11 +1311,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     >
       <div style={{ display: 'flex', minHeight: 480 }}>
         {/* 左侧菜单 */}
-        <div style={{ width: 160, background: '#fafafa', borderRight: '1px solid #f0f0f0', padding: '20px 0' }}>
+        <div className="settings-menu" style={{ width: 160, borderRight: '1px solid var(--border-color, #f0f0f0)', padding: '20px 0' }}>
           {menuItems.map(item => (
             <div
               key={item.key}
               onClick={() => setActiveTab(item.key as TabKey)}
+              className={`settings-menu-item ${activeTab === item.key ? 'active' : ''}`}
               style={{
                 padding: '10px 20px',
                 cursor: 'pointer',
@@ -979,8 +1324,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                 alignItems: 'center',
                 gap: 10,
                 fontSize: 13,
-                color: activeTab === item.key ? '#1890ff' : '#666',
-                background: activeTab === item.key ? '#e6f4ff' : 'transparent',
                 borderRight: activeTab === item.key ? '2px solid #1890ff' : '2px solid transparent',
                 transition: 'all 0.2s',
               }}
@@ -991,7 +1334,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
           ))}
         </div>
         {/* 右侧内容 */}
-        <div style={{ flex: 1, padding: 24, overflow: 'auto' }}>
+        <div className="settings-content" style={{ flex: 1, padding: 24, overflow: 'auto' }}>
           {renderContent()}
         </div>
       </div>

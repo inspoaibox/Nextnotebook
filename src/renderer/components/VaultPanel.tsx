@@ -8,9 +8,10 @@ import {
   StarOutlined, StarFilled, CopyOutlined, EyeOutlined, EyeInvisibleOutlined,
   FolderOutlined, FolderAddOutlined, GlobalOutlined, UserOutlined,
   CreditCardOutlined, IdcardOutlined, FileTextOutlined, MenuOutlined,
-  SearchOutlined, ReloadOutlined, SafetyOutlined,
+  SearchOutlined, ReloadOutlined, SafetyOutlined, ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useVaultEntries, useVaultFolders, VaultEntry, VaultFolder, generatePassword } from '../hooks/useVault';
+import GeneratorView from './GeneratorView';
 import { VaultEntryType, VaultUri, VaultCustomField, VaultTotp } from '@shared/types';
 import * as OTPAuth from 'otpauth';
 
@@ -172,10 +173,10 @@ const EntryListItem: React.FC<{
   return (
     <div
       onClick={onSelect}
+      className={`vault-entry-item ${selected ? 'selected' : ''}`}
       style={{
         padding: '10px 12px',
         cursor: 'pointer',
-        background: selected ? '#e6f4ff' : 'transparent',
         borderLeft: selected ? '3px solid #1890ff' : '3px solid transparent',
         display: 'flex',
         alignItems: 'center',
@@ -428,6 +429,7 @@ const VaultPanel: React.FC = () => {
   const [editingEntry, setEditingEntry] = useState<VaultEntry | null>(null);
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [viewMode, setViewMode] = useState<'normal' | 'generator'>('normal');
 
   const { folders, createFolder, deleteFolder } = useVaultFolders();
   const { entries, createEntry, updateEntry, deleteEntry, toggleFavorite, refresh } = useVaultEntries(
@@ -537,21 +539,21 @@ const VaultPanel: React.FC = () => {
   const customFieldsValue = Form.useWatch('custom_fields', form);
 
   return (
-    <Layout style={{ height: '100%' }}>
+    <Layout style={{ height: '100%' }} className="vault-panel">
       {/* 左侧文件夹列表 */}
-      <Sider width={180} theme="light" style={{ borderRight: '1px solid #f0f0f0', background: '#fafafa' }}>
+      <Sider width={180} theme="light" className="vault-folder-sider" style={{ borderRight: '1px solid var(--border-color, #f0f0f0)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ padding: '12px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color, #f0f0f0)', display: 'flex', alignItems: 'center', gap: 8 }}>
             <KeyOutlined style={{ fontSize: 16, color: '#1890ff' }} />
             <span style={{ fontWeight: 500 }}>密码库</span>
           </div>
           <div style={{ flex: 1, overflow: 'auto' }}>
             <div
-              onClick={() => { setSelectedFolderId('all'); setSelectedEntryId(null); }}
+              onClick={() => { setSelectedFolderId('all'); setSelectedEntryId(null); setViewMode('normal'); }}
+              className={`vault-folder-item ${selectedFolderId === 'all' && viewMode === 'normal' ? 'selected' : ''}`}
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
-                background: selectedFolderId === 'all' ? '#e6f4ff' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -561,11 +563,11 @@ const VaultPanel: React.FC = () => {
               <span>所有项目</span>
             </div>
             <div
-              onClick={() => { setSelectedFolderId(null); setSelectedEntryId(null); }}
+              onClick={() => { setSelectedFolderId(null); setSelectedEntryId(null); setViewMode('normal'); }}
+              className={`vault-folder-item ${selectedFolderId === null && viewMode === 'normal' ? 'selected' : ''}`}
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
-                background: selectedFolderId === null ? '#e6f4ff' : 'transparent',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -576,17 +578,17 @@ const VaultPanel: React.FC = () => {
             </div>
             <Divider style={{ margin: '8px 0' }} />
             <div style={{ padding: '4px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: '#888' }}>文件夹</span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary, #888)' }}>文件夹</span>
               <Button type="text" size="small" icon={<FolderAddOutlined />} onClick={() => setFolderModalOpen(true)} />
             </div>
             {folders.map(folder => (
               <div
                 key={folder.id}
-                onClick={() => { setSelectedFolderId(folder.id); setSelectedEntryId(null); }}
+                onClick={() => { setSelectedFolderId(folder.id); setSelectedEntryId(null); setViewMode('normal'); }}
+                className={`vault-folder-item ${selectedFolderId === folder.id && viewMode === 'normal' ? 'selected' : ''}`}
                 style={{
                   padding: '8px 12px',
                   cursor: 'pointer',
-                  background: selectedFolderId === folder.id ? '#e6f4ff' : 'transparent',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -602,13 +604,36 @@ const VaultPanel: React.FC = () => {
               </div>
             ))}
           </div>
+          {/* 生成器按钮 */}
+          <div style={{ padding: '12px', borderTop: '1px solid var(--border-color, #f0f0f0)' }}>
+            <Button
+              type={viewMode === 'generator' ? 'primary' : 'default'}
+              icon={<ThunderboltOutlined />}
+              block
+              onClick={() => setViewMode('generator')}
+            >
+              生成器
+            </Button>
+          </div>
         </div>
       </Sider>
 
-      {/* 中间条目列表 */}
-      <Sider width={260} theme="light" style={{ borderRight: '1px solid #f0f0f0', background: '#fff' }}>
+      {/* 生成器视图或普通视图 */}
+      {viewMode === 'generator' ? (
+        <GeneratorView
+          folders={folders}
+          onBack={() => setViewMode('normal')}
+          onImport={async (payload) => {
+            await createEntry(payload);
+          }}
+          onCreateFolder={createFolder}
+        />
+      ) : (
+        <>
+          {/* 中间条目列表 */}
+          <Sider width={260} theme="light" className="vault-entry-sider" style={{ borderRight: '1px solid var(--border-color, #f0f0f0)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0' }}>
+          <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color, #f0f0f0)' }}>
             <Input
               placeholder="搜索..."
               prefix={<SearchOutlined />}
@@ -617,7 +642,7 @@ const VaultPanel: React.FC = () => {
               allowClear
             />
           </div>
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0' }}>
+          <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color, #f0f0f0)' }}>
             <Button type="primary" icon={<PlusOutlined />} block size="small" onClick={handleCreateEntry}>
               新建条目
             </Button>
@@ -642,7 +667,7 @@ const VaultPanel: React.FC = () => {
       </Sider>
 
       {/* 右侧详情 */}
-      <Content style={{ background: '#fff', overflow: 'auto' }}>
+      <Content className="vault-detail-content" style={{ overflow: 'auto' }}>
         {selectedEntry ? (
           <div style={{ padding: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
@@ -758,6 +783,8 @@ const VaultPanel: React.FC = () => {
           </div>
         )}
       </Content>
+        </>
+      )}
 
       {/* 编辑弹窗 */}
       <Modal

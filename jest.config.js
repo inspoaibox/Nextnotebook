@@ -10,6 +10,9 @@ module.exports = {
     '^@core/(.*)$': '<rootDir>/src/core/$1',
     '^@shared/(.*)$': '<rootDir>/src/shared/$1',
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(@faker-js/faker)/)',
+  ],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
     '!src/**/*.d.ts',
