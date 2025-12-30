@@ -3,6 +3,10 @@ node_modules/
 
 # Build output
 dist/
+release/
+dist/
+out/
+win-unpacked/
 
 # IDE
 .idea/
@@ -31,3 +35,8 @@ coverage/
 
 # User data
 userData/
+
+# electron
+*.exe
+*.asar
+*.blockmap
