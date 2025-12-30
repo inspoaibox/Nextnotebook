@@ -420,13 +420,14 @@ if (config.type === 'your_type') {
 ## 常用命令
 
 ```bash
-# 开发
-npm run build          # 构建
-npm start              # 运行
-或者
-npm run dev 直接运行开发服务器
+# 方式1：先构建再运行
+npm run build
+npm start
 
-# 打
+# 方式2：开发模式（同时启动主进程和渲染进程）
+npm run dev
+
+# 构建
 ## 1. 先构建项目
 npm run build
 
@@ -438,8 +439,6 @@ npm run dist:win
 
 或者2.3合并一个步骤
 $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"; npm run dist:win
-
-
 
 # 测试
 npm test               # 运行测试

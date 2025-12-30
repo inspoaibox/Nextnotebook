@@ -34,6 +34,10 @@ function getIconPath(): string {
 }
 
 function createWindow(): void {
+  // 检测系统是否使用深色模式
+  const { nativeTheme } = require('electron');
+  const isDarkMode = nativeTheme.shouldUseDarkColors;
+  
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -42,7 +46,7 @@ function createWindow(): void {
     title: '暮城笔记',
     icon: getIconPath(),
     show: false, // 先隐藏窗口
-    backgroundColor: '#fafafa', // 设置背景色避免白屏闪烁
+    backgroundColor: isDarkMode ? '#141414' : '#fafafa', // 根据系统主题设置背景色
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

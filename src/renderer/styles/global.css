@@ -1028,13 +1028,40 @@ body.dark-mode .ant-message-notice-content span {
 /* ========== TinyMCE 编辑器样式 ========== */
 
 /* 移除 TinyMCE 编辑器的蓝色聚焦边框 */
-.tox-tinymce {
+.tox-tinymce,
+.tox.tox-tinymce {
   border: 1px solid #d9d9d9 !important;
   border-radius: 6px !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
-.tox-tinymce:focus-within {
+.tox-tinymce:focus,
+.tox-tinymce:focus-within,
+.tox-tinymce:focus-visible,
+.tox.tox-tinymce:focus,
+.tox.tox-tinymce:focus-within,
+.tox.tox-tinymce:focus-visible,
+.tox-tinymce.tox-tinymce--toolbar-sticky-on,
+.tox-tinymce.tox-tinymce--toolbar-sticky-off {
   border-color: #d9d9d9 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* 移除编辑区域的焦点边框 */
+.tox .tox-edit-area,
+.tox .tox-edit-area__iframe {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.tox .tox-edit-area:focus,
+.tox .tox-edit-area:focus-within,
+.tox .tox-edit-area__iframe:focus {
+  border: none !important;
+  outline: none !important;
   box-shadow: none !important;
 }
 
@@ -1042,24 +1069,36 @@ body.dark-mode .ant-message-notice-content span {
 .tox .tox-toolbar-overlord,
 .tox .tox-toolbar__primary {
   background: #fafafa !important;
+  border-bottom: 1px solid #e8e8e8 !important;
 }
 
 .tox .tox-menubar {
   background: #fafafa !important;
+  border-bottom: 1px solid #e8e8e8 !important;
 }
 
 /* 深色模式 - TinyMCE */
-body.dark-mode .tox-tinymce {
+body.dark-mode .tox-tinymce,
+body.dark-mode .tox.tox-tinymce {
+  border-color: #434343 !important;
+}
+
+body.dark-mode .tox-tinymce:focus,
+body.dark-mode .tox-tinymce:focus-within,
+body.dark-mode .tox.tox-tinymce:focus,
+body.dark-mode .tox.tox-tinymce:focus-within {
   border-color: #434343 !important;
 }
 
 body.dark-mode .tox .tox-toolbar-overlord,
 body.dark-mode .tox .tox-toolbar__primary {
   background: #262626 !important;
+  border-bottom-color: #303030 !important;
 }
 
 body.dark-mode .tox .tox-menubar {
   background: #262626 !important;
+  border-bottom-color: #303030 !important;
 }
 
 body.dark-mode .tox .tox-mbtn {

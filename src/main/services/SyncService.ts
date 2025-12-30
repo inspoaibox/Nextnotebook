@@ -42,19 +42,18 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
 
     // 创建适配器
     if (config.type === 'webdav') {
-      // 构建完整的同步 URL（包含同步目录）
-      let syncUrl = config.url;
-      if (config.syncPath) {
-        // 确保 URL 和 path 正确拼接
-        syncUrl = syncUrl.replace(/\/+$/, ''); // 移除末尾斜杠
-        const path = config.syncPath.startsWith('/') ? config.syncPath : '/' + config.syncPath;
-        syncUrl = syncUrl + path;
-      }
+      // 移除 URL 末尾斜杠
+      const baseUrl = config.url.replace(/\/+$/, '');
+      // 确保 syncPath 以 / 开头
+      const syncPath = config.syncPath 
+        ? (config.syncPath.startsWith('/') ? config.syncPath : '/' + config.syncPath)
+        : '/mucheng-notes';
       
       const webdavConfig: WebDAVConfig = {
-        url: syncUrl,
+        url: baseUrl,
         username: config.username || '',
         password: config.password || '',
+        basePath: syncPath,  // 将 syncPath 作为 basePath 传递
       };
       currentAdapter = new WebDAVAdapter(webdavConfig);
     } else {
@@ -155,18 +154,18 @@ export async function testSyncConnection(config: SyncServiceConfig): Promise<boo
     let adapter: StorageAdapter;
     
     if (config.type === 'webdav') {
-      // 构建完整的同步 URL（包含同步目录）
-      let syncUrl = config.url;
-      if (config.syncPath) {
-        syncUrl = syncUrl.replace(/\/+$/, '');
-        const path = config.syncPath.startsWith('/') ? config.syncPath : '/' + config.syncPath;
-        syncUrl = syncUrl + path;
-      }
+      // 移除 URL 末尾斜杠
+      const baseUrl = config.url.replace(/\/+$/, '');
+      // 确保 syncPath 以 / 开头
+      const syncPath = config.syncPath 
+        ? (config.syncPath.startsWith('/') ? config.syncPath : '/' + config.syncPath)
+        : '/mucheng-notes';
       
       const webdavConfig: WebDAVConfig = {
-        url: syncUrl,
+        url: baseUrl,
         username: config.username || '',
         password: config.password || '',
+        basePath: syncPath,  // 将 syncPath 作为 basePath 传递
       };
       adapter = new WebDAVAdapter(webdavConfig);
     } else {

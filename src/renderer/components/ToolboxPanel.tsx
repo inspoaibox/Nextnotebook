@@ -53,6 +53,7 @@ const tools: Tool[] = [
   { id: 'case-convert', name: '大小写转换', icon: <FontSizeOutlined />, category: 'text' },
   { id: 'text-sort', name: '文本排序', icon: <SortAscendingOutlined />, category: 'text' },
   { id: 'pinyin', name: '汉字转拼音', icon: <TranslationOutlined />, category: 'text' },
+  { id: 'url-extract', name: 'URL提取', icon: <LinkOutlined />, category: 'text' },
   // 编程工具
   { id: 'json-format', name: 'JSON格式化', icon: <CodeOutlined />, category: 'code' },
   { id: 'base64', name: 'Base64编解码', icon: <LockOutlined />, category: 'code' },
@@ -103,6 +104,8 @@ const ToolboxPanel: React.FC = () => {
         return <TextSortTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'pinyin':
         return <PinyinTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
+      case 'url-extract':
+        return <UrlExtractTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'json-format':
         return <JsonFormatTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'base64':
@@ -1222,6 +1225,233 @@ const PinyinTool: React.FC<ToolProps> = ({ input, setInput, output, setOutput })
   );
 };
 
+// URL 提取工具
+const UrlExtractTool: React.FC<ToolProps> = ({ input, setInput, output, setOutput }) => {
+  // 文件类型过滤
+  const [fileTypes, setFileTypes] = useState<string[]>([]);
+  const [customFileType, setCustomFileType] = useState('');
+  // 域名过滤
+  const [includeDomains, setIncludeDomains] = useState('');
+  const [excludeDomains, setExcludeDomains] = useState('');
+  // 统计信息
+  const [stats, setStats] = useState({ total: 0, unique: 0, filtered: 0 });
+
+  // 预设文件类型
+  const presetFileTypes = [
+    { label: '图片', value: 'images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'bmp'] },
+    { label: '视频', value: 'videos', extensions: ['mp4', 'webm', 'avi', 'mov', 'mkv', 'flv', 'wmv'] },
+    { label: '音频', value: 'audios', extensions: ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'] },
+    { label: '文档', value: 'docs', extensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md'] },
+    { label: '压缩包', value: 'archives', extensions: ['zip', 'rar', '7z', 'tar', 'gz', 'bz2'] },
+    { label: '代码', value: 'code', extensions: ['js', 'ts', 'jsx', 'tsx', 'css', 'html', 'json', 'xml', 'py', 'java'] },
+  ];
+
+  // 当选择分类变化时，更新扩展名输入框
+  const handleFileTypesChange = (values: string[]) => {
+    setFileTypes(values);
+    // 收集所有选中分类的扩展名
+    const extensions: string[] = [];
+    values.forEach(type => {
+      const preset = presetFileTypes.find(p => p.value === type);
+      if (preset) {
+        extensions.push(...preset.extensions);
+      }
+    });
+    // 去重并更新到输入框
+    setCustomFileType([...new Set(extensions)].join(', '));
+  };
+
+  // 提取 URL
+  const extractUrls = () => {
+    if (!input.trim()) {
+      setOutput('');
+      setStats({ total: 0, unique: 0, filtered: 0 });
+      return;
+    }
+
+    // URL 正则表达式
+    const urlRegex = /https?:\/\/[^\s<>"')\]]+/gi;
+    const matches = input.match(urlRegex) || [];
+    
+    // 去重
+    const uniqueUrls = [...new Set(matches)];
+    
+    // 获取过滤条件 - 直接从输入框获取扩展名
+    const extensions = customFileType.trim() 
+      ? customFileType.split(/[,，\s]+/).filter(Boolean).map(ext => ext.replace(/^\./, '').toLowerCase())
+      : [];
+    const includeList = includeDomains.split(/[,，\s]+/).filter(Boolean).map(d => d.toLowerCase());
+    const excludeList = excludeDomains.split(/[,，\s]+/).filter(Boolean).map(d => d.toLowerCase());
+
+    // 过滤 URL
+    let filteredUrls = uniqueUrls.filter(url => {
+      try {
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname.toLowerCase();
+        const pathname = urlObj.pathname.toLowerCase();
+        
+        // 域名包含过滤
+        if (includeList.length > 0) {
+          const matchInclude = includeList.some(domain => hostname.includes(domain));
+          if (!matchInclude) return false;
+        }
+        
+        // 域名排除过滤
+        if (excludeList.length > 0) {
+          const matchExclude = excludeList.some(domain => hostname.includes(domain));
+          if (matchExclude) return false;
+        }
+        
+        // 文件类型过滤
+        if (extensions.length > 0) {
+          const matchExt = extensions.some(ext => pathname.endsWith('.' + ext));
+          if (!matchExt) return false;
+        }
+        
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+    setStats({
+      total: matches.length,
+      unique: uniqueUrls.length,
+      filtered: filteredUrls.length,
+    });
+    
+    setOutput(filteredUrls.join('\n'));
+  };
+
+  const copyOutput = () => {
+    if (output) {
+      navigator.clipboard.writeText(output);
+      message.success('已复制到剪贴板');
+    }
+  };
+
+  const clearAll = () => {
+    setInput('');
+    setOutput('');
+    setStats({ total: 0, unique: 0, filtered: 0 });
+    setFileTypes([]);
+    setCustomFileType('');
+    setIncludeDomains('');
+    setExcludeDomains('');
+  };
+
+  return (
+    <div>
+      {/* 过滤选项 */}
+      <Card size="small" style={{ marginBottom: 12 }}>
+        <Row gutter={16}>
+          <Col span={12}>
+            <div style={{ marginBottom: 8 }}>
+              <Text strong>快速选择文件类型</Text>
+              <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>（点击自动填充扩展名）</Text>
+            </div>
+            <Checkbox.Group
+              value={fileTypes}
+              onChange={(values) => handleFileTypesChange(values as string[])}
+              style={{ width: '100%' }}
+            >
+              <Row>
+                {presetFileTypes.map(type => (
+                  <Col span={8} key={type.value}>
+                    <Tooltip title={type.extensions.join(', ')}>
+                      <Checkbox value={type.value}>{type.label}</Checkbox>
+                    </Tooltip>
+                  </Col>
+                ))}
+              </Row>
+            </Checkbox.Group>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>扩展名（可手动编辑，多个用逗号分隔，留空提取所有）：</Text>
+              <Input
+                placeholder="如: jpg, png, gif, mp4"
+                value={customFileType}
+                onChange={e => {
+                  setCustomFileType(e.target.value);
+                  // 清除分类选择，因为用户手动编辑了
+                  if (fileTypes.length > 0) {
+                    setFileTypes([]);
+                  }
+                }}
+                size="small"
+              />
+            </div>
+          </Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 8 }}>
+              <Text strong>域名过滤</Text>
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>包含域名（多个用逗号分隔）：</Text>
+              <Input
+                placeholder="如: github.com, google.com"
+                value={includeDomains}
+                onChange={e => setIncludeDomains(e.target.value)}
+                size="small"
+              />
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 12 }}>排除域名（多个用逗号分隔）：</Text>
+              <Input
+                placeholder="如: ads.com, tracker.com"
+                value={excludeDomains}
+                onChange={e => setExcludeDomains(e.target.value)}
+                size="small"
+              />
+            </div>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* 输入输出区域 */}
+      <Row gutter={16}>
+        <Col span={12}>
+          <Text strong>输入文本</Text>
+          <TextArea
+            rows={14}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="粘贴包含 URL 的文本内容..."
+          />
+          <Space style={{ marginTop: 8 }}>
+            <Button type="primary" onClick={extractUrls}>提取 URL</Button>
+            <Button onClick={clearAll} icon={<ClearOutlined />}>清空</Button>
+          </Space>
+        </Col>
+        <Col span={12}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text strong>提取结果</Text>
+            {stats.filtered > 0 && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                共 {stats.total} 个 URL，去重后 {stats.unique} 个，过滤后 {stats.filtered} 个
+              </Text>
+            )}
+          </div>
+          <TextArea
+            rows={14}
+            value={output}
+            readOnly
+            style={{ background: '#f5f5f5' }}
+            placeholder="提取的 URL 将显示在这里..."
+          />
+          <Button
+            onClick={copyOutput}
+            style={{ marginTop: 8 }}
+            icon={<CopyOutlined />}
+            disabled={!output}
+          >
+            复制
+          </Button>
+        </Col>
+      </Row>
+    </div>
+  );
+};
+
 // Markdown 转 HTML 工具
 const MdHtmlTool: React.FC<ToolProps> = ({ input, setInput, output, setOutput }) => {
   const convert = () => {
@@ -1410,6 +1640,8 @@ const HtmlEditorTool: React.FC = () => {
               promotion: false,
               branding: false,
               license_key: 'gpl', // 使用 GPL 开源许可
+              highlight_on_focus: false, // 禁用焦点高亮
+              statusbar: true,
             }}
           />
         )}

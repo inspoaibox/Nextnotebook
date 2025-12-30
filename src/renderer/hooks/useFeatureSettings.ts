@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS: FeatureSettings = {
   vault_enabled: true,
   bookmark_enabled: true,
   toolbox_enabled: true,
+  diagram_enabled: true,
 };
 
 function getSettings(): FeatureSettings {

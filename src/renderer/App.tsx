@@ -14,6 +14,7 @@ import VaultLockScreen from './components/VaultLockScreen';
 import LockScreen from './components/LockScreen';
 import BookmarkPanel from './components/BookmarkPanel';
 import ToolboxPanel from './components/ToolboxPanel';
+import DiagramPanel from './components/DiagramPanel';
 import { useNotes, useNote } from './hooks/useNotes';
 import { useFolders } from './hooks/useFolders';
 import { useTags } from './hooks/useTags';
@@ -714,6 +715,7 @@ const App: React.FC = () => {
           vaultEnabled={featureSettings.vault_enabled}
           bookmarkEnabled={featureSettings.bookmark_enabled}
           toolboxEnabled={featureSettings.toolbox_enabled}
+          diagramEnabled={featureSettings.diagram_enabled}
           currentTool={currentTool}
           onSelectFolder={handleSelectFolder}
           onSelectView={handleSelectView}
@@ -757,6 +759,10 @@ const App: React.FC = () => {
         ) : currentTool === 'toolbox' ? (
           <Content style={{ background: isDarkMode ? '#141414' : '#fff' }}>
             <ToolboxPanel />
+          </Content>
+        ) : currentTool === 'diagram' ? (
+          <Content style={{ background: isDarkMode ? '#141414' : '#fff' }}>
+            <DiagramPanel />
           </Content>
         ) : (
           <>

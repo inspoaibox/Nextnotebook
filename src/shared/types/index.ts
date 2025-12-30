@@ -28,6 +28,18 @@ export type ItemType =
   | 'ai_conversation'
   | 'ai_message';
 
+// 图表类型
+export type DiagramType = 'mindmap' | 'flowchart' | 'whiteboard';
+
+// 图表 payload
+export interface DiagramPayload {
+  name: string;
+  diagram_type: DiagramType;
+  data: string;  // JSON 格式的图表数据
+  thumbnail: string | null;  // 缩略图 base64
+  folder_id: string | null;
+}
+
 // 待办事项四象限类型
 export type TodoQuadrant = 'urgent-important' | 'not-urgent-important' | 'urgent-not-important' | 'not-urgent-not-important';
 
@@ -115,6 +127,7 @@ export interface FeatureSettings {
   vault_enabled: boolean;
   bookmark_enabled: boolean;
   toolbox_enabled: boolean;
+  diagram_enabled: boolean;
 }
 
 // 书签 payload

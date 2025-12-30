@@ -158,7 +158,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   useEffect(() => {
     if (open) {
       form.setFieldsValue(settings);
-      syncForm.setFieldsValue(syncConfig);
+      // 确保同步表单有完整的初始值
+      syncForm.setFieldsValue({
+        enabled: syncConfig.enabled || false,
+        type: syncConfig.type || 'webdav',
+        url: syncConfig.url || '',
+        sync_path: syncConfig.sync_path || '/mucheng-notes',
+        username: syncConfig.username || '',
+        password: syncConfig.password || '',
+        encryption_enabled: syncConfig.encryption_enabled || false,
+        sync_interval: syncConfig.sync_interval || 5,
+      });
     }
   }, [open, settings, syncConfig, form, syncForm]);
 
@@ -318,16 +328,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   };
 
   const handleTestConnection = async () => {
-    const { url, username, password } = syncForm.getFieldsValue();
+    const values = syncForm.getFieldsValue();
+    const { url, username, password, sync_path, type } = values;
     if (!url) { message.error('请填写服务器地址'); return; }
     message.loading({ content: '测试中...', key: 'test' });
     try {
-      const res = await fetch(url, {
-        method: 'OPTIONS',
-        headers: username ? { 'Authorization': 'Basic ' + btoa(`${username}:${password}`) } : {},
-      });
-      message.success({ content: '连接成功', key: 'test' });
-    } catch {
+      // 使用后端的测试连接功能
+      const api = (window as any).electronAPI;
+      if (api?.sync?.testConnection) {
+        const encryptionKey = localStorage.getItem('mucheng-sync-key') || undefined;
+        const success = await api.sync.testConnection({
+          enabled: true,
+          type: type || 'webdav',
+          url: url,
+          syncPath: sync_path || '/mucheng-notes',
+          username: username || '',
+          password: password || '',
+          encryptionEnabled: false,
+          encryptionKey,
+          syncInterval: 5,
+        });
+        if (success) {
+          message.success({ content: '连接成功', key: 'test' });
+        } else {
+          message.error({ content: '连接失败，请检查配置', key: 'test' });
+        }
+      } else {
+        // 降级到简单的 fetch 测试
+        const res = await fetch(url, {
+          method: 'OPTIONS',
+          headers: username ? { 'Authorization': 'Basic ' + btoa(`${username}:${password}`) } : {},
+        });
+        message.success({ content: '连接成功', key: 'test' });
+      }
+    } catch (e) {
+      console.error('Connection test failed:', e);
       message.error({ content: '连接失败', key: 'test' });
     }
   };
@@ -411,7 +446,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   const handleRefreshModels = async (channel: AIChannel) => {
     message.loading({ content: '获取模型列表...', key: 'refresh-models' });
     try {
-      const response = await fetch(`${channel.api_url}/models`, {
+      // 从 api_url 提取基础 URL（移除 /chat/completions 或 /messages 等路径）
+      let baseUrl = channel.api_url;
+      if (baseUrl.endsWith('/chat/completions')) {
+        baseUrl = baseUrl.replace('/chat/completions', '');
+      } else if (baseUrl.endsWith('/messages')) {
+        baseUrl = baseUrl.replace('/messages', '');
+      } else if (baseUrl.endsWith('/')) {
+        baseUrl = baseUrl.slice(0, -1);
+      }
+      
+      const response = await fetch(`${baseUrl}/models`, {
         headers: {
           'Authorization': `Bearer ${channel.api_key}`,
         },
@@ -584,6 +629,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                 />
               </div>
             </div>
+
+            <Divider style={{ margin: '16px 0' }} />
+
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div>
+                  <span style={{ fontWeight: 500 }}>脑图</span>
+                  <p style={{ color: '#888', fontSize: 12, margin: '4px 0 0' }}>脑图、流程图、白板，支持同步</p>
+                </div>
+                <Switch 
+                  checked={featureSettings.diagram_enabled} 
+                  onChange={(checked) => updateFeatureSettings({ diagram_enabled: checked })} 
+                />
+              </div>
+            </div>
           </div>
         );
 
@@ -591,58 +651,56 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
         return (
           <div>
             <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 500 }}>同步设置</h3>
-            <Form form={syncForm} layout="horizontal" labelCol={{ span: 6 }} wrapperCol={{ span: 18 }} labelAlign="left">
+            <Form form={syncForm} layout="horizontal" labelCol={{ span: 6 }} wrapperCol={{ span: 18 }} labelAlign="left" preserve={true}>
               <Form.Item name="enabled" label="启用同步" valuePropName="checked">
                 <Switch />
               </Form.Item>
               
               <Form.Item noStyle shouldUpdate={(prev, cur) => prev.enabled !== cur.enabled}>
-                {({ getFieldValue }) => 
-                  getFieldValue('enabled') ? (
+                {({ getFieldValue }) => {
+                  const enabled = getFieldValue('enabled');
+                  return (
                     <>
-                      <Form.Item name="type" label="同步方式">
+                      <Form.Item name="type" label="同步方式" hidden={!enabled}>
                         <Select style={{ width: 200 }} options={[
                           { value: 'webdav', label: 'WebDAV' },
                           { value: 'server', label: '自建服务器' },
                         ]} />
                       </Form.Item>
-                      <Form.Item name="url" label="服务器地址" rules={[{ required: true, message: '请填写服务器地址' }]}>
+                      <Form.Item name="url" label="服务器地址" rules={[{ required: enabled, message: '请填写服务器地址' }]} hidden={!enabled}>
                         <Input placeholder="https://example.com/dav" />
                       </Form.Item>
                       <Form.Item 
                         name="sync_path" 
                         label="同步目录" 
                         tooltip="数据将同步到此目录下，避免与其他数据混淆"
+                        hidden={!enabled}
                       >
                         <Input placeholder="/mucheng-notes" />
                       </Form.Item>
-                      <Form.Item name="username" label="用户名">
+                      <Form.Item name="username" label="用户名" hidden={!enabled}>
                         <Input placeholder="可选" style={{ width: 200 }} />
                       </Form.Item>
-                      <Form.Item name="password" label="密码">
+                      <Form.Item name="password" label="密码" hidden={!enabled}>
                         <Input.Password placeholder="可选" style={{ width: 200 }} />
                       </Form.Item>
-                      <Divider style={{ margin: '16px 0' }} />
-                      <Form.Item name="encryption_enabled" label="端到端加密" valuePropName="checked">
+                      {enabled && <Divider style={{ margin: '16px 0' }} />}
+                      <Form.Item name="encryption_enabled" label="端到端加密" valuePropName="checked" hidden={!enabled}>
                         <Switch />
                       </Form.Item>
-                      <Form.Item name="sync_interval" label="同步间隔">
+                      <Form.Item name="sync_interval" label="同步间隔" hidden={!enabled}>
                         <InputNumber min={1} max={60} addonAfter="分钟" style={{ width: 120 }} />
                       </Form.Item>
-                      <Divider style={{ margin: '16px 0' }} />
+                      {enabled && <Divider style={{ margin: '16px 0' }} />}
                       <Form.Item wrapperCol={{ offset: 6 }}>
                         <Space>
                           <Button type="primary" onClick={handleSaveSyncConfig}>保存设置</Button>
-                          <Button onClick={handleTestConnection}>测试连接</Button>
+                          {enabled && <Button onClick={handleTestConnection}>测试连接</Button>}
                         </Space>
                       </Form.Item>
                     </>
-                  ) : (
-                    <Form.Item wrapperCol={{ offset: 6 }}>
-                      <Button type="primary" onClick={handleSaveSyncConfig}>保存设置</Button>
-                    </Form.Item>
-                  )
-                }
+                  );
+                }}
               </Form.Item>
             </Form>
           </div>
@@ -956,6 +1014,44 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                     </Space>
                   </div>
                   <p style={{ fontSize: 12, color: '#888', margin: '0 0 8px' }}>{channel.api_url}</p>
+                  
+                  {/* 测试连接按钮 */}
+                  <div style={{ marginBottom: 8 }}>
+                    <Button 
+                      type="link" 
+                      size="small" 
+                      onClick={async () => {
+                        message.loading({ content: '测试连接中...', key: 'test-ai' });
+                        try {
+                          // 从 api_url 提取基础 URL
+                          let baseUrl = channel.api_url;
+                          if (baseUrl.endsWith('/chat/completions')) {
+                            baseUrl = baseUrl.replace('/chat/completions', '');
+                          } else if (baseUrl.endsWith('/messages')) {
+                            baseUrl = baseUrl.replace('/messages', '');
+                          } else if (baseUrl.endsWith('/')) {
+                            baseUrl = baseUrl.slice(0, -1);
+                          }
+                          
+                          const response = await fetch(`${baseUrl}/models`, {
+                            headers: {
+                              'Authorization': `Bearer ${channel.api_key}`,
+                            },
+                          });
+                          if (response.ok) {
+                            message.success({ content: '连接成功', key: 'test-ai' });
+                          } else {
+                            message.error({ content: `连接失败: ${response.status}`, key: 'test-ai' });
+                          }
+                        } catch (err) {
+                          message.error({ content: '连接失败，请检查网络或 API 地址', key: 'test-ai' });
+                        }
+                      }}
+                      style={{ padding: 0, height: 'auto', fontSize: 12 }}
+                    >
+                      测试连接
+                    </Button>
+                  </div>
                   
                   {/* 模型列表 */}
                   <div style={{ marginTop: 8 }}>

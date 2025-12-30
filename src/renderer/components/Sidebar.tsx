@@ -17,6 +17,7 @@ import {
   SafetyOutlined,
   LinkOutlined,
   SyncOutlined,
+  NodeIndexOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Folder } from '../hooks/useFolders';
@@ -32,6 +33,7 @@ interface SidebarProps {
   vaultEnabled?: boolean;
   bookmarkEnabled?: boolean;
   toolboxEnabled?: boolean;
+  diagramEnabled?: boolean;
   currentTool?: string | null;
   onSelectFolder: (folderId: string | null) => void;
   onSelectView: (view: 'all' | 'starred' | 'trash') => void;
@@ -58,6 +60,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   vaultEnabled,
   bookmarkEnabled,
   toolboxEnabled,
+  diagramEnabled,
   currentTool,
   onSelectFolder,
   onSelectView,
@@ -319,8 +322,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div className="sidebar-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* 工具栏区域 - 单行布局 */}
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color, #f0f0f0)' }}>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+      <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-color, #f0f0f0)' }}>
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
           {aiEnabled && (
             <Tooltip title="智能助理">
               <Button
@@ -368,6 +371,16 @@ const Sidebar: React.FC<SidebarProps> = ({
                 icon={<AppstoreOutlined />}
                 size="small"
                 onClick={() => onSelectTool?.(currentTool === 'toolbox' ? null : 'toolbox')}
+              />
+            </Tooltip>
+          )}
+          {diagramEnabled && (
+            <Tooltip title="脑图">
+              <Button
+                type={currentTool === 'diagram' ? 'primary' : 'text'}
+                icon={<NodeIndexOutlined />}
+                size="small"
+                onClick={() => onSelectTool?.(currentTool === 'diagram' ? null : 'diagram')}
               />
             </Tooltip>
           )}
