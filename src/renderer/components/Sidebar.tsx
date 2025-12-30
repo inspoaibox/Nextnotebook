@@ -1,0 +1,405 @@
+import React, { useState } from 'react';
+import { Menu, Button, Dropdown, Input, Modal, message, Tooltip } from 'antd';
+import {
+  FileTextOutlined,
+  FolderOutlined,
+  FolderAddOutlined,
+  TagOutlined,
+  StarOutlined,
+  DeleteOutlined,
+  PlusOutlined,
+  SettingOutlined,
+  EditOutlined,
+  RobotOutlined,
+  AppstoreOutlined,
+  CheckSquareOutlined,
+  KeyOutlined,
+  LinkOutlined,
+} from '@ant-design/icons';
+import type { MenuProps } from 'antd';
+import { Folder } from '../hooks/useFolders';
+import { Tag } from '../hooks/useTags';
+
+interface SidebarProps {
+  selectedFolderId: string | null;
+  selectedView: 'all' | 'starred' | 'trash' | 'folder' | 'tag';
+  folders: Folder[];
+  tags: Tag[];
+  aiEnabled?: boolean;
+  todoEnabled?: boolean;
+  vaultEnabled?: boolean;
+  bookmarkEnabled?: boolean;
+  currentTool?: string | null;
+  onSelectFolder: (folderId: string | null) => void;
+  onSelectView: (view: 'all' | 'starred' | 'trash') => void;
+  onSelectTag: (tagId: string) => void;
+  onSelectTool?: (tool: string | null) => void;
+  onCreateNote?: () => void;
+  onQuickCreateNote?: () => void;
+  onCreateFolder?: (name: string, parentId?: string | null) => Promise<void>;
+  onDeleteFolder?: (folderId: string) => Promise<void>;
+  onRenameFolder?: (folderId: string, newName: string) => Promise<void>;
+  onDeleteTag?: (tagId: string) => Promise<void>;
+  onOpenSettings?: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({
+  selectedFolderId,
+  selectedView,
+  folders,
+  tags,
+  aiEnabled,
+  todoEnabled,
+  vaultEnabled,
+  bookmarkEnabled,
+  currentTool,
+  onSelectFolder,
+  onSelectView,
+  onSelectTag,
+  onSelectTool,
+  onCreateNote,
+  onQuickCreateNote,
+  onCreateFolder,
+  onDeleteFolder,
+  onRenameFolder,
+  onDeleteTag,
+  onOpenSettings,
+}) => {
+  const [newFolderModalOpen, setNewFolderModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderParentId, setNewFolderParentId] = useState<string | null>(null);
+  const [renameFolderModalOpen, setRenameFolderModalOpen] = useState(false);
+  const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState('');
+
+  // 文件夹右键菜单
+  const getFolderContextMenu = (folder: Folder): MenuProps['items'] => [
+    {
+      key: 'newSubfolder',
+      icon: <FolderAddOutlined />,
+      label: '新建子文件夹',
+      onClick: (e) => {
+        e.domEvent.stopPropagation();
+        setNewFolderParentId(folder.id);
+        setNewFolderModalOpen(true);
+      },
+    },
+    { 
+      key: 'rename', 
+      icon: <EditOutlined />, 
+      label: '重命名',
+      onClick: (e) => {
+        e.domEvent.stopPropagation();
+        setRenameFolderId(folder.id);
+        setRenameFolderName(folder.name);
+        setRenameFolderModalOpen(true);
+      },
+    },
+    { type: 'divider' },
+    { 
+      key: 'delete', 
+      icon: <DeleteOutlined />, 
+      label: '删除',
+      danger: true,
+      onClick: (e) => {
+        e.domEvent.stopPropagation();
+        Modal.confirm({
+          title: '删除文件夹',
+          content: `确定要删除文件夹 "${folder.name}" 吗？文件夹内的笔记不会被删除。`,
+          okText: '删除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => onDeleteFolder?.(folder.id),
+        });
+      },
+    },
+  ];
+
+  // 标签右键菜单
+  const getTagContextMenu = (tag: Tag): MenuProps['items'] => [
+    { 
+      key: 'delete', 
+      icon: <DeleteOutlined />, 
+      label: '删除标签',
+      danger: true,
+      onClick: (e) => {
+        e.domEvent.stopPropagation();
+        Modal.confirm({
+          title: '删除标签',
+          content: `确定要删除标签 "${tag.name}" 吗？`,
+          okText: '删除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => onDeleteTag?.(tag.id),
+        });
+      },
+    },
+  ];
+
+  // 构建文件夹树形结构（支持多级目录）
+  const buildFolderTree = (parentId: string | null = null): MenuProps['items'] => {
+    const childFolders = folders.filter(f => f.parentId === parentId);
+    
+    if (childFolders.length === 0) {
+      return parentId === null ? [{ key: 'no-folders', label: '暂无文件夹', disabled: true }] : undefined;
+    }
+
+    return childFolders.map(folder => {
+      const subFolders = buildFolderTree(folder.id);
+      const hasChildren = subFolders && subFolders.length > 0;
+
+      return {
+        key: `folder-${folder.id}`,
+        icon: <FolderOutlined style={{ color: folder.color || undefined }} />,
+        label: (
+          <Dropdown menu={{ items: getFolderContextMenu(folder) }} trigger={['contextMenu']}>
+            <span style={{ display: 'block' }}>{folder.name}</span>
+          </Dropdown>
+        ),
+        children: hasChildren ? subFolders : undefined,
+      };
+    });
+  };
+
+  const folderChildren = buildFolderTree(null);
+
+  // 构建标签子菜单（带右键菜单）
+  const tagChildren = tags.map(tag => ({
+    key: `tag-${tag.id}`,
+    icon: <TagOutlined style={{ color: tag.color || '#1890ff' }} />,
+    label: (
+      <Dropdown menu={{ items: getTagContextMenu(tag) }} trigger={['contextMenu']}>
+        <span style={{ display: 'block' }}>{tag.name}</span>
+      </Dropdown>
+    ),
+  }));
+
+  const menuItems: MenuProps['items'] = [
+    { key: 'all', icon: <FileTextOutlined />, label: '所有笔记' },
+    { key: 'starred', icon: <StarOutlined />, label: '星标笔记' },
+    { type: 'divider' },
+    { 
+      key: 'folders-group', 
+      icon: <FolderOutlined />, 
+      label: (
+        <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          文件夹
+          <FolderAddOutlined 
+            onClick={(e) => {
+              e.stopPropagation();
+              setNewFolderModalOpen(true);
+            }}
+            style={{ marginLeft: 8 }}
+          />
+        </span>
+      ),
+      children: folderChildren,
+    },
+    { 
+      key: 'tags-group', 
+      icon: <TagOutlined />, 
+      label: '标签',
+      children: tagChildren.length > 0 ? tagChildren : [
+        { key: 'no-tags', label: '暂无标签', disabled: true }
+      ],
+    },
+    { type: 'divider' },
+    { key: 'trash', icon: <DeleteOutlined />, label: '回收站' },
+  ];
+
+  const createMenuItems: MenuProps['items'] = [
+    { key: 'template', label: '从模板创建', onClick: onCreateNote },
+    { key: 'blank', label: '空白笔记', onClick: onQuickCreateNote },
+  ];
+
+  const handleMenuClick = ({ key }: { key: string }) => {
+    // 点击笔记相关菜单时，清除当前工具选择，切换回笔记视图
+    if (currentTool) {
+      onSelectTool?.(null);
+    }
+    
+    if (key === 'all') {
+      onSelectView('all');
+      onSelectFolder(null);
+    } else if (key === 'starred') {
+      onSelectView('starred');
+    } else if (key === 'trash') {
+      onSelectView('trash');
+    } else if (key.startsWith('folder-')) {
+      const folderId = key.replace('folder-', '');
+      onSelectFolder(folderId);
+    } else if (key.startsWith('tag-')) {
+      const tagId = key.replace('tag-', '');
+      onSelectTag(tagId);
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) {
+      message.warning('请输入文件夹名称');
+      return;
+    }
+    if (onCreateFolder) {
+      await onCreateFolder(newFolderName.trim(), newFolderParentId);
+      setNewFolderName('');
+      setNewFolderParentId(null);
+      setNewFolderModalOpen(false);
+      message.success('文件夹已创建');
+    }
+  };
+
+  const handleRenameFolder = async () => {
+    if (!renameFolderName.trim()) {
+      message.warning('请输入文件夹名称');
+      return;
+    }
+    if (onRenameFolder && renameFolderId) {
+      await onRenameFolder(renameFolderId, renameFolderName.trim());
+      setRenameFolderName('');
+      setRenameFolderId(null);
+      setRenameFolderModalOpen(false);
+      message.success('文件夹已重命名');
+    }
+  };
+
+  // 计算选中的 key
+  const getSelectedKeys = () => {
+    if (selectedView === 'starred') return ['starred'];
+    if (selectedView === 'trash') return ['trash'];
+    if (selectedFolderId) return [`folder-${selectedFolderId}`];
+    return ['all'];
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fafafa' }}>
+      {/* 工具栏区域 */}
+      {(aiEnabled || todoEnabled || vaultEnabled || bookmarkEnabled) && (
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: 4 }}>
+          {aiEnabled && (
+            <Tooltip title="智能助理">
+              <Button
+                type={currentTool === 'ai' ? 'primary' : 'text'}
+                icon={<RobotOutlined />}
+                size="small"
+                onClick={() => onSelectTool?.(currentTool === 'ai' ? null : 'ai')}
+              />
+            </Tooltip>
+          )}
+          {todoEnabled && (
+            <Tooltip title="待办事项">
+              <Button
+                type={currentTool === 'todo' ? 'primary' : 'text'}
+                icon={<CheckSquareOutlined />}
+                size="small"
+                onClick={() => onSelectTool?.(currentTool === 'todo' ? null : 'todo')}
+              />
+            </Tooltip>
+          )}
+          {vaultEnabled && (
+            <Tooltip title="密码库">
+              <Button
+                type={currentTool === 'vault' ? 'primary' : 'text'}
+                icon={<KeyOutlined />}
+                size="small"
+                onClick={() => onSelectTool?.(currentTool === 'vault' ? null : 'vault')}
+              />
+            </Tooltip>
+          )}
+          {bookmarkEnabled && (
+            <Tooltip title="书签">
+              <Button
+                type={currentTool === 'bookmark' ? 'primary' : 'text'}
+                icon={<LinkOutlined />}
+                size="small"
+                onClick={() => onSelectTool?.(currentTool === 'bookmark' ? null : 'bookmark')}
+              />
+            </Tooltip>
+          )}
+          <Tooltip title="更多工具">
+            <Button
+              type="text"
+              icon={<AppstoreOutlined />}
+              size="small"
+              disabled
+            />
+          </Tooltip>
+        </div>
+      )}
+      
+      {/* 新建笔记按钮 */}
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0' }}>
+        <Dropdown menu={{ items: createMenuItems }} trigger={['click']}>
+          <Button type="primary" icon={<PlusOutlined />} size="small" style={{ width: '100%' }}>
+            新建笔记
+          </Button>
+        </Dropdown>
+      </div>
+      
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <Menu
+          mode="inline"
+          selectedKeys={getSelectedKeys()}
+          onClick={handleMenuClick}
+          items={menuItems}
+          className="sidebar-menu"
+          style={{ background: 'transparent', borderRight: 0 }}
+        />
+      </div>
+      <div style={{ padding: '8px 12px', borderTop: '1px solid #f0f0f0' }}>
+        <Button
+          type="text"
+          icon={<SettingOutlined />}
+          onClick={onOpenSettings}
+          size="small"
+          style={{ width: '100%', textAlign: 'left', color: '#666' }}
+        >
+          设置
+        </Button>
+      </div>
+
+      <Modal
+        title={newFolderParentId ? "新建子文件夹" : "新建文件夹"}
+        open={newFolderModalOpen}
+        onOk={handleCreateFolder}
+        onCancel={() => {
+          setNewFolderModalOpen(false);
+          setNewFolderName('');
+          setNewFolderParentId(null);
+        }}
+        okText="创建"
+        cancelText="取消"
+      >
+        <Input
+          placeholder="文件夹名称"
+          value={newFolderName}
+          onChange={e => setNewFolderName(e.target.value)}
+          onPressEnter={handleCreateFolder}
+          autoFocus
+        />
+      </Modal>
+
+      <Modal
+        title="重命名文件夹"
+        open={renameFolderModalOpen}
+        onOk={handleRenameFolder}
+        onCancel={() => {
+          setRenameFolderModalOpen(false);
+          setRenameFolderName('');
+          setRenameFolderId(null);
+        }}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Input
+          placeholder="文件夹名称"
+          value={renameFolderName}
+          onChange={e => setRenameFolderName(e.target.value)}
+          onPressEnter={handleRenameFolder}
+          autoFocus
+        />
+      </Modal>
+    </div>
+  );
+};
+
+export default Sidebar;
