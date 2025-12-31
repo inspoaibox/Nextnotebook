@@ -3,35 +3,8 @@
  * 使用 pdf-lib 库在主进程中处理 PDF 文件
  */
 
-import { PDFDocument, rgb, degrees, StandardFonts, PDFPage, PDFFont } from 'pdf-lib';
-import fontkit from '@pdf-lib/fontkit';
+import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import * as fs from 'fs';
-import * as path from 'path';
-
-// ============ 字体路径配置 ============
-
-// Windows 系统字体路径（支持中文的字体）
-const CHINESE_FONT_PATHS = [
-  'C:/Windows/Fonts/msyh.ttc',      // 微软雅黑
-  'C:/Windows/Fonts/simhei.ttf',    // 黑体
-  'C:/Windows/Fonts/simsun.ttc',    // 宋体
-  'C:/Windows/Fonts/simkai.ttf',    // 楷体
-  '/System/Library/Fonts/PingFang.ttc',           // macOS 苹方
-  '/System/Library/Fonts/STHeiti Light.ttc',      // macOS 华文黑体
-  '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf', // Linux
-];
-
-/**
- * 查找可用的中文字体
- */
-function findChineseFont(): string | null {
-  for (const fontPath of CHINESE_FONT_PATHS) {
-    if (fs.existsSync(fontPath)) {
-      return fontPath;
-    }
-  }
-  return null;
-}
 
 /**
  * 检测文本是否包含非 ASCII 字符（如中文）
@@ -286,30 +259,37 @@ export class PDFService {
 
   /**
    * 添加水印
+   * 优先使用 Ghostscript（支持中文），不可用时回退到 pdf-lib（仅支持英文）
    */
   async addWatermark(file: Buffer, options: WatermarkOptions): Promise<Buffer> {
-    const pdfDoc = await PDFDocument.load(file);
-    const pages = pdfDoc.getPages();
-    
-    // 根据水印文本内容选择字体
-    let font: PDFFont;
-    if (options.type === 'text' && options.text && containsNonAscii(options.text)) {
-      // 包含非 ASCII 字符（如中文），使用系统中文字体
-      const chineseFontPath = findChineseFont();
-      if (!chineseFontPath) {
-        throw new Error('未找到支持中文的系统字体，请确保系统已安装中文字体（如微软雅黑、黑体等）');
+    // 优先使用 Ghostscript（更完整的支持）
+    if (options.type === 'text' && options.text) {
+      const { ghostscriptService } = require('./GhostscriptService');
+      const gsStatus = ghostscriptService.checkAvailability();
+      
+      if (gsStatus.available) {
+        const gsOptions = {
+          text: options.text,
+          fontSize: options.fontSize,
+          color: options.color,
+          opacity: options.opacity,
+          rotation: options.rotation,
+          position: options.position === 'tile' ? 'tile' as const : 'center' as const,
+          pages: options.pages,
+        };
+        return await ghostscriptService.addWatermark(file, gsOptions);
       }
       
-      // 注册 fontkit 以支持自定义字体
-      pdfDoc.registerFontkit(fontkit);
-      
-      // 读取并嵌入中文字体
-      const fontBytes = fs.readFileSync(chineseFontPath);
-      font = await pdfDoc.embedFont(fontBytes);
-    } else {
-      // 纯 ASCII 文本，使用标准字体
-      font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      // Ghostscript 不可用且包含中文，报错
+      if (containsNonAscii(options.text)) {
+        throw new Error('Ghostscript 不可用，无法添加中文水印。请确保 Ghostscript 已正确安装。');
+      }
     }
+
+    // 回退方案：使用 pdf-lib（仅支持英文文本和图片水印）
+    const pdfDoc = await PDFDocument.load(file);
+    const pages = pdfDoc.getPages();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     
     // 确定要添加水印的页面
     const targetPages = options.pages && options.pages.length > 0

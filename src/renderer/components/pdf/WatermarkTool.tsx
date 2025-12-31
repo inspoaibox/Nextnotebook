@@ -85,21 +85,27 @@ const WatermarkTool: React.FC = () => {
         return false;
       }
 
+      // 先清除旧数据
+      setResultData(null);
+      
+      // 设置新文件
       setPdfFile({
         name: file.name,
         data: bufferCopy,
         size: file.size,
       });
-      setResultData(null);
-      setPreviewKey(prev => prev + 1);
+      
+      // 强制更新预览
+      setPreviewKey(Date.now());
       
       message.success(`已加载: ${file.name}`);
-      return true;
     } catch (error) {
       console.error('Failed to load PDF:', error);
       message.error('PDF 加载失败');
-      return false;
     }
+    
+    // 始终返回 false 阻止默认上传
+    return false;
   }, []);
 
   // 水印图片上传处理

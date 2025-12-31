@@ -39,6 +39,17 @@ export interface ConvertResult {
   convertedSize: number;
 }
 
+// 水印选项
+export interface GSWatermarkOptions {
+  text: string;
+  fontSize?: number;
+  color?: string;  // hex color like '#FF0000'
+  opacity?: number; // 0-1
+  rotation?: number; // degrees
+  position: 'center' | 'tile';
+  pages?: number[];
+}
+
 // ============ GhostscriptService 类 ============
 
 export class GhostscriptService {
@@ -323,8 +334,28 @@ export class GhostscriptService {
         '-dQUIET',
         `-sDEVICE=${device}`,
         `-r${options.dpi}`,
+        // 字体渲染优化
+        '-dTextAlphaBits=4',      // 文字抗锯齿
+        '-dGraphicsAlphaBits=4',  // 图形抗锯齿
+        // 使用 PDF 中嵌入的字体，不替换
+        '-dNOSUBSTDEVICECOLORS',
+        '-dUseCIEColor',
         `-sOutputFile=${outputPattern}`,
       ];
+
+      // 添加系统字体路径（Windows）
+      if (process.platform === 'win32') {
+        const fontPath = 'C:/Windows/Fonts';
+        if (fs.existsSync(fontPath)) {
+          args.push(`-sFONTPATH=${fontPath}`);
+        }
+      } else if (process.platform === 'darwin') {
+        // macOS 字体路径
+        args.push('-sFONTPATH=/System/Library/Fonts:/Library/Fonts:~/Library/Fonts');
+      } else {
+        // Linux 字体路径
+        args.push('-sFONTPATH=/usr/share/fonts:/usr/local/share/fonts');
+      }
 
       // 如果指定了页面范围
       if (options.pages && options.pages.length > 0) {
@@ -336,7 +367,7 @@ export class GhostscriptService {
 
       // JPEG 质量设置
       if (options.format === 'jpg') {
-        args.push('-dJPEGQ=90');
+        args.push('-dJPEGQ=95');
       }
 
       args.push(inputPath);
@@ -704,6 +735,170 @@ export class GhostscriptService {
     } finally {
       this.cleanupTempFiles(tempFiles);
     }
+  }
+
+  /**
+   * 添加文字水印
+   * 使用 Ghostscript 的 pdfmark 功能添加水印
+   * 注意：由于 PostScript 对中文支持复杂，这里使用简化方案
+   */
+  async addWatermark(inputBuffer: Buffer, options: GSWatermarkOptions): Promise<Buffer> {
+    if (!this.isAvailable) {
+      throw new Error('Ghostscript is not available');
+    }
+
+    const tempFiles: string[] = [];
+
+    try {
+      const inputPath = this.generateTempPath('input', 'pdf');
+      const outputPath = this.generateTempPath('output_watermark', 'pdf');
+      const psPath = this.generateTempPath('watermark', 'ps');
+      
+      fs.writeFileSync(inputPath, inputBuffer);
+      tempFiles.push(inputPath);
+      tempFiles.push(outputPath);
+      tempFiles.push(psPath);
+
+      // 解析颜色
+      const color = options.color || '#888888';
+      const r = parseInt(color.slice(1, 3), 16) / 255;
+      const g = parseInt(color.slice(3, 5), 16) / 255;
+      const b = parseInt(color.slice(5, 7), 16) / 255;
+      
+      const fontSize = options.fontSize || 48;
+      const opacity = options.opacity || 0.3;
+      const rotation = options.rotation || -45;
+
+      // 生成 PostScript 水印脚本
+      // 使用 Helvetica 字体（对于英文）或简单的图形方式
+      let psContent: string;
+      
+      if (options.position === 'tile') {
+        // 平铺水印
+        psContent = `
+<<
+  /EndPage {
+    2 eq { pop false }
+    {
+      gsave
+      ${r} ${g} ${b} setrgbcolor
+      ${opacity} .setfillconstantalpha
+      /Helvetica findfont ${fontSize} scalefont setfont
+      
+      % 获取页面尺寸
+      clippath pathbbox
+      /ury exch def /urx exch def /lly exch def /llx exch def
+      /pagewidth urx llx sub def
+      /pageheight ury lly sub def
+      
+      % 平铺水印
+      0 150 pageheight {
+        /y exch def
+        0 200 pagewidth {
+          /x exch def
+          gsave
+          x y translate
+          ${rotation} rotate
+          0 0 moveto
+          (${this.escapePostScript(options.text)}) show
+          grestore
+        } for
+      } for
+      
+      grestore
+      true
+    } ifelse
+  }
+>> setpagedevice
+`;
+      } else {
+        // 居中水印
+        psContent = `
+<<
+  /EndPage {
+    2 eq { pop false }
+    {
+      gsave
+      ${r} ${g} ${b} setrgbcolor
+      ${opacity} .setfillconstantalpha
+      /Helvetica findfont ${fontSize} scalefont setfont
+      
+      % 获取页面尺寸
+      clippath pathbbox
+      /ury exch def /urx exch def /lly exch def /llx exch def
+      /pagewidth urx llx sub def
+      /pageheight ury lly sub def
+      
+      % 计算文字宽度
+      (${this.escapePostScript(options.text)}) stringwidth pop /textwidth exch def
+      
+      % 居中显示
+      gsave
+      pagewidth 2 div pageheight 2 div translate
+      ${rotation} rotate
+      textwidth -2 div ${fontSize} -3 div moveto
+      (${this.escapePostScript(options.text)}) show
+      grestore
+      
+      grestore
+      true
+    } ifelse
+  }
+>> setpagedevice
+`;
+      }
+
+      fs.writeFileSync(psPath, psContent, 'utf8');
+
+      const args = [
+        '-dNOPAUSE',
+        '-dBATCH',
+        '-dSAFER',
+        '-sDEVICE=pdfwrite',
+        '-dCompatibilityLevel=1.4',
+        '-dAutoRotatePages=/None',
+        '-dEmbedAllFonts=true',
+        `-sOutputFile=${outputPath}`,
+        psPath,
+        inputPath,
+      ];
+
+      await this.execute(args);
+
+      return fs.readFileSync(outputPath);
+    } finally {
+      this.cleanupTempFiles(tempFiles);
+    }
+  }
+
+  /**
+   * 查找系统中文字体
+   */
+  private findChineseFont(): string | null {
+    const fontPaths = [
+      'C:/Windows/Fonts/msyh.ttc',      // 微软雅黑
+      'C:/Windows/Fonts/simhei.ttf',    // 黑体
+      'C:/Windows/Fonts/simsun.ttc',    // 宋体
+      '/System/Library/Fonts/PingFang.ttc',
+      '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
+    ];
+    
+    for (const fontPath of fontPaths) {
+      if (fs.existsSync(fontPath)) {
+        return fontPath;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 转义 PostScript 特殊字符
+   */
+  private escapePostScript(text: string): string {
+    return text
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)');
   }
 
   /**

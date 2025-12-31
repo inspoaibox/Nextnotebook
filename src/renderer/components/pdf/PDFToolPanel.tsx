@@ -203,8 +203,13 @@ const PDFToolPanel: React.FC<PDFToolPanelProps> = ({
 
   // 渲染工具内容
   const renderToolContent = () => {
-    // 某些工具不需要先上传 PDF（如图片转PDF、批量重命名、对比）
-    const noUploadRequired = ['image-to-pdf', 'rename', 'compare'];
+    // 这些工具有自己的文件上传逻辑，不需要 PDFToolPanel 的统一上传
+    const noUploadRequired = [
+      'image-to-pdf', 'rename', 'compare',
+      'merge-split', 'to-image', 'compress', 'convert',
+      'watermark', 'rotate', 'reorder', 'delete-pages',
+      'extract-pages', 'form-fill', 'security', 'metadata'
+    ];
     
     if (!pdfData && !noUploadRequired.includes(selectedTool)) {
       return (
@@ -276,15 +281,6 @@ const PDFToolPanel: React.FC<PDFToolPanelProps> = ({
     return (
       <div style={{ height: '100%' }}>
         <Spin spinning={processing}>
-          {pdfData && (
-            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-              <Space>
-                <Upload accept=".pdf" showUploadList={false} beforeUpload={handleFileUpload}>
-                  <Button icon={<UploadOutlined />}>更换文件</Button>
-                </Upload>
-              </Space>
-            </div>
-          )}
           {renderToolContent()}
         </Spin>
       </div>

@@ -177,39 +177,47 @@ const PDFThumbnails: React.FC<PDFThumbnailsProps> = ({
 
   // 懒加载：使用 IntersectionObserver 监测可见性
   useEffect(() => {
-    if (!containerRef.current || thumbnails.length === 0) return;
+    if (!containerRef.current || thumbnails.length === 0 || !pdfDocRef.current) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach(async (entry) => {
-          if (entry.isIntersecting) {
-            const pageNum = parseInt(entry.target.getAttribute('data-page') || '0');
-            if (pageNum > 0) {
-              const thumbnail = thumbnails.find(t => t.page === pageNum);
-              if (thumbnail && !thumbnail.imageUrl && !thumbnail.loading) {
-                // 标记为加载中
-                setThumbnails(prev => prev.map(t => 
-                  t.page === pageNum ? { ...t, loading: true } : t
-                ));
-                
-                const imageUrl = await renderThumbnail(pageNum);
-                
-                setThumbnails(prev => prev.map(t => 
-                  t.page === pageNum ? { ...t, imageUrl, loading: false } : t
-                ));
+    // 延迟一帧确保 DOM 已更新
+    const timeoutId = setTimeout(() => {
+      if (!containerRef.current) return;
+      
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach(async (entry) => {
+            if (entry.isIntersecting) {
+              const pageNum = parseInt(entry.target.getAttribute('data-page') || '0');
+              if (pageNum > 0) {
+                const thumbnail = thumbnails.find(t => t.page === pageNum);
+                if (thumbnail && !thumbnail.imageUrl && !thumbnail.loading) {
+                  // 标记为加载中
+                  setThumbnails(prev => prev.map(t => 
+                    t.page === pageNum ? { ...t, loading: true } : t
+                  ));
+                  
+                  const imageUrl = await renderThumbnail(pageNum);
+                  
+                  setThumbnails(prev => prev.map(t => 
+                    t.page === pageNum ? { ...t, imageUrl, loading: false } : t
+                  ));
+                }
               }
             }
-          }
-        });
-      },
-      { root: containerRef.current, rootMargin: '100px', threshold: 0.1 }
-    );
+          });
+        },
+        { root: containerRef.current, rootMargin: '100px', threshold: 0.1 }
+      );
 
-    // 观察所有缩略图容器
-    const thumbnailElements = containerRef.current.querySelectorAll('[data-page]');
-    thumbnailElements.forEach(el => observer.observe(el));
+      // 观察所有缩略图容器
+      const thumbnailElements = containerRef.current?.querySelectorAll('[data-page]');
+      thumbnailElements?.forEach(el => observer.observe(el));
 
-    return () => observer.disconnect();
+      // 保存 observer 引用以便清理
+      return () => observer.disconnect();
+    }, 50);
+
+    return () => clearTimeout(timeoutId);
   }, [thumbnails, renderThumbnail]);
 
   // 页面选择处理

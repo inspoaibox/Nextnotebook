@@ -65,17 +65,29 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const [rendering, setRendering] = useState(false);
 
+  // 用于触发渲染的状态
+  const [pdfLoaded, setPdfLoaded] = useState(0);
+
   // 加载 PDF 文档
   useEffect(() => {
     if (!pdfData) {
       pdfDocRef.current = null;
       setTotalPages(0);
+      setPdfLoaded(0);
       return;
     }
 
     const loadPDF = async () => {
       setLoading(true);
+      setRendering(false); // 重置渲染状态
+      
       try {
+        // 先清理旧的 PDF 文档
+        if (pdfDocRef.current) {
+          pdfDocRef.current.destroy();
+          pdfDocRef.current = null;
+        }
+
         let loadingTask: pdfjsLib.PDFDocumentLoadingTask;
         
         if (typeof pdfData === 'string') {
@@ -118,15 +130,20 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
         setTotalPages(pdf.numPages);
         onTotalPagesChange?.(pdf.numPages);
         
-        // 重置到第一页
-        if (currentPage > pdf.numPages) {
-          setCurrentPage(1);
-          onPageChange?.(1);
+        // 重置到第一页或保持当前页
+        const newPage = currentPage > pdf.numPages ? 1 : currentPage;
+        if (newPage !== currentPage) {
+          setCurrentPage(newPage);
+          onPageChange?.(newPage);
         }
+        
+        // 加载完成
+        setLoading(false);
+        // 触发渲染
+        setPdfLoaded(Date.now());
       } catch (error) {
         console.error('Failed to load PDF:', error);
         message.error('PDF 加载失败');
-      } finally {
         setLoading(false);
       }
     };
@@ -134,21 +151,32 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
     loadPDF();
 
     return () => {
-      pdfDocRef.current?.destroy();
-      pdfDocRef.current = null;
+      if (pdfDocRef.current) {
+        pdfDocRef.current.destroy();
+        pdfDocRef.current = null;
+      }
     };
   }, [pdfData]);
 
   // 渲染当前页面
   const renderPage = useCallback(async () => {
-    if (!pdfDocRef.current || !canvasRef.current || rendering) return;
+    if (!pdfDocRef.current || !canvasRef.current) return;
+    
+    // 使用 ref 来跟踪当前渲染任务，避免竞态条件
+    if (rendering) {
+      // 如果正在渲染，等待一下再重试
+      return;
+    }
 
     setRendering(true);
     try {
       const page = await pdfDocRef.current.getPage(currentPage);
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
-      if (!context) return;
+      if (!context) {
+        setRendering(false);
+        return;
+      }
 
       // 计算缩放比例
       let scale = zoom / 100;
@@ -185,9 +213,10 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
       canvas.style.width = `${Math.floor(viewport.width)}px`;
       canvas.style.height = `${Math.floor(viewport.height)}px`;
 
-      context.scale(outputScale, outputScale);
-
-      // 渲染页面
+      // 清除之前的内容
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.scale(outputScale, outputScale);      // 渲染页面
       await page.render({
         canvasContext: context,
         viewport,
@@ -197,12 +226,18 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
     } finally {
       setRendering(false);
     }
-  }, [currentPage, zoom, zoomMode, onZoomChange]);
+  }, [currentPage, zoom, zoomMode, onZoomChange, rendering]);
 
   // 当页面或缩放变化时重新渲染
   useEffect(() => {
-    renderPage();
-  }, [renderPage, totalPages]);
+    if (pdfLoaded > 0 && pdfDocRef.current && !loading) {
+      // 使用 setTimeout 确保状态已更新
+      const timer = setTimeout(() => {
+        renderPage();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [currentPage, zoom, zoomMode, pdfLoaded, loading, renderPage]);
 
   // 同步外部页码
   useEffect(() => {
