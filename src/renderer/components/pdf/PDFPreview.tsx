@@ -70,6 +70,12 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
 
   // 加载 PDF 文档
   useEffect(() => {
+    console.log('PDFPreview: pdfData changed', { 
+      hasData: !!pdfData, 
+      dataType: pdfData ? (typeof pdfData === 'string' ? 'string' : 'ArrayBuffer') : 'null',
+      dataSize: pdfData ? (typeof pdfData === 'string' ? pdfData.length : pdfData.byteLength) : 0
+    });
+    
     if (!pdfData) {
       pdfDocRef.current = null;
       setTotalPages(0);
@@ -117,6 +123,7 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
           // ArrayBuffer - 复制以避免 detached 问题
           // pdfjs 会 transfer ArrayBuffer，导致原始 buffer 被 detached
           const bufferCopy = pdfData.slice(0);
+          console.log('PDFPreview: Loading ArrayBuffer', { size: bufferCopy.byteLength });
           loadingTask = pdfjsLib.getDocument({ 
             data: bufferCopy,
             standardFontDataUrl: STANDARD_FONT_DATA_URL,
@@ -126,6 +133,7 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
         }
 
         const pdf = await loadingTask.promise;
+        console.log('PDFPreview: PDF loaded', { numPages: pdf.numPages });
         pdfDocRef.current = pdf;
         setTotalPages(pdf.numPages);
         onTotalPagesChange?.(pdf.numPages);
@@ -140,9 +148,11 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
         // 加载完成
         setLoading(false);
         // 触发渲染
-        setPdfLoaded(Date.now());
+        const loadedTime = Date.now();
+        console.log('PDFPreview: Setting pdfLoaded to', loadedTime);
+        setPdfLoaded(loadedTime);
       } catch (error) {
-        console.error('Failed to load PDF:', error);
+        console.error('PDFPreview: Failed to load PDF:', error);
         message.error('PDF 加载失败');
         setLoading(false);
       }
@@ -160,11 +170,15 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
 
   // 渲染当前页面
   const renderPage = useCallback(async () => {
-    if (!pdfDocRef.current || !canvasRef.current) return;
+    console.log('PDFPreview: renderPage called', { 
+      hasPdfDoc: !!pdfDocRef.current, 
+      hasCanvas: !!canvasRef.current,
+      currentPage,
+      rendering 
+    });
     
-    // 使用 ref 来跟踪当前渲染任务，避免竞态条件
-    if (rendering) {
-      // 如果正在渲染，等待一下再重试
+    if (!pdfDocRef.current || !canvasRef.current) {
+      console.log('PDFPreview: Missing pdfDoc or canvas');
       return;
     }
 
@@ -174,6 +188,7 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       if (!context) {
+        console.log('PDFPreview: Failed to get canvas context');
         setRendering(false);
         return;
       }
@@ -213,31 +228,47 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
       canvas.style.width = `${Math.floor(viewport.width)}px`;
       canvas.style.height = `${Math.floor(viewport.height)}px`;
 
+      console.log('PDFPreview: Rendering page', { 
+        page: currentPage, 
+        scale, 
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        canvasStyleWidth: canvas.style.width,
+        canvasStyleHeight: canvas.style.height,
+        containerWidth: containerRef.current?.clientWidth,
+        containerHeight: containerRef.current?.clientHeight,
+      });
+
       // 清除之前的内容
       context.setTransform(1, 0, 0, 1, 0, 0);
       context.clearRect(0, 0, canvas.width, canvas.height);
-      context.scale(outputScale, outputScale);      // 渲染页面
+      context.scale(outputScale, outputScale);
+      
+      // 渲染页面
       await page.render({
         canvasContext: context,
         viewport,
       } as any).promise;
+      
+      console.log('PDFPreview: Page rendered successfully');
     } catch (error) {
-      console.error('Failed to render page:', error);
+      console.error('PDFPreview: Failed to render page:', error);
     } finally {
       setRendering(false);
     }
-  }, [currentPage, zoom, zoomMode, onZoomChange, rendering]);
+  }, [currentPage, zoom, zoomMode, onZoomChange]);
 
   // 当页面或缩放变化时重新渲染
   useEffect(() => {
+    console.log('PDFPreview: Render effect triggered', { pdfLoaded, loading, hasPdfDoc: !!pdfDocRef.current });
     if (pdfLoaded > 0 && pdfDocRef.current && !loading) {
       // 使用 setTimeout 确保状态已更新
       const timer = setTimeout(() => {
         renderPage();
-      }, 50);
+      }, 100);
       return () => clearTimeout(timer);
     }
-  }, [currentPage, zoom, zoomMode, pdfLoaded, loading, renderPage]);
+  }, [currentPage, zoom, zoomMode, pdfLoaded, loading]);
 
   // 同步外部页码
   useEffect(() => {
@@ -379,7 +410,7 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
   }, [currentPage, totalPages, zoom]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', ...style }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, ...style }}>
       {/* 控制栏 */}
       {showControls && (
         <div style={{ 
@@ -468,6 +499,7 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
         ref={containerRef}
         style={{
           flex: 1,
+          minHeight: 0,
           overflow: 'auto',
           display: 'flex',
           justifyContent: 'center',

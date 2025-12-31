@@ -366,11 +366,12 @@ const WatermarkTool: React.FC = () => {
         size="small" 
         title={resultData ? "预览效果（已添加水印）" : "原始 PDF"}
         style={{ height: 'calc(100vh - 320px)' }}
-        styles={{ body: { height: 'calc(100% - 40px)', padding: 0 } }}
+        styles={{ body: { height: 'calc(100% - 40px)', padding: 0, display: 'flex', flexDirection: 'column' } }}
       >
         <PDFPreview
           key={previewKey}
           pdfData={resultData || pdfFile.data}
+          style={{ flex: 1, minHeight: 0 }}
         />
       </Card>
     </div>

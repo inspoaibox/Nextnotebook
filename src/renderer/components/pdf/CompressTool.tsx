@@ -1,7 +1,7 @@
 /**
  * CompressTool - PDF 压缩工具组件
  * 采用上下布局：上方为参数设置区，下方为压缩结果展示
- * 优先使用 Ghostscript 进行真正的图片压缩，否则使用 pdf-lib 进行基础优化
+ * 使用 Ghostscript 进行 PDF 压缩（必需）
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -118,11 +118,11 @@ const CompressTool: React.FC = () => {
         data: compressResult.data,
         originalSize: compressResult.originalSize,
         compressedSize: compressResult.compressedSize,
-        ratio: Math.max(0, compressResult.ratio),
+        ratio: compressResult.ratio, // 保留原始值，可能为负
       });
 
       if (compressResult.compressedSize >= compressResult.originalSize) {
-        message.info('文件已经是最优状态，无法进一步压缩');
+        message.warning('压缩后文件反而变大，建议保留原文件');
       } else {
         message.success(`压缩完成，节省 ${compressResult.ratio.toFixed(1)}%`);
       }
@@ -151,9 +151,9 @@ const CompressTool: React.FC = () => {
             description={
               gsStatus?.available 
                 ? `使用 Ghostscript 进行高质量压缩 (版本: ${gsStatus.version || '未知'})`
-                : '将使用基础优化模式，压缩效果有限。安装 Ghostscript 可获得更好的压缩效果。'
+                : 'PDF 压缩功能需要 Ghostscript 支持，请先安装 Ghostscript。'
             }
-            type={gsStatus?.available ? 'success' : 'warning'}
+            type={gsStatus?.available ? 'success' : 'error'}
             showIcon
             icon={gsStatus?.available ? <CheckCircleOutlined /> : <WarningOutlined />}
             style={{ marginBottom: 16 }}
@@ -164,16 +164,19 @@ const CompressTool: React.FC = () => {
           accept=".pdf"
           showUploadList={false}
           beforeUpload={handleFileUpload}
-          style={{ padding: 40 }}
+          disabled={!gsStatus?.available}
+          style={{ padding: 40, opacity: gsStatus?.available ? 1 : 0.5 }}
         >
           <p className="ant-upload-drag-icon">
-            <InboxOutlined style={{ fontSize: 48, color: '#1890ff' }} />
+            <InboxOutlined style={{ fontSize: 48, color: gsStatus?.available ? '#1890ff' : '#999' }} />
           </p>
-          <p className="ant-upload-text">点击或拖拽 PDF 文件到此处</p>
+          <p className="ant-upload-text">
+            {gsStatus?.available ? '点击或拖拽 PDF 文件到此处' : 'Ghostscript 未安装，无法使用压缩功能'}
+          </p>
           <p className="ant-upload-hint">
             {gsStatus?.available 
               ? '使用 Ghostscript 进行高质量图片压缩'
-              : '优化 PDF 文件结构以减小文件大小'
+              : '请先安装 Ghostscript 后再使用此功能'
             }
           </p>
         </Dragger>
@@ -181,14 +184,10 @@ const CompressTool: React.FC = () => {
     );
   }
 
-  const levelDescriptions: Record<CompressLevel, { label: string; desc: string }> = gsStatus?.available ? {
+  const levelDescriptions: Record<CompressLevel, { label: string; desc: string }> = {
     low: { label: '低压缩', desc: '300 DPI - 保持高质量' },
     medium: { label: '中压缩', desc: '150 DPI - 平衡质量与大小' },
     high: { label: '高压缩', desc: '72 DPI - 最小文件' },
-  } : {
-    low: { label: '低', desc: '保留元数据' },
-    medium: { label: '中', desc: '移除部分元数据' },
-    high: { label: '高', desc: '移除所有元数据' },
   };
 
 
@@ -224,11 +223,7 @@ const CompressTool: React.FC = () => {
           </Col>
           <Col span={6} style={{ textAlign: 'right' }}>
             <Space>
-              {gsStatus?.available ? (
-                <Tag color="green" icon={<CheckCircleOutlined />}>Ghostscript</Tag>
-              ) : (
-                <Tag color="orange" icon={<WarningOutlined />}>基础模式</Tag>
-              )}
+              <Tag color="green" icon={<CheckCircleOutlined />}>Ghostscript</Tag>
               <Button
                 type="primary"
                 icon={<CompressOutlined />}
@@ -244,15 +239,6 @@ const CompressTool: React.FC = () => {
 
       {/* 下方：压缩结果展示 */}
       <Card size="small" title="压缩结果">
-        {!gsStatus?.available && (
-          <Alert
-            message="基础优化模式"
-            description="当前使用结构优化方式。安装 Ghostscript 可获得真正的图片压缩，压缩率可达 50-90%。"
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
         
         {!result ? (
           <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>
@@ -277,15 +263,17 @@ const CompressTool: React.FC = () => {
               <Col span={6}>
                 <Statistic 
                   title="节省比例" 
-                  value={result.ratio.toFixed(1)} 
+                  value={Math.abs(result.ratio).toFixed(1)} 
                   suffix="%" 
-                  valueStyle={{ color: result.ratio > 0 ? '#3f8600' : '#999' }}
+                  prefix={result.ratio < 0 ? '+' : ''}
+                  valueStyle={{ color: result.ratio > 0 ? '#3f8600' : '#cf1322' }}
                 />
               </Col>
               <Col span={6}>
                 <Statistic 
-                  title="节省空间" 
-                  value={result.ratio > 0 ? formatFileSize(result.originalSize - result.compressedSize) : '0 B'} 
+                  title={result.ratio >= 0 ? "节省空间" : "增加空间"}
+                  value={formatFileSize(Math.abs(result.originalSize - result.compressedSize))} 
+                  valueStyle={{ color: result.ratio > 0 ? '#3f8600' : '#cf1322' }}
                 />
               </Col>
             </Row>
@@ -321,14 +309,13 @@ const CompressTool: React.FC = () => {
               icon={<DownloadOutlined />} 
               onClick={handleDownload}
               size="large"
-              disabled={result.compressedSize >= result.originalSize}
             >
-              下载压缩后的 PDF
+              下载{result.ratio < 0 ? '处理后' : '压缩后'}的 PDF
             </Button>
             
             {result.compressedSize >= result.originalSize && (
-              <Text type="secondary" style={{ marginLeft: 12 }}>
-                文件已是最优状态
+              <Text type="warning" style={{ marginLeft: 12 }}>
+                ⚠️ 压缩后文件变大，建议保留原文件
               </Text>
             )}
           </div>

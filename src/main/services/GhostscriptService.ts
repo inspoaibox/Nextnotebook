@@ -78,13 +78,19 @@ export class GhostscriptService {
    * 获取应用资源路径
    */
   private getResourcesPath(): string {
-    // 开发环境: __dirname 是 dist/main/services，需要回到项目根目录
-    if (process.env.NODE_ENV === 'development' || !process.resourcesPath) {
-      // 从 dist/main/services 回到项目根目录
-      return path.join(__dirname, '..', '..', '..', 'gs-portable');
-    }
     // 生产环境: 从 resources 目录读取
-    return path.join(process.resourcesPath, 'gs');
+    if (process.resourcesPath) {
+      const prodPath = path.join(process.resourcesPath, 'gs');
+      console.log('GhostscriptService: Production path =', prodPath);
+      console.log('GhostscriptService: resourcesPath =', process.resourcesPath);
+      return prodPath;
+    }
+    
+    // 开发环境: __dirname 是 dist/main（webpack 输出目录）
+    const devPath = path.join(__dirname, '..', '..', 'gs-portable');
+    console.log('GhostscriptService: Dev path =', devPath);
+    console.log('GhostscriptService: __dirname =', __dirname);
+    return devPath;
   }
 
 
@@ -93,14 +99,20 @@ export class GhostscriptService {
    */
   private detectGhostscript(): void {
     const resourcesPath = this.getResourcesPath();
+    console.log('GhostscriptService: Detecting Ghostscript...');
+    console.log('GhostscriptService: Resources path =', resourcesPath);
     
     // 可能的 Ghostscript 路径（按优先级排序）
     const possiblePaths: Array<{ exe: string; lib?: string }> = [];
     
     if (process.platform === 'win32') {
       // 1. 内置便携版（最高优先级）
+      const builtinExe = path.join(resourcesPath, 'bin', 'gswin64c.exe');
+      console.log('GhostscriptService: Checking builtin path =', builtinExe);
+      console.log('GhostscriptService: Builtin exists =', fs.existsSync(builtinExe));
+      
       possiblePaths.push({
-        exe: path.join(resourcesPath, 'bin', 'gswin64c.exe'),
+        exe: builtinExe,
         lib: path.join(resourcesPath, 'lib'),
       });
       
