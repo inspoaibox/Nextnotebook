@@ -67,6 +67,8 @@ export interface WatermarkOptions {
   opacity: number;
   rotation: number;
   position: 'center' | 'tile' | { x: number; y: number };
+  spacingX?: number;  // 横向间距
+  spacingY?: number;  // 纵向间距
   pages?: number[];
 }
 
@@ -255,6 +257,8 @@ export const pdfApi = {
       opacity: options.opacity,
       rotation: options.rotation,
       position: options.position,
+      spacingX: options.spacingX,
+      spacingY: options.spacingY,
       pages: options.pages,
     });
     return base64ToArrayBuffer(result);

@@ -3,15 +3,7 @@
  * 使用 pdf-lib 库在主进程中处理 PDF 文件
  */
 
-import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
-import * as fs from 'fs';
-
-/**
- * 检测文本是否包含非 ASCII 字符（如中文）
- */
-function containsNonAscii(text: string): boolean {
-  return /[^\x00-\x7F]/.test(text);
-}
+import { PDFDocument, degrees } from 'pdf-lib';
 
 // ============ 类型定义 ============
 
@@ -52,6 +44,8 @@ export interface WatermarkOptions {
   opacity: number;
   rotation: number;
   position: 'center' | 'tile' | { x: number; y: number };
+  spacingX?: number;  // 横向间距
+  spacingY?: number;  // 纵向间距
   pages?: number[];
 }
 
@@ -259,37 +253,37 @@ export class PDFService {
 
   /**
    * 添加水印
-   * 优先使用 Ghostscript（支持中文），不可用时回退到 pdf-lib（仅支持英文）
+   * 文字水印使用 GhostscriptService（支持中文），图片水印使用 pdf-lib
    */
   async addWatermark(file: Buffer, options: WatermarkOptions): Promise<Buffer> {
-    // 优先使用 Ghostscript（更完整的支持）
+    // 文字水印：使用 GhostscriptService（支持中文）
     if (options.type === 'text' && options.text) {
       const { ghostscriptService } = require('./GhostscriptService');
-      const gsStatus = ghostscriptService.checkAvailability();
       
-      if (gsStatus.available) {
-        const gsOptions = {
-          text: options.text,
-          fontSize: options.fontSize,
-          color: options.color,
-          opacity: options.opacity,
-          rotation: options.rotation,
-          position: options.position === 'tile' ? 'tile' as const : 'center' as const,
-          pages: options.pages,
-        };
-        return await ghostscriptService.addWatermark(file, gsOptions);
+      // 转换位置参数
+      let position: 'center' | 'tile' = 'center';
+      if (options.position === 'tile') {
+        position = 'tile';
+      } else if (options.position === 'center') {
+        position = 'center';
       }
       
-      // Ghostscript 不可用且包含中文，报错
-      if (containsNonAscii(options.text)) {
-        throw new Error('Ghostscript 不可用，无法添加中文水印。请确保 Ghostscript 已正确安装。');
-      }
+      return ghostscriptService.addWatermark(file, {
+        text: options.text,
+        fontSize: options.fontSize,
+        color: options.color,
+        opacity: options.opacity,
+        rotation: options.rotation,
+        position,
+        spacingX: options.spacingX,
+        spacingY: options.spacingY,
+        pages: options.pages,
+      });
     }
 
-    // 回退方案：使用 pdf-lib（仅支持英文文本和图片水印）
+    // 图片水印：使用 pdf-lib
     const pdfDoc = await PDFDocument.load(file);
     const pages = pdfDoc.getPages();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     
     // 确定要添加水印的页面
     const targetPages = options.pages && options.pages.length > 0
@@ -300,58 +294,7 @@ export class PDFService {
       const page = pages[pageNum - 1];
       const { width, height } = page.getSize();
       
-      if (options.type === 'text' && options.text) {
-        const fontSize = options.fontSize || 48;
-        const color = parseColor(options.color || '#000000');
-        const opacity = options.opacity || 0.3;
-        const rotation = options.rotation || 0;
-        
-        if (options.position === 'tile') {
-          // 平铺水印
-          const textWidth = font.widthOfTextAtSize(options.text, fontSize);
-          const spacingX = textWidth + 100;
-          const spacingY = fontSize + 80;
-          
-          for (let y = 0; y < height + spacingY; y += spacingY) {
-            for (let x = 0; x < width + spacingX; x += spacingX) {
-              page.drawText(options.text, {
-                x,
-                y,
-                size: fontSize,
-                font,
-                color: rgb(color.r, color.g, color.b),
-                opacity,
-                rotate: degrees(rotation),
-              });
-            }
-          }
-        } else {
-          // 单个水印
-          let x: number, y: number;
-          
-          if (options.position === 'center') {
-            const textWidth = font.widthOfTextAtSize(options.text, fontSize);
-            x = (width - textWidth) / 2;
-            y = height / 2;
-          } else if (typeof options.position === 'object') {
-            x = options.position.x;
-            y = options.position.y;
-          } else {
-            x = width / 2;
-            y = height / 2;
-          }
-          
-          page.drawText(options.text, {
-            x,
-            y,
-            size: fontSize,
-            font,
-            color: rgb(color.r, color.g, color.b),
-            opacity,
-            rotate: degrees(rotation),
-          });
-        }
-      } else if (options.type === 'image' && options.imageData) {
+      if (options.type === 'image' && options.imageData) {
         // 图片水印
         let image;
         try {

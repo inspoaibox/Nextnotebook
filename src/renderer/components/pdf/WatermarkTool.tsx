@@ -39,6 +39,8 @@ interface WatermarkConfig {
   opacity: number;
   rotation: number;
   position: PositionType;
+  spacingX: number;  // 横向间距
+  spacingY: number;  // 纵向间距
   applyToAllPages: boolean;
   selectedPages: number[];
 }
@@ -61,6 +63,8 @@ const WatermarkTool: React.FC = () => {
     opacity: 0.3,
     rotation: -45,
     position: 'tile',
+    spacingX: 100,  // 默认横向间距
+    spacingY: 80,   // 默认纵向间距
     applyToAllPages: true,
     selectedPages: [],
   });
@@ -165,6 +169,8 @@ const WatermarkTool: React.FC = () => {
         opacity: config.opacity,
         rotation: config.rotation,
         position: config.position,
+        spacingX: config.spacingX,
+        spacingY: config.spacingY,
         pages: config.applyToAllPages ? undefined : config.selectedPages,
       });
 
@@ -359,6 +365,38 @@ const WatermarkTool: React.FC = () => {
             <Text style={{ marginLeft: 8 }}>{config.rotation}°</Text>
           </Col>
         </Row>
+
+        {/* 平铺间距设置（仅在平铺模式下显示） */}
+        {config.position === 'tile' && (
+          <Row gutter={16} align="middle" style={{ marginTop: 12 }}>
+            <Col span={6}>
+              <Text type="secondary">横向间距：</Text>
+              <InputNumber
+                value={config.spacingX}
+                onChange={(v) => updateConfig('spacingX', v || 100)}
+                min={0}
+                max={500}
+                step={10}
+                size="small"
+                style={{ width: 80 }}
+                addonAfter="px"
+              />
+            </Col>
+            <Col span={6}>
+              <Text type="secondary">纵向间距：</Text>
+              <InputNumber
+                value={config.spacingY}
+                onChange={(v) => updateConfig('spacingY', v || 80)}
+                min={0}
+                max={500}
+                step={10}
+                size="small"
+                style={{ width: 80 }}
+                addonAfter="px"
+              />
+            </Col>
+          </Row>
+        )}
       </Card>
 
       {/* 下方：PDF 预览区 */}

@@ -318,6 +318,26 @@ const Sidebar: React.FC<SidebarProps> = ({
     return ['all'];
   };
 
+  // 获取所有需要展开的目录 key（包括有子目录的目录和标签组）
+  const getDefaultOpenKeys = () => {
+    const openKeys: string[] = [];
+    
+    // 展开所有有子目录的目录
+    folders.forEach(folder => {
+      const hasChildren = folders.some(f => f.parentId === folder.id);
+      if (hasChildren) {
+        openKeys.push(`folder-${folder.id}`);
+      }
+    });
+    
+    // 展开标签组
+    if (tags.length > 0) {
+      openKeys.push('tags-group');
+    }
+    
+    return openKeys;
+  };
+
 
   return (
     <div className="sidebar-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -400,6 +420,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         <Menu
           mode="inline"
           selectedKeys={getSelectedKeys()}
+          defaultOpenKeys={getDefaultOpenKeys()}
           onClick={handleMenuClick}
           items={menuItems}
           className="sidebar-menu"

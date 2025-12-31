@@ -250,7 +250,14 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
         viewport,
       } as any).promise;
       
-      console.log('PDFPreview: Page rendered successfully');
+      // 验证渲染结果
+      const imageData = context.getImageData(0, 0, Math.min(100, canvas.width), Math.min(100, canvas.height));
+      const hasContent = imageData.data.some((v, i) => i % 4 !== 3 && v !== 255); // 检查是否有非白色像素
+      console.log('PDFPreview: Page rendered successfully', { 
+        hasContent,
+        canvasVisible: canvas.offsetWidth > 0 && canvas.offsetHeight > 0,
+        canvasInDOM: document.body.contains(canvas)
+      });
     } catch (error) {
       console.error('PDFPreview: Failed to render page:', error);
     } finally {

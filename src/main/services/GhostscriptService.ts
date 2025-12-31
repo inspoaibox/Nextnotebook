@@ -47,6 +47,8 @@ export interface GSWatermarkOptions {
   opacity?: number; // 0-1
   rotation?: number; // degrees
   position: 'center' | 'tile';
+  spacingX?: number;  // 横向间距
+  spacingY?: number;  // 纵向间距
   pages?: number[];
 }
 
@@ -751,166 +753,183 @@ export class GhostscriptService {
 
   /**
    * 添加文字水印
-   * 使用 Ghostscript 的 pdfmark 功能添加水印
-   * 注意：由于 PostScript 对中文支持复杂，这里使用简化方案
+   * 方案：使用 sharp 生成水印图片，然后用 pdf-lib 添加图片水印
+   * 这样可以完美支持中文
    */
   async addWatermark(inputBuffer: Buffer, options: GSWatermarkOptions): Promise<Buffer> {
-    if (!this.isAvailable) {
-      throw new Error('Ghostscript is not available');
-    }
-
-    const tempFiles: string[] = [];
-
     try {
-      const inputPath = this.generateTempPath('input', 'pdf');
-      const outputPath = this.generateTempPath('output_watermark', 'pdf');
-      const psPath = this.generateTempPath('watermark', 'ps');
+      const { PDFDocument } = require('pdf-lib');
+      const sharp = require('sharp');
       
-      fs.writeFileSync(inputPath, inputBuffer);
-      tempFiles.push(inputPath);
-      tempFiles.push(outputPath);
-      tempFiles.push(psPath);
-
+      // 加载原 PDF
+      const pdfDoc = await PDFDocument.load(inputBuffer);
+      const pages = pdfDoc.getPages();
+      
+      if (pages.length === 0) {
+        throw new Error('PDF has no pages');
+      }
+      
       // 解析颜色
       const color = options.color || '#888888';
-      const r = parseInt(color.slice(1, 3), 16) / 255;
-      const g = parseInt(color.slice(3, 5), 16) / 255;
-      const b = parseInt(color.slice(5, 7), 16) / 255;
-      
       const fontSize = options.fontSize || 48;
       const opacity = options.opacity || 0.3;
       const rotation = options.rotation || -45;
-
-      // 生成 PostScript 水印脚本
-      // 使用 Helvetica 字体（对于英文）或简单的图形方式
-      let psContent: string;
+      const text = options.text;
       
-      if (options.position === 'tile') {
-        // 平铺水印
-        psContent = `
-<<
-  /EndPage {
-    2 eq { pop false }
-    {
-      gsave
-      ${r} ${g} ${b} setrgbcolor
-      ${opacity} .setfillconstantalpha
-      /Helvetica findfont ${fontSize} scalefont setfont
+      // 获取第一页尺寸作为参考
+      const firstPage = pages[0];
+      const { width: pageWidth, height: pageHeight } = firstPage.getSize();
       
-      % 获取页面尺寸
-      clippath pathbbox
-      /ury exch def /urx exch def /lly exch def /llx exch def
-      /pagewidth urx llx sub def
-      /pageheight ury lly sub def
+      // 使用 sharp 生成水印图片
+      // 计算画布大小（需要足够大以容纳旋转后的文本）
+      const diagonal = Math.sqrt(pageWidth * pageWidth + pageHeight * pageHeight);
+      const canvasSize = Math.ceil(diagonal);
       
-      % 平铺水印
-      0 150 pageheight {
-        /y exch def
-        0 200 pagewidth {
-          /x exch def
-          gsave
-          x y translate
-          ${rotation} rotate
-          0 0 moveto
-          (${this.escapePostScript(options.text)}) show
-          grestore
-        } for
-      } for
+      // 创建 SVG 水印
+      const svgWatermark = this.createWatermarkSVG(
+        text,
+        canvasSize,
+        canvasSize,
+        fontSize,
+        color,
+        opacity,
+        rotation,
+        options.position,
+        options.spacingX,
+        options.spacingY
+      );
       
-      grestore
-      true
-    } ifelse
-  }
->> setpagedevice
-`;
-      } else {
-        // 居中水印
-        psContent = `
-<<
-  /EndPage {
-    2 eq { pop false }
-    {
-      gsave
-      ${r} ${g} ${b} setrgbcolor
-      ${opacity} .setfillconstantalpha
-      /Helvetica findfont ${fontSize} scalefont setfont
+      // 使用 sharp 将 SVG 转换为 PNG
+      const watermarkPng = await sharp(Buffer.from(svgWatermark))
+        .png()
+        .toBuffer();
       
-      % 获取页面尺寸
-      clippath pathbbox
-      /ury exch def /urx exch def /lly exch def /llx exch def
-      /pagewidth urx llx sub def
-      /pageheight ury lly sub def
+      // 将水印图片嵌入到每一页
+      const watermarkImage = await pdfDoc.embedPng(watermarkPng);
       
-      % 计算文字宽度
-      (${this.escapePostScript(options.text)}) stringwidth pop /textwidth exch def
-      
-      % 居中显示
-      gsave
-      pagewidth 2 div pageheight 2 div translate
-      ${rotation} rotate
-      textwidth -2 div ${fontSize} -3 div moveto
-      (${this.escapePostScript(options.text)}) show
-      grestore
-      
-      grestore
-      true
-    } ifelse
-  }
->> setpagedevice
-`;
+      for (const page of pages) {
+        const { width, height } = page.getSize();
+        
+        // 计算水印图片的位置和大小
+        // 将水印居中放置
+        const scale = Math.min(width / canvasSize, height / canvasSize);
+        const drawWidth = canvasSize * scale;
+        const drawHeight = canvasSize * scale;
+        const x = (width - drawWidth) / 2;
+        const y = (height - drawHeight) / 2;
+        
+        page.drawImage(watermarkImage, {
+          x,
+          y,
+          width: drawWidth,
+          height: drawHeight,
+          opacity: 1, // 透明度已经在 SVG 中设置
+        });
       }
-
-      fs.writeFileSync(psPath, psContent, 'utf8');
-
-      const args = [
-        '-dNOPAUSE',
-        '-dBATCH',
-        '-dSAFER',
-        '-sDEVICE=pdfwrite',
-        '-dCompatibilityLevel=1.4',
-        '-dAutoRotatePages=/None',
-        '-dEmbedAllFonts=true',
-        `-sOutputFile=${outputPath}`,
-        psPath,
-        inputPath,
-      ];
-
-      await this.execute(args);
-
-      return fs.readFileSync(outputPath);
-    } finally {
-      this.cleanupTempFiles(tempFiles);
+      
+      return Buffer.from(await pdfDoc.save());
+    } catch (error) {
+      console.error('GhostscriptService: addWatermark failed:', error);
+      throw error;
     }
   }
-
+  
   /**
-   * 查找系统中文字体
+   * 创建水印 SVG
    */
-  private findChineseFont(): string | null {
-    const fontPaths = [
-      'C:/Windows/Fonts/msyh.ttc',      // 微软雅黑
-      'C:/Windows/Fonts/simhei.ttf',    // 黑体
-      'C:/Windows/Fonts/simsun.ttc',    // 宋体
-      '/System/Library/Fonts/PingFang.ttc',
-      '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
-    ];
+  private createWatermarkSVG(
+    text: string,
+    width: number,
+    height: number,
+    fontSize: number,
+    color: string,
+    opacity: number,
+    rotation: number,
+    position: 'center' | 'tile',
+    spacingX?: number,
+    spacingY?: number
+  ): string {
+    // 获取字体族
+    const fontFamily = this.getCanvasFontFamily();
     
-    for (const fontPath of fontPaths) {
-      if (fs.existsSync(fontPath)) {
-        return fontPath;
+    // 估算文本宽度（中文字符约等于字号宽度）
+    const textWidth = text.length * fontSize;
+    const textHeight = fontSize;
+    
+    let textElements = '';
+    
+    if (position === 'tile') {
+      // 平铺水印 - 使用用户指定的间距或默认值
+      const gapX = spacingX !== undefined ? spacingX : 100;
+      const gapY = spacingY !== undefined ? spacingY : 80;
+      const stepX = textWidth + gapX;
+      const stepY = textHeight + gapY;
+      
+      // 生成平铺的文本元素
+      for (let y = -height; y < height * 2; y += stepY) {
+        for (let x = -width; x < width * 2; x += stepX) {
+          textElements += `
+            <text 
+              x="${x}" 
+              y="${y}" 
+              font-family="${fontFamily}, Microsoft YaHei, SimHei, sans-serif"
+              font-size="${fontSize}"
+              fill="${color}"
+              fill-opacity="${opacity}"
+              transform="rotate(${rotation}, ${x}, ${y})"
+            >${this.escapeXml(text)}</text>`;
+        }
       }
+    } else {
+      // 居中水印
+      const centerX = width / 2;
+      const centerY = height / 2;
+      
+      textElements = `
+        <text 
+          x="${centerX}" 
+          y="${centerY}" 
+          font-family="${fontFamily}, Microsoft YaHei, SimHei, sans-serif"
+          font-size="${fontSize}"
+          fill="${color}"
+          fill-opacity="${opacity}"
+          text-anchor="middle"
+          dominant-baseline="middle"
+          transform="rotate(${rotation}, ${centerX}, ${centerY})"
+        >${this.escapeXml(text)}</text>`;
     }
-    return null;
+    
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  ${textElements}
+</svg>`;
   }
-
+  
   /**
-   * 转义 PostScript 特殊字符
+   * 转义 XML 特殊字符
    */
-  private escapePostScript(text: string): string {
+  private escapeXml(text: string): string {
     return text
-      .replace(/\\/g, '\\\\')
-      .replace(/\(/g, '\\(')
-      .replace(/\)/g, '\\)');
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+  
+  /**
+   * 获取 Canvas 使用的字体族
+   * 优先使用中文字体
+   */
+  private getCanvasFontFamily(): string {
+    if (process.platform === 'win32') {
+      // Windows 中文字体优先级
+      return 'Microsoft YaHei';
+    } else if (process.platform === 'darwin') {
+      return 'PingFang SC';
+    } else {
+      return 'Noto Sans CJK SC';
+    }
   }
 
   /**
