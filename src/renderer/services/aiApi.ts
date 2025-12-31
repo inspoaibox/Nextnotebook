@@ -42,11 +42,14 @@ export const aiMessagesApi = {
     itemsApi.delete(id),
 };
 
-// AI 设置存储
+// AI 设置存储 - 使用数据库存储以支持同步
 const AI_SETTINGS_KEY = 'mucheng-ai-settings';
+const AI_CONFIG_ID = 'ai-config-singleton'; // 使用固定 ID 确保只有一条配置记录
 
 export const aiSettingsApi = {
+  // 从数据库获取 AI 配置，如果不存在则返回默认值
   get: (): AISettings => {
+    // 先尝试从 localStorage 获取（兼容旧数据）
     const saved = localStorage.getItem(AI_SETTINGS_KEY);
     if (saved) {
       try {
@@ -61,8 +64,62 @@ export const aiSettingsApi = {
     };
   },
 
+  // 保存 AI 配置到 localStorage（同时会通过数据库同步）
   save: (settings: AISettings): void => {
     localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(settings));
+    // 同时保存到数据库以支持同步
+    aiSettingsApi.saveToDb(settings);
+  },
+
+  // 保存到数据库
+  saveToDb: async (settings: AISettings): Promise<void> => {
+    try {
+      const api = (window as any).electronAPI;
+      if (!api?.items) return;
+
+      // 检查是否已存在配置记录
+      const existing = await api.items.getById(AI_CONFIG_ID);
+      
+      const payload = {
+        enabled: settings.enabled,
+        default_channel: settings.default_channel,
+        default_model: settings.default_model,
+        channels: settings.channels,
+      };
+
+      if (existing) {
+        // 更新现有记录
+        await api.items.update(AI_CONFIG_ID, payload);
+      } else {
+        // 创建新记录（使用固定 ID）
+        // 注意：需要通过特殊方式创建带固定 ID 的记录
+        await api.items.create('ai_config', { ...payload, _id: AI_CONFIG_ID });
+      }
+    } catch (err) {
+      console.error('Failed to save AI settings to database:', err);
+    }
+  },
+
+  // 从数据库加载（用于同步后更新本地）
+  loadFromDb: async (): Promise<AISettings | null> => {
+    try {
+      const api = (window as any).electronAPI;
+      if (!api?.items) return null;
+
+      const items = await api.items.getByType('ai_config');
+      if (items && items.length > 0) {
+        const payload = JSON.parse(items[0].payload);
+        return {
+          enabled: payload.enabled ?? false,
+          default_channel: payload.default_channel ?? '',
+          default_model: payload.default_model ?? '',
+          channels: payload.channels ?? [],
+        };
+      }
+    } catch (err) {
+      console.error('Failed to load AI settings from database:', err);
+    }
+    return null;
   },
 };
 

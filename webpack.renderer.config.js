@@ -47,6 +47,21 @@ module.exports = {
     // 复制 TinyMCE 静态资源到 dist 目录（本地部署，不使用 CDN）
     new CopyWebpackPlugin({
       patterns: [
+        // PDF.js worker 文件
+        {
+          from: path.resolve(__dirname, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'),
+          to: path.resolve(__dirname, 'dist/renderer/pdfjs/pdf.worker.min.mjs'),
+        },
+        // PDF.js 标准字体文件（用于正确渲染 PDF 中的文字）
+        {
+          from: path.resolve(__dirname, 'node_modules/pdfjs-dist/standard_fonts'),
+          to: path.resolve(__dirname, 'dist/renderer/pdfjs/standard_fonts'),
+        },
+        // PDF.js CMap 文件（用于支持 CJK 字符）
+        {
+          from: path.resolve(__dirname, 'node_modules/pdfjs-dist/cmaps'),
+          to: path.resolve(__dirname, 'dist/renderer/pdfjs/cmaps'),
+        },
         {
           from: path.resolve(__dirname, 'node_modules/tinymce/tinymce.min.js'),
           to: path.resolve(__dirname, 'dist/renderer/tinymce/tinymce.min.js'),
@@ -85,6 +100,21 @@ module.exports = {
     static: [
       {
         directory: path.join(__dirname, 'dist/renderer'),
+      },
+      {
+        // PDF.js worker 文件
+        directory: path.join(__dirname, 'node_modules/pdfjs-dist/build'),
+        publicPath: '/pdfjs',
+      },
+      {
+        // PDF.js 标准字体文件
+        directory: path.join(__dirname, 'node_modules/pdfjs-dist/standard_fonts'),
+        publicPath: '/pdfjs/standard_fonts',
+      },
+      {
+        // PDF.js CMap 文件（用于支持 CJK 字符）
+        directory: path.join(__dirname, 'node_modules/pdfjs-dist/cmaps'),
+        publicPath: '/pdfjs/cmaps',
       },
       {
         // 在开发模式下直接从 node_modules 提供 TinyMCE 资源

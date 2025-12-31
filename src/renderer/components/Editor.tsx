@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Typography, Empty, Tabs, Space, Button, Tooltip, message, Modal, Tag as AntTag, Input, Select, Dropdown } from 'antd';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Empty, Tabs, Space, Button, Tooltip, message, Modal, Tag as AntTag, Input, Select, Dropdown } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   EditOutlined,
@@ -14,11 +14,129 @@ import {
   CopyOutlined,
   ExportOutlined,
   InfoCircleOutlined,
+  UnorderedListOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { Tag } from '../hooks/useTags';
 
-const { Title } = Typography;
+// TOC 项目接口
+interface TocItem {
+  id: string;
+  level: number;
+  text: string;
+}
+
+// 从 Markdown 内容提取标题
+const extractHeadings = (content: string): TocItem[] => {
+  const headings: TocItem[] = [];
+  const lines = content.split('\n');
+  
+  lines.forEach((line, index) => {
+    const match = line.match(/^(#{1,6})\s+(.+)$/);
+    if (match) {
+      const level = match[1].length;
+      const text = match[2].trim();
+      // 生成唯一 ID
+      const id = `heading-${index}-${text.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '-').toLowerCase()}`;
+      headings.push({ id, level, text });
+    }
+  });
+  
+  return headings;
+};
+
+// TOC 组件
+interface TocPanelProps {
+  headings: TocItem[];
+  onItemClick: (id: string) => void;
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+const TocPanel: React.FC<TocPanelProps> = ({ headings, onItemClick, collapsed, onToggle }) => {
+  if (headings.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        right: 0,
+        top: 0,
+        width: collapsed ? 32 : 200,
+        height: '100%',
+        background: 'var(--bg-secondary, #fafafa)',
+        borderLeft: '1px solid var(--border-color, #f0f0f0)',
+        transition: 'width 0.2s ease',
+        zIndex: 10,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <div
+        style={{
+          padding: '8px',
+          borderBottom: '1px solid var(--border-color, #f0f0f0)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+        }}
+      >
+        {!collapsed && (
+          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #888)' }}>
+            <UnorderedListOutlined style={{ marginRight: 4 }} />
+            目录
+          </span>
+        )}
+        <Tooltip title={collapsed ? '展开目录' : '收起目录'}>
+          <Button
+            type="text"
+            size="small"
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={onToggle}
+          />
+        </Tooltip>
+      </div>
+      {!collapsed && (
+        <div style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
+          {headings.map((item) => (
+            <div
+              key={item.id}
+              onClick={() => onItemClick(item.id)}
+              style={{
+                padding: '4px 12px',
+                paddingLeft: 12 + (item.level - 1) * 12,
+                fontSize: item.level === 1 ? 13 : 12,
+                fontWeight: item.level <= 2 ? 500 : 400,
+                color: item.level === 1 ? 'var(--text-primary, #333)' : 'var(--text-secondary, #666)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                borderLeft: item.level === 1 ? '2px solid #1890ff' : '2px solid transparent',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--item-hover-bg, #f5f5f5)';
+                e.currentTarget.style.color = '#1890ff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = item.level === 1 ? 'var(--text-primary, #333)' : 'var(--text-secondary, #666)';
+              }}
+              title={item.text}
+            >
+              {item.text}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface EditorProps {
   noteId: string | null;
@@ -61,7 +179,21 @@ const Editor: React.FC<EditorProps> = ({
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newTagName, setNewTagName] = useState('');
+  const [tocCollapsed, setTocCollapsed] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+
+  // 提取标题生成目录
+  const headings = useMemo(() => extractHeadings(content), [content]);
+
+  // 点击目录项滚动到对应位置
+  const handleTocItemClick = useCallback((id: string) => {
+    if (!previewRef.current) return;
+    const element = previewRef.current.querySelector(`[data-heading-id="${id}"]`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
 
   // 加载笔记内容
   useEffect(() => {
@@ -303,8 +435,63 @@ const Editor: React.FC<EditorProps> = ({
           />
         )}
         {activeTab === 'preview' && (
-          <div style={{ width: '100%', height: '100%', overflow: 'auto', lineHeight: 1.8 }}>
-            <ReactMarkdown>{content}</ReactMarkdown>
+          <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+            <div 
+              ref={previewRef}
+              style={{ 
+                width: headings.length > 0 ? 'calc(100% - 200px)' : '100%', 
+                height: '100%', 
+                overflow: 'auto', 
+                lineHeight: 1.8,
+                paddingRight: headings.length > 0 && !tocCollapsed ? 16 : 0,
+                transition: 'width 0.2s ease',
+              }}
+            >
+              <ReactMarkdown
+                components={{
+                  h1: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 1)?.id || '';
+                    return <h1 data-heading-id={id}>{children}</h1>;
+                  },
+                  h2: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 2)?.id || '';
+                    return <h2 data-heading-id={id}>{children}</h2>;
+                  },
+                  h3: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 3)?.id || '';
+                    return <h3 data-heading-id={id}>{children}</h3>;
+                  },
+                  h4: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 4)?.id || '';
+                    return <h4 data-heading-id={id}>{children}</h4>;
+                  },
+                  h5: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 5)?.id || '';
+                    return <h5 data-heading-id={id}>{children}</h5>;
+                  },
+                  h6: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 6)?.id || '';
+                    return <h6 data-heading-id={id}>{children}</h6>;
+                  },
+                }}
+              >
+                {content}
+              </ReactMarkdown>
+            </div>
+            {headings.length > 0 && (
+              <TocPanel
+                headings={headings}
+                onItemClick={handleTocItemClick}
+                collapsed={tocCollapsed}
+                onToggle={() => setTocCollapsed(!tocCollapsed)}
+              />
+            )}
           </div>
         )}
         {activeTab === 'split' && (
@@ -326,8 +513,46 @@ const Editor: React.FC<EditorProps> = ({
               }}
               placeholder="开始编写 Markdown..."
             />
-            <div style={{ width: '50%', height: '100%', overflow: 'auto', paddingLeft: 16, lineHeight: 1.8 }}>
-              <ReactMarkdown>{content}</ReactMarkdown>
+            <div 
+              ref={previewRef}
+              style={{ width: '50%', height: '100%', overflow: 'auto', paddingLeft: 16, lineHeight: 1.8, position: 'relative' }}
+            >
+              <ReactMarkdown
+                components={{
+                  h1: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 1)?.id || '';
+                    return <h1 data-heading-id={id}>{children}</h1>;
+                  },
+                  h2: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 2)?.id || '';
+                    return <h2 data-heading-id={id}>{children}</h2>;
+                  },
+                  h3: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 3)?.id || '';
+                    return <h3 data-heading-id={id}>{children}</h3>;
+                  },
+                  h4: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 4)?.id || '';
+                    return <h4 data-heading-id={id}>{children}</h4>;
+                  },
+                  h5: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 5)?.id || '';
+                    return <h5 data-heading-id={id}>{children}</h5>;
+                  },
+                  h6: ({ children }) => {
+                    const text = String(children);
+                    const id = headings.find(h => h.text === text && h.level === 6)?.id || '';
+                    return <h6 data-heading-id={id}>{children}</h6>;
+                  },
+                }}
+              >
+                {content}
+              </ReactMarkdown>
             </div>
           </>
         )}

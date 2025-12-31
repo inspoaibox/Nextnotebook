@@ -1,10 +1,10 @@
-import { ItemBase } from '@shared/types';
+import { ItemBase, ItemType } from '@shared/types';
 
 // 远端变更记录
 export interface RemoteChange {
   change_id: number;
   item_id: string;
-  type: string;
+  type: ItemType;
   updated_time: number;
   deleted_time: number | null;
   content_hash: string;

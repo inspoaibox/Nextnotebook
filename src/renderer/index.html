@@ -25,17 +25,31 @@
     }
     
     /* 手动深色模式类 */
-    .dark-mode-loading {
+    html.dark-mode-loading, html.dark-mode-loading body {
       --loading-bg: #141414;
       --loading-spinner-bg: #303030;
       --loading-spinner-color: #1890ff;
       --loading-text-color: rgba(255, 255, 255, 0.65);
     }
     
-    body { 
+    /* 手动浅色模式类 - 覆盖系统深色 */
+    html.light-mode-loading, html.light-mode-loading body {
+      --loading-bg: #fafafa;
+      --loading-spinner-bg: #e8e8e8;
+      --loading-spinner-color: #1890ff;
+      --loading-text-color: #666;
+    }
+    
+    html, body { 
       margin: 0; 
+      padding: 0;
+      height: 100%;
+      background: var(--loading-bg) !important;
+    }
+    
+    #root {
+      min-height: 100%;
       background: var(--loading-bg);
-      transition: background-color 0.3s ease;
     }
     
     #loading {
@@ -109,7 +123,7 @@
   </div>
   <div id="root"></div>
   <script>
-    // 检查用户保存的主题设置
+    // 检查用户保存的主题设置 - 立即执行，在 DOM 解析时就应用
     (function() {
       try {
         const savedSettings = localStorage.getItem('mucheng-settings');
@@ -119,11 +133,11 @@
           
           if (theme === 'dark') {
             document.documentElement.classList.add('dark-mode-loading');
-            document.body.classList.add('dark-mode-loading');
-          } else if (theme === 'system') {
-            // 跟随系统，CSS media query 会自动处理
+          } else if (theme === 'light') {
+            // 明确设置浅色模式，覆盖系统深色
+            document.documentElement.classList.add('light-mode-loading');
           }
-          // theme === 'light' 时使用默认浅色
+          // theme === 'system' 时不添加类，让 CSS media query 处理
         }
       } catch (e) {
         console.warn('Failed to load theme settings:', e);
@@ -134,9 +148,12 @@
     window.addEventListener('DOMContentLoaded', () => {
       const loading = document.getElementById('loading');
       
+      // 更智能的检测：等待 Ant Design 组件渲染完成
       const checkReady = setInterval(() => {
         const root = document.getElementById('root');
-        if (root && root.children.length > 0) {
+        // 检查是否有实际的 UI 内容（Ant Design Layout 组件）
+        const hasContent = root && root.querySelector('.ant-layout');
+        if (hasContent) {
           // 先淡出
           loading.classList.add('hidden');
           // 动画结束后完全移除
@@ -147,14 +164,14 @@
         }
       }, 50);
       
-      // 最多等待5秒
+      // 最多等待8秒（给复杂组件更多时间）
       setTimeout(() => {
         loading.classList.add('hidden');
         setTimeout(() => {
           loading.classList.add('removed');
         }, 300);
         clearInterval(checkReady);
-      }, 5000);
+      }, 8000);
     });
   </script>
 </body>

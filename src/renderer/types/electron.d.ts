@@ -12,6 +12,40 @@ export interface ItemsAPI {
   getStats: () => Promise<{ total: number; byType: Record<string, number> }>;
 }
 
+export interface ImageMetadata {
+  width: number;
+  height: number;
+  format: string;
+  space: string;
+  channels: number;
+  depth: string;
+  density?: number;
+  hasAlpha: boolean;
+  size: number;
+  exif?: Record<string, any>;
+  icc?: {
+    name: string;
+    description?: string;
+  };
+}
+
+export interface ProcessResult {
+  buffer: string;
+  info: {
+    format: string;
+    width: number;
+    height: number;
+    size: number;
+  };
+}
+
+export interface ImageAPI {
+  getMetadata: (input: string) => Promise<ImageMetadata>;
+  process: (input: string, options: object) => Promise<ProcessResult>;
+  generatePreview: (input: string, maxSize: number) => Promise<string>;
+  saveFile: (buffer: string, defaultName: string) => Promise<boolean>;
+}
+
 export interface ElectronAPI {
   getAppPath: () => Promise<string>;
   onMenuAction: (callback: (action: string) => void) => void;
@@ -21,6 +55,7 @@ export interface ElectronAPI {
     writeFile: (path: string, data: string | Buffer) => Promise<void>;
     exists: (path: string) => Promise<boolean>;
   };
+  image: ImageAPI;
 }
 
 declare global {

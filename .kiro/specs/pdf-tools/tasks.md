@@ -1,0 +1,362 @@
+# Implementation Plan: PDF 工具套件
+
+## Overview
+
+本实现计划将 PDF 工具套件分为多个阶段，从基础设施开始，逐步实现各个工具。优先实现核心功能（预览、合并拆分、转图片、压缩），然后扩展到高级功能。
+
+## Tasks
+
+- [x] 1. 基础设施搭建
+  - [x] 1.1 创建 PDFService 主进程服务骨架
+    - 创建 `src/main/services/PDFService.ts`
+    - 实现基本的 PDF 信息读取功能
+    - 集成 pdf-lib 库
+    - _Requirements: 10.2_
+  - [x] 1.2 创建 GhostscriptService 服务
+    - 创建 `src/main/services/GhostscriptService.ts`
+    - 实现 Ghostscript 路径检测
+    - 实现命令执行封装
+    - 实现临时文件管理
+    - _Requirements: 10.2, 10.4, 10.6_
+  - [x] 1.3 创建 pdfApi 渲染进程服务
+    - 创建 `src/renderer/services/pdfApi.ts`
+    - 定义所有 API 接口类型
+    - 实现 IPC 通信封装
+    - _Requirements: 10.3_
+  - [x] 1.4 配置 IPC 通道
+    - 在 `src/main/preload.ts` 添加 PDF 相关 IPC 方法
+    - 在 `src/main/main.ts` 注册 IPC 处理器
+    - _Requirements: 10.3_
+  - [x] 1.5 编写页面范围解析函数的属性测试
+    - **Property 3: Page Range Parsing Correctness**
+    - **Validates: Requirements 2.6, 8.4, 14.4**
+
+- [x] 2. Checkpoint - 基础设施验证
+  - 确保 IPC 通信正常工作
+  - 确保 Ghostscript 可以被调用
+  - 如有问题请询问用户
+
+- [x] 3. PDF 预览引擎
+  - [x] 3.1 创建 PDFPreview 组件
+    - 创建 `src/renderer/components/pdf/PDFPreview.tsx`
+    - 集成 PDF.js 库
+    - 实现单页渲染
+    - 实现缩放控制（适应宽度、适应页面、自定义百分比）
+    - 实现页面导航（上一页、下一页、跳转）
+    - _Requirements: 11.2, 11.3, 13.2, 13.3, 13.4, 13.5_
+  - [x] 3.2 创建 PDFThumbnails 组件
+    - 创建 `src/renderer/components/pdf/PDFThumbnails.tsx`
+    - 实现缩略图网格渲染
+    - 实现懒加载
+    - 实现页面选择（单选、多选）
+    - 实现拖拽排序（可选）
+    - _Requirements: 11.4, 11.5_
+  - [x] 3.3 实现文本搜索功能
+    - 在 PDFPreview 中添加搜索输入框
+    - 实现搜索高亮
+    - 实现搜索结果导航
+    - _Requirements: 11.6, 13.6_
+  - [x] 3.4 编写 PDF 预览导航边界属性测试
+    - **Property 11: PDF Preview Navigation Bounds**
+    - **Validates: Requirements 11.2, 11.3, 13.5**
+
+- [x] 4. PDF 工具面板框架
+  - [x] 4.1 创建 PDFToolPanel 主组件
+    - 创建 `src/renderer/components/PDFToolPanel.tsx`
+    - 实现工具列表和切换逻辑
+    - 复用 ImageToolPanel 的布局模式
+    - _Requirements: 1.1, 1.2, 1.3, 1.4_
+  - [x] 4.2 在 ToolboxPanel 中添加 PDF 分类
+    - 添加 'pdf' 分类到 ToolCategory
+    - 添加 PDF 工具定义到 tools 数组（15个工具：预览、合并拆分、转图片、压缩、加水印、旋转调整、页面重排、页面删除、页面提取、批量重命名、表单填写、安全加密、元数据编辑、图片转PDF、对比）
+    - 添加 renderToolContent 中的 case 分支
+    - _Requirements: 1.1, 1.2, 1.3, 1.4_
+  - [x] 4.3 创建 PreviewTool 独立预览工具组件
+    - 创建 `src/renderer/components/pdf/PreviewTool.tsx`
+    - 采用上下布局：上方为文件上传和控制栏，下方为预览区
+    - 集成 PDFPreview 组件
+    - 实现键盘快捷键支持（Arrow keys, Page Up/Down）
+    - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5, 13.6, 13.7_
+
+- [x] 5. Checkpoint - 预览功能验证
+  - 确保 PDF 可以正常预览
+  - 确保缩略图正常显示
+  - 如有问题请询问用户
+
+- [x] 6. PDF 合并与拆分工具
+  - [x] 6.1 实现 PDFService.merge 方法
+    - 使用 pdf-lib 合并多个 PDF
+    - 支持页面选择
+    - _Requirements: 2.4_
+  - [x] 6.2 实现 PDFService.split 方法
+    - 使用 pdf-lib 拆分 PDF
+    - 支持页面范围语法
+    - _Requirements: 2.5, 2.6_
+  - [x] 6.3 创建 MergeSplitTool 组件
+    - 创建 `src/renderer/components/pdf/MergeSplitTool.tsx`
+    - 采用上下布局：上方为文件上传和操作按钮（紧凑排列），下方为页面缩略图网格
+    - 实现多文件上传
+    - 实现页面缩略图显示
+    - 实现拖拽排序
+    - 实现合并和拆分按钮
+    - _Requirements: 2.1, 2.2, 2.3, 2.7_
+  - [x] 6.4 编写 PDF 合并属性测试
+    - **Property 1: PDF Merge Preserves Page Content**
+    - **Validates: Requirements 2.4, 2.5**
+  - [x] 6.5 编写 PDF 拆分属性测试
+    - **Property 2: PDF Split Produces Correct Subsets**
+    - **Validates: Requirements 2.5, 2.6**
+
+- [x] 7. PDF 转图片工具
+  - [x] 7.1 实现 GhostscriptService.toImage 方法
+    - 实现 PDF 到 PNG/JPG 转换
+    - 支持 DPI 设置
+    - 支持页面选择
+    - _Requirements: 3.5_
+  - [x] 7.2 创建 ToImageTool 组件
+    - 创建 `src/renderer/components/pdf/ToImageTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传、格式选择、DPI选择，使用 Row/Col 紧凑排列），下方为页面缩略图选择和转换结果预览
+    - 实现文件上传和页面选择
+    - 实现格式和 DPI 选择
+    - 实现转换和下载
+    - 集成现有图片工具进行后处理
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.6, 3.7_
+  - [x] 7.3 编写 PDF 转图片属性测试
+    - **Property 4: PDF to Image Conversion Produces Valid Images**
+    - **Validates: Requirements 3.5**
+
+- [x] 8. PDF 压缩工具
+  - [x] 8.1 实现 GhostscriptService.compress 方法
+    - 实现三档压缩级别
+    - 计算压缩比
+    - _Requirements: 4.4, 4.5_
+  - [x] 8.2 创建 CompressTool 组件
+    - 创建 `src/renderer/components/pdf/CompressTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传、压缩级别选择、原始大小显示，使用 Row/Col 紧凑排列），下方为压缩结果展示（压缩后大小、压缩比、下载按钮）
+    - 实现文件上传
+    - 显示原始大小
+    - 实现压缩级别选择
+    - 显示压缩后大小和压缩比
+    - _Requirements: 4.1, 4.2, 4.3, 4.6_
+  - [x] 8.3 编写 PDF 压缩属性测试
+    - **Property 5: PDF Compression Reduces or Maintains Size**
+    - **Validates: Requirements 4.4, 4.5**
+
+- [x] 9. Checkpoint - 核心功能验证
+  - 确保合并拆分功能正常
+  - 确保转图片功能正常
+  - 确保压缩功能正常
+  - 如有问题请询问用户
+
+- [x] 10. PDF 加水印工具
+  - [x] 10.1 实现 PDFService.addWatermark 方法
+    - 实现文字水印
+    - 实现图片水印
+    - 支持透明度、旋转、位置设置
+    - 支持平铺模式
+    - _Requirements: 5.7_
+  - [x] 10.2 创建 WatermarkTool 组件
+    - 创建 `src/renderer/components/pdf/WatermarkTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传、水印类型选择、水印配置项，使用 Row/Col 紧凑排列），下方为 PDF 预览区（实时显示水印效果）
+    - 实现水印类型选择
+    - 实现水印配置面板
+    - 实现预览功能
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.8_
+  - [x] 10.3 编写水印应用属性测试
+    - **Property 6: Watermark Application Preserves Page Count**
+    - **Validates: Requirements 5.6, 5.7**
+
+- [x] 11. PDF 旋转调整工具
+  - [x] 11.1 实现 PDFService.rotate 方法
+    - 使用 pdf-lib 旋转页面
+    - 支持 90°、-90°、180° 旋转
+    - _Requirements: 6.5_
+  - [x] 11.2 创建 RotateTool 组件
+    - 创建 `src/renderer/components/pdf/RotateTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传、旋转角度按钮组、页面选择模式，使用 Row/Col 紧凑排列），下方为页面缩略图网格（可选择页面，显示旋转后效果）
+    - 实现页面选择
+    - 实现旋转按钮
+    - 实现缩略图预览更新
+    - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.6, 6.7_
+  - [x] 11.3 编写页面旋转属性测试
+    - **Property 7: Page Rotation Correctness**
+    - **Validates: Requirements 6.5**
+
+- [x] 12. PDF 页面重排工具
+  - [x] 12.1 实现 PDFService.reorder 方法
+    - 使用 pdf-lib 重排页面
+    - _Requirements: 7.5_
+  - [x] 12.2 创建 ReorderTool 组件
+    - 创建 `src/renderer/components/pdf/ReorderTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传、应用按钮、下载按钮，使用 Row/Col 紧凑排列），下方为可拖拽排序的页面缩略图网格（显示动态页码）
+    - 实现拖拽排序缩略图
+    - 实现动态页码更新
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.6_
+  - [x] 12.3 编写页面重排属性测试
+    - **Property 8: Page Reorder Produces Correct Sequence**
+    - **Validates: Requirements 7.4, 7.5**
+
+- [x] 13. PDF 页面删除工具
+  - [x] 13.1 实现 PDFService.deletePages 方法
+    - 使用 pdf-lib 删除页面
+    - _Requirements: 8.5_
+  - [x] 13.2 创建 DeletePagesTool 组件
+    - 创建 `src/renderer/components/pdf/DeletePagesTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传、页面范围输入、删除按钮，使用 Row/Col 紧凑排列），下方为页面缩略图网格（可点击选择，带删除标记）
+    - 实现页面选择（点击和范围输入）
+    - 实现删除确认
+    - 实现全选删除警告
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.6, 8.7, 8.8_
+  - [x] 13.3 编写页面删除属性测试
+    - **Property 9: Page Deletion Reduces Page Count**
+    - **Validates: Requirements 8.5**
+
+- [x] 14. PDF 页面提取工具
+  - [x] 14.1 实现 PDFService.extractPages 方法
+    - 使用 pdf-lib 提取页面
+    - _Requirements: 14.5_
+  - [x] 14.2 创建 ExtractPagesTool 组件
+    - 创建 `src/renderer/components/pdf/ExtractPagesTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传、页面范围输入、提取按钮，使用 Row/Col 紧凑排列），下方为页面缩略图网格（可点击选择，带选中标记）
+    - 实现页面选择
+    - 实现范围语法输入
+    - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.6_
+
+- [x] 15. Checkpoint - 页面操作功能验证
+  - 确保水印功能正常
+  - 确保旋转功能正常
+  - 确保重排功能正常
+  - 确保删除功能正常
+  - 确保提取功能正常
+  - 如有问题请询问用户
+
+- [x] 16. PDF 批量重命名工具
+  - [x] 16.1 创建 RenameTool 组件
+    - 创建 `src/renderer/components/pdf/RenameTool.tsx`
+    - 采用上下布局：上方为参数设置区（多文件上传、命名规则选择、模板输入，使用 Row/Col 紧凑排列），下方为文件列表（显示原文件名和新文件名预览）
+    - 实现多文件上传
+    - 实现命名规则选择
+    - 实现模板占位符替换
+    - 实现预览和应用
+    - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7_
+  - [x] 16.2 编写文件名模板替换属性测试
+    - **Property 10: Filename Template Substitution**
+    - **Validates: Requirements 9.4, 9.5, 9.6**
+
+- [x] 17. PDF 表单填写工具
+  - [x] 17.1 实现 PDFService.getFormFields 方法
+    - 使用 pdf-lib 读取表单字段
+    - _Requirements: 16.1_
+  - [x] 17.2 实现 PDFService.fillForm 方法
+    - 使用 pdf-lib 填写表单
+    - _Requirements: 16.5_
+  - [x] 17.3 创建 FormFillTool 组件
+    - 创建 `src/renderer/components/pdf/FormFillTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传、保存/清空按钮，使用 Row/Col 紧凑排列），下方为 PDF 预览区（表单字段高亮显示，可直接填写）
+    - 实现表单字段检测和高亮
+    - 实现文本、复选框、下拉框输入
+    - 实现保存和清空
+    - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.6, 16.7_
+  - [ ] 17.4 编写表单字段往返属性测试
+    - **Property 13: Form Field Round-Trip**
+    - **Validates: Requirements 16.2, 16.3, 16.4, 16.5**
+
+- [x] 18. PDF 安全与加密工具
+  - [x] 18.1 实现 PDFService.setSecurity 方法
+    - 使用 pdf-lib 设置密码和权限
+    - _Requirements: 17.5_
+  - [x] 18.2 实现 PDFService.removeSecurity 方法
+    - 使用 pdf-lib 移除密码保护
+    - _Requirements: 17.7_
+  - [x] 18.3 创建 SecurityTool 组件
+    - 创建 `src/renderer/components/pdf/SecurityTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传、密码输入、权限复选框，使用 Row/Col 紧凑排列），下方为操作结果展示（加密状态、下载按钮）
+    - 实现密码设置
+    - 实现权限设置
+    - 实现密码移除
+    - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.6_
+  - [ ] 18.4 编写 PDF 加密往返属性测试
+    - **Property 14: PDF Encryption Round-Trip**
+    - **Validates: Requirements 17.2, 17.3, 17.5, 17.7**
+
+- [x] 19. PDF 元数据编辑工具
+  - [x] 19.1 实现 PDFService.getMetadata 和 setMetadata 方法
+    - 使用 pdf-lib 读写元数据
+    - _Requirements: 18.2, 18.4_
+  - [x] 19.2 创建 MetadataTool 组件
+    - 创建 `src/renderer/components/pdf/MetadataTool.tsx`
+    - 采用上下布局：上方为参数设置区（文件上传，使用 Row/Col 紧凑排列），下方为元数据编辑表单（标题、作者、主题、关键词等字段）
+    - 实现元数据显示和编辑
+    - _Requirements: 18.1, 18.3, 18.5_
+  - [ ] 19.3 编写元数据往返属性测试
+    - **Property 15: Metadata Round-Trip**
+    - **Validates: Requirements 18.2, 18.4**
+
+- [x] 20. 图片转 PDF 工具
+  - [x] 20.1 实现 PDFService.imagesToPdf 方法
+    - 使用 pdf-lib 创建 PDF
+    - 支持多种页面尺寸和图片放置方式
+    - _Requirements: 19.6_
+  - [x] 20.2 创建 ImageToPdfTool 组件
+    - 创建 `src/renderer/components/pdf/ImageToPdfTool.tsx`
+    - 采用上下布局：上方为参数设置区（多图上传、页面尺寸选择、放置方式选择，使用 Row/Col 紧凑排列），下方为可拖拽排序的图片缩略图网格
+    - 实现多图上传
+    - 实现拖拽排序
+    - 实现页面尺寸和放置选项
+    - _Requirements: 19.1, 19.2, 19.3, 19.4, 19.5, 19.7_
+  - [ ] 20.3 编写图片转 PDF 页数属性测试
+    - **Property 16: Image to PDF Page Count**
+    - **Validates: Requirements 19.6**
+
+- [x] 21. PDF 对比工具
+  - [x] 21.1 创建 CompareTool 组件
+    - 创建 `src/renderer/components/pdf/CompareTool.tsx`
+    - 采用上下布局：上方为参数设置区（双文件上传区域、同步控制选项，使用 Row/Col 紧凑排列），下方为左右并排的 PDF 预览区（同步导航和缩放）
+    - 实现双文件上传
+    - 实现并排预览
+    - 实现同步导航和缩放
+    - _Requirements: 20.1, 20.2, 20.5, 20.6_
+  - [ ] 21.2 编写对比视图同步属性测试
+    - **Property 17: Comparison View Synchronization**
+    - **Validates: Requirements 20.3, 20.4**
+
+- [x] 22. 笔记导出为 PDF
+  - [x] 22.1 扩展 ExportManager 支持 PDF 导出
+    - 在 `src/core/export/ExportManager.ts` 添加 exportToPdf 方法
+    - 实现 Markdown 到 PDF 转换
+    - 支持页面尺寸和边距设置
+    - 嵌入图片
+    - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6, 15.7_
+
+- [x] 23. 错误处理完善
+  - [x] 23.1 实现文件类型验证
+    - 检查 PDF magic bytes
+    - 拒绝非 PDF 文件
+    - _Requirements: 12.5_
+  - [x] 23.2 实现 Ghostscript 可用性检查
+    - 启动时检查 Ghostscript
+    - 不可用时显示提示
+    - _Requirements: 10.5, 12.4_
+  - [x] 23.3 实现操作进度显示
+    - 添加进度条组件
+    - 显示操作状态
+    - _Requirements: 12.1, 12.2, 12.3_
+  - [x] 23.4 编写文件类型验证属性测试
+    - **Property 12: File Type Validation**
+    - **Validates: Requirements 12.5**
+
+- [x] 24. Final Checkpoint - 完整功能验证
+  - 确保所有 PDF 工具正常工作
+  - 确保错误处理正确
+  - 确保所有测试通过
+  - 如有问题请询问用户
+
+## Notes
+
+- 所有任务都是必须的，包括属性测试
+- Each task references specific requirements for traceability
+- Checkpoints ensure incremental validation
+- Property tests validate universal correctness properties
+- Unit tests validate specific examples and edge cases
+- 建议按顺序实现，先完成核心功能（1-9），再实现扩展功能（10-23）
+- Ghostscript 需要单独打包，可能需要调整 electron-builder 配置

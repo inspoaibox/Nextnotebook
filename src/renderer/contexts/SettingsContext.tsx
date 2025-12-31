@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { AppSettings, SyncConfig } from '@shared/types';
+import { AppSettings, SyncConfig, DEFAULT_SYNC_MODULES } from '@shared/types';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
@@ -24,6 +24,7 @@ const DEFAULT_SYNC_CONFIG: SyncConfig = {
   sync_interval: 5,
   last_sync_time: null,
   sync_cursor: null,
+  sync_modules: DEFAULT_SYNC_MODULES,
 };
 
 interface SettingsContextType {
@@ -69,7 +70,14 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     const savedSettings = localStorage.getItem('mucheng-settings');
     if (savedSettings) {
       try {
-        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) });
+        const parsed = { ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) };
+        setSettings(parsed);
+        
+        // 同步主题设置到主进程（确保下次启动时背景色正确）
+        const api = (window as any).electronAPI;
+        if (api?.saveThemeSettings) {
+          api.saveThemeSettings({ theme: parsed.theme }).catch(() => {});
+        }
       } catch (e) {
         console.error('Failed to load settings:', e);
       }
@@ -86,8 +94,18 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
   }, []);
 
   // 保存设置到本地存储
-  const saveSettings = useCallback((newSettings: AppSettings) => {
+  const saveSettings = useCallback(async (newSettings: AppSettings) => {
     localStorage.setItem('mucheng-settings', JSON.stringify(newSettings));
+    
+    // 同时保存主题设置到主进程可读取的文件（用于启动时背景色）
+    try {
+      const api = (window as any).electronAPI;
+      if (api?.saveThemeSettings) {
+        await api.saveThemeSettings({ theme: newSettings.theme });
+      }
+    } catch (e) {
+      console.warn('Failed to save theme to main process:', e);
+    }
   }, []);
 
   const saveSyncConfig = useCallback((newConfig: SyncConfig) => {

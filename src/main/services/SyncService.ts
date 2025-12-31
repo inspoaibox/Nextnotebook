@@ -5,6 +5,7 @@ import { WebDAVAdapter } from '@core/sync/WebDAVAdapter';
 import { ServerAdapter } from '@core/sync/ServerAdapter';
 import { StorageAdapter, WebDAVConfig, ServerConfig } from '@core/sync/StorageAdapter';
 import { CryptoEngine } from '@core/crypto/CryptoEngine';
+import { SyncModules, DEFAULT_SYNC_MODULES } from '@shared/types';
 import { getItemsManager } from './DatabaseService';
 
 let syncEngine: SyncEngine | null = null;
@@ -23,6 +24,7 @@ export interface SyncServiceConfig {
   encryptionEnabled: boolean;
   encryptionKey?: string;
   syncInterval: number;
+  syncModules?: SyncModules;  // 同步模块配置
 }
 
 // 初始化同步服务
@@ -93,14 +95,17 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
     const syncOptions: Partial<SyncOptions> = {
       encryptionEnabled: config.encryptionEnabled,
       conflictStrategy: 'create-copy',
+      syncModules: config.syncModules || DEFAULT_SYNC_MODULES,
     };
     syncEngine = new SyncEngine(currentAdapter, itemsManager, cryptoEngine, syncOptions);
 
     // 创建调度器
+    // 只有设置了同步间隔才自动同步，间隔为0表示纯手动模式
+    // syncOnChange 设为 false，不在内容变更时触发同步，只按时间间隔同步
     syncScheduler = new SyncScheduler(syncEngine, {
-      autoSyncOnStart: true,
+      autoSyncOnStart: config.syncInterval > 0,
       syncInterval: config.syncInterval,
-      syncOnChange: true,
+      syncOnChange: false,  // 不在内容变更时触发同步
       changeDebounce: 30,
     });
 

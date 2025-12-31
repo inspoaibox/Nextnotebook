@@ -36,19 +36,46 @@ export class WebDAVAdapter implements StorageAdapter {
 
   async testConnection(): Promise<boolean> {
     try {
-      // 尝试创建基础目录
+      // 尝试检查/创建基础目录
       const exists = await this.client.exists(this.basePath);
       if (!exists) {
-        await this.client.createDirectory(this.basePath);
-        await this.client.createDirectory(this.getPath(PATHS.ITEMS));
-        await this.client.createDirectory(this.getPath(PATHS.RESOURCES));
-        await this.client.createDirectory(this.getPath(PATHS.CHANGES));
-        await this.client.createDirectory(this.getPath(PATHS.LOCKS));
+        // 逐级创建目录
+        await this.ensureDirectory(this.basePath);
       }
+      
+      // 检查/创建子目录
+      const subDirs = [PATHS.ITEMS, PATHS.RESOURCES, PATHS.CHANGES, PATHS.LOCKS];
+      for (const dir of subDirs) {
+        const dirPath = this.getPath(dir);
+        const dirExists = await this.client.exists(dirPath);
+        if (!dirExists) {
+          await this.client.createDirectory(dirPath);
+        }
+      }
+      
       return true;
     } catch (error) {
       console.error('WebDAV connection test failed:', error);
       return false;
+    }
+  }
+
+  // 逐级创建目录
+  private async ensureDirectory(path: string): Promise<void> {
+    const parts = path.split('/').filter(p => p);
+    let currentPath = '';
+    
+    for (const part of parts) {
+      currentPath += '/' + part;
+      try {
+        const exists = await this.client.exists(currentPath);
+        if (!exists) {
+          await this.client.createDirectory(currentPath);
+        }
+      } catch (e) {
+        // 目录可能已存在，忽略错误
+        console.warn(`Directory creation warning for ${currentPath}:`, e);
+      }
     }
   }
 

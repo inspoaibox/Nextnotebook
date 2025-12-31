@@ -1,16 +1,21 @@
 // 同步 API 服务
+// 注意：SyncConfig 使用驼峰命名，与主进程 SyncServiceConfig 保持一致
+// shared/types 中的 SyncConfig 使用下划线命名，用于存储
 
-export interface SyncConfig {
+import { SyncModules } from '@shared/types';
+
+export interface SyncApiConfig {
   enabled: boolean;
   type: 'webdav' | 'server';
   url: string;
-  syncPath: string;  // 同步目录路径
+  syncPath: string;
   username?: string;
   password?: string;
   apiKey?: string;
   encryptionEnabled: boolean;
   encryptionKey?: string;
   syncInterval: number;
+  syncModules?: SyncModules;
 }
 
 export interface SyncResult {
@@ -39,7 +44,7 @@ const getElectronAPI = () => {
 
 export const syncApi = {
   // 初始化同步服务
-  initialize: async (config: SyncConfig): Promise<boolean> => {
+  initialize: async (config: SyncApiConfig): Promise<boolean> => {
     const api = getElectronAPI();
     return api?.sync?.initialize(config) ?? false;
   },
@@ -75,7 +80,7 @@ export const syncApi = {
   },
 
   // 测试连接
-  testConnection: async (config: SyncConfig): Promise<boolean> => {
+  testConnection: async (config: SyncApiConfig): Promise<boolean> => {
     const api = getElectronAPI();
     return api?.sync?.testConnection(config) ?? false;
   },

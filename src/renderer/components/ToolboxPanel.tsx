@@ -20,21 +20,52 @@ import {
   DiffOutlined,
   AppstoreOutlined,
   TranslationOutlined,
+  PictureOutlined,
+  ExpandOutlined,
+  ScissorOutlined,
+  RotateRightOutlined,
+  FilterOutlined,
+  InfoCircleOutlined,
+  CompressOutlined,
+  OrderedListOutlined,
+  DeleteOutlined,
+  PlusOutlined,
+  FilePdfOutlined,
+  FileSearchOutlined,
+  MergeCellsOutlined,
+  FileImageOutlined,
+  FontColorsOutlined,
+  EditOutlined,
+  FormOutlined,
 } from '@ant-design/icons';
 import { pinyin } from 'pinyin-pro';
+import ImageToolPanel, {
+  FormatConvertTool as ImageFormatConvertTool,
+  ResizeTool as ImageResizeTool,
+  CropTool as ImageCropTool,
+  RotateFlipTool as ImageRotateFlipTool,
+  ColorAdjustTool as ImageColorAdjustTool,
+  FiltersTool as ImageFiltersTool,
+  WatermarkTool as ImageWatermarkTool,
+  MetadataTool as ImageMetadataTool,
+  CompressTool as ImageCompressTool,
+} from './ImageToolPanel';
+import PDFToolPanel from './pdf/PDFToolPanel';
 
 const { Content, Sider } = Layout;
 const { TextArea } = Input;
 const { Text, Title } = Typography;
 
 // 工具分类
-type ToolCategory = 'text' | 'code' | 'convert' | 'other';
+type ToolCategory = 'text' | 'code' | 'convert' | 'image' | 'pdf' | 'other';
 
 // 分类图标
 const categoryIcons: Record<ToolCategory, React.ReactNode> = {
   text: <FontSizeOutlined />,
   code: <CodeOutlined />,
   convert: <SwapOutlined />,
+  image: <PictureOutlined />,
+  pdf: <FilePdfOutlined />,
   other: <ToolOutlined />,
 };
 
@@ -54,6 +85,8 @@ const tools: Tool[] = [
   { id: 'text-sort', name: '文本排序', icon: <SortAscendingOutlined />, category: 'text' },
   { id: 'pinyin', name: '汉字转拼音', icon: <TranslationOutlined />, category: 'text' },
   { id: 'url-extract', name: 'URL提取', icon: <LinkOutlined />, category: 'text' },
+  { id: 'text-merge-split', name: '合并拆分', icon: <SwapOutlined />, category: 'text' },
+  { id: 'text-prefix-suffix', name: '前后缀处理', icon: <OrderedListOutlined />, category: 'text' },
   // 编程工具
   { id: 'json-format', name: 'JSON格式化', icon: <CodeOutlined />, category: 'code' },
   { id: 'base64', name: 'Base64编解码', icon: <LockOutlined />, category: 'code' },
@@ -64,6 +97,32 @@ const tools: Tool[] = [
   { id: 'html-editor', name: 'HTML编辑器', icon: <CodeOutlined />, category: 'code' },
   // 格式转换
   { id: 'md-html', name: 'MD转HTML', icon: <FileTextOutlined />, category: 'convert' },
+  // 图片处理 - 9 个独立工具
+  { id: 'image-format-convert', name: '格式转换', icon: <SwapOutlined />, category: 'image' },
+  { id: 'image-resize', name: '尺寸调整', icon: <ExpandOutlined />, category: 'image' },
+  { id: 'image-crop', name: '图片裁剪', icon: <ScissorOutlined />, category: 'image' },
+  { id: 'image-rotate-flip', name: '旋转翻转', icon: <RotateRightOutlined />, category: 'image' },
+  { id: 'image-color-adjust', name: '颜色处理', icon: <BgColorsOutlined />, category: 'image' },
+  { id: 'image-filters', name: '滤镜效果', icon: <FilterOutlined />, category: 'image' },
+  { id: 'image-watermark', name: '水印叠加', icon: <PictureOutlined />, category: 'image' },
+  { id: 'image-metadata', name: '元数据', icon: <InfoCircleOutlined />, category: 'image' },
+  { id: 'image-compress', name: '优化压缩', icon: <CompressOutlined />, category: 'image' },
+  // PDF 工具 - 15 个独立工具
+  { id: 'pdf-preview', name: 'PDF 预览', icon: <FileSearchOutlined />, category: 'pdf' },
+  { id: 'pdf-merge-split', name: '合并拆分', icon: <MergeCellsOutlined />, category: 'pdf' },
+  { id: 'pdf-to-image', name: '转图片', icon: <FileImageOutlined />, category: 'pdf' },
+  { id: 'pdf-compress', name: '压缩', icon: <CompressOutlined />, category: 'pdf' },
+  { id: 'pdf-watermark', name: '加水印', icon: <FontColorsOutlined />, category: 'pdf' },
+  { id: 'pdf-rotate', name: '旋转调整', icon: <RotateRightOutlined />, category: 'pdf' },
+  { id: 'pdf-reorder', name: '页面重排', icon: <SwapOutlined />, category: 'pdf' },
+  { id: 'pdf-delete-pages', name: '页面删除', icon: <DeleteOutlined />, category: 'pdf' },
+  { id: 'pdf-extract-pages', name: '页面提取', icon: <ScissorOutlined />, category: 'pdf' },
+  { id: 'pdf-rename', name: '批量重命名', icon: <EditOutlined />, category: 'pdf' },
+  { id: 'pdf-form-fill', name: '表单填写', icon: <FormOutlined />, category: 'pdf' },
+  { id: 'pdf-security', name: '安全加密', icon: <LockOutlined />, category: 'pdf' },
+  { id: 'pdf-metadata', name: '元数据', icon: <InfoCircleOutlined />, category: 'pdf' },
+  { id: 'pdf-image-to-pdf', name: '图片转PDF', icon: <PictureOutlined />, category: 'pdf' },
+  { id: 'pdf-compare', name: 'PDF 对比', icon: <DiffOutlined />, category: 'pdf' },
   // 其他工具
   { id: 'qrcode', name: '二维码生成', icon: <QrcodeOutlined />, category: 'other' },
   { id: 'color', name: '颜色转换', icon: <BgColorsOutlined />, category: 'other' },
@@ -73,6 +132,8 @@ const categoryNames: Record<ToolCategory, string> = {
   text: '文字处理',
   code: '编程工具',
   convert: '格式转换',
+  image: '图片处理',
+  pdf: 'PDF 工具',
   other: '其他工具',
 };
 
@@ -106,6 +167,10 @@ const ToolboxPanel: React.FC = () => {
         return <PinyinTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'url-extract':
         return <UrlExtractTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
+      case 'text-merge-split':
+        return <TextMergeSplitTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
+      case 'text-prefix-suffix':
+        return <TextPrefixSuffixTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'json-format':
         return <JsonFormatTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'base64':
@@ -126,6 +191,55 @@ const ToolboxPanel: React.FC = () => {
         return <MdHtmlTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'html-editor':
         return <HtmlEditorTool />;
+      case 'image-format-convert':
+        return <ImageToolPanel defaultTool="format-convert" />;
+      case 'image-resize':
+        return <ImageToolPanel defaultTool="resize" />;
+      case 'image-crop':
+        return <ImageToolPanel defaultTool="crop" />;
+      case 'image-rotate-flip':
+        return <ImageToolPanel defaultTool="rotate-flip" />;
+      case 'image-color-adjust':
+        return <ImageToolPanel defaultTool="color-adjust" />;
+      case 'image-filters':
+        return <ImageToolPanel defaultTool="filters" />;
+      case 'image-watermark':
+        return <ImageToolPanel defaultTool="watermark" />;
+      case 'image-metadata':
+        return <ImageToolPanel defaultTool="metadata" />;
+      case 'image-compress':
+        return <ImageToolPanel defaultTool="compress" />;
+      // PDF 工具
+      case 'pdf-preview':
+        return <PDFToolPanel defaultTool="preview" />;
+      case 'pdf-merge-split':
+        return <PDFToolPanel defaultTool="merge-split" />;
+      case 'pdf-to-image':
+        return <PDFToolPanel defaultTool="to-image" />;
+      case 'pdf-compress':
+        return <PDFToolPanel defaultTool="compress" />;
+      case 'pdf-watermark':
+        return <PDFToolPanel defaultTool="watermark" />;
+      case 'pdf-rotate':
+        return <PDFToolPanel defaultTool="rotate" />;
+      case 'pdf-reorder':
+        return <PDFToolPanel defaultTool="reorder" />;
+      case 'pdf-delete-pages':
+        return <PDFToolPanel defaultTool="delete-pages" />;
+      case 'pdf-extract-pages':
+        return <PDFToolPanel defaultTool="extract-pages" />;
+      case 'pdf-rename':
+        return <PDFToolPanel defaultTool="rename" />;
+      case 'pdf-form-fill':
+        return <PDFToolPanel defaultTool="form-fill" />;
+      case 'pdf-security':
+        return <PDFToolPanel defaultTool="security" />;
+      case 'pdf-metadata':
+        return <PDFToolPanel defaultTool="metadata" />;
+      case 'pdf-image-to-pdf':
+        return <PDFToolPanel defaultTool="image-to-pdf" />;
+      case 'pdf-compare':
+        return <PDFToolPanel defaultTool="compare" />;
       default:
         return <div>请选择工具</div>;
     }
@@ -1216,6 +1330,884 @@ const PinyinTool: React.FC<ToolProps> = ({ input, setInput, output, setOutput })
             onClick={() => navigator.clipboard.writeText(output)} 
             style={{ marginTop: 8 }} 
             icon={<CopyOutlined />}
+          >
+            复制
+          </Button>
+        </Col>
+      </Row>
+    </div>
+  );
+};
+
+// 文本合并拆分工具
+const TextMergeSplitTool: React.FC<ToolProps> = ({ input, setInput, output, setOutput }) => {
+  // 模式：合并或拆分
+  const [mode, setMode] = useState<'merge' | 'split'>('merge');
+  
+  // 合并设置
+  const [mergeDelimiter, setMergeDelimiter] = useState(',');
+  const [mergeCustom, setMergeCustom] = useState('');
+  const [trimLines, setTrimLines] = useState(true);
+  const [removeEmpty, setRemoveEmpty] = useState(true);
+  const [addQuotes, setAddQuotes] = useState(false);
+  const [quoteChar, setQuoteChar] = useState('"');
+  
+  // 拆分设置
+  const [splitType, setSplitType] = useState<'delimiter' | 'regex' | 'length' | 'count'>('delimiter');
+  const [splitDelimiter, setSplitDelimiter] = useState(',');
+  const [splitCustom, setSplitCustom] = useState('');
+  const [splitRegex, setSplitRegex] = useState('');
+  const [splitLength, setSplitLength] = useState(10);
+  const [splitCount, setSplitCount] = useState(5);
+  const [keepDelimiter, setKeepDelimiter] = useState(false);
+
+  // 预设分隔符
+  const delimiterPresets = [
+    { label: '逗号 ,', value: ',' },
+    { label: '分号 ;', value: ';' },
+    { label: '空格', value: ' ' },
+    { label: '制表符', value: '\t' },
+    { label: '换行符', value: '\n' },
+    { label: '竖线 |', value: '|' },
+    { label: '冒号 :', value: ':' },
+    { label: '点号 .', value: '.' },
+    { label: '斜杠 /', value: '/' },
+    { label: '自定义', value: 'custom' },
+  ];
+
+  // 获取实际使用的合并分隔符
+  const getActualMergeDelimiter = () => {
+    if (mergeDelimiter === 'custom') {
+      // 处理转义字符
+      return mergeCustom
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\r/g, '\r');
+    }
+    return mergeDelimiter;
+  };
+
+  // 获取实际使用的拆分分隔符
+  const getActualSplitDelimiter = () => {
+    if (splitDelimiter === 'custom') {
+      return splitCustom
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\r/g, '\r');
+    }
+    return splitDelimiter;
+  };
+
+  // 合并操作
+  const handleMerge = () => {
+    if (!input.trim()) {
+      setOutput('');
+      return;
+    }
+
+    let lines = input.split('\n');
+    
+    // 去除每行首尾空白
+    if (trimLines) {
+      lines = lines.map(line => line.trim());
+    }
+    
+    // 移除空行
+    if (removeEmpty) {
+      lines = lines.filter(line => line.length > 0);
+    }
+    
+    // 添加引号
+    if (addQuotes) {
+      lines = lines.map(line => `${quoteChar}${line}${quoteChar}`);
+    }
+    
+    const delimiter = getActualMergeDelimiter();
+    setOutput(lines.join(delimiter));
+  };
+
+  // 拆分操作
+  const handleSplit = () => {
+    if (!input.trim()) {
+      setOutput('');
+      return;
+    }
+
+    let result: string[] = [];
+
+    switch (splitType) {
+      case 'delimiter': {
+        const delimiter = getActualSplitDelimiter();
+        if (keepDelimiter) {
+          // 保留分隔符
+          const regex = new RegExp(`(${escapeRegex(delimiter)})`, 'g');
+          result = input.split(regex).filter(s => s.length > 0);
+        } else {
+          result = input.split(delimiter);
+        }
+        break;
+      }
+      case 'regex': {
+        try {
+          const regex = new RegExp(splitRegex, 'g');
+          if (keepDelimiter) {
+            result = input.split(regex).filter(s => s.length > 0);
+          } else {
+            result = input.split(regex);
+          }
+        } catch (e) {
+          setOutput('正则表达式错误: ' + (e as Error).message);
+          return;
+        }
+        break;
+      }
+      case 'length': {
+        // 按固定长度拆分
+        const len = Math.max(1, splitLength);
+        for (let i = 0; i < input.length; i += len) {
+          result.push(input.slice(i, i + len));
+        }
+        break;
+      }
+      case 'count': {
+        // 按数量均分
+        const count = Math.max(1, splitCount);
+        const partLength = Math.ceil(input.length / count);
+        for (let i = 0; i < input.length; i += partLength) {
+          result.push(input.slice(i, i + partLength));
+        }
+        break;
+      }
+    }
+
+    // 去除空白
+    if (trimLines) {
+      result = result.map(s => s.trim());
+    }
+    if (removeEmpty) {
+      result = result.filter(s => s.length > 0);
+    }
+
+    setOutput(result.join('\n'));
+  };
+
+  // 转义正则特殊字符
+  const escapeRegex = (str: string) => {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
+
+  // 复制结果
+  const copyOutput = () => {
+    if (output) {
+      navigator.clipboard.writeText(output);
+      message.success('已复制到剪贴板');
+    }
+  };
+
+  // 交换输入输出
+  const swapInputOutput = () => {
+    const temp = input;
+    setInput(output);
+    setOutput(temp);
+  };
+
+  // 统计信息
+  const getStats = () => {
+    const inputLines = input.split('\n').filter(l => l.trim()).length;
+    const outputLines = output.split('\n').filter(l => l.trim()).length;
+    return { inputLines, outputLines };
+  };
+
+  const stats = getStats();
+
+  return (
+    <div>
+      {/* 模式切换 */}
+      <Card size="small" style={{ marginBottom: 12 }}>
+        <Row gutter={16} align="middle">
+          <Col span={6}>
+            <Text strong>操作模式</Text>
+            <Select
+              value={mode}
+              onChange={setMode}
+              style={{ width: '100%', marginTop: 4 }}
+            >
+              <Select.Option value="merge">合并（多行 → 单行）</Select.Option>
+              <Select.Option value="split">拆分（单行 → 多行）</Select.Option>
+            </Select>
+          </Col>
+          
+          {mode === 'merge' ? (
+            <>
+              <Col span={6}>
+                <Text strong>合并分隔符</Text>
+                <Select
+                  value={mergeDelimiter}
+                  onChange={setMergeDelimiter}
+                  style={{ width: '100%', marginTop: 4 }}
+                >
+                  {delimiterPresets.map(p => (
+                    <Select.Option key={p.value} value={p.value}>{p.label}</Select.Option>
+                  ))}
+                </Select>
+              </Col>
+              {mergeDelimiter === 'custom' && (
+                <Col span={4}>
+                  <Text strong>自定义</Text>
+                  <Input
+                    value={mergeCustom}
+                    onChange={e => setMergeCustom(e.target.value)}
+                    placeholder="如: \n 或 ||"
+                    style={{ marginTop: 4 }}
+                  />
+                </Col>
+              )}
+              <Col span={8}>
+                <div style={{ marginTop: 20 }}>
+                  <Space wrap>
+                    <Checkbox checked={trimLines} onChange={e => setTrimLines(e.target.checked)}>去除空白</Checkbox>
+                    <Checkbox checked={removeEmpty} onChange={e => setRemoveEmpty(e.target.checked)}>移除空行</Checkbox>
+                    <Checkbox checked={addQuotes} onChange={e => setAddQuotes(e.target.checked)}>添加引号</Checkbox>
+                    {addQuotes && (
+                      <Select value={quoteChar} onChange={setQuoteChar} size="small" style={{ width: 70 }}>
+                        <Select.Option value='"'>双引号</Select.Option>
+                        <Select.Option value="'">单引号</Select.Option>
+                        <Select.Option value="`">反引号</Select.Option>
+                      </Select>
+                    )}
+                  </Space>
+                </div>
+              </Col>
+            </>
+          ) : (
+            <>
+              <Col span={4}>
+                <Text strong>拆分方式</Text>
+                <Select
+                  value={splitType}
+                  onChange={setSplitType}
+                  style={{ width: '100%', marginTop: 4 }}
+                >
+                  <Select.Option value="delimiter">按分隔符</Select.Option>
+                  <Select.Option value="regex">按正则</Select.Option>
+                  <Select.Option value="length">按长度</Select.Option>
+                  <Select.Option value="count">按数量</Select.Option>
+                </Select>
+              </Col>
+              {splitType === 'delimiter' && (
+                <>
+                  <Col span={4}>
+                    <Text strong>分隔符</Text>
+                    <Select
+                      value={splitDelimiter}
+                      onChange={setSplitDelimiter}
+                      style={{ width: '100%', marginTop: 4 }}
+                    >
+                      {delimiterPresets.map(p => (
+                        <Select.Option key={p.value} value={p.value}>{p.label}</Select.Option>
+                      ))}
+                    </Select>
+                  </Col>
+                  {splitDelimiter === 'custom' && (
+                    <Col span={3}>
+                      <Text strong>自定义</Text>
+                      <Input
+                        value={splitCustom}
+                        onChange={e => setSplitCustom(e.target.value)}
+                        placeholder="分隔符"
+                        style={{ marginTop: 4 }}
+                      />
+                    </Col>
+                  )}
+                </>
+              )}
+              {splitType === 'regex' && (
+                <Col span={6}>
+                  <Text strong>正则表达式</Text>
+                  <Input
+                    value={splitRegex}
+                    onChange={e => setSplitRegex(e.target.value)}
+                    placeholder="如: [,;] 或 \s+"
+                    style={{ marginTop: 4 }}
+                  />
+                </Col>
+              )}
+              {splitType === 'length' && (
+                <Col span={4}>
+                  <Text strong>每段长度</Text>
+                  <Input
+                    type="number"
+                    value={splitLength}
+                    onChange={e => setSplitLength(parseInt(e.target.value) || 10)}
+                    min={1}
+                    style={{ marginTop: 4 }}
+                  />
+                </Col>
+              )}
+              {splitType === 'count' && (
+                <Col span={4}>
+                  <Text strong>拆分数量</Text>
+                  <Input
+                    type="number"
+                    value={splitCount}
+                    onChange={e => setSplitCount(parseInt(e.target.value) || 5)}
+                    min={1}
+                    style={{ marginTop: 4 }}
+                  />
+                </Col>
+              )}
+              <Col span={6}>
+                <div style={{ marginTop: 20 }}>
+                  <Space wrap>
+                    <Checkbox checked={trimLines} onChange={e => setTrimLines(e.target.checked)}>去除空白</Checkbox>
+                    <Checkbox checked={removeEmpty} onChange={e => setRemoveEmpty(e.target.checked)}>移除空项</Checkbox>
+                    {(splitType === 'delimiter' || splitType === 'regex') && (
+                      <Checkbox checked={keepDelimiter} onChange={e => setKeepDelimiter(e.target.checked)}>保留分隔符</Checkbox>
+                    )}
+                  </Space>
+                </div>
+              </Col>
+            </>
+          )}
+        </Row>
+      </Card>
+
+      {/* 输入输出区域 */}
+      <Row gutter={16}>
+        <Col span={11}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <Text strong>输入文本</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {mode === 'merge' ? `${stats.inputLines} 行` : `${input.length} 字符`}
+            </Text>
+          </div>
+          <TextArea
+            rows={14}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder={mode === 'merge' ? '输入多行文本，每行一个项目...' : '输入要拆分的文本...'}
+          />
+          <Space style={{ marginTop: 8 }}>
+            <Button type="primary" onClick={mode === 'merge' ? handleMerge : handleSplit}>
+              {mode === 'merge' ? '合并' : '拆分'}
+            </Button>
+            <Button onClick={() => { setInput(''); setOutput(''); }} icon={<ClearOutlined />}>清空</Button>
+          </Space>
+        </Col>
+        <Col span={2} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Tooltip title="交换输入输出">
+            <Button icon={<SwapOutlined />} onClick={swapInputOutput} />
+          </Tooltip>
+        </Col>
+        <Col span={11}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <Text strong>输出结果</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {mode === 'merge' ? `${output.length} 字符` : `${stats.outputLines} 行`}
+            </Text>
+          </div>
+          <TextArea
+            rows={14}
+            value={output}
+            readOnly
+            style={{ background: '#f5f5f5' }}
+            placeholder="处理结果将显示在这里..."
+          />
+          <Button
+            onClick={copyOutput}
+            style={{ marginTop: 8 }}
+            icon={<CopyOutlined />}
+            disabled={!output}
+          >
+            复制
+          </Button>
+        </Col>
+      </Row>
+    </div>
+  );
+};
+
+// 前后缀处理工具
+const TextPrefixSuffixTool: React.FC<ToolProps> = ({ input, setInput, output, setOutput }) => {
+  // 操作模式
+  const [mode, setMode] = useState<'add' | 'remove'>('add');
+  // 位置：前缀或后缀
+  const [position, setPosition] = useState<'prefix' | 'suffix' | 'both'>('prefix');
+  
+  // 添加模式设置
+  const [addType, setAddType] = useState<'static' | 'number' | 'letter' | 'weekday' | 'custom'>('static');
+  const [staticPrefix, setStaticPrefix] = useState('');
+  const [staticSuffix, setStaticSuffix] = useState('');
+  
+  // 递增设置
+  const [startNumber, setStartNumber] = useState(1);
+  const [step, setStep] = useState(1);
+  const [numberPadding, setNumberPadding] = useState(0); // 数字补零位数
+  const [letterCase, setLetterCase] = useState<'lower' | 'upper'>('lower');
+  const [startLetter, setStartLetter] = useState('a');
+  
+  // 自定义序列
+  const [customSequence, setCustomSequence] = useState('');
+  const [sequenceCycle, setSequenceCycle] = useState(true); // 循环使用序列
+  
+  // 删除模式设置
+  const [removeType, setRemoveType] = useState<'chars' | 'regex' | 'pattern'>('chars');
+  const [removeChars, setRemoveChars] = useState(0); // 删除字符数
+  const [removeRegex, setRemoveRegex] = useState('');
+  const [removePattern, setRemovePattern] = useState(''); // 删除指定内容
+  
+  // 分隔符
+  const [separator, setSeparator] = useState('');
+
+  // 星期预设
+  const weekdays = {
+    cn: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+    cnFull: ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'],
+    en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    enFull: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+  };
+  const [weekdayFormat, setWeekdayFormat] = useState<'cn' | 'cnFull' | 'en' | 'enFull'>('cn');
+
+  // 生成递增值
+  const generateValue = (index: number): string => {
+    switch (addType) {
+      case 'number': {
+        const num = startNumber + index * step;
+        return numberPadding > 0 ? String(num).padStart(numberPadding, '0') : String(num);
+      }
+      case 'letter': {
+        const startCode = startLetter.toLowerCase().charCodeAt(0) - 97;
+        const letterIndex = (startCode + index * step) % 26;
+        const letter = String.fromCharCode(97 + letterIndex);
+        return letterCase === 'upper' ? letter.toUpperCase() : letter;
+      }
+      case 'weekday': {
+        const days = weekdays[weekdayFormat];
+        return days[index % 7];
+      }
+      case 'custom': {
+        const items = customSequence.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
+        if (items.length === 0) return '';
+        if (sequenceCycle) {
+          return items[index % items.length];
+        }
+        return index < items.length ? items[index] : items[items.length - 1];
+      }
+      default:
+        return '';
+    }
+  };
+
+  // 添加前后缀
+  const handleAdd = () => {
+    if (!input.trim()) {
+      setOutput('');
+      return;
+    }
+
+    const lines = input.split('\n');
+    const result = lines.map((line, index) => {
+      if (!line.trim()) return line; // 保留空行
+      
+      let prefix = '';
+      let suffix = '';
+      
+      if (addType === 'static') {
+        prefix = position === 'prefix' || position === 'both' ? staticPrefix : '';
+        suffix = position === 'suffix' || position === 'both' ? staticSuffix : '';
+      } else {
+        const value = generateValue(index);
+        prefix = position === 'prefix' || position === 'both' ? value + separator : '';
+        suffix = position === 'suffix' || position === 'both' ? separator + value : '';
+      }
+      
+      return prefix + line + suffix;
+    });
+    
+    setOutput(result.join('\n'));
+  };
+
+  // 删除前后缀
+  const handleRemove = () => {
+    if (!input.trim()) {
+      setOutput('');
+      return;
+    }
+
+    const lines = input.split('\n');
+    const result = lines.map(line => {
+      if (!line.trim()) return line;
+      
+      let processed = line;
+      
+      switch (removeType) {
+        case 'chars': {
+          if (removeChars > 0) {
+            if (position === 'prefix' || position === 'both') {
+              processed = processed.slice(removeChars);
+            }
+            if (position === 'suffix' || position === 'both') {
+              processed = processed.slice(0, -removeChars);
+            }
+          }
+          break;
+        }
+        case 'regex': {
+          try {
+            const regex = new RegExp(removeRegex, 'g');
+            if (position === 'prefix') {
+              processed = processed.replace(new RegExp('^' + removeRegex), '');
+            } else if (position === 'suffix') {
+              processed = processed.replace(new RegExp(removeRegex + '$'), '');
+            } else {
+              processed = processed.replace(new RegExp('^' + removeRegex), '').replace(new RegExp(removeRegex + '$'), '');
+            }
+          } catch (e) {
+            // 正则错误时保持原样
+          }
+          break;
+        }
+        case 'pattern': {
+          if (removePattern) {
+            if (position === 'prefix' || position === 'both') {
+              if (processed.startsWith(removePattern)) {
+                processed = processed.slice(removePattern.length);
+              }
+            }
+            if (position === 'suffix' || position === 'both') {
+              if (processed.endsWith(removePattern)) {
+                processed = processed.slice(0, -removePattern.length);
+              }
+            }
+          }
+          break;
+        }
+      }
+      
+      return processed;
+    });
+    
+    setOutput(result.join('\n'));
+  };
+
+  // 执行操作
+  const handleProcess = () => {
+    if (mode === 'add') {
+      handleAdd();
+    } else {
+      handleRemove();
+    }
+  };
+
+  // 复制结果
+  const copyOutput = () => {
+    if (output) {
+      navigator.clipboard.writeText(output);
+      message.success('已复制到剪贴板');
+    }
+  };
+
+  // 交换输入输出
+  const swapInputOutput = () => {
+    const temp = input;
+    setInput(output);
+    setOutput(temp);
+  };
+
+  // 统计
+  const inputLines = input.split('\n').filter(l => l.trim()).length;
+  const outputLines = output.split('\n').filter(l => l.trim()).length;
+
+  return (
+    <div>
+      {/* 设置区域 */}
+      <Card size="small" style={{ marginBottom: 12 }}>
+        <Row gutter={16} align="middle">
+          <Col span={4}>
+            <Text strong>操作模式</Text>
+            <Select value={mode} onChange={setMode} style={{ width: '100%', marginTop: 4 }}>
+              <Select.Option value="add">添加前后缀</Select.Option>
+              <Select.Option value="remove">删除前后缀</Select.Option>
+            </Select>
+          </Col>
+          <Col span={4}>
+            <Text strong>位置</Text>
+            <Select value={position} onChange={setPosition} style={{ width: '100%', marginTop: 4 }}>
+              <Select.Option value="prefix">前缀</Select.Option>
+              <Select.Option value="suffix">后缀</Select.Option>
+              <Select.Option value="both">前后都加</Select.Option>
+            </Select>
+          </Col>
+          
+          {mode === 'add' ? (
+            <>
+              <Col span={4}>
+                <Text strong>添加类型</Text>
+                <Select value={addType} onChange={setAddType} style={{ width: '100%', marginTop: 4 }}>
+                  <Select.Option value="static">固定内容</Select.Option>
+                  <Select.Option value="number">数字递增</Select.Option>
+                  <Select.Option value="letter">字母递增</Select.Option>
+                  <Select.Option value="weekday">星期</Select.Option>
+                  <Select.Option value="custom">自定义序列</Select.Option>
+                </Select>
+              </Col>
+              
+              {addType === 'static' && (
+                <>
+                  {(position === 'prefix' || position === 'both') && (
+                    <Col span={4}>
+                      <Text strong>前缀内容</Text>
+                      <Input
+                        value={staticPrefix}
+                        onChange={e => setStaticPrefix(e.target.value)}
+                        placeholder="前缀"
+                        style={{ marginTop: 4 }}
+                      />
+                    </Col>
+                  )}
+                  {(position === 'suffix' || position === 'both') && (
+                    <Col span={4}>
+                      <Text strong>后缀内容</Text>
+                      <Input
+                        value={staticSuffix}
+                        onChange={e => setStaticSuffix(e.target.value)}
+                        placeholder="后缀"
+                        style={{ marginTop: 4 }}
+                      />
+                    </Col>
+                  )}
+                </>
+              )}
+              
+              {addType === 'number' && (
+                <>
+                  <Col span={3}>
+                    <Text strong>起始值</Text>
+                    <Input
+                      type="number"
+                      value={startNumber}
+                      onChange={e => setStartNumber(parseInt(e.target.value) || 1)}
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                  <Col span={2}>
+                    <Text strong>步长</Text>
+                    <Input
+                      type="number"
+                      value={step}
+                      onChange={e => setStep(parseInt(e.target.value) || 1)}
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                  <Col span={3}>
+                    <Text strong>补零位数</Text>
+                    <Input
+                      type="number"
+                      value={numberPadding}
+                      onChange={e => setNumberPadding(parseInt(e.target.value) || 0)}
+                      min={0}
+                      placeholder="0=不补零"
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                  <Col span={3}>
+                    <Text strong>分隔符</Text>
+                    <Input
+                      value={separator}
+                      onChange={e => setSeparator(e.target.value)}
+                      placeholder="如: . 或 -"
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                </>
+              )}
+              
+              {addType === 'letter' && (
+                <>
+                  <Col span={3}>
+                    <Text strong>起始字母</Text>
+                    <Input
+                      value={startLetter}
+                      onChange={e => setStartLetter(e.target.value.slice(0, 1) || 'a')}
+                      maxLength={1}
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                  <Col span={2}>
+                    <Text strong>步长</Text>
+                    <Input
+                      type="number"
+                      value={step}
+                      onChange={e => setStep(parseInt(e.target.value) || 1)}
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                  <Col span={3}>
+                    <Text strong>大小写</Text>
+                    <Select value={letterCase} onChange={setLetterCase} style={{ width: '100%', marginTop: 4 }}>
+                      <Select.Option value="lower">小写</Select.Option>
+                      <Select.Option value="upper">大写</Select.Option>
+                    </Select>
+                  </Col>
+                  <Col span={3}>
+                    <Text strong>分隔符</Text>
+                    <Input
+                      value={separator}
+                      onChange={e => setSeparator(e.target.value)}
+                      placeholder="如: . 或 -"
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                </>
+              )}
+              
+              {addType === 'weekday' && (
+                <>
+                  <Col span={4}>
+                    <Text strong>格式</Text>
+                    <Select value={weekdayFormat} onChange={setWeekdayFormat} style={{ width: '100%', marginTop: 4 }}>
+                      <Select.Option value="cn">周一、周二...</Select.Option>
+                      <Select.Option value="cnFull">星期一、星期二...</Select.Option>
+                      <Select.Option value="en">Mon、Tue...</Select.Option>
+                      <Select.Option value="enFull">Monday、Tuesday...</Select.Option>
+                    </Select>
+                  </Col>
+                  <Col span={3}>
+                    <Text strong>分隔符</Text>
+                    <Input
+                      value={separator}
+                      onChange={e => setSeparator(e.target.value)}
+                      placeholder="如: . 或 -"
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                </>
+              )}
+              
+              {addType === 'custom' && (
+                <>
+                  <Col span={6}>
+                    <Text strong>自定义序列（逗号分隔）</Text>
+                    <Input
+                      value={customSequence}
+                      onChange={e => setCustomSequence(e.target.value)}
+                      placeholder="如: 甲,乙,丙,丁 或 ①,②,③"
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                  <Col span={3}>
+                    <Text strong>分隔符</Text>
+                    <Input
+                      value={separator}
+                      onChange={e => setSeparator(e.target.value)}
+                      placeholder="如: . 或 -"
+                      style={{ marginTop: 4 }}
+                    />
+                  </Col>
+                  <Col span={3}>
+                    <div style={{ marginTop: 20 }}>
+                      <Checkbox checked={sequenceCycle} onChange={e => setSequenceCycle(e.target.checked)}>
+                        循环使用
+                      </Checkbox>
+                    </div>
+                  </Col>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <Col span={4}>
+                <Text strong>删除方式</Text>
+                <Select value={removeType} onChange={setRemoveType} style={{ width: '100%', marginTop: 4 }}>
+                  <Select.Option value="chars">按字符数</Select.Option>
+                  <Select.Option value="pattern">指定内容</Select.Option>
+                  <Select.Option value="regex">正则匹配</Select.Option>
+                </Select>
+              </Col>
+              
+              {removeType === 'chars' && (
+                <Col span={4}>
+                  <Text strong>删除字符数</Text>
+                  <Input
+                    type="number"
+                    value={removeChars}
+                    onChange={e => setRemoveChars(parseInt(e.target.value) || 0)}
+                    min={0}
+                    style={{ marginTop: 4 }}
+                  />
+                </Col>
+              )}
+              
+              {removeType === 'pattern' && (
+                <Col span={6}>
+                  <Text strong>要删除的内容</Text>
+                  <Input
+                    value={removePattern}
+                    onChange={e => setRemovePattern(e.target.value)}
+                    placeholder="输入要删除的前缀或后缀"
+                    style={{ marginTop: 4 }}
+                  />
+                </Col>
+              )}
+              
+              {removeType === 'regex' && (
+                <Col span={6}>
+                  <Text strong>正则表达式</Text>
+                  <Input
+                    value={removeRegex}
+                    onChange={e => setRemoveRegex(e.target.value)}
+                    placeholder="如: \d+ 或 [a-z]+"
+                    style={{ marginTop: 4 }}
+                  />
+                </Col>
+              )}
+            </>
+          )}
+        </Row>
+      </Card>
+
+      {/* 输入输出区域 */}
+      <Row gutter={16}>
+        <Col span={11}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <Text strong>输入文本</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{inputLines} 行</Text>
+          </div>
+          <TextArea
+            rows={14}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="输入多行文本，每行将被处理..."
+          />
+          <Space style={{ marginTop: 8 }}>
+            <Button type="primary" onClick={handleProcess}>
+              {mode === 'add' ? '添加' : '删除'}
+            </Button>
+            <Button onClick={() => { setInput(''); setOutput(''); }} icon={<ClearOutlined />}>清空</Button>
+          </Space>
+        </Col>
+        <Col span={2} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Tooltip title="交换输入输出">
+            <Button icon={<SwapOutlined />} onClick={swapInputOutput} />
+          </Tooltip>
+        </Col>
+        <Col span={11}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <Text strong>输出结果</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{outputLines} 行</Text>
+          </div>
+          <TextArea
+            rows={14}
+            value={output}
+            readOnly
+            style={{ background: '#f5f5f5' }}
+            placeholder="处理结果将显示在这里..."
+          />
+          <Button
+            onClick={copyOutput}
+            style={{ marginTop: 8 }}
+            icon={<CopyOutlined />}
+            disabled={!output}
           >
             复制
           </Button>

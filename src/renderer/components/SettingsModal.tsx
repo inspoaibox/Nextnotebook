@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Select, Switch, InputNumber, Input, Button, Space, message, Divider, List, Popconfirm, Tag, Typography } from 'antd';
+import { Modal, Form, Select, Switch, InputNumber, Input, Button, Space, message, Divider, List, Popconfirm, Tag, Typography, Checkbox } from 'antd';
 import {
   SettingOutlined,
   CloudOutlined,
@@ -19,7 +19,7 @@ import {
 import { useSettings } from '../contexts/SettingsContext';
 import { useAISettings } from '../hooks/useAI';
 import { useFeatureSettings } from '../hooks/useFeatureSettings';
-import { AIChannel, AIModel } from '@shared/types';
+import { AIChannel, AIModel, SyncModules, DEFAULT_SYNC_MODULES } from '@shared/types';
 import { PRESET_CHANNELS } from '../services/aiApi';
 
 const { Text } = Typography;
@@ -115,6 +115,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   const [newVaultPassword, setNewVaultPassword] = useState('');
   const [confirmVaultPassword, setConfirmVaultPassword] = useState('');
 
+  // 同步密钥状态
+  const [hasSyncKey, setHasSyncKey] = useState(() => !!localStorage.getItem('mucheng-sync-key'));
+
   // 数据路径信息
   const [appPaths, setAppPaths] = useState<{
     installPath: string;
@@ -158,16 +161,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   useEffect(() => {
     if (open) {
       form.setFieldsValue(settings);
-      // 确保同步表单有完整的初始值
+      // 设置同步表单初始值
       syncForm.setFieldsValue({
-        enabled: syncConfig.enabled || false,
+        enabled: syncConfig.enabled ?? false,
         type: syncConfig.type || 'webdav',
         url: syncConfig.url || '',
         sync_path: syncConfig.sync_path || '/mucheng-notes',
         username: syncConfig.username || '',
         password: syncConfig.password || '',
-        encryption_enabled: syncConfig.encryption_enabled || false,
+        encryption_enabled: syncConfig.encryption_enabled ?? false,
         sync_interval: syncConfig.sync_interval || 5,
+        sync_modules: syncConfig.sync_modules || DEFAULT_SYNC_MODULES,
       });
     }
   }, [open, settings, syncConfig, form, syncForm]);
@@ -196,21 +200,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   };
 
   const handleSaveSyncConfig = () => {
-    const values = syncForm.getFieldsValue();
-    // 确保所有字段都被保存
+    // 获取表单所有字段值
+    const values = syncForm.getFieldsValue(true);
+    
+    // 保存配置
     const configToSave = {
-      enabled: values.enabled || false,
+      enabled: values.enabled ?? false,
       type: values.type || 'webdav',
       url: values.url || '',
       sync_path: values.sync_path || '/mucheng-notes',
       username: values.username || '',
       password: values.password || '',
-      encryption_enabled: values.encryption_enabled || false,
+      encryption_enabled: values.encryption_enabled ?? false,
       sync_interval: values.sync_interval || 5,
+      sync_modules: values.sync_modules || DEFAULT_SYNC_MODULES,
     };
+    
     updateSyncConfig(configToSave);
+    
     if (configToSave.encryption_enabled && !localStorage.getItem('mucheng-sync-key')) {
       localStorage.setItem('mucheng-sync-key', generateSyncKey());
+      setHasSyncKey(true);
       message.info('已自动生成同步密钥');
     }
     message.success('同步设置已保存');
@@ -300,6 +310,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     if (!key) {
       key = generateSyncKey();
       localStorage.setItem('mucheng-sync-key', key);
+      setHasSyncKey(true);
     }
     const blob = new Blob([JSON.stringify({ key, created: Date.now() })], { type: 'application/json' });
     const a = document.createElement('a');
@@ -319,6 +330,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
       try {
         const data = JSON.parse(await file.text());
         localStorage.setItem('mucheng-sync-key', data.key || data);
+        setHasSyncKey(true);
         message.success('密钥已导入');
       } catch {
         message.error('导入失败');
@@ -328,22 +340,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   };
 
   const handleTestConnection = async () => {
-    const values = syncForm.getFieldsValue();
-    const { url, username, password, sync_path, type } = values;
-    if (!url) { message.error('请填写服务器地址'); return; }
+    // 获取表单所有字段值
+    const values = syncForm.getFieldsValue(true);
+    
+    const url = values.url;
+    if (!url) { 
+      message.error('请填写服务器地址'); 
+      return; 
+    }
+    
     message.loading({ content: '测试中...', key: 'test' });
     try {
-      // 使用后端的测试连接功能
       const api = (window as any).electronAPI;
       if (api?.sync?.testConnection) {
         const encryptionKey = localStorage.getItem('mucheng-sync-key') || undefined;
         const success = await api.sync.testConnection({
           enabled: true,
-          type: type || 'webdav',
+          type: values.type || 'webdav',
           url: url,
-          syncPath: sync_path || '/mucheng-notes',
-          username: username || '',
-          password: password || '',
+          syncPath: values.sync_path || '/mucheng-notes',
+          username: values.username || '',
+          password: values.password || '',
           encryptionEnabled: false,
           encryptionKey,
           syncInterval: 5,
@@ -354,20 +371,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
           message.error({ content: '连接失败，请检查配置', key: 'test' });
         }
       } else {
-        // 降级到简单的 fetch 测试
-        const res = await fetch(url, {
-          method: 'OPTIONS',
-          headers: username ? { 'Authorization': 'Basic ' + btoa(`${username}:${password}`) } : {},
-        });
-        message.success({ content: '连接成功', key: 'test' });
+        message.error({ content: '测试功能不可用', key: 'test' });
       }
     } catch (e) {
       console.error('Connection test failed:', e);
       message.error({ content: '连接失败', key: 'test' });
     }
   };
-
-  const hasSyncKey = !!localStorage.getItem('mucheng-sync-key');
 
   const menuItems = [
     { key: 'general', icon: <SettingOutlined />, label: '通用设置' },
@@ -692,6 +702,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                         <InputNumber min={1} max={60} addonAfter="分钟" style={{ width: 120 }} />
                       </Form.Item>
                       {enabled && <Divider style={{ margin: '16px 0' }} />}
+                      {enabled && (
+                        <Form.Item label="同步模块" tooltip="选择需要同步的数据模块">
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <Form.Item name={['sync_modules', 'notes']} valuePropName="checked" noStyle>
+                              <Checkbox>笔记（含文件夹、标签、附件）</Checkbox>
+                            </Form.Item>
+                            <Form.Item name={['sync_modules', 'bookmarks']} valuePropName="checked" noStyle>
+                              <Checkbox>书签</Checkbox>
+                            </Form.Item>
+                            <Form.Item name={['sync_modules', 'vault']} valuePropName="checked" noStyle>
+                              <Checkbox>密码库</Checkbox>
+                            </Form.Item>
+                            <Form.Item name={['sync_modules', 'diagrams']} valuePropName="checked" noStyle>
+                              <Checkbox>脑图 / 流程图 / 白板</Checkbox>
+                            </Form.Item>
+                            <Form.Item name={['sync_modules', 'todos']} valuePropName="checked" noStyle>
+                              <Checkbox>待办事项</Checkbox>
+                            </Form.Item>
+                            <Form.Item name={['sync_modules', 'ai']} valuePropName="checked" noStyle>
+                              <Checkbox>AI 助手（配置与对话）</Checkbox>
+                            </Form.Item>
+                          </div>
+                        </Form.Item>
+                      )}
+                      {enabled && <Divider style={{ margin: '16px 0' }} />}
                       <Form.Item wrapperCol={{ offset: 6 }}>
                         <Space>
                           <Button type="primary" onClick={handleSaveSyncConfig}>保存设置</Button>
@@ -810,7 +845,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
               <Space>
                 <Button size="small" onClick={handleExportKey}>导出密钥</Button>
                 <Button size="small" onClick={handleImportKey}>导入密钥</Button>
-                <Button size="small" onClick={() => { localStorage.setItem('mucheng-sync-key', generateSyncKey()); message.success('已生成新密钥'); }}>
+                <Button size="small" onClick={() => { 
+                  localStorage.setItem('mucheng-sync-key', generateSyncKey()); 
+                  setHasSyncKey(true);
+                  message.success('已生成新密钥'); 
+                }}>
                   {hasSyncKey ? '重新生成' : '生成密钥'}
                 </Button>
               </Space>

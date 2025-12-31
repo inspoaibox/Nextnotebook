@@ -38,6 +38,7 @@ module.exports = [
     externals: {
       'better-sqlite3': 'commonjs better-sqlite3',
       keytar: 'commonjs keytar',
+      sharp: 'commonjs sharp',
     },
     node: {
       __dirname: false,

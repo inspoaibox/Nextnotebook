@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ItemBase } from '@shared/types';
+import { ItemBase, ItemType, SyncModules, SYNC_MODULE_TYPES } from '@shared/types';
 import { StorageAdapter, RemoteChange } from './StorageAdapter';
 import { ItemsManager } from '../database/ItemsManager';
 import { CryptoEngine } from '../crypto/CryptoEngine';
@@ -16,10 +16,11 @@ export interface SyncResult {
 export interface SyncOptions {
   encryptionEnabled: boolean;
   conflictStrategy: 'remote-wins' | 'local-wins' | 'create-copy';
+  syncModules: SyncModules;
 }
 
-// 敏感数据类型 - 这些类型始终需要加密同步
-const SENSITIVE_TYPES = ['vault_entry', 'vault_folder'];
+// 敏感数据类型 - 这些类型始终需要加密同步（包含密码、API Key 等敏感信息）
+const SENSITIVE_TYPES = ['vault_entry', 'vault_folder', 'ai_config'];
 
 export class SyncEngine {
   private adapter: StorageAdapter;
@@ -27,6 +28,7 @@ export class SyncEngine {
   private cryptoEngine: CryptoEngine | null;
   private deviceId: string;
   private options: SyncOptions;
+  private allowedTypes: Set<ItemType>;
 
   constructor(
     adapter: StorageAdapter,
@@ -41,8 +43,39 @@ export class SyncEngine {
     this.options = {
       encryptionEnabled: false,
       conflictStrategy: 'create-copy',
+      syncModules: {
+        notes: true,
+        bookmarks: true,
+        vault: true,
+        diagrams: true,
+        todos: true,
+        ai: true,
+      },
       ...options,
     };
+    this.allowedTypes = this.buildAllowedTypes();
+  }
+
+  // 根据模块配置构建允许同步的类型集合
+  private buildAllowedTypes(): Set<ItemType> {
+    const types = new Set<ItemType>();
+    const modules = this.options.syncModules;
+    
+    for (const [module, enabled] of Object.entries(modules)) {
+      if (enabled) {
+        const moduleTypes = SYNC_MODULE_TYPES[module as keyof SyncModules];
+        if (moduleTypes) {
+          moduleTypes.forEach(t => types.add(t));
+        }
+      }
+    }
+    
+    return types;
+  }
+
+  // 检查类型是否允许同步
+  private shouldSyncType(type: ItemType): boolean {
+    return this.allowedTypes.has(type);
   }
 
   // 执行完整同步
@@ -70,7 +103,7 @@ export class SyncEngine {
         if (this.options.encryptionEnabled) {
           const keyValid = await this.verifyEncryptionKey();
           if (!keyValid) {
-            result.errors.push('Encryption key mismatch - sync rejected');
+            result.errors.push('Encryption key mismatch - 同步密钥不匹配，请确保使用相同的密钥');
             return result;
           }
         }
@@ -107,7 +140,8 @@ export class SyncEngine {
     const errors: string[] = [];
     let count = 0;
 
-    const pendingItems = this.itemsManager.getPendingSync();
+    const pendingItems = this.itemsManager.getPendingSync()
+      .filter(item => this.shouldSyncType(item.type));
 
     for (const item of pendingItems) {
       try {
@@ -162,6 +196,11 @@ export class SyncEngine {
       currentCursor = nextCursor;
 
       for (const change of changes) {
+        // 过滤不需要同步的类型
+        if (!this.shouldSyncType(change.type)) {
+          continue;
+        }
+        
         try {
           const result = await this.processRemoteChange(change);
           if (result.success) {
@@ -305,6 +344,10 @@ export class SyncEngine {
   // 设置同步选项
   setOptions(options: Partial<SyncOptions>): void {
     this.options = { ...this.options, ...options };
+    // 如果模块配置变化，重新构建允许的类型集合
+    if (options.syncModules) {
+      this.allowedTypes = this.buildAllowedTypes();
+    }
   }
 
   // 获取同步状态
@@ -313,7 +356,8 @@ export class SyncEngine {
     lastSyncTime: number | null;
     isLocked: boolean;
   }> {
-    const pendingItems = this.itemsManager.getPendingSync();
+    const pendingItems = this.itemsManager.getPendingSync()
+      .filter(item => this.shouldSyncType(item.type));
     const cursor = await this.adapter.getSyncCursor();
     const lockStatus = await this.adapter.checkLock();
 

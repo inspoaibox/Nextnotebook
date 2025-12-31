@@ -296,6 +296,7 @@ const App: React.FC = () => {
           encryptionEnabled: syncConfig.encryption_enabled,
           encryptionKey,
           syncInterval: syncConfig.sync_interval,
+          syncModules: syncConfig.sync_modules,
         });
         
         if (success) {
@@ -312,7 +313,7 @@ const App: React.FC = () => {
       }
     };
     initSync();
-  }, [syncConfig.enabled, syncConfig.url, syncConfig.type, syncConfig.username, syncConfig.password, syncConfig.sync_path, syncConfig.encryption_enabled, syncConfig.sync_interval, syncConfig.api_key]);
+  }, [syncConfig.enabled, syncConfig.url, syncConfig.type, syncConfig.username, syncConfig.password, syncConfig.sync_path, syncConfig.encryption_enabled, syncConfig.sync_interval, syncConfig.api_key, syncConfig.sync_modules]);
 
   // 定期更新同步状态
   useEffect(() => {
@@ -536,6 +537,7 @@ const App: React.FC = () => {
           encryptionEnabled: syncConfig.encryption_enabled,
           encryptionKey,
           syncInterval: syncConfig.sync_interval,
+          syncModules: syncConfig.sync_modules,
         });
         
         if (success) {
@@ -567,7 +569,16 @@ const App: React.FC = () => {
           await refresh();
         } else {
           setSyncStatus('error');
-          message.error(`同步失败: ${result.errors.join(', ')}`);
+          // 检查是否是密钥不匹配错误
+          const keyMismatchError = result.errors.find(e => e.includes('key mismatch'));
+          if (keyMismatchError) {
+            message.error({
+              content: '同步密钥不匹配，请导入正确的同步密钥后重试',
+              duration: 5,
+            });
+          } else {
+            message.error(`同步失败: ${result.errors.join(', ')}`);
+          }
         }
       } else {
         setSyncStatus('error');

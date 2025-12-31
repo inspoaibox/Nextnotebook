@@ -7,6 +7,38 @@ import App from './App';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import './styles/global.css';
 
+// Polyfill for Promise.withResolvers (required by pdfjs-dist 5.x)
+if (typeof (Promise as any).withResolvers !== 'function') {
+  (Promise as any).withResolvers = function <T>() {
+    let resolve: (value: T | PromiseLike<T>) => void;
+    let reject: (reason?: any) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve: resolve!, reject: reject! };
+  };
+}
+
+// 在 React 渲染前立即应用主题，避免闪烁
+(function applyInitialTheme() {
+  try {
+    const savedSettings = localStorage.getItem('mucheng-settings');
+    if (savedSettings) {
+      const settings = JSON.parse(savedSettings);
+      const theme = settings.theme;
+      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      
+      const isDark = theme === 'dark' || (theme === 'system' && systemDark);
+      if (isDark) {
+        document.body.classList.add('dark-mode');
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to apply initial theme:', e);
+  }
+})();
+
 // 主题包装组件
 const ThemedApp: React.FC = () => {
   const { isDarkMode } = useSettings();

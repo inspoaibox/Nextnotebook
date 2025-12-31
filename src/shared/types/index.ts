@@ -25,6 +25,7 @@ export type ItemType =
   | 'bookmark'
   | 'bookmark_folder'
   | 'diagram'
+  | 'ai_config'
   | 'ai_conversation'
   | 'ai_message';
 
@@ -166,6 +167,14 @@ export interface AIMessagePayload {
   created_at: number;
 }
 
+// AI 配置 payload（用于同步 AI 渠道和模型配置）
+export interface AIConfigPayload {
+  enabled: boolean;
+  default_channel: string;
+  default_model: string;
+  channels: AIChannel[];
+}
+
 // AI 渠道配置
 export interface AIChannel {
   id: string;
@@ -230,6 +239,36 @@ export interface ResourcePayload {
   file_hash: string;
 }
 
+// 同步模块配置
+export interface SyncModules {
+  notes: boolean;      // 笔记 + 文件夹 + 标签 + 附件
+  bookmarks: boolean;  // 书签 + 书签文件夹
+  vault: boolean;      // 密码库条目 + 密码库文件夹
+  diagrams: boolean;   // 脑图/流程图/白板
+  todos: boolean;      // 待办事项
+  ai: boolean;         // AI 配置 + 对话 + 消息
+}
+
+// 默认同步模块配置（全选）
+export const DEFAULT_SYNC_MODULES: SyncModules = {
+  notes: true,
+  bookmarks: true,
+  vault: true,
+  diagrams: true,
+  todos: true,
+  ai: true,
+};
+
+// 模块到 ItemType 的映射
+export const SYNC_MODULE_TYPES: Record<keyof SyncModules, ItemType[]> = {
+  notes: ['note', 'folder', 'tag', 'resource'],
+  bookmarks: ['bookmark', 'bookmark_folder'],
+  vault: ['vault_entry', 'vault_folder'],
+  diagrams: ['diagram'],
+  todos: ['todo'],
+  ai: ['ai_config', 'ai_conversation', 'ai_message'],
+};
+
 // 同步配置
 export interface SyncConfig {
   enabled: boolean;
@@ -243,6 +282,7 @@ export interface SyncConfig {
   sync_interval: number;  // 分钟
   last_sync_time: number | null;
   sync_cursor: string | null;
+  sync_modules: SyncModules;  // 同步模块选择
 }
 
 // 应用设置

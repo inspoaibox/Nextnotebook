@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('set-auto-launch', enabled),
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   
+  // 主题设置（保存到主进程可读取的文件，用于启动时背景色）
+  saveThemeSettings: (settings: { theme: string }) => ipcRenderer.invoke('save-theme-settings', settings),
+  
   // 窗口操作
   minimizeToTray: () => ipcRenderer.send('window-minimize-to-tray'),
   quitApp: () => ipcRenderer.send('window-quit'),
@@ -73,5 +76,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
     readFile: (path: string) => ipcRenderer.invoke('fs-read', path),
     writeFile: (path: string, data: string | Buffer) => ipcRenderer.invoke('fs-write', path, data),
     exists: (path: string) => ipcRenderer.invoke('fs-exists', path),
+  },
+
+  // Image API - 图片处理
+  image: {
+    getMetadata: (input: string) => ipcRenderer.invoke('image:getMetadata', input),
+    process: (input: string, options: object) => ipcRenderer.invoke('image:process', input, options),
+    generatePreview: (input: string, maxSize: number) => ipcRenderer.invoke('image:generatePreview', input, maxSize),
+    saveFile: (buffer: string, defaultName: string) => ipcRenderer.invoke('image:saveFile', buffer, defaultName),
+  },
+
+  // PDF API - PDF 处理
+  pdf: {
+    getInfo: (file: string) => ipcRenderer.invoke('pdf:getInfo', file),
+    merge: (options: object) => ipcRenderer.invoke('pdf:merge', options),
+    split: (options: object) => ipcRenderer.invoke('pdf:split', options),
+    toImage: (options: object) => ipcRenderer.invoke('pdf:toImage', options),
+    compress: (options: object) => ipcRenderer.invoke('pdf:compress', options),
+    addWatermark: (options: object) => ipcRenderer.invoke('pdf:addWatermark', options),
+    rotate: (options: object) => ipcRenderer.invoke('pdf:rotate', options),
+    reorder: (options: object) => ipcRenderer.invoke('pdf:reorder', options),
+    deletePages: (options: object) => ipcRenderer.invoke('pdf:deletePages', options),
+    extractPages: (options: object) => ipcRenderer.invoke('pdf:extractPages', options),
+    setSecurity: (options: object) => ipcRenderer.invoke('pdf:setSecurity', options),
+    removeSecurity: (file: string, password: string) => ipcRenderer.invoke('pdf:removeSecurity', file, password),
+    getMetadata: (file: string) => ipcRenderer.invoke('pdf:getMetadata', file),
+    setMetadata: (options: object) => ipcRenderer.invoke('pdf:setMetadata', options),
+    imagesToPdf: (options: object) => ipcRenderer.invoke('pdf:imagesToPdf', options),
+    getFormFields: (file: string) => ipcRenderer.invoke('pdf:getFormFields', file),
+    fillForm: (file: string, values: object) => ipcRenderer.invoke('pdf:fillForm', file, values),
+    checkGhostscript: () => ipcRenderer.invoke('pdf:checkGhostscript'),
+    // Ghostscript 增强功能
+    toGrayscale: (file: string) => ipcRenderer.invoke('pdf:toGrayscale', file),
+    toPDFA: (options: object) => ipcRenderer.invoke('pdf:toPDFA', options),
+    repair: (file: string) => ipcRenderer.invoke('pdf:repair', file),
+    convertVersion: (options: object) => ipcRenderer.invoke('pdf:convertVersion', options),
+    linearize: (file: string) => ipcRenderer.invoke('pdf:linearize', file),
+    saveFile: (buffer: string, defaultName: string) => ipcRenderer.invoke('pdf:saveFile', buffer, defaultName),
   },
 });

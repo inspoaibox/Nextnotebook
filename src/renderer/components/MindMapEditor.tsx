@@ -29,6 +29,8 @@ const DEFAULT_MIND_DATA = {
   root: {
     data: {
       text: '中心主题',
+      expand: true,
+      isActive: false,
     },
     children: [],
   },
@@ -137,11 +139,25 @@ const MindMapEditor: React.FC<MindMapEditorProps> = ({ data, onSave }) => {
         initRootNodePosition: ['center', 'center'],
         width: rect.width || 800,
         height: rect.height || 600,
+        // 禁用库的内置编辑功能，使用我们自己的 Modal
+        customInnerElsAppendTo: null,
+        isUseCustomNodeContent: false,
+        // 文本配置
+        textAutoWrapWidth: 200,
       } as any);
 
       mindMapRef.current = mindMap;
       setIsReady(true);
       setIsLoading(false);
+
+      // 监听双击事件，使用我们自己的编辑 Modal
+      mindMap.on('node_dblclick', (node: any) => {
+        if (node) {
+          const text = node.nodeData?.data?.text || '';
+          setEditingText(text);
+          setEditingNode(true);
+        }
+      });
 
       mindMap.on('data_change', () => {
         if ((window as any).__mindMapSaveTimer) {
@@ -222,6 +238,28 @@ const MindMapEditor: React.FC<MindMapEditorProps> = ({ data, onSave }) => {
     }
   }, [isReady]);
 
+  // 编辑根节点（中心主题）
+  const handleEditRoot = useCallback(() => {
+    if (!mindMapRef.current || !isReady) return;
+    try {
+      const root = mindMapRef.current.renderer?.root;
+      if (root) {
+        // 清除当前选中，选中根节点
+        mindMapRef.current.renderer.clearActiveNodeList();
+        mindMapRef.current.renderer.addNodeToActiveList(root);
+        // 获取根节点文本
+        const text = root.nodeData?.data?.text || '中心主题';
+        setEditingText(text);
+        setEditingNode(true);
+      } else {
+        message.warning('无法获取根节点');
+      }
+    } catch (e) {
+      console.error('Edit root failed:', e);
+      message.error('编辑根节点失败');
+    }
+  }, [isReady]);
+
   const handleAddSibling = useCallback(() => {
     if (!mindMapRef.current || !isReady) {
       message.warning('脑图未就绪');
@@ -280,7 +318,15 @@ const MindMapEditor: React.FC<MindMapEditorProps> = ({ data, onSave }) => {
   const handleEditNode = useCallback(() => {
     if (!mindMapRef.current || !isReady) return;
     try {
-      const activeNodes = mindMapRef.current.renderer?.activeNodeList || [];
+      let activeNodes = mindMapRef.current.renderer?.activeNodeList || [];
+      // 如果没有选中节点，默认选中根节点
+      if (activeNodes.length === 0) {
+        const root = mindMapRef.current.renderer?.root;
+        if (root) {
+          mindMapRef.current.renderer.addNodeToActiveList(root);
+          activeNodes = [root];
+        }
+      }
       if (activeNodes.length === 0) {
         message.warning('请先点击选中要编辑的节点');
         return;
@@ -290,6 +336,7 @@ const MindMapEditor: React.FC<MindMapEditorProps> = ({ data, onSave }) => {
       setEditingText(text);
       setEditingNode(true);
     } catch (e) {
+      console.error('Edit node failed:', e);
       message.error('编辑失败');
     }
   }, [isReady]);
@@ -297,10 +344,19 @@ const MindMapEditor: React.FC<MindMapEditorProps> = ({ data, onSave }) => {
   const handleSaveNodeEdit = useCallback(() => {
     if (!mindMapRef.current || !isReady) return;
     try {
-      mindMapRef.current.execCommand('SET_NODE_TEXT', mindMapRef.current.renderer.activeNodeList[0], editingText);
+      const activeNodes = mindMapRef.current.renderer?.activeNodeList || [];
+      if (activeNodes.length > 0) {
+        const node = activeNodes[0];
+        // 使用 SET_NODE_DATA 命令更新节点数据
+        mindMapRef.current.execCommand('SET_NODE_DATA', node, {
+          text: editingText || '新节点'
+        });
+      }
       setEditingNode(false);
       setEditingText('');
+      message.success('已保存');
     } catch (e) {
+      console.error('Save node edit failed:', e);
       message.error('保存失败');
     }
   }, [isReady, editingText]);
@@ -545,7 +601,9 @@ const MindMapEditor: React.FC<MindMapEditorProps> = ({ data, onSave }) => {
 
   const editMenu = {
     items: [
-      { key: 'edit', label: <><EditOutlined /> 编辑节点</>, onClick: handleEditNode },
+      { key: 'editRoot', label: <><EditOutlined /> 编辑中心主题</>, onClick: handleEditRoot },
+      { key: 'edit', label: <><EditOutlined /> 编辑选中节点</>, onClick: handleEditNode },
+      { type: 'divider' as const },
       { key: 'copy', label: <><CopyOutlined /> 复制 (Ctrl+C)</>, onClick: handleCopy },
       { key: 'cut', label: <><ScissorOutlined /> 剪切 (Ctrl+X)</>, onClick: handleCut },
       { key: 'paste', label: <><SnippetsOutlined /> 粘贴 (Ctrl+V)</>, onClick: handlePaste },
@@ -620,6 +678,11 @@ const MindMapEditor: React.FC<MindMapEditorProps> = ({ data, onSave }) => {
           </Space>
           <div style={{ width: 1, height: 16, background: '#d9d9d9', margin: '0 4px' }} />
           <Space size="small">
+            <Tooltip title="编辑中心主题">
+              <Button size="small" type="primary" ghost onClick={handleEditRoot}>
+                <EditOutlined /> 编辑主题
+              </Button>
+            </Tooltip>
             <Tooltip title="添加子节点">
               <Button size="small" onClick={handleAddChild}>+ 子节点</Button>
             </Tooltip>
