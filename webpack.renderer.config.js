@@ -10,7 +10,7 @@ module.exports = {
     filename: 'renderer.js',
   },
   resolve: {
-    extensions: ['.ts', '.tsx', '.js', '.jsx'],
+    extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs'],
     alias: {
       '@': path.resolve(__dirname, 'src'),
       '@renderer': path.resolve(__dirname, 'src/renderer'),
@@ -37,6 +37,15 @@ module.exports = {
       {
         test: /\.css$/,
         use: ['style-loader', 'css-loader'],
+      },
+      {
+        // 处理 @imgly/background-removal 的 ES 模块
+        test: /\.m?js$/,
+        include: /node_modules\/@imgly/,
+        type: 'javascript/auto',
+        resolve: {
+          fullySpecified: false,
+        },
       },
     ],
   },

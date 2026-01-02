@@ -39,6 +39,7 @@ module.exports = [
       'better-sqlite3': 'commonjs better-sqlite3',
       keytar: 'commonjs keytar',
       sharp: 'commonjs sharp',
+      'onnxruntime-node': 'commonjs onnxruntime-node',
     },
     node: {
       __dirname: false,

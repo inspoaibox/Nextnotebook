@@ -51,7 +51,6 @@ import ImageToolPanel, {
   CompressTool as ImageCompressTool,
 } from './ImageToolPanel';
 import PDFToolPanel from './pdf/PDFToolPanel';
-import RemoveBackgroundTool from './image/RemoveBackgroundTool';
 
 const { Content, Sider } = Layout;
 const { TextArea } = Input;
@@ -108,7 +107,6 @@ const tools: Tool[] = [
   { id: 'image-watermark', name: '水印叠加', icon: <PictureOutlined />, category: 'image' },
   { id: 'image-metadata', name: '元数据', icon: <InfoCircleOutlined />, category: 'image' },
   { id: 'image-compress', name: '优化压缩', icon: <CompressOutlined />, category: 'image' },
-  { id: 'image-remove-bg', name: '智能去背景', icon: <ScissorOutlined />, category: 'image' },
   // PDF 工具 - 15 个独立工具
   { id: 'pdf-preview', name: 'PDF 预览', icon: <FileSearchOutlined />, category: 'pdf' },
   { id: 'pdf-merge-split', name: '合并拆分', icon: <MergeCellsOutlined />, category: 'pdf' },
@@ -211,8 +209,6 @@ const ToolboxPanel: React.FC = () => {
         return <ImageToolPanel defaultTool="metadata" />;
       case 'image-compress':
         return <ImageToolPanel defaultTool="compress" />;
-      case 'image-remove-bg':
-        return <RemoveBackgroundTool />;
       // PDF 工具
       case 'pdf-preview':
         return <PDFToolPanel defaultTool="preview" />;
