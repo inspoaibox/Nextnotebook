@@ -1,4 +1,4 @@
-import { SyncEngine, SyncResult } from './SyncEngine';
+import { SyncEngine, SyncResult, SyncProgress } from './SyncEngine';
 
 export interface SyncSchedulerOptions {
   autoSyncOnStart: boolean;
@@ -15,6 +15,7 @@ export interface SyncState {
   lastSyncResult: SyncResult | null;
   pendingChanges: number;
   isOnline: boolean;
+  progress: SyncProgress | null;  // 当前同步进度
 }
 
 type SyncEventCallback = (state: SyncState) => void;
@@ -30,7 +31,7 @@ export class SyncScheduler {
   constructor(syncEngine: SyncEngine, options: Partial<SyncSchedulerOptions> = {}) {
     this.syncEngine = syncEngine;
     this.options = {
-      autoSyncOnStart: true,
+      autoSyncOnStart: false,  // 默认不在启动时立即同步，而是按间隔时间同步
       syncInterval: 5,
       syncOnChange: true,
       changeDebounce: 30,
@@ -42,7 +43,13 @@ export class SyncScheduler {
       lastSyncResult: null,
       pendingChanges: 0,
       isOnline: true,
+      progress: null,
     };
+
+    // 设置进度回调
+    this.syncEngine.setProgressCallback((progress) => {
+      this.updateState({ progress });
+    });
 
     // 监听网络状态
     if (typeof window !== 'undefined') {
@@ -81,7 +88,7 @@ export class SyncScheduler {
       return null;
     }
 
-    this.updateState({ status: 'syncing' });
+    this.updateState({ status: 'syncing', progress: { phase: 'connecting', message: '正在连接服务器...' } });
 
     try {
       const result = await this.syncEngine.sync();
@@ -90,6 +97,7 @@ export class SyncScheduler {
         lastSyncTime: Date.now(),
         lastSyncResult: result,
         pendingChanges: 0,
+        progress: null,
       });
       return result;
     } catch (error) {
@@ -104,6 +112,7 @@ export class SyncScheduler {
           errors: [(error as Error).message],
           duration: 0,
         },
+        progress: { phase: 'error', message: '同步失败', detail: (error as Error).message },
       });
       return null;
     }

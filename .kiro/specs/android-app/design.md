@@ -103,6 +103,12 @@ interface WebDAVAdapter {
     suspend fun releaseLock(deviceId: String): Boolean
     suspend fun getSyncCursor(): SyncCursor?
     suspend fun setSyncCursor(cursor: SyncCursor): Boolean
+    
+    // 资源文件操作
+    suspend fun uploadResource(resourceId: String, data: ByteArray): Result<String>
+    suspend fun downloadResource(resourceId: String): Result<ByteArray>
+    suspend fun deleteResource(resourceId: String): Boolean
+    suspend fun listResources(): List<String>
 }
 
 data class ChangeListResult(
@@ -166,16 +172,18 @@ enum class ItemType(val value: String) {
 
 #### 2.2 Payload 数据类
 
+> **重要**: 所有 Payload 字段使用 `@SerialName` 注解保持与桌面端 JSON 格式一致（snake_case）
+
 ```kotlin
 // 笔记
 @Serializable
 data class NotePayload(
     val title: String,
     val content: String,
-    val folderId: String?,
-    val isPinned: Boolean,
-    val isLocked: Boolean,
-    val lockPasswordHash: String?,
+    @SerialName("folder_id") val folderId: String?,
+    @SerialName("is_pinned") val isPinned: Boolean,
+    @SerialName("is_locked") val isLocked: Boolean,
+    @SerialName("lock_password_hash") val lockPasswordHash: String?,
     val tags: List<String>
 )
 
@@ -186,46 +194,46 @@ data class TodoPayload(
     val description: String,
     val quadrant: TodoQuadrant,
     val completed: Boolean,
-    val completedAt: Long?,
-    val dueDate: Long?,
-    val reminderTime: Long?,
-    val reminderEnabled: Boolean,
+    @SerialName("completed_at") val completedAt: Long?,
+    @SerialName("due_date") val dueDate: Long?,
+    @SerialName("reminder_time") val reminderTime: Long?,
+    @SerialName("reminder_enabled") val reminderEnabled: Boolean,
     val priority: Int,
     val tags: List<String>
 )
 
 enum class TodoQuadrant {
-    URGENT_IMPORTANT,
-    NOT_URGENT_IMPORTANT,
-    URGENT_NOT_IMPORTANT,
-    NOT_URGENT_NOT_IMPORTANT
+    @SerialName("urgent-important") URGENT_IMPORTANT,
+    @SerialName("not-urgent-important") NOT_URGENT_IMPORTANT,
+    @SerialName("urgent-not-important") URGENT_NOT_IMPORTANT,
+    @SerialName("not-urgent-not-important") NOT_URGENT_NOT_IMPORTANT
 }
 
 // 密码库条目
 @Serializable
 data class VaultEntryPayload(
     val name: String,
-    val entryType: VaultEntryType,
-    val folderId: String?,
+    @SerialName("entry_type") val entryType: VaultEntryType,
+    @SerialName("folder_id") val folderId: String?,
     val favorite: Boolean,
     val notes: String,
     val username: String,
     val password: String,
-    val totpSecrets: List<VaultTotp>,
+    @SerialName("totp_secrets") val totpSecrets: List<VaultTotp>,
     val uris: List<VaultUri>,
-    val cardHolderName: String,
-    val cardNumber: String,
-    val cardBrand: String,
-    val cardExpMonth: String,
-    val cardExpYear: String,
-    val cardCvv: String,
-    val identityTitle: String,
-    val identityFirstName: String,
-    val identityLastName: String,
-    val identityEmail: String,
-    val identityPhone: String,
-    val identityAddress: String,
-    val customFields: List<VaultCustomField>
+    @SerialName("card_holder_name") val cardHolderName: String,
+    @SerialName("card_number") val cardNumber: String,
+    @SerialName("card_brand") val cardBrand: String,
+    @SerialName("card_exp_month") val cardExpMonth: String,
+    @SerialName("card_exp_year") val cardExpYear: String,
+    @SerialName("card_cvv") val cardCvv: String,
+    @SerialName("identity_title") val identityTitle: String,
+    @SerialName("identity_first_name") val identityFirstName: String,
+    @SerialName("identity_last_name") val identityLastName: String,
+    @SerialName("identity_email") val identityEmail: String,
+    @SerialName("identity_phone") val identityPhone: String,
+    @SerialName("identity_address") val identityAddress: String,
+    @SerialName("custom_fields") val customFields: List<VaultCustomField>
 )
 
 // 书签
@@ -234,7 +242,7 @@ data class BookmarkPayload(
     val name: String,
     val url: String,
     val description: String,
-    val folderId: String?,
+    @SerialName("folder_id") val folderId: String?,
     val icon: String?,
     val tags: List<String>
 )
@@ -244,29 +252,29 @@ data class BookmarkPayload(
 data class AIConversationPayload(
     val title: String,
     val model: String,
-    val systemPrompt: String,
+    @SerialName("system_prompt") val systemPrompt: String,
     val temperature: Float,
-    val maxTokens: Int,
-    val createdAt: Long
+    @SerialName("max_tokens") val maxTokens: Int,
+    @SerialName("created_at") val createdAt: Long
 )
 
 // AI 消息
 @Serializable
 data class AIMessagePayload(
-    val conversationId: String,
+    @SerialName("conversation_id") val conversationId: String,
     val role: String,  // "user", "assistant", "system"
     val content: String,
     val model: String,
-    val tokensUsed: Int?,
-    val createdAt: Long
+    @SerialName("tokens_used") val tokensUsed: Int?,
+    @SerialName("created_at") val createdAt: Long
 )
 
 // AI 配置
 @Serializable
 data class AIConfigPayload(
     val enabled: Boolean,
-    val defaultChannel: String,
-    val defaultModel: String,
+    @SerialName("default_channel") val defaultChannel: String,
+    @SerialName("default_model") val defaultModel: String,
     val channels: List<AIChannel>
 )
 
@@ -275,8 +283,8 @@ data class AIChannel(
     val id: String,
     val name: String,
     val type: String,  // "openai", "anthropic", "custom"
-    val apiUrl: String,
-    val apiKey: String,
+    @SerialName("api_url") val apiUrl: String,
+    @SerialName("api_key") val apiKey: String,
     val models: List<AIModel>,
     val enabled: Boolean
 )
@@ -285,16 +293,16 @@ data class AIChannel(
 data class AIModel(
     val id: String,
     val name: String,
-    val channelId: String,
-    val maxTokens: Int,
-    val isCustom: Boolean
+    @SerialName("channel_id") val channelId: String,
+    @SerialName("max_tokens") val maxTokens: Int,
+    @SerialName("is_custom") val isCustom: Boolean
 )
 
 // 文件夹
 @Serializable
 data class FolderPayload(
     val name: String,
-    val parentId: String?,
+    @SerialName("parent_id") val parentId: String?,
     val icon: String?,
     val color: String?
 )
@@ -303,19 +311,22 @@ data class FolderPayload(
 @Serializable
 data class BookmarkFolderPayload(
     val name: String,
-    val parentId: String?
+    @SerialName("parent_id") val parentId: String?
 )
 
 // 密码库文件夹
 @Serializable
 data class VaultFolderPayload(
     val name: String,
-    val parentId: String?
+    @SerialName("parent_id") val parentId: String?
 )
 
 // 密码库辅助类型
 enum class VaultEntryType {
-    LOGIN, CARD, IDENTITY, SECURE_NOTE
+    @SerialName("login") LOGIN,
+    @SerialName("card") CARD,
+    @SerialName("identity") IDENTITY,
+    @SerialName("secure_note") SECURE_NOTE
 }
 
 @Serializable
@@ -331,7 +342,7 @@ data class VaultUri(
     val id: String,
     val name: String,
     val uri: String,
-    val matchType: String  // "domain", "host", "starts_with", "exact", "regex", "never"
+    @SerialName("match_type") val matchType: String  // "domain", "host", "starts_with", "exact", "regex", "never"
 )
 
 @Serializable
@@ -348,6 +359,34 @@ data class TagPayload(
     val name: String,
     val color: String?
 )
+
+// 资源文件
+@Serializable
+data class ResourcePayload(
+    val filename: String,
+    @SerialName("mime_type") val mimeType: String,
+    val size: Long,
+    @SerialName("note_id") val noteId: String,
+    @SerialName("file_hash") val fileHash: String
+    // 注意: local_path 不参与同步，仅在本地使用
+    // Android 端应在 ItemEntity 外部单独维护本地缓存路径
+)
+
+// 图表
+@Serializable
+data class DiagramPayload(
+    val name: String,
+    @SerialName("diagram_type") val diagramType: DiagramType,
+    val data: String,  // JSON 格式的图表数据
+    @SerialName("folder_id") val folderId: String?,
+    val thumbnail: String?  // Base64 缩略图
+)
+
+enum class DiagramType {
+    @SerialName("mindmap") MINDMAP,
+    @SerialName("flowchart") FLOWCHART,
+    @SerialName("whiteboard") WHITEBOARD
+}
 ```
 
 #### 2.3 Repository 接口
@@ -486,6 +525,104 @@ data class TOTPCode(
     val code: String,
     val remainingSeconds: Int
 )
+```
+
+#### 4.4 AutofillManager
+
+```kotlin
+interface AutofillManager {
+    fun isAutofillServiceEnabled(): Boolean
+    fun requestEnableAutofillService()
+    suspend fun getMatchingEntries(packageName: String?, webDomain: String?): List<VaultEntryPayload>
+    suspend fun authenticateForAutofill(): AuthResult
+}
+
+// AutofillService 实现
+@RequiresApi(Build.VERSION_CODES.O)
+class MuchengAutofillService : AutofillService() {
+    override fun onFillRequest(
+        request: FillRequest,
+        cancellationSignal: CancellationSignal,
+        callback: FillCallback
+    ) {
+        // 1. 解析请求获取 packageName 或 webDomain
+        // 2. 查询匹配的密码库条目
+        // 3. 如果需要，触发生物识别认证
+        // 4. 构建 FillResponse 返回
+    }
+    
+    override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
+        // 保存新凭据到密码库
+    }
+}
+```
+
+#### 4.5 NetworkSecurityManager
+
+```kotlin
+interface NetworkSecurityManager {
+    fun getSecureOkHttpClient(): OkHttpClient
+    fun getCertificatePinner(): CertificatePinner
+}
+
+class NetworkSecurityManagerImpl : NetworkSecurityManager {
+    override fun getCertificatePinner(): CertificatePinner {
+        return CertificatePinner.Builder()
+            // 可配置的证书固定
+            .add("*.openai.com", "sha256/...")
+            .add("*.anthropic.com", "sha256/...")
+            .build()
+    }
+    
+    override fun getSecureOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .certificatePinner(getCertificatePinner())
+            .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS))
+            .build()
+    }
+}
+```
+
+#### 4.6 ConnectivityManager (离线队列)
+
+```kotlin
+interface OfflineQueueManager {
+    fun isOnline(): Boolean
+    fun observeConnectivity(): Flow<Boolean>
+    suspend fun queueChange(itemId: String)
+    suspend fun processQueue()
+}
+
+class OfflineQueueManagerImpl(
+    private val context: Context,
+    private val syncRepository: SyncRepository
+) : OfflineQueueManager {
+    
+    private val connectivityManager = context.getSystemService<ConnectivityManager>()
+    
+    override fun observeConnectivity(): Flow<Boolean> = callbackFlow {
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                trySend(true)
+                // 网络恢复时自动触发同步
+                CoroutineScope(Dispatchers.IO).launch {
+                    processQueue()
+                }
+            }
+            override fun onLost(network: Network) {
+                trySend(false)
+            }
+        }
+        connectivityManager?.registerDefaultNetworkCallback(callback)
+        awaitClose { connectivityManager?.unregisterNetworkCallback(callback) }
+    }
+    
+    override suspend fun processQueue() {
+        if (isOnline()) {
+            syncRepository.sync()
+        }
+    }
+}
 ```
 
 ### 5. UI 组件设计 (UI Components)
@@ -757,16 +894,17 @@ CREATE INDEX idx_items_updated_time ON items(updated_time);
 @Serializable
 data class SyncConfig(
     val enabled: Boolean,
-    val type: String = "webdav",
+    val type: String = "webdav",  // "webdav" | "server"
     val url: String,
-    val syncPath: String,
+    @SerialName("sync_path") val syncPath: String,
     val username: String?,
     val password: String?,
-    val encryptionEnabled: Boolean,
-    val syncInterval: Int,  // minutes
-    val lastSyncTime: Long?,
-    val syncCursor: String?,
-    val syncModules: SyncModules
+    @SerialName("api_key") val apiKey: String?,  // 用于 server 类型同步
+    @SerialName("encryption_enabled") val encryptionEnabled: Boolean,
+    @SerialName("sync_interval") val syncInterval: Int,  // minutes
+    @SerialName("last_sync_time") val lastSyncTime: Long?,
+    @SerialName("sync_cursor") val syncCursor: String?,
+    @SerialName("sync_modules") val syncModules: SyncModules
 )
 
 @Serializable
@@ -778,6 +916,107 @@ data class SyncModules(
     val todos: Boolean = true,
     val ai: Boolean = true
 )
+
+// 模块到 ItemType 的映射（与桌面端一致）
+object SyncModuleTypes {
+    val NOTES = listOf("note", "folder", "tag", "resource")
+    val BOOKMARKS = listOf("bookmark", "bookmark_folder")
+    val VAULT = listOf("vault_entry", "vault_folder")
+    val DIAGRAMS = listOf("diagram")
+    val TODOS = listOf("todo")
+    val AI = listOf("ai_config", "ai_conversation", "ai_message")
+}
+```
+
+## Localization
+
+### 字符串资源本地化
+
+所有用户可见的字符串必须使用 Android 资源系统，支持中文本地化：
+
+```xml
+<!-- res/values-zh-rCN/strings.xml -->
+<resources>
+    <!-- 通用 -->
+    <string name="app_name">暮城笔记</string>
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="delete">删除</string>
+    <string name="edit">编辑</string>
+    <string name="save">保存</string>
+    
+    <!-- 导航 -->
+    <string name="nav_notes">笔记</string>
+    <string name="nav_bookmarks">书签</string>
+    <string name="nav_todos">待办</string>
+    <string name="nav_ai">AI</string>
+    <string name="nav_vault">密码库</string>
+    
+    <!-- 同步 -->
+    <string name="sync_in_progress">同步中...</string>
+    <string name="sync_success">同步成功</string>
+    <string name="sync_failed">同步失败</string>
+    <string name="error_key_mismatch">同步密钥不匹配</string>
+    <string name="error_lock_occupied">同步锁被占用</string>
+    <string name="error_network_unavailable">网络不可用</string>
+    <string name="error_auth_failed">认证失败，请检查凭据</string>
+    
+    <!-- 加密 -->
+    <string name="encryption_enabled">加密同步</string>
+    <string name="encryption_disabled">明文同步</string>
+    <string name="enter_sync_password">请输入同步密码</string>
+    
+    <!-- 安全 -->
+    <string name="biometric_prompt_title">身份验证</string>
+    <string name="biometric_prompt_subtitle">使用指纹或面部解锁</string>
+    <string name="biometric_prompt_negative">使用密码</string>
+    <string name="lock_screen_title">应用已锁定</string>
+    <string name="enter_pin">请输入 PIN</string>
+    <string name="draw_pattern">请绘制解锁图案</string>
+    
+    <!-- 待办四象限 -->
+    <string name="quadrant_urgent_important">紧急且重要</string>
+    <string name="quadrant_not_urgent_important">重要不紧急</string>
+    <string name="quadrant_urgent_not_important">紧急不重要</string>
+    <string name="quadrant_not_urgent_not_important">不紧急不重要</string>
+    
+    <!-- 密码库 -->
+    <string name="vault_master_password">主密码</string>
+    <string name="vault_copied">已复制到剪贴板</string>
+    <string name="vault_clipboard_cleared">剪贴板已清除</string>
+    <string name="totp_code">验证码</string>
+</resources>
+```
+
+### 代码中使用字符串资源
+
+```kotlin
+// ViewModel 中
+class SyncViewModel @Inject constructor(
+    @ApplicationContext private val context: Context
+) : ViewModel() {
+    
+    fun getSyncErrorMessage(error: SyncError): String {
+        return when (error) {
+            SyncError.KEY_MISMATCH -> context.getString(R.string.error_key_mismatch)
+            SyncError.LOCK_OCCUPIED -> context.getString(R.string.error_lock_occupied)
+            SyncError.NETWORK_UNAVAILABLE -> context.getString(R.string.error_network_unavailable)
+            SyncError.AUTH_FAILED -> context.getString(R.string.error_auth_failed)
+        }
+    }
+}
+
+// Compose 中
+@Composable
+fun SyncStatusIndicator(status: SyncStatus) {
+    val message = when (status) {
+        SyncStatus.SYNCING -> stringResource(R.string.sync_in_progress)
+        SyncStatus.SUCCESS -> stringResource(R.string.sync_success)
+        SyncStatus.FAILED -> stringResource(R.string.sync_failed)
+        else -> null
+    }
+    // ...
+}
 ```
 
 
@@ -847,18 +1086,36 @@ data class SyncModules(
 
 **Validates: Requirements 10.1, 10.2**
 
+### Property 11: Resource File Integrity
+
+*For any* resource file, uploading to WebDAV and downloading SHALL return identical byte content, verified by SHA-256 hash comparison.
+
+**Validates: Requirements 2.2**
+
+### Property 12: Autofill Entry Matching
+
+*For any* vault entry with URIs, querying by package name or web domain SHALL return entries where at least one URI matches according to its matchType (domain, host, starts_with, exact, regex).
+
+**Validates: Requirements 13.8**
+
+### Property 13: JSON Serialization Desktop Compatibility
+
+*For any* Payload object, serializing to JSON SHALL produce field names in snake_case format (e.g., "folder_id", "is_pinned", "created_at") matching the desktop app's JSON format exactly.
+
+**Validates: Requirements 1.3, 4.7**
+
 ## Error Handling
 
 ### 同步错误处理
 
-| 错误类型 | 处理策略 |
-|---------|---------|
-| 网络不可用 | 队列变更，下次同步时重试 |
-| WebDAV 认证失败 | 提示用户检查凭据 |
-| 加密密钥不匹配 | 中止同步，显示"同步密钥不匹配"错误 |
-| 同步锁被占用 | 等待并重试，最多 3 次 |
-| 冲突 | 创建冲突副本，保留两个版本 |
-| 服务器不可达 | 显示离线状态，允许本地操作 |
+| 错误类型 | 处理策略 | 字符串资源 |
+|---------|---------|-----------|
+| 网络不可用 | 队列变更，下次同步时重试 | `R.string.error_network_unavailable` |
+| WebDAV 认证失败 | 提示用户检查凭据 | `R.string.error_auth_failed` |
+| 加密密钥不匹配 | 中止同步，显示错误 | `R.string.error_key_mismatch` |
+| 同步锁被占用 | 等待并重试，最多 3 次 | `R.string.error_lock_occupied` |
+| 冲突 | 创建冲突副本，保留两个版本 | `R.string.sync_conflict_created` |
+| 服务器不可达 | 显示离线状态，允许本地操作 | `R.string.error_server_unreachable` |
 
 ### 加密错误处理
 
@@ -870,11 +1127,157 @@ data class SyncModules(
 
 ### 生物识别错误处理
 
-| 错误类型 | 处理策略 |
-|---------|---------|
-| 生物识别不可用 | 回退到 PIN/图案 |
-| 认证失败 3 次 | 强制使用 PIN/图案 |
-| 硬件错误 | 显示错误提示，回退到 PIN/图案 |
+| 错误类型 | 处理策略 | 字符串资源 |
+|---------|---------|-----------|
+| 生物识别不可用 | 回退到 PIN/图案 | `R.string.biometric_unavailable` |
+| 认证失败 3 次 | 强制使用 PIN/图案 | `R.string.biometric_too_many_attempts` |
+| 硬件错误 | 显示错误提示，回退到 PIN/图案 | `R.string.biometric_hardware_error` |
+
+## Resource Sync
+
+### 本地缓存管理
+
+资源文件的本地路径不参与同步（避免与桌面端不兼容），Android 端使用单独的缓存表管理：
+
+```kotlin
+// 本地资源缓存表（不参与同步）
+@Entity(tableName = "resource_cache")
+data class ResourceCacheEntity(
+    @PrimaryKey val resourceId: String,  // 对应 items 表中的 resource id
+    val localPath: String,               // 本地文件路径
+    val downloadedAt: Long,              // 下载时间
+    val lastAccessedAt: Long             // 最后访问时间
+)
+
+@Dao
+interface ResourceCacheDao {
+    @Query("SELECT * FROM resource_cache WHERE resourceId = :resourceId")
+    suspend fun getByResourceId(resourceId: String): ResourceCacheEntity?
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(cache: ResourceCacheEntity)
+    
+    @Query("DELETE FROM resource_cache WHERE resourceId = :resourceId")
+    suspend fun delete(resourceId: String)
+    
+    @Query("DELETE FROM resource_cache WHERE lastAccessedAt < :threshold")
+    suspend fun deleteOlderThan(threshold: Long)
+}
+```
+
+### 资源文件同步流程
+
+```kotlin
+class ResourceSyncManager(
+    private val webDAVAdapter: WebDAVAdapter,
+    private val itemsManager: ItemsManager,
+    private val resourceCacheDao: ResourceCacheDao,
+    private val cacheDir: File
+) {
+    /**
+     * 上传本地资源到 WebDAV
+     * @param resourceId items 表中的 resource 记录 ID
+     */
+    suspend fun uploadResource(resourceId: String): Result<Unit> {
+        // 获取本地缓存路径
+        val cache = resourceCacheDao.getByResourceId(resourceId)
+            ?: return Result.failure(Exception("No local cache"))
+        
+        val localFile = File(cache.localPath)
+        if (!localFile.exists()) return Result.failure(Exception("File not found"))
+        
+        // 获取 ResourcePayload 验证哈希
+        val item = itemsManager.getById(resourceId)
+            ?: return Result.failure(Exception("Resource item not found"))
+        val payload = Json.decodeFromString<ResourcePayload>(item.payload)
+        
+        val data = localFile.readBytes()
+        val hash = computeSHA256(data)
+        
+        // 验证哈希一致性
+        if (hash != payload.fileHash) {
+            return Result.failure(Exception("Hash mismatch"))
+        }
+        
+        return webDAVAdapter.uploadResource(resourceId, data)
+            .map { /* 更新同步状态 */ }
+    }
+    
+    /**
+     * 下载远程资源到本地缓存
+     */
+    suspend fun downloadResource(resourceId: String): Result<File> {
+        val result = webDAVAdapter.downloadResource(resourceId)
+        return result.map { data ->
+            val cacheFile = File(cacheDir, resourceId)
+            cacheFile.writeBytes(data)
+            
+            // 更新缓存记录
+            val now = System.currentTimeMillis()
+            resourceCacheDao.upsert(ResourceCacheEntity(
+                resourceId = resourceId,
+                localPath = cacheFile.absolutePath,
+                downloadedAt = now,
+                lastAccessedAt = now
+            ))
+            
+            cacheFile
+        }
+    }
+    
+    /**
+     * 获取资源文件（优先本地缓存，否则下载）
+     */
+    suspend fun getResource(resourceId: String): Result<File> {
+        val cache = resourceCacheDao.getByResourceId(resourceId)
+        if (cache != null) {
+            val file = File(cache.localPath)
+            if (file.exists()) {
+                // 更新访问时间
+                resourceCacheDao.upsert(cache.copy(lastAccessedAt = System.currentTimeMillis()))
+                return Result.success(file)
+            }
+        }
+        return downloadResource(resourceId)
+    }
+    
+    /**
+     * 清理过期缓存
+     */
+    suspend fun cleanupCache(maxAge: Long = 7 * 24 * 60 * 60 * 1000L) {
+        val threshold = System.currentTimeMillis() - maxAge
+        resourceCacheDao.deleteOlderThan(threshold)
+        
+        // 同时清理文件系统
+        cacheDir.listFiles()?.forEach { file ->
+            if (System.currentTimeMillis() - file.lastModified() > maxAge) {
+                file.delete()
+            }
+        }
+    }
+    
+    private fun computeSHA256(data: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(data).joinToString("") { "%02x".format(it) }
+    }
+}
+```
+
+### WebDAV 资源目录结构
+
+```
+sync_path/
+├── items/           # 数据项 JSON 文件
+│   ├── {uuid}.json
+│   └── ...
+├── resources/       # 资源文件 (图片、附件等)
+│   ├── {uuid}       # 无扩展名，使用 mimeType 识别
+│   └── ...
+├── changes/         # 变更日志
+│   └── cursor.json
+└── locks/           # 同步锁
+    └── sync.lock
+```
 
 ## Testing Strategy
 
@@ -926,3 +1329,144 @@ class CryptoEnginePropertyTest : StringSpec({
 - **手势测试**: 验证返回手势和滑动操作
 - **无障碍测试**: 验证 TalkBack 支持
 
+
+## Desktop Compatibility Checklist
+
+### 数据模型兼容性检查清单
+
+以下是 Android 端与桌面端数据同步的完整兼容性检查清单：
+
+#### ItemEntity 字段 ✅
+
+| 字段 | 桌面端 (TypeScript) | Android (Kotlin) | JSON 字段名 |
+|------|---------------------|------------------|-------------|
+| id | string | String | id |
+| type | ItemType | String | type |
+| created_time | number | Long | created_time |
+| updated_time | number | Long | updated_time |
+| deleted_time | number \| null | Long? | deleted_time |
+| payload | string | String | payload |
+| content_hash | string | String | content_hash |
+| sync_status | SyncStatus | String | sync_status |
+| local_rev | number | Int | local_rev |
+| remote_rev | string \| null | String? | remote_rev |
+| encryption_applied | 0 \| 1 | Int | encryption_applied |
+| schema_version | number | Int | schema_version |
+
+#### ItemType 枚举值 ✅
+
+| 值 | 桌面端 | Android @SerialName |
+|----|--------|---------------------|
+| note | 'note' | "note" |
+| folder | 'folder' | "folder" |
+| tag | 'tag' | "tag" |
+| resource | 'resource' | "resource" |
+| todo | 'todo' | "todo" |
+| vault_entry | 'vault_entry' | "vault_entry" |
+| vault_folder | 'vault_folder' | "vault_folder" |
+| bookmark | 'bookmark' | "bookmark" |
+| bookmark_folder | 'bookmark_folder' | "bookmark_folder" |
+| diagram | 'diagram' | "diagram" |
+| ai_config | 'ai_config' | "ai_config" |
+| ai_conversation | 'ai_conversation' | "ai_conversation" |
+| ai_message | 'ai_message' | "ai_message" |
+
+#### Payload 字段映射 ✅
+
+所有 Payload 使用 `@SerialName` 注解确保 JSON 字段名为 snake_case：
+
+| Payload | 关键字段 | @SerialName 映射 |
+|---------|---------|------------------|
+| NotePayload | folder_id, is_pinned, is_locked, lock_password_hash | ✅ |
+| TodoPayload | completed_at, due_date, reminder_time, reminder_enabled | ✅ |
+| VaultEntryPayload | entry_type, folder_id, totp_secrets, custom_fields, card_*, identity_* | ✅ |
+| BookmarkPayload | folder_id | ✅ |
+| AIConversationPayload | system_prompt, max_tokens, created_at | ✅ |
+| AIMessagePayload | conversation_id, tokens_used, created_at | ✅ |
+| AIConfigPayload | default_channel, default_model | ✅ |
+| AIChannel | api_url, api_key | ✅ |
+| AIModel | channel_id, max_tokens, is_custom | ✅ |
+| FolderPayload | parent_id | ✅ |
+| ResourcePayload | mime_type, note_id, file_hash | ✅ |
+| DiagramPayload | diagram_type, folder_id | ✅ |
+
+#### 枚举值映射 ✅
+
+| 枚举 | 桌面端值 | Android @SerialName |
+|------|---------|---------------------|
+| TodoQuadrant | 'urgent-important' | "urgent-important" |
+| TodoQuadrant | 'not-urgent-important' | "not-urgent-important" |
+| TodoQuadrant | 'urgent-not-important' | "urgent-not-important" |
+| TodoQuadrant | 'not-urgent-not-important' | "not-urgent-not-important" |
+| VaultEntryType | 'login' | "login" |
+| VaultEntryType | 'card' | "card" |
+| VaultEntryType | 'identity' | "identity" |
+| VaultEntryType | 'secure_note' | "secure_note" |
+| DiagramType | 'mindmap' | "mindmap" |
+| DiagramType | 'flowchart' | "flowchart" |
+| DiagramType | 'whiteboard' | "whiteboard" |
+
+#### 加密参数 ✅
+
+| 参数 | 桌面端 | Android |
+|------|--------|---------|
+| 算法 | aes-256-gcm | AES-256-GCM |
+| 密钥长度 | 32 bytes (256 bits) | 32 bytes |
+| IV 长度 | 12 bytes (96 bits) | 12 bytes |
+| AuthTag 长度 | 16 bytes | 16 bytes |
+| Salt 长度 | 32 bytes | 32 bytes |
+| PBKDF2 迭代次数 | 100000 | 100000 |
+| PBKDF2 哈希算法 | sha256 | SHA-256 |
+
+#### EncryptedData JSON 结构 ✅
+
+```json
+{
+  "ciphertext": "Base64...",
+  "iv": "Base64...",
+  "authTag": "Base64...",
+  "salt": "Base64..."  // 可选
+}
+```
+
+#### SyncConfig 字段 ✅
+
+| 字段 | 桌面端 | Android @SerialName |
+|------|--------|---------------------|
+| enabled | boolean | enabled |
+| type | 'webdav' \| 'server' | type |
+| url | string | url |
+| sync_path | string | sync_path |
+| username | string? | username |
+| password | string? | password |
+| api_key | string? | api_key |
+| encryption_enabled | boolean | encryption_enabled |
+| sync_interval | number | sync_interval |
+| last_sync_time | number \| null | last_sync_time |
+| sync_cursor | string \| null | sync_cursor |
+| sync_modules | SyncModules | sync_modules |
+
+#### 敏感类型（始终加密） ✅
+
+- vault_entry
+- vault_folder
+- ai_config
+
+#### WebDAV 目录结构 ✅
+
+```
+sync_path/
+├── items/           # 数据项 JSON 文件
+├── resources/       # 资源文件
+├── changes/         # 变更日志
+├── locks/           # 同步锁
+└── workspace.json   # 元数据
+```
+
+### 不参与同步的 Android 特有数据
+
+以下数据仅在 Android 本地使用，不参与同步：
+
+1. **resource_cache 表**: 资源文件本地缓存路径
+2. **应用锁配置**: PIN/图案/生物识别设置
+3. **UI 偏好设置**: 主题、字体大小等本地设置

@@ -161,20 +161,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   useEffect(() => {
     if (open) {
       form.setFieldsValue(settings);
-      // 设置同步表单初始值
-      syncForm.setFieldsValue({
-        enabled: syncConfig.enabled ?? false,
-        type: syncConfig.type || 'webdav',
-        url: syncConfig.url || '',
-        sync_path: syncConfig.sync_path || '/mucheng-notes',
-        username: syncConfig.username || '',
-        password: syncConfig.password || '',
-        encryption_enabled: syncConfig.encryption_enabled ?? false,
-        sync_interval: syncConfig.sync_interval || 5,
-        sync_modules: syncConfig.sync_modules || DEFAULT_SYNC_MODULES,
-      });
     }
-  }, [open, settings, syncConfig, form, syncForm]);
+  }, [open, settings, form]);
 
   const generateSyncKey = () => {
     const array = new Uint8Array(32);
@@ -202,20 +190,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   const handleSaveSyncConfig = () => {
     // 获取表单所有字段值
     const values = syncForm.getFieldsValue(true);
+    console.log('[SettingsModal] Saving sync config, form values:', values);
     
-    // 保存配置
+    // 保存配置 - enabled 已经通过 Switch onChange 直接更新到 syncConfig 了
     const configToSave = {
-      enabled: values.enabled ?? false,
-      type: values.type || 'webdav',
-      url: values.url || '',
-      sync_path: values.sync_path || '/mucheng-notes',
-      username: values.username || '',
-      password: values.password || '',
-      encryption_enabled: values.encryption_enabled ?? false,
-      sync_interval: values.sync_interval || 5,
-      sync_modules: values.sync_modules || DEFAULT_SYNC_MODULES,
+      enabled: syncConfig.enabled,  // 使用 syncConfig 中的值
+      type: values.type || syncConfig.type || 'webdav',
+      url: values.url || syncConfig.url || '',
+      sync_path: values.sync_path || syncConfig.sync_path || '/mucheng-notes',
+      username: values.username ?? syncConfig.username ?? '',
+      password: values.password ?? syncConfig.password ?? '',
+      encryption_enabled: values.encryption_enabled ?? syncConfig.encryption_enabled ?? false,
+      sync_interval: values.sync_interval || syncConfig.sync_interval || 5,
+      sync_modules: values.sync_modules || syncConfig.sync_modules || DEFAULT_SYNC_MODULES,
     };
     
+    console.log('[SettingsModal] Config to save:', configToSave);
     updateSyncConfig(configToSave);
     
     if (configToSave.encryption_enabled && !localStorage.getItem('mucheng-sync-key')) {
@@ -340,10 +330,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   };
 
   const handleTestConnection = async () => {
-    // 获取表单所有字段值
-    const values = syncForm.getFieldsValue(true);
-    
-    const url = values.url;
+    // 优先使用 syncConfig 中的值，因为表单可能还没有初始化
+    const url = syncConfig.url;
     if (!url) { 
       message.error('请填写服务器地址'); 
       return; 
@@ -356,14 +344,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
         const encryptionKey = localStorage.getItem('mucheng-sync-key') || undefined;
         const success = await api.sync.testConnection({
           enabled: true,
-          type: values.type || 'webdav',
+          type: syncConfig.type || 'webdav',
           url: url,
-          syncPath: values.sync_path || '/mucheng-notes',
-          username: values.username || '',
-          password: values.password || '',
-          encryptionEnabled: false,
+          syncPath: syncConfig.sync_path || '/mucheng-notes',
+          username: syncConfig.username || '',
+          password: syncConfig.password || '',
+          encryptionEnabled: syncConfig.encryption_enabled || false,
           encryptionKey,
-          syncInterval: 5,
+          syncInterval: syncConfig.sync_interval || 5,
         });
         if (success) {
           message.success({ content: '连接成功', key: 'test' });
@@ -661,81 +649,86 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
         return (
           <div>
             <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 500 }}>同步设置</h3>
-            <Form form={syncForm} layout="horizontal" labelCol={{ span: 6 }} wrapperCol={{ span: 18 }} labelAlign="left" preserve={true}>
-              <Form.Item name="enabled" label="启用同步" valuePropName="checked">
-                <Switch />
+            <Form 
+              form={syncForm} 
+              layout="horizontal" 
+              labelCol={{ span: 6 }} 
+              wrapperCol={{ span: 18 }} 
+              labelAlign="left" 
+              preserve={true}
+            >
+              <Form.Item label="启用同步">
+                <Switch 
+                  checked={syncConfig.enabled} 
+                  onChange={(checked) => {
+                    updateSyncConfig({ enabled: checked });
+                  }} 
+                />
               </Form.Item>
               
-              <Form.Item noStyle shouldUpdate={(prev, cur) => prev.enabled !== cur.enabled}>
-                {({ getFieldValue }) => {
-                  const enabled = getFieldValue('enabled');
-                  return (
-                    <>
-                      <Form.Item name="type" label="同步方式" hidden={!enabled}>
-                        <Select style={{ width: 200 }} options={[
-                          { value: 'webdav', label: 'WebDAV' },
-                          { value: 'server', label: '自建服务器' },
-                        ]} />
+              {syncConfig.enabled && (
+                <>
+                  <Form.Item name="type" label="同步方式" initialValue={syncConfig.type || 'webdav'}>
+                    <Select style={{ width: 200 }} options={[
+                      { value: 'webdav', label: 'WebDAV' },
+                      { value: 'server', label: '自建服务器' },
+                    ]} />
+                  </Form.Item>
+                  <Form.Item name="url" label="服务器地址" initialValue={syncConfig.url || ''}>
+                    <Input placeholder="https://example.com/dav" />
+                  </Form.Item>
+                  <Form.Item 
+                    name="sync_path" 
+                    label="同步目录" 
+                    initialValue={syncConfig.sync_path || '/mucheng-notes'}
+                    tooltip="数据将同步到此目录下，避免与其他数据混淆"
+                  >
+                    <Input placeholder="/mucheng-notes" />
+                  </Form.Item>
+                  <Form.Item name="username" label="用户名" initialValue={syncConfig.username || ''}>
+                    <Input placeholder="可选" style={{ width: 200 }} />
+                  </Form.Item>
+                  <Form.Item name="password" label="密码" initialValue={syncConfig.password || ''}>
+                    <Input.Password placeholder="可选" style={{ width: 200 }} />
+                  </Form.Item>
+                  <Divider style={{ margin: '16px 0' }} />
+                  <Form.Item name="encryption_enabled" label="端到端加密" valuePropName="checked" initialValue={syncConfig.encryption_enabled ?? false}>
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item name="sync_interval" label="同步间隔" initialValue={syncConfig.sync_interval || 5}>
+                    <InputNumber min={1} max={60} addonAfter="分钟" style={{ width: 120 }} />
+                  </Form.Item>
+                  <Divider style={{ margin: '16px 0' }} />
+                  <Form.Item label="同步模块" tooltip="选择需要同步的数据模块">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <Form.Item name={['sync_modules', 'notes']} valuePropName="checked" noStyle initialValue={syncConfig.sync_modules?.notes ?? true}>
+                        <Checkbox>笔记（含文件夹、标签、附件）</Checkbox>
                       </Form.Item>
-                      <Form.Item name="url" label="服务器地址" rules={[{ required: enabled, message: '请填写服务器地址' }]} hidden={!enabled}>
-                        <Input placeholder="https://example.com/dav" />
+                      <Form.Item name={['sync_modules', 'bookmarks']} valuePropName="checked" noStyle initialValue={syncConfig.sync_modules?.bookmarks ?? true}>
+                        <Checkbox>书签</Checkbox>
                       </Form.Item>
-                      <Form.Item 
-                        name="sync_path" 
-                        label="同步目录" 
-                        tooltip="数据将同步到此目录下，避免与其他数据混淆"
-                        hidden={!enabled}
-                      >
-                        <Input placeholder="/mucheng-notes" />
+                      <Form.Item name={['sync_modules', 'vault']} valuePropName="checked" noStyle initialValue={syncConfig.sync_modules?.vault ?? true}>
+                        <Checkbox>密码库</Checkbox>
                       </Form.Item>
-                      <Form.Item name="username" label="用户名" hidden={!enabled}>
-                        <Input placeholder="可选" style={{ width: 200 }} />
+                      <Form.Item name={['sync_modules', 'diagrams']} valuePropName="checked" noStyle initialValue={syncConfig.sync_modules?.diagrams ?? false}>
+                        <Checkbox>脑图 / 流程图 / 白板</Checkbox>
                       </Form.Item>
-                      <Form.Item name="password" label="密码" hidden={!enabled}>
-                        <Input.Password placeholder="可选" style={{ width: 200 }} />
+                      <Form.Item name={['sync_modules', 'todos']} valuePropName="checked" noStyle initialValue={syncConfig.sync_modules?.todos ?? true}>
+                        <Checkbox>待办事项</Checkbox>
                       </Form.Item>
-                      {enabled && <Divider style={{ margin: '16px 0' }} />}
-                      <Form.Item name="encryption_enabled" label="端到端加密" valuePropName="checked" hidden={!enabled}>
-                        <Switch />
+                      <Form.Item name={['sync_modules', 'ai']} valuePropName="checked" noStyle initialValue={syncConfig.sync_modules?.ai ?? false}>
+                        <Checkbox>AI 助手（配置与对话）</Checkbox>
                       </Form.Item>
-                      <Form.Item name="sync_interval" label="同步间隔" hidden={!enabled}>
-                        <InputNumber min={1} max={60} addonAfter="分钟" style={{ width: 120 }} />
-                      </Form.Item>
-                      {enabled && <Divider style={{ margin: '16px 0' }} />}
-                      {enabled && (
-                        <Form.Item label="同步模块" tooltip="选择需要同步的数据模块">
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <Form.Item name={['sync_modules', 'notes']} valuePropName="checked" noStyle>
-                              <Checkbox>笔记（含文件夹、标签、附件）</Checkbox>
-                            </Form.Item>
-                            <Form.Item name={['sync_modules', 'bookmarks']} valuePropName="checked" noStyle>
-                              <Checkbox>书签</Checkbox>
-                            </Form.Item>
-                            <Form.Item name={['sync_modules', 'vault']} valuePropName="checked" noStyle>
-                              <Checkbox>密码库</Checkbox>
-                            </Form.Item>
-                            <Form.Item name={['sync_modules', 'diagrams']} valuePropName="checked" noStyle>
-                              <Checkbox>脑图 / 流程图 / 白板</Checkbox>
-                            </Form.Item>
-                            <Form.Item name={['sync_modules', 'todos']} valuePropName="checked" noStyle>
-                              <Checkbox>待办事项</Checkbox>
-                            </Form.Item>
-                            <Form.Item name={['sync_modules', 'ai']} valuePropName="checked" noStyle>
-                              <Checkbox>AI 助手（配置与对话）</Checkbox>
-                            </Form.Item>
-                          </div>
-                        </Form.Item>
-                      )}
-                      {enabled && <Divider style={{ margin: '16px 0' }} />}
-                      <Form.Item wrapperCol={{ offset: 6 }}>
-                        <Space>
-                          <Button type="primary" onClick={handleSaveSyncConfig}>保存设置</Button>
-                          {enabled && <Button onClick={handleTestConnection}>测试连接</Button>}
-                        </Space>
-                      </Form.Item>
-                    </>
-                  );
-                }}
+                    </div>
+                  </Form.Item>
+                  <Divider style={{ margin: '16px 0' }} />
+                </>
+              )}
+              <Form.Item wrapperCol={{ offset: syncConfig.enabled ? 6 : 0 }}>
+                <Space>
+                  <Button type="primary" onClick={handleSaveSyncConfig}>保存设置</Button>
+                  {syncConfig.enabled && <Button onClick={handleTestConnection}>测试连接</Button>}
+                </Space>
               </Form.Item>
             </Form>
           </div>

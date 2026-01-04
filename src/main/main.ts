@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain, globalShortcut, shell, Tray, nativeImage, dialog } from 'electron';
+import { app, BrowserWindow, Menu, ipcMain, shell, Tray, nativeImage, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { initializeDatabase, closeDatabase } from './services/DatabaseService';
@@ -120,83 +120,88 @@ function createWindow(): void {
     }
   });
 
-  // 注册全局快捷键
-  registerShortcuts();
+  // 注册窗口级别的快捷键（通过 before-input-event）
+  // 这些快捷键只在窗口获得焦点时生效，不会影响其他应用
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    
+    const isMod = input.control || input.meta;
+    const isShift = input.shift;
+    
+    // Ctrl+N: 新建空白笔记
+    if (isMod && !isShift && input.key === 'n') {
+      sendToRenderer('menu-action', 'quick-new-note');
+      event.preventDefault();
+    }
+    // Ctrl+Shift+N: 从模板新建笔记
+    else if (isMod && isShift && input.key === 'N') {
+      sendToRenderer('menu-action', 'new-note');
+      event.preventDefault();
+    }
+    // Ctrl+F: 搜索
+    else if (isMod && !isShift && input.key === 'f') {
+      sendToRenderer('menu-action', 'find');
+      event.preventDefault();
+    }
+    // Ctrl+S: 保存/同步
+    else if (isMod && !isShift && input.key === 's') {
+      sendToRenderer('menu-action', 'save-note');
+      event.preventDefault();
+    }
+    // Ctrl+Shift+S: 立即同步
+    else if (isMod && isShift && input.key === 'S') {
+      sendToRenderer('menu-action', 'sync-now');
+      event.preventDefault();
+    }
+    // Ctrl+,: 打开设置
+    else if (isMod && !isShift && input.key === ',') {
+      sendToRenderer('menu-action', 'open-settings');
+      event.preventDefault();
+    }
+    // Ctrl+D: 删除当前笔记
+    else if (isMod && !isShift && input.key === 'd') {
+      sendToRenderer('menu-action', 'delete-note');
+      event.preventDefault();
+    }
+    // Ctrl+Shift+D: 复制当前笔记
+    else if (isMod && isShift && input.key === 'D') {
+      sendToRenderer('menu-action', 'duplicate-note');
+      event.preventDefault();
+    }
+    // Ctrl+E: 切换编辑/预览模式
+    else if (isMod && !isShift && input.key === 'e') {
+      sendToRenderer('menu-action', 'toggle-edit-mode');
+      event.preventDefault();
+    }
+    // Ctrl+P: 星标/取消星标
+    else if (isMod && !isShift && input.key === 'p') {
+      sendToRenderer('menu-action', 'toggle-star');
+      event.preventDefault();
+    }
+    // Ctrl+上箭头: 上一篇笔记
+    else if (isMod && !isShift && input.key === 'ArrowUp') {
+      sendToRenderer('menu-action', 'prev-note');
+      event.preventDefault();
+    }
+    // Ctrl+下箭头: 下一篇笔记
+    else if (isMod && !isShift && input.key === 'ArrowDown') {
+      sendToRenderer('menu-action', 'next-note');
+      event.preventDefault();
+    }
+    // Escape: 退出搜索/关闭弹窗
+    else if (!isMod && !isShift && input.key === 'Escape') {
+      sendToRenderer('menu-action', 'escape');
+      event.preventDefault();
+    }
+    // Ctrl+L: 锁定应用
+    else if (isMod && !isShift && input.key === 'l') {
+      sendToRenderer('menu-action', 'lock-app');
+      event.preventDefault();
+    }
+  });
 
   createMenu();
   createTray();
-}
-
-function registerShortcuts(): void {
-  // Ctrl+N: 新建空白笔记
-  globalShortcut.register('CommandOrControl+N', () => {
-    sendToRenderer('menu-action', 'quick-new-note');
-  });
-
-  // Ctrl+Shift+N: 从模板新建笔记
-  globalShortcut.register('CommandOrControl+Shift+N', () => {
-    sendToRenderer('menu-action', 'new-note');
-  });
-
-  // Ctrl+F: 搜索
-  globalShortcut.register('CommandOrControl+F', () => {
-    sendToRenderer('menu-action', 'find');
-  });
-
-  // Ctrl+S: 保存/同步
-  globalShortcut.register('CommandOrControl+S', () => {
-    sendToRenderer('menu-action', 'save-note');
-  });
-
-  // Ctrl+Shift+S: 立即同步
-  globalShortcut.register('CommandOrControl+Shift+S', () => {
-    sendToRenderer('menu-action', 'sync-now');
-  });
-
-  // Ctrl+,: 打开设置
-  globalShortcut.register('CommandOrControl+,', () => {
-    sendToRenderer('menu-action', 'open-settings');
-  });
-
-  // Ctrl+D: 删除当前笔记
-  globalShortcut.register('CommandOrControl+D', () => {
-    sendToRenderer('menu-action', 'delete-note');
-  });
-
-  // Ctrl+Shift+D: 复制当前笔记
-  globalShortcut.register('CommandOrControl+Shift+D', () => {
-    sendToRenderer('menu-action', 'duplicate-note');
-  });
-
-  // Ctrl+E: 切换编辑/预览模式
-  globalShortcut.register('CommandOrControl+E', () => {
-    sendToRenderer('menu-action', 'toggle-edit-mode');
-  });
-
-  // Ctrl+P: 星标/取消星标
-  globalShortcut.register('CommandOrControl+P', () => {
-    sendToRenderer('menu-action', 'toggle-star');
-  });
-
-  // Ctrl+上箭头: 上一篇笔记
-  globalShortcut.register('CommandOrControl+Up', () => {
-    sendToRenderer('menu-action', 'prev-note');
-  });
-
-  // Ctrl+下箭头: 下一篇笔记
-  globalShortcut.register('CommandOrControl+Down', () => {
-    sendToRenderer('menu-action', 'next-note');
-  });
-
-  // Escape: 退出搜索/关闭弹窗
-  globalShortcut.register('Escape', () => {
-    sendToRenderer('menu-action', 'escape');
-  });
-
-  // Ctrl+L: 锁定应用
-  globalShortcut.register('CommandOrControl+L', () => {
-    sendToRenderer('menu-action', 'lock-app');
-  });
 }
 
 function createMenu(): void {
@@ -317,8 +322,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  // 注销所有快捷键
-  globalShortcut.unregisterAll();
   closeDatabase();
   if (process.platform !== 'darwin') {
     app.quit();

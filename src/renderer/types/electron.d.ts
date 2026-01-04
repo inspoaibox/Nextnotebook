@@ -56,6 +56,9 @@ export interface SyncAPI {
   getState: () => Promise<any>;
   notifyChange: () => Promise<any>;
   testConnection: (config: object) => Promise<any>;
+  forceResync: () => Promise<{ success: boolean; count: number; error?: string }>;
+  resetStatus: () => Promise<{ success: boolean; count: number; error?: string }>;
+  checkFirstSync: () => Promise<{ isFirstSync: boolean; remoteHasData: boolean; localItemCount: number }>;
 }
 
 export interface PDFAPI {

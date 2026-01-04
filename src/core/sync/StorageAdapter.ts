@@ -24,6 +24,12 @@ export interface SyncCursor {
   timestamp: number;
 }
 
+// 默认锁超时时间（毫秒）- 统一为 3 分钟
+export const DEFAULT_LOCK_TIMEOUT = 180000;
+
+// 变更日志保留时间（毫秒）- 7 天
+export const CHANGE_LOG_RETENTION = 7 * 24 * 60 * 60 * 1000;
+
 // 统一的存储适配器接口
 export interface StorageAdapter {
   // 连接测试
@@ -43,7 +49,7 @@ export interface StorageAdapter {
   getItem(id: string): Promise<ItemBase | null>;
 
   // 上传对象
-  putItem(item: ItemBase): Promise<{ success: boolean; remoteRev: string }>;
+  putItem(item: ItemBase): Promise<{ success: boolean; remoteRev: string; error?: string }>;
 
   // 删除对象（或标记删除）
   deleteItem(id: string): Promise<boolean>;
@@ -68,6 +74,12 @@ export interface StorageAdapter {
   acquireLock(deviceId: string, timeout?: number): Promise<boolean>;
   releaseLock(deviceId: string): Promise<boolean>;
   checkLock(): Promise<{ locked: boolean; owner?: string; expires?: number }>;
+
+  // 清理过期的变更日志
+  cleanupChangeLogs?(beforeTimestamp: number): Promise<number>;
+
+  // 检查远端是否已有数据（用于首次同步检测）
+  hasExistingData?(): Promise<boolean>;
 }
 
 // 适配器配置

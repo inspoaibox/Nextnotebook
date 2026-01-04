@@ -25,6 +25,15 @@ export interface SyncResult {
   conflicts: number;
   errors: string[];
   duration: number;
+  cleanedChangeLogs?: number;
+}
+
+export interface SyncProgress {
+  phase: 'idle' | 'connecting' | 'acquiring-lock' | 'verifying-key' | 'pushing' | 'pulling' | 'committing' | 'done' | 'error';
+  message: string;
+  current?: number;
+  total?: number;
+  detail?: string;
 }
 
 export interface SyncState {
@@ -33,6 +42,7 @@ export interface SyncState {
   lastSyncResult: SyncResult | null;
   pendingChanges: number;
   isOnline: boolean;
+  progress: SyncProgress | null;
 }
 
 const getElectronAPI = () => {
@@ -83,6 +93,24 @@ export const syncApi = {
   testConnection: async (config: SyncApiConfig): Promise<boolean> => {
     const api = getElectronAPI();
     return api?.sync?.testConnection(config) ?? false;
+  },
+
+  // 强制重新同步（标记所有数据为待同步）
+  forceResync: async (): Promise<{ success: boolean; count: number; error?: string }> => {
+    const api = getElectronAPI();
+    return api?.sync?.forceResync() ?? { success: false, count: 0, error: 'API not available' };
+  },
+
+  // 重置同步状态（用于切换服务器）
+  resetStatus: async (): Promise<{ success: boolean; count: number; error?: string }> => {
+    const api = getElectronAPI();
+    return api?.sync?.resetStatus() ?? { success: false, count: 0, error: 'API not available' };
+  },
+
+  // 检查首次同步状态
+  checkFirstSync: async (): Promise<{ isFirstSync: boolean; remoteHasData: boolean; localItemCount: number }> => {
+    const api = getElectronAPI();
+    return api?.sync?.checkFirstSync() ?? { isFirstSync: false, remoteHasData: false, localItemCount: 0 };
   },
 };
 

@@ -69,6 +69,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getState: () => ipcRenderer.invoke('sync:getState'),
     notifyChange: () => ipcRenderer.invoke('sync:notifyChange'),
     testConnection: (config: object) => ipcRenderer.invoke('sync:testConnection', config),
+    forceResync: () => ipcRenderer.invoke('sync:forceResync'),
+    resetStatus: () => ipcRenderer.invoke('sync:resetStatus'),
+    checkFirstSync: () => ipcRenderer.invoke('sync:checkFirstSync'),
   },
   
   // 文件操作

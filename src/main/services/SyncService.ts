@@ -27,6 +27,13 @@ export interface SyncServiceConfig {
   syncModules?: SyncModules;  // 同步模块配置
 }
 
+// 首次同步检测结果
+export interface FirstSyncCheckResult {
+  isFirstSync: boolean;
+  remoteHasData: boolean;
+  localItemCount: number;
+}
+
 // 初始化同步服务
 export async function initializeSyncService(config: SyncServiceConfig): Promise<boolean> {
   try {
@@ -98,6 +105,28 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       syncModules: config.syncModules || DEFAULT_SYNC_MODULES,
     };
     syncEngine = new SyncEngine(currentAdapter, itemsManager, cryptoEngine, syncOptions);
+
+    // 检测是否首次同步（远端没有元数据或没有同步游标）
+    // 如果是首次同步，自动标记所有本地数据为待同步
+    try {
+      const remoteMeta = await currentAdapter.getRemoteMeta();
+      const syncCursor = await currentAdapter.getSyncCursor();
+      const remoteHasData = await syncEngine.checkRemoteHasData();
+      
+      // 如果远端没有上次同步时间，说明是首次同步到这个服务器
+      if (!remoteMeta.last_sync_time && !syncCursor) {
+        console.log('First sync detected, marking all local data for sync...');
+        const count = syncEngine.resetSyncStatus();
+        console.log(`Marked ${count} items for sync`);
+        
+        // 如果远端已有数据，记录警告（可能会产生冲突）
+        if (remoteHasData) {
+          console.warn('Remote server already has data. Conflicts may occur during first sync.');
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to check first sync status:', e);
+    }
 
     // 创建调度器
     // 只有设置了同步间隔才自动同步，间隔为0表示纯手动模式
@@ -226,5 +255,54 @@ export function registerSyncIpcHandlers(): void {
   // 测试连接
   ipcMain.handle('sync:testConnection', async (_event: IpcMainInvokeEvent, config: SyncServiceConfig) => {
     return testSyncConnection(config);
+  });
+
+  // 强制重新同步（标记所有数据为待同步）
+  ipcMain.handle('sync:forceResync', async () => {
+    if (!syncEngine) {
+      return { success: false, count: 0, error: '同步服务未初始化' };
+    }
+    try {
+      const count = syncEngine.forceMarkAllForSync();
+      return { success: true, count };
+    } catch (error) {
+      return { success: false, count: 0, error: (error as Error).message };
+    }
+  });
+
+  // 重置同步状态（用于切换服务器）
+  ipcMain.handle('sync:resetStatus', async () => {
+    if (!syncEngine) {
+      return { success: false, count: 0, error: '同步服务未初始化' };
+    }
+    try {
+      const count = syncEngine.resetSyncStatus();
+      return { success: true, count };
+    } catch (error) {
+      return { success: false, count: 0, error: (error as Error).message };
+    }
+  });
+
+  // 检查首次同步状态
+  ipcMain.handle('sync:checkFirstSync', async () => {
+    if (!syncEngine || !currentAdapter) {
+      return { isFirstSync: false, remoteHasData: false, localItemCount: 0 };
+    }
+    try {
+      const remoteMeta = await currentAdapter.getRemoteMeta();
+      const syncCursor = await currentAdapter.getSyncCursor();
+      const remoteHasData = await syncEngine.checkRemoteHasData();
+      const itemsManager = getItemsManager();
+      const stats = itemsManager.getStats();
+      
+      return {
+        isFirstSync: !remoteMeta.last_sync_time && !syncCursor,
+        remoteHasData,
+        localItemCount: stats.total,
+      };
+    } catch (error) {
+      console.error('Failed to check first sync status:', error);
+      return { isFirstSync: false, remoteHasData: false, localItemCount: 0 };
+    }
   });
 }

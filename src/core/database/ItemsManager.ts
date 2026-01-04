@@ -160,6 +160,22 @@ export class ItemsManager {
     return result.changes > 0;
   }
 
+  // 强制标记所有数据为待同步（用于首次同步或强制重新同步）
+  markAllForSync(): number {
+    const result = this.db.run(
+      "UPDATE items SET sync_status = 'modified' WHERE deleted_time IS NULL AND sync_status = 'clean'"
+    );
+    return result.changes;
+  }
+
+  // 重置同步状态（清除所有同步记录，用于切换同步服务器）
+  resetSyncStatus(): number {
+    const result = this.db.run(
+      "UPDATE items SET sync_status = 'modified', remote_rev = NULL WHERE deleted_time IS NULL"
+    );
+    return result.changes;
+  }
+
   // 标记为冲突
   markConflict(id: string): boolean {
     const result = this.db.run("UPDATE items SET sync_status = 'conflict' WHERE id = ?", [id]);
@@ -184,11 +200,13 @@ export class ItemsManager {
   }
 
   // 按文件夹获取笔记
+  // folderId === null 时返回所有笔记（用于"所有笔记"视图）
   getNotesByFolder(folderId: string | null): ItemBase[] {
     if (folderId === null) {
+      // 返回所有笔记，不限制文件夹
       return this.db.query<ItemBase>(
         `SELECT * FROM items WHERE type = 'note' AND deleted_time IS NULL 
-         AND json_extract(payload, '$.folder_id') IS NULL ORDER BY updated_time DESC`
+         ORDER BY updated_time DESC`
       );
     }
     return this.db.query<ItemBase>(

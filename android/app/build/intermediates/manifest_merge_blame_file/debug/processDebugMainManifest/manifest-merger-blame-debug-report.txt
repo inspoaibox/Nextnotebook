@@ -1,0 +1,225 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.mucheng.notes"
+4    android:versionCode="1"
+5    android:versionName="1.0.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="34" />
+10
+11    <!-- 网络权限 -->
+12    <uses-permission android:name="android.permission.INTERNET" />
+12-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:6:5-67
+12-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:6:22-64
+13    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+13-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:7:5-79
+13-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:7:22-76
+14
+15    <!-- 生物识别权限 -->
+16    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+16-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:10:5-72
+16-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:10:22-69
+17
+18    <!-- 通知权限 (Android 13+) -->
+19    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+19-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:13:5-77
+19-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:13:22-74
+20
+21    <!-- 精确闹钟权限 (用于待办提醒) -->
+22    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+22-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:16:5-79
+22-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:16:22-76
+23    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+23-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:17:5-74
+23-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:17:22-71
+24
+25    <!-- 开机启动 (用于恢复提醒) -->
+26    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+26-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:20:5-81
+26-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:20:22-78
+27
+28    <!-- suppress DeprecatedClassUsageInspection -->
+29    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+29-->[androidx.biometric:biometric:1.2.0-alpha05] C:\Users\暮城\.gradle\caches\8.9\transforms\931ed77753960b62f96194f214d2039c\transformed\biometric-1.2.0-alpha05\AndroidManifest.xml:25:5-74
+29-->[androidx.biometric:biometric:1.2.0-alpha05] C:\Users\暮城\.gradle\caches\8.9\transforms\931ed77753960b62f96194f214d2039c\transformed\biometric-1.2.0-alpha05\AndroidManifest.xml:25:22-71
+30
+31    <permission
+31-->[androidx.core:core:1.13.1] C:\Users\暮城\.gradle\caches\8.9\transforms\40914508250886953ee7c84bef74af28\transformed\core-1.13.1\AndroidManifest.xml:22:5-24:47
+32        android:name="com.mucheng.notes.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+32-->[androidx.core:core:1.13.1] C:\Users\暮城\.gradle\caches\8.9\transforms\40914508250886953ee7c84bef74af28\transformed\core-1.13.1\AndroidManifest.xml:23:9-81
+33        android:protectionLevel="signature" />
+33-->[androidx.core:core:1.13.1] C:\Users\暮城\.gradle\caches\8.9\transforms\40914508250886953ee7c84bef74af28\transformed\core-1.13.1\AndroidManifest.xml:24:9-44
+34
+35    <uses-permission android:name="com.mucheng.notes.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+35-->[androidx.core:core:1.13.1] C:\Users\暮城\.gradle\caches\8.9\transforms\40914508250886953ee7c84bef74af28\transformed\core-1.13.1\AndroidManifest.xml:26:5-97
+35-->[androidx.core:core:1.13.1] C:\Users\暮城\.gradle\caches\8.9\transforms\40914508250886953ee7c84bef74af28\transformed\core-1.13.1\AndroidManifest.xml:26:22-94
+36
+37    <application
+37-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:22:5-63:19
+38        android:name="com.mucheng.notes.MuchengNotesApp"
+38-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:23:9-40
+39        android:allowBackup="true"
+39-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:24:9-35
+40        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+40-->[androidx.core:core:1.13.1] C:\Users\暮城\.gradle\caches\8.9\transforms\40914508250886953ee7c84bef74af28\transformed\core-1.13.1\AndroidManifest.xml:28:18-86
+41        android:dataExtractionRules="@xml/data_extraction_rules"
+41-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:25:9-65
+42        android:debuggable="true"
+43        android:extractNativeLibs="false"
+44        android:fullBackupContent="@xml/backup_rules"
+44-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:26:9-54
+45        android:icon="@mipmap/ic_launcher"
+45-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:27:9-43
+46        android:label="@string/app_name"
+46-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:28:9-41
+47        android:roundIcon="@mipmap/ic_launcher_round"
+47-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:29:9-54
+48        android:supportsRtl="true"
+48-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:30:9-35
+49        android:theme="@style/Theme.MuchengNotes" >
+49-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:31:9-50
+50        <activity
+50-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:34:9-43:20
+51            android:name="com.mucheng.notes.presentation.MainActivity"
+51-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:35:13-54
+52            android:exported="true"
+52-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:36:13-36
+53            android:theme="@style/Theme.MuchengNotes"
+53-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:37:13-54
+54            android:windowSoftInputMode="adjustResize" >
+54-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:38:13-55
+55            <intent-filter>
+55-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:39:13-42:29
+56                <action android:name="android.intent.action.MAIN" />
+56-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:40:17-69
+56-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:40:25-66
+57
+58                <category android:name="android.intent.category.LAUNCHER" />
+58-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:41:17-77
+58-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:41:27-74
+59            </intent-filter>
+60        </activity>
+61
+62        <!-- 自动填充服务 -->
+63        <service
+63-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:46:9-56:19
+64            android:name="com.mucheng.notes.service.MuchengAutofillService"
+64-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:47:13-59
+65            android:exported="true"
+65-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:48:13-36
+66            android:permission="android.permission.BIND_AUTOFILL_SERVICE" >
+66-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:49:13-74
+67            <intent-filter>
+67-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:50:13-52:29
+68                <action android:name="android.service.autofill.AutofillService" />
+68-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:51:17-83
+68-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:51:25-80
+69            </intent-filter>
+70
+71            <meta-data
+71-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:53:13-55:60
+72                android:name="android.autofill"
+72-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:54:17-48
+73                android:resource="@xml/autofill_service" />
+73-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:55:17-57
+74        </service>
+75
+76        <!-- 待办提醒广播接收器 -->
+77        <receiver
+77-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:59:9-61:40
+78            android:name="com.mucheng.notes.service.ReminderReceiver"
+78-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:60:13-53
+79            android:exported="false" />
+79-->D:\website\Nextnotebook\android\app\src\main\AndroidManifest.xml:61:13-37
+80
+81        <activity
+81-->[androidx.compose.ui:ui-tooling-android:1.7.5] C:\Users\暮城\.gradle\caches\8.9\transforms\d72b73c3543f32c71f276e40e9470c3f\transformed\ui-tooling-release\AndroidManifest.xml:23:9-25:39
+82            android:name="androidx.compose.ui.tooling.PreviewActivity"
+82-->[androidx.compose.ui:ui-tooling-android:1.7.5] C:\Users\暮城\.gradle\caches\8.9\transforms\d72b73c3543f32c71f276e40e9470c3f\transformed\ui-tooling-release\AndroidManifest.xml:24:13-71
+83            android:exported="true" />
+83-->[androidx.compose.ui:ui-tooling-android:1.7.5] C:\Users\暮城\.gradle\caches\8.9\transforms\d72b73c3543f32c71f276e40e9470c3f\transformed\ui-tooling-release\AndroidManifest.xml:25:13-36
+84        <activity
+84-->[androidx.compose.ui:ui-test-manifest:1.7.5] C:\Users\暮城\.gradle\caches\8.9\transforms\d37f5311bf23b4e1c4d5d58410cb9af0\transformed\ui-test-manifest-1.7.5\AndroidManifest.xml:23:9-25:39
+85            android:name="androidx.activity.ComponentActivity"
+85-->[androidx.compose.ui:ui-test-manifest:1.7.5] C:\Users\暮城\.gradle\caches\8.9\transforms\d37f5311bf23b4e1c4d5d58410cb9af0\transformed\ui-test-manifest-1.7.5\AndroidManifest.xml:24:13-63
+86            android:exported="true" />
+86-->[androidx.compose.ui:ui-test-manifest:1.7.5] C:\Users\暮城\.gradle\caches\8.9\transforms\d37f5311bf23b4e1c4d5d58410cb9af0\transformed\ui-test-manifest-1.7.5\AndroidManifest.xml:25:13-36
+87
+88        <provider
+88-->[androidx.lifecycle:lifecycle-process:2.8.7] C:\Users\暮城\.gradle\caches\8.9\transforms\5989f9a7ca93a87592cec9bb11fb5721\transformed\lifecycle-process-2.8.7\AndroidManifest.xml:24:9-32:20
+89            android:name="androidx.startup.InitializationProvider"
+89-->[androidx.lifecycle:lifecycle-process:2.8.7] C:\Users\暮城\.gradle\caches\8.9\transforms\5989f9a7ca93a87592cec9bb11fb5721\transformed\lifecycle-process-2.8.7\AndroidManifest.xml:25:13-67
+90            android:authorities="com.mucheng.notes.androidx-startup"
+90-->[androidx.lifecycle:lifecycle-process:2.8.7] C:\Users\暮城\.gradle\caches\8.9\transforms\5989f9a7ca93a87592cec9bb11fb5721\transformed\lifecycle-process-2.8.7\AndroidManifest.xml:26:13-68
+91            android:exported="false" >
+91-->[androidx.lifecycle:lifecycle-process:2.8.7] C:\Users\暮城\.gradle\caches\8.9\transforms\5989f9a7ca93a87592cec9bb11fb5721\transformed\lifecycle-process-2.8.7\AndroidManifest.xml:27:13-37
+92            <meta-data
+92-->[androidx.lifecycle:lifecycle-process:2.8.7] C:\Users\暮城\.gradle\caches\8.9\transforms\5989f9a7ca93a87592cec9bb11fb5721\transformed\lifecycle-process-2.8.7\AndroidManifest.xml:29:13-31:52
+93                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+93-->[androidx.lifecycle:lifecycle-process:2.8.7] C:\Users\暮城\.gradle\caches\8.9\transforms\5989f9a7ca93a87592cec9bb11fb5721\transformed\lifecycle-process-2.8.7\AndroidManifest.xml:30:17-78
+94                android:value="androidx.startup" />
+94-->[androidx.lifecycle:lifecycle-process:2.8.7] C:\Users\暮城\.gradle\caches\8.9\transforms\5989f9a7ca93a87592cec9bb11fb5721\transformed\lifecycle-process-2.8.7\AndroidManifest.xml:31:17-49
+95            <meta-data
+95-->[androidx.emoji2:emoji2:1.3.0] C:\Users\暮城\.gradle\caches\8.9\transforms\32a7fbf0fc411827a7707058d997c824\transformed\emoji2-1.3.0\AndroidManifest.xml:29:13-31:52
+96                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+96-->[androidx.emoji2:emoji2:1.3.0] C:\Users\暮城\.gradle\caches\8.9\transforms\32a7fbf0fc411827a7707058d997c824\transformed\emoji2-1.3.0\AndroidManifest.xml:30:17-75
+97                android:value="androidx.startup" />
+97-->[androidx.emoji2:emoji2:1.3.0] C:\Users\暮城\.gradle\caches\8.9\transforms\32a7fbf0fc411827a7707058d997c824\transformed\emoji2-1.3.0\AndroidManifest.xml:31:17-49
+98            <meta-data
+98-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:29:13-31:52
+99                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+99-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:30:17-85
+100                android:value="androidx.startup" />
+100-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:31:17-49
+101        </provider>
+102
+103        <service
+103-->[androidx.room:room-runtime:2.6.1] C:\Users\暮城\.gradle\caches\8.9\transforms\7aa4d1224754824a3330eacb08aecf80\transformed\room-runtime-2.6.1\AndroidManifest.xml:24:9-28:63
+104            android:name="androidx.room.MultiInstanceInvalidationService"
+104-->[androidx.room:room-runtime:2.6.1] C:\Users\暮城\.gradle\caches\8.9\transforms\7aa4d1224754824a3330eacb08aecf80\transformed\room-runtime-2.6.1\AndroidManifest.xml:25:13-74
+105            android:directBootAware="true"
+105-->[androidx.room:room-runtime:2.6.1] C:\Users\暮城\.gradle\caches\8.9\transforms\7aa4d1224754824a3330eacb08aecf80\transformed\room-runtime-2.6.1\AndroidManifest.xml:26:13-43
+106            android:exported="false" />
+106-->[androidx.room:room-runtime:2.6.1] C:\Users\暮城\.gradle\caches\8.9\transforms\7aa4d1224754824a3330eacb08aecf80\transformed\room-runtime-2.6.1\AndroidManifest.xml:27:13-37
+107
+108        <receiver
+108-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:34:9-52:20
+109            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+109-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:35:13-76
+110            android:directBootAware="false"
+110-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:36:13-44
+111            android:enabled="true"
+111-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:37:13-35
+112            android:exported="true"
+112-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:38:13-36
+113            android:permission="android.permission.DUMP" >
+113-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:39:13-57
+114            <intent-filter>
+114-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:40:13-42:29
+115                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+115-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:41:17-91
+115-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:41:25-88
+116            </intent-filter>
+117            <intent-filter>
+117-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:43:13-45:29
+118                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+118-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:44:17-85
+118-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:44:25-82
+119            </intent-filter>
+120            <intent-filter>
+120-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:46:13-48:29
+121                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+121-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:47:17-88
+121-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:47:25-85
+122            </intent-filter>
+123            <intent-filter>
+123-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:49:13-51:29
+124                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+124-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:50:17-95
+124-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\暮城\.gradle\caches\8.9\transforms\261f4822aa81a25e739aa028620c89df\transformed\profileinstaller-1.3.1\AndroidManifest.xml:50:25-92
+125            </intent-filter>
+126        </receiver>
+127    </application>
+128
+129</manifest>

@@ -4,6 +4,7 @@ import {
   RemoteMeta,
   SyncCursor,
   ServerConfig,
+  DEFAULT_LOCK_TIMEOUT,
 } from './StorageAdapter';
 import { ItemBase } from '@shared/types';
 
@@ -112,7 +113,7 @@ export class ServerAdapter implements StorageAdapter {
     }
   }
 
-  async putItem(item: ItemBase): Promise<{ success: boolean; remoteRev: string }> {
+  async putItem(item: ItemBase): Promise<{ success: boolean; remoteRev: string; error?: string }> {
     try {
       const result = await this.request<{ remoteRev: string }>(
         'PUT',
@@ -121,8 +122,9 @@ export class ServerAdapter implements StorageAdapter {
       );
       return { success: true, remoteRev: result.remoteRev };
     } catch (error) {
+      const errorMessage = (error as Error).message || 'Unknown error';
       console.error(`Failed to put item ${item.id}:`, error);
-      return { success: false, remoteRev: '' };
+      return { success: false, remoteRev: '', error: errorMessage };
     }
   }
 
@@ -195,7 +197,7 @@ export class ServerAdapter implements StorageAdapter {
     }
   }
 
-  async acquireLock(deviceId: string, timeout: number = 300000): Promise<boolean> {
+  async acquireLock(deviceId: string, timeout: number = DEFAULT_LOCK_TIMEOUT): Promise<boolean> {
     try {
       const result = await this.request<{ acquired: boolean }>(
         'POST',
@@ -227,6 +229,35 @@ export class ServerAdapter implements StorageAdapter {
       );
     } catch (error) {
       return { locked: false };
+    }
+  }
+
+  // 清理过期的变更日志
+  async cleanupChangeLogs(beforeTimestamp: number): Promise<number> {
+    try {
+      const result = await this.request<{ deleted: number }>(
+        'DELETE',
+        `/api/changes?before=${beforeTimestamp}`
+      );
+      return result.deleted;
+    } catch (error) {
+      console.error('Failed to cleanup change logs:', error);
+      return 0;
+    }
+  }
+
+  // 检查远端是否已有数据
+  async hasExistingData(): Promise<boolean> {
+    try {
+      const result = await this.request<{ hasData: boolean; itemCount: number }>(
+        'GET',
+        '/api/items/count'
+      );
+      return result.hasData || result.itemCount > 0;
+    } catch (error) {
+      // 如果接口不存在，回退到检查元数据
+      const meta = await this.getRemoteMeta();
+      return meta.last_sync_time !== null;
     }
   }
 

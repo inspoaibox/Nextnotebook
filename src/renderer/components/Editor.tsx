@@ -17,9 +17,20 @@ import {
   UnorderedListOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  LockOutlined,
+  UnlockOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { Tag } from '../hooks/useTags';
+
+// 计算密码哈希（使用 Web Crypto API，与 Android 端保持一致，使用 SHA-256）
+const computePasswordHash = async (password: string): Promise<string> => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
 
 // TOC 项目接口
 interface TocItem {
@@ -145,6 +156,8 @@ interface EditorProps {
     title: string;
     content: string;
     isPinned: boolean;
+    isLocked: boolean;
+    lockPasswordHash: string | null;
     tags: string[];
     createdAt?: number;
     updatedAt?: number;
@@ -154,6 +167,8 @@ interface EditorProps {
   onUpdateTags?: (noteId: string, tags: string[]) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
   onDuplicate?: (id: string) => Promise<void>;
+  onLockNote?: (id: string, passwordHash: string) => Promise<void>;
+  onUnlockNote?: (id: string) => Promise<void>;
   allTags?: Tag[];
   onCreateTag?: (name: string, color?: string | null) => Promise<Tag | null>;
   isTrashView?: boolean;
@@ -167,6 +182,8 @@ const Editor: React.FC<EditorProps> = ({
   onUpdateTags,
   onDelete,
   onDuplicate,
+  onLockNote,
+  onUnlockNote,
   allTags = [],
   onCreateTag,
   isTrashView = false,
@@ -182,6 +199,15 @@ const Editor: React.FC<EditorProps> = ({
   const [tocCollapsed, setTocCollapsed] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  
+  // 笔记加密相关状态
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [showLockDialog, setShowLockDialog] = useState(false);
+  const [lockPassword, setLockPassword] = useState('');
+  const [lockPasswordConfirm, setLockPasswordConfirm] = useState('');
+  const [lockError, setLockError] = useState('');
 
   // 提取标题生成目录
   const headings = useMemo(() => extractHeadings(content), [content]);
@@ -202,8 +228,60 @@ const Editor: React.FC<EditorProps> = ({
       setTitle(note.title);
       setSelectedTags(note.tags || []);
       setIsDirty(false);
+      // 如果笔记已加密，重置解锁状态
+      if (note.isLocked) {
+        setIsUnlocked(false);
+        setUnlockPassword('');
+        setUnlockError('');
+      } else {
+        setIsUnlocked(true);
+      }
     }
   }, [note]);
+
+  // 验证密码并解锁笔记
+  const handleUnlock = useCallback(async () => {
+    if (!note || !note.lockPasswordHash) return;
+    
+    const inputHash = await computePasswordHash(unlockPassword);
+    if (inputHash === note.lockPasswordHash) {
+      setIsUnlocked(true);
+      setUnlockError('');
+      setUnlockPassword('');
+    } else {
+      setUnlockError('密码错误，请重试');
+    }
+  }, [note, unlockPassword]);
+
+  // 锁定笔记
+  const handleLockNote = useCallback(async () => {
+    if (!noteId || !onLockNote) return;
+    
+    if (lockPassword.length < 4) {
+      setLockError('密码至少 4 位');
+      return;
+    }
+    if (lockPassword !== lockPasswordConfirm) {
+      setLockError('两次密码不一致');
+      return;
+    }
+    
+    const passwordHash = await computePasswordHash(lockPassword);
+    await onLockNote(noteId, passwordHash);
+    setShowLockDialog(false);
+    setLockPassword('');
+    setLockPasswordConfirm('');
+    setLockError('');
+    message.success('笔记已加密');
+  }, [noteId, onLockNote, lockPassword, lockPasswordConfirm]);
+
+  // 解除笔记锁定
+  const handleRemoveLock = useCallback(async () => {
+    if (!noteId || !onUnlockNote) return;
+    await onUnlockNote(noteId);
+    setIsUnlocked(true);
+    message.success('已解除加密');
+  }, [noteId, onUnlockNote]);
 
   // 自动保存（防抖）
   const scheduleAutoSave = useCallback(() => {
@@ -331,6 +409,10 @@ const Editor: React.FC<EditorProps> = ({
     { key: 'export', icon: <ExportOutlined />, label: '导出为 Markdown', onClick: handleExport },
     { key: 'info', icon: <InfoCircleOutlined />, label: '笔记信息', onClick: () => setInfoModalOpen(true) },
     { type: 'divider' },
+    note?.isLocked 
+      ? { key: 'unlock', icon: <UnlockOutlined />, label: '解除加密', onClick: handleRemoveLock }
+      : { key: 'lock', icon: <LockOutlined />, label: '加密笔记', onClick: () => setShowLockDialog(true) },
+    { type: 'divider' },
     { key: 'delete', icon: <DeleteOutlined />, label: '删除笔记', danger: true, onClick: handleDelete },
   ];
 
@@ -338,6 +420,100 @@ const Editor: React.FC<EditorProps> = ({
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
         <Empty description="选择或创建一个笔记开始编辑" />
+      </div>
+    );
+  }
+
+  // 如果笔记已加密且未解锁，显示密码验证界面
+  if (note.isLocked && !isUnlocked) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+        {/* 模糊背景 */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'var(--bg-primary, #fff)',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* 工具栏（只显示标题） */}
+          <div
+            style={{
+              padding: '8px 16px',
+              borderBottom: '1px solid var(--border-color, #f0f0f0)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <LockOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
+              <span style={{ fontSize: 18, fontWeight: 600 }}>{note.title || '加密笔记'}</span>
+            </div>
+          </div>
+          
+          {/* 密码验证区域 */}
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'linear-gradient(135deg, rgba(0,0,0,0.02) 0%, rgba(0,0,0,0.05) 100%)',
+            }}
+          >
+            <div
+              style={{
+                background: 'var(--bg-primary, #fff)',
+                borderRadius: 12,
+                padding: 32,
+                boxShadow: '0 4px 24px rgba(0,0,0,0.1)',
+                width: 360,
+                textAlign: 'center',
+              }}
+            >
+              <LockOutlined style={{ fontSize: 48, color: '#1890ff', marginBottom: 16 }} />
+              <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 600 }}>此笔记已加密</h3>
+              <p style={{ margin: '0 0 24px', color: 'var(--text-secondary, #666)', fontSize: 14 }}>
+                请输入密码以查看内容
+              </p>
+              
+              <Input.Password
+                placeholder="输入密码"
+                value={unlockPassword}
+                onChange={(e) => {
+                  setUnlockPassword(e.target.value);
+                  setUnlockError('');
+                }}
+                onPressEnter={handleUnlock}
+                style={{ marginBottom: 12 }}
+                size="large"
+                status={unlockError ? 'error' : undefined}
+              />
+              
+              {unlockError && (
+                <div style={{ color: '#ff4d4f', fontSize: 13, marginBottom: 12 }}>
+                  {unlockError}
+                </div>
+              )}
+              
+              <Button
+                type="primary"
+                size="large"
+                block
+                onClick={handleUnlock}
+                disabled={!unlockPassword}
+              >
+                解锁
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -640,6 +816,55 @@ const Editor: React.FC<EditorProps> = ({
           <p><strong>创建时间：</strong>{formatDate(note?.createdAt)}</p>
           <p><strong>修改时间：</strong>{formatDate(note?.updatedAt)}</p>
           <p><strong>标签数：</strong>{note?.tags?.length || 0}</p>
+          <p><strong>加密状态：</strong>{note?.isLocked ? '已加密' : '未加密'}</p>
+        </div>
+      </Modal>
+
+      {/* 加密笔记 Modal */}
+      <Modal
+        title="加密笔记"
+        open={showLockDialog}
+        onOk={handleLockNote}
+        onCancel={() => {
+          setShowLockDialog(false);
+          setLockPassword('');
+          setLockPasswordConfirm('');
+          setLockError('');
+        }}
+        okText="加密"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 16 }}>
+            设置密码后，每次查看此笔记都需要输入密码。请牢记密码，忘记密码将无法恢复。
+          </p>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>设置密码：</div>
+            <Input.Password
+              placeholder="至少 4 位"
+              value={lockPassword}
+              onChange={(e) => {
+                setLockPassword(e.target.value);
+                setLockError('');
+              }}
+            />
+          </div>
+          <div>
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>确认密码：</div>
+            <Input.Password
+              placeholder="再次输入密码"
+              value={lockPasswordConfirm}
+              onChange={(e) => {
+                setLockPasswordConfirm(e.target.value);
+                setLockError('');
+              }}
+            />
+          </div>
+          {lockError && (
+            <div style={{ color: '#ff4d4f', fontSize: 13, marginTop: 8 }}>
+              {lockError}
+            </div>
+          )}
         </div>
       </Modal>
     </div>

@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Input, List, Typography, Tag, Empty, Dropdown, Button } from 'antd';
 import { 
   SearchOutlined, 
-  PushpinOutlined, 
-  LockOutlined, 
+  LockOutlined,
+  UnlockOutlined,
   MoreOutlined, 
   DeleteOutlined, 
   UndoOutlined,
@@ -31,6 +31,8 @@ interface NoteListProps {
   onToggleStar?: (noteId: string, isStarred: boolean) => void;
   onDuplicateNote?: (noteId: string) => void;
   onMoveToFolder?: (noteId: string) => void;
+  onLockNote?: (noteId: string) => void;
+  onUnlockNote?: (noteId: string) => void;
   onCreateNote?: () => void;
   onCreateTemplateNote?: () => void;
   isTrashView?: boolean;
@@ -46,6 +48,8 @@ const NoteList: React.FC<NoteListProps> = ({
   onToggleStar,
   onDuplicateNote,
   onMoveToFolder,
+  onLockNote,
+  onUnlockNote,
   onCreateNote,
   onCreateTemplateNote,
   isTrashView = false,
@@ -100,6 +104,12 @@ const NoteList: React.FC<NoteListProps> = ({
         label: note.isPinned ? '取消星标' : '添加星标',
         onClick: () => onToggleStar?.(note.id, !note.isPinned),
       },
+      { 
+        key: 'lock', 
+        icon: note.isLocked ? <UnlockOutlined /> : <LockOutlined />, 
+        label: note.isLocked ? '解锁笔记' : '锁定笔记',
+        onClick: () => note.isLocked ? onUnlockNote?.(note.id) : onLockNote?.(note.id),
+      },
       { type: 'divider' },
       { key: 'duplicate', icon: <CopyOutlined />, label: '复制笔记', onClick: () => onDuplicateNote?.(note.id) },
       { key: 'move', icon: <FolderOutlined />, label: '移动到文件夹', onClick: () => onMoveToFolder?.(note.id) },
@@ -122,6 +132,12 @@ const NoteList: React.FC<NoteListProps> = ({
         icon: note.isPinned ? <StarFilled /> : <StarOutlined />, 
         label: note.isPinned ? '取消星标' : '添加星标',
         onClick: () => onToggleStar?.(note.id, !note.isPinned),
+      },
+      { 
+        key: 'lock', 
+        icon: note.isLocked ? <UnlockOutlined /> : <LockOutlined />, 
+        label: note.isLocked ? '解锁' : '锁定',
+        onClick: () => note.isLocked ? onUnlockNote?.(note.id) : onLockNote?.(note.id),
       },
       { key: 'duplicate', icon: <CopyOutlined />, label: '复制', onClick: () => onDuplicateNote?.(note.id) },
       { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => onDeleteNote?.(note.id) },

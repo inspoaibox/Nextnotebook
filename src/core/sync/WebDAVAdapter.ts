@@ -5,6 +5,8 @@ import {
   RemoteMeta,
   SyncCursor,
   WebDAVConfig,
+  DEFAULT_LOCK_TIMEOUT,
+  CHANGE_LOG_RETENTION,
 } from './StorageAdapter';
 import { ItemBase } from '@shared/types';
 
@@ -18,16 +20,33 @@ const PATHS = {
   CURSOR: 'sync-cursor.json',
 };
 
+// 默认超时时间（毫秒）
+const DEFAULT_TIMEOUT = 30000; // 30秒
+
 export class WebDAVAdapter implements StorageAdapter {
   private client: WebDAVClient;
   private basePath: string;
+  private timeout: number;
 
   constructor(config: WebDAVConfig) {
     this.client = createClient(config.url, {
       username: config.username,
       password: config.password,
+      maxBodyLength: 100 * 1024 * 1024, // 100MB
+      maxContentLength: 100 * 1024 * 1024,
     });
     this.basePath = config.basePath || '/mucheng-notes';
+    this.timeout = DEFAULT_TIMEOUT;
+  }
+
+  // 带超时的 Promise 包装器
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number = this.timeout): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => 
+        setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
+      )
+    ]);
   }
 
   private getPath(relativePath: string): string {
@@ -36,8 +55,8 @@ export class WebDAVAdapter implements StorageAdapter {
 
   async testConnection(): Promise<boolean> {
     try {
-      // 尝试检查/创建基础目录
-      const exists = await this.client.exists(this.basePath);
+      // 尝试检查/创建基础目录（带超时）
+      const exists = await this.withTimeout(this.client.exists(this.basePath));
       if (!exists) {
         // 逐级创建目录
         await this.ensureDirectory(this.basePath);
@@ -47,9 +66,9 @@ export class WebDAVAdapter implements StorageAdapter {
       const subDirs = [PATHS.ITEMS, PATHS.RESOURCES, PATHS.CHANGES, PATHS.LOCKS];
       for (const dir of subDirs) {
         const dirPath = this.getPath(dir);
-        const dirExists = await this.client.exists(dirPath);
+        const dirExists = await this.withTimeout(this.client.exists(dirPath));
         if (!dirExists) {
-          await this.client.createDirectory(dirPath);
+          await this.withTimeout(this.client.createDirectory(dirPath));
         }
       }
       
@@ -68,9 +87,9 @@ export class WebDAVAdapter implements StorageAdapter {
     for (const part of parts) {
       currentPath += '/' + part;
       try {
-        const exists = await this.client.exists(currentPath);
+        const exists = await this.withTimeout(this.client.exists(currentPath));
         if (!exists) {
-          await this.client.createDirectory(currentPath);
+          await this.withTimeout(this.client.createDirectory(currentPath));
         }
       } catch (e) {
         // 目录可能已存在，忽略错误
@@ -82,9 +101,11 @@ export class WebDAVAdapter implements StorageAdapter {
   async getRemoteMeta(): Promise<RemoteMeta> {
     try {
       const metaPath = this.getPath(PATHS.META);
-      const exists = await this.client.exists(metaPath);
+      const exists = await this.withTimeout(this.client.exists(metaPath));
       if (exists) {
-        const content = await this.client.getFileContents(metaPath, { format: 'text' });
+        const content = await this.withTimeout(
+          this.client.getFileContents(metaPath, { format: 'text' })
+        );
         return JSON.parse(content as string);
       }
     } catch (error) {
@@ -102,7 +123,9 @@ export class WebDAVAdapter implements StorageAdapter {
   async putRemoteMeta(meta: RemoteMeta): Promise<boolean> {
     try {
       const metaPath = this.getPath(PATHS.META);
-      await this.client.putFileContents(metaPath, JSON.stringify(meta, null, 2));
+      await this.withTimeout(
+        this.client.putFileContents(metaPath, JSON.stringify(meta, null, 2))
+      );
       return true;
     } catch (error) {
       console.error('Failed to put remote meta:', error);
@@ -117,12 +140,45 @@ export class WebDAVAdapter implements StorageAdapter {
   }> {
     try {
       const changesDir = this.getPath(PATHS.CHANGES);
-      const files = await this.client.getDirectoryContents(changesDir) as Array<{ basename: string }>;
+      
+      // 检查目录是否存在（带超时）
+      let dirExists = false;
+      try {
+        dirExists = await this.withTimeout(this.client.exists(changesDir));
+      } catch (e) {
+        console.warn('Failed to check changes directory existence:', e);
+        return { changes: [], nextCursor: null, hasMore: false };
+      }
+      
+      if (!dirExists) {
+        // 目录不存在，尝试创建
+        try {
+          await this.withTimeout(this.client.createDirectory(changesDir));
+        } catch (e) {
+          console.warn('Failed to create changes directory:', e);
+        }
+        return { changes: [], nextCursor: null, hasMore: false };
+      }
+      
+      let files: Array<{ basename: string }> = [];
+      try {
+        files = await this.withTimeout(
+          this.client.getDirectoryContents(changesDir)
+        ) as Array<{ basename: string }>;
+      } catch (e) {
+        console.warn('Failed to list changes directory:', e);
+        return { changes: [], nextCursor: null, hasMore: false };
+      }
 
-      // 按文件名排序（假设文件名包含序号）
+      // 过滤并排序 JSON 文件
       const sortedFiles = files
-        .filter(f => f.basename.endsWith('.json'))
+        .filter(f => f.basename && f.basename.endsWith('.json'))
         .sort((a, b) => a.basename.localeCompare(b.basename));
+
+      // 如果没有变更文件，直接返回
+      if (sortedFiles.length === 0) {
+        return { changes: [], nextCursor: null, hasMore: false };
+      }
 
       // 找到游标位置
       let startIndex = 0;
@@ -133,25 +189,38 @@ export class WebDAVAdapter implements StorageAdapter {
         }
       }
 
+      // 如果游标已经在末尾，没有更多变更
+      if (startIndex >= sortedFiles.length) {
+        return { changes: [], nextCursor: null, hasMore: false };
+      }
+
       // 读取变更
       const changes: RemoteChange[] = [];
       const endIndex = Math.min(startIndex + limit, sortedFiles.length);
 
       for (let i = startIndex; i < endIndex; i++) {
-        const content = await this.client.getFileContents(
-          `${changesDir}/${sortedFiles[i].basename}`,
-          { format: 'text' }
-        );
-        const change = JSON.parse(content as string) as RemoteChange;
-        changes.push(change);
+        try {
+          const content = await this.withTimeout(
+            this.client.getFileContents(
+              `${changesDir}/${sortedFiles[i].basename}`,
+              { format: 'text' }
+            )
+          );
+          const change = JSON.parse(content as string) as RemoteChange;
+          changes.push(change);
+        } catch (e) {
+          console.warn(`Failed to read change file ${sortedFiles[i].basename}:`, e);
+          // 跳过损坏的文件，继续处理
+        }
       }
 
       const hasMore = endIndex < sortedFiles.length;
-      const nextCursor = hasMore ? sortedFiles[endIndex - 1].basename : null;
+      const nextCursor = changes.length > 0 ? sortedFiles[endIndex - 1].basename : null;
 
       return { changes, nextCursor, hasMore };
     } catch (error) {
       console.error('Failed to list changes:', error);
+      // 出错时返回空结果，避免卡住
       return { changes: [], nextCursor: null, hasMore: false };
     }
   }
@@ -159,10 +228,12 @@ export class WebDAVAdapter implements StorageAdapter {
   async getItem(id: string): Promise<ItemBase | null> {
     try {
       const itemPath = this.getPath(`${PATHS.ITEMS}/${id}.json`);
-      const exists = await this.client.exists(itemPath);
+      const exists = await this.withTimeout(this.client.exists(itemPath));
       if (!exists) return null;
 
-      const content = await this.client.getFileContents(itemPath, { format: 'text' });
+      const content = await this.withTimeout(
+        this.client.getFileContents(itemPath, { format: 'text' })
+      );
       return JSON.parse(content as string);
     } catch (error) {
       console.error(`Failed to get item ${id}:`, error);
@@ -170,11 +241,13 @@ export class WebDAVAdapter implements StorageAdapter {
     }
   }
 
-  async putItem(item: ItemBase): Promise<{ success: boolean; remoteRev: string }> {
+  async putItem(item: ItemBase): Promise<{ success: boolean; remoteRev: string; error?: string }> {
     try {
       const itemPath = this.getPath(`${PATHS.ITEMS}/${item.id}.json`);
       const content = JSON.stringify(item, null, 2);
-      await this.client.putFileContents(itemPath, content);
+      
+      // 使用更长的超时时间（60秒）
+      await this.withTimeout(this.client.putFileContents(itemPath, content), 60000);
 
       // 记录变更
       await this.recordChange(item);
@@ -183,17 +256,18 @@ export class WebDAVAdapter implements StorageAdapter {
       const remoteRev = Date.now().toString();
       return { success: true, remoteRev };
     } catch (error) {
+      const errorMessage = (error as Error).message || 'Unknown error';
       console.error(`Failed to put item ${item.id}:`, error);
-      return { success: false, remoteRev: '' };
+      return { success: false, remoteRev: '', error: errorMessage };
     }
   }
 
   async deleteItem(id: string): Promise<boolean> {
     try {
       const itemPath = this.getPath(`${PATHS.ITEMS}/${id}.json`);
-      const exists = await this.client.exists(itemPath);
+      const exists = await this.withTimeout(this.client.exists(itemPath));
       if (exists) {
-        await this.client.deleteFile(itemPath);
+        await this.withTimeout(this.client.deleteFile(itemPath));
       }
       return true;
     } catch (error) {
@@ -205,14 +279,19 @@ export class WebDAVAdapter implements StorageAdapter {
   async getResource(id: string): Promise<Buffer | null> {
     try {
       const resourceDir = this.getPath(PATHS.RESOURCES);
-      const files = await this.client.getDirectoryContents(resourceDir) as Array<{ basename: string }>;
+      const files = await this.withTimeout(
+        this.client.getDirectoryContents(resourceDir)
+      ) as Array<{ basename: string }>;
       const file = files.find(f => f.basename.startsWith(id));
 
       if (!file) return null;
 
-      const content = await this.client.getFileContents(
-        `${resourceDir}/${file.basename}`,
-        { format: 'binary' }
+      const content = await this.withTimeout(
+        this.client.getFileContents(
+          `${resourceDir}/${file.basename}`,
+          { format: 'binary' }
+        ),
+        60000 // 资源文件可能较大，使用60秒超时
       );
       return Buffer.from(content as ArrayBuffer);
     } catch (error) {
@@ -233,7 +312,10 @@ export class WebDAVAdapter implements StorageAdapter {
       const ext = extMap[mimeType] || '';
       const resourcePath = this.getPath(`${PATHS.RESOURCES}/${id}${ext}`);
 
-      await this.client.putFileContents(resourcePath, data);
+      await this.withTimeout(
+        this.client.putFileContents(resourcePath, data),
+        60000 // 资源文件可能较大，使用60秒超时
+      );
       return true;
     } catch (error) {
       console.error(`Failed to put resource ${id}:`, error);
@@ -244,11 +326,15 @@ export class WebDAVAdapter implements StorageAdapter {
   async deleteResource(id: string): Promise<boolean> {
     try {
       const resourceDir = this.getPath(PATHS.RESOURCES);
-      const files = await this.client.getDirectoryContents(resourceDir) as Array<{ basename: string }>;
+      const files = await this.withTimeout(
+        this.client.getDirectoryContents(resourceDir)
+      ) as Array<{ basename: string }>;
       const file = files.find(f => f.basename.startsWith(id));
 
       if (file) {
-        await this.client.deleteFile(`${resourceDir}/${file.basename}`);
+        await this.withTimeout(
+          this.client.deleteFile(`${resourceDir}/${file.basename}`)
+        );
       }
       return true;
     } catch (error) {
@@ -260,10 +346,12 @@ export class WebDAVAdapter implements StorageAdapter {
   async getSyncCursor(): Promise<SyncCursor | null> {
     try {
       const cursorPath = this.getPath(PATHS.CURSOR);
-      const exists = await this.client.exists(cursorPath);
+      const exists = await this.withTimeout(this.client.exists(cursorPath));
       if (!exists) return null;
 
-      const content = await this.client.getFileContents(cursorPath, { format: 'text' });
+      const content = await this.withTimeout(
+        this.client.getFileContents(cursorPath, { format: 'text' })
+      );
       return JSON.parse(content as string);
     } catch (error) {
       console.error('Failed to get sync cursor:', error);
@@ -274,7 +362,9 @@ export class WebDAVAdapter implements StorageAdapter {
   async setSyncCursor(cursor: SyncCursor): Promise<boolean> {
     try {
       const cursorPath = this.getPath(PATHS.CURSOR);
-      await this.client.putFileContents(cursorPath, JSON.stringify(cursor, null, 2));
+      await this.withTimeout(
+        this.client.putFileContents(cursorPath, JSON.stringify(cursor, null, 2))
+      );
       return true;
     } catch (error) {
       console.error('Failed to set sync cursor:', error);
@@ -282,13 +372,23 @@ export class WebDAVAdapter implements StorageAdapter {
     }
   }
 
-  async acquireLock(deviceId: string, timeout: number = 300000): Promise<boolean> {
+  async acquireLock(deviceId: string, timeout: number = DEFAULT_LOCK_TIMEOUT): Promise<boolean> {
     try {
       const lockPath = this.getPath(`${PATHS.LOCKS}/lock.json`);
-      const exists = await this.client.exists(lockPath);
+      
+      // 先确保 locks 目录存在
+      const locksDir = this.getPath(PATHS.LOCKS);
+      const locksDirExists = await this.withTimeout(this.client.exists(locksDir));
+      if (!locksDirExists) {
+        await this.withTimeout(this.client.createDirectory(locksDir));
+      }
+      
+      const exists = await this.withTimeout(this.client.exists(lockPath));
 
       if (exists) {
-        const content = await this.client.getFileContents(lockPath, { format: 'text' });
+        const content = await this.withTimeout(
+          this.client.getFileContents(lockPath, { format: 'text' })
+        );
         const lock = JSON.parse(content as string);
 
         // 检查锁是否过期
@@ -303,7 +403,9 @@ export class WebDAVAdapter implements StorageAdapter {
         acquired: Date.now(),
         expires: Date.now() + timeout,
       };
-      await this.client.putFileContents(lockPath, JSON.stringify(lock, null, 2));
+      await this.withTimeout(
+        this.client.putFileContents(lockPath, JSON.stringify(lock, null, 2))
+      );
       return true;
     } catch (error) {
       console.error('Failed to acquire lock:', error);
@@ -314,14 +416,16 @@ export class WebDAVAdapter implements StorageAdapter {
   async releaseLock(deviceId: string): Promise<boolean> {
     try {
       const lockPath = this.getPath(`${PATHS.LOCKS}/lock.json`);
-      const exists = await this.client.exists(lockPath);
+      const exists = await this.withTimeout(this.client.exists(lockPath));
 
       if (exists) {
-        const content = await this.client.getFileContents(lockPath, { format: 'text' });
+        const content = await this.withTimeout(
+          this.client.getFileContents(lockPath, { format: 'text' })
+        );
         const lock = JSON.parse(content as string);
 
         if (lock.owner === deviceId) {
-          await this.client.deleteFile(lockPath);
+          await this.withTimeout(this.client.deleteFile(lockPath));
         }
       }
       return true;
@@ -334,13 +438,15 @@ export class WebDAVAdapter implements StorageAdapter {
   async checkLock(): Promise<{ locked: boolean; owner?: string; expires?: number }> {
     try {
       const lockPath = this.getPath(`${PATHS.LOCKS}/lock.json`);
-      const exists = await this.client.exists(lockPath);
+      const exists = await this.withTimeout(this.client.exists(lockPath));
 
       if (!exists) {
         return { locked: false };
       }
 
-      const content = await this.client.getFileContents(lockPath, { format: 'text' });
+      const content = await this.withTimeout(
+        this.client.getFileContents(lockPath, { format: 'text' })
+      );
       const lock = JSON.parse(content as string);
 
       if (lock.expires < Date.now()) {
@@ -370,8 +476,73 @@ export class WebDAVAdapter implements StorageAdapter {
     };
 
     const changePath = this.getPath(`${PATHS.CHANGES}/${change.change_id}.json`);
-    await this.client.putFileContents(changePath, JSON.stringify(change, null, 2));
+    await this.withTimeout(
+      this.client.putFileContents(changePath, JSON.stringify(change, null, 2))
+    );
+  }
+
+  // 清理过期的变更日志
+  async cleanupChangeLogs(beforeTimestamp: number): Promise<number> {
+    try {
+      const changesDir = this.getPath(PATHS.CHANGES);
+      const dirExists = await this.withTimeout(this.client.exists(changesDir));
+      if (!dirExists) {
+        return 0;
+      }
+
+      const files = await this.withTimeout(
+        this.client.getDirectoryContents(changesDir)
+      ) as Array<{ basename: string }>;
+
+      let deletedCount = 0;
+      for (const file of files) {
+        if (!file.basename.endsWith('.json')) continue;
+        
+        // 从文件名提取时间戳（文件名格式：{timestamp}.json）
+        const timestamp = parseInt(file.basename.replace('.json', ''), 10);
+        if (isNaN(timestamp) || timestamp >= beforeTimestamp) continue;
+
+        try {
+          await this.withTimeout(
+            this.client.deleteFile(`${changesDir}/${file.basename}`)
+          );
+          deletedCount++;
+        } catch (e) {
+          console.warn(`Failed to delete change log ${file.basename}:`, e);
+        }
+      }
+
+      console.log(`Cleaned up ${deletedCount} expired change logs`);
+      return deletedCount;
+    } catch (error) {
+      console.error('Failed to cleanup change logs:', error);
+      return 0;
+    }
+  }
+
+  // 检查远端是否已有数据
+  async hasExistingData(): Promise<boolean> {
+    try {
+      const itemsDir = this.getPath(PATHS.ITEMS);
+      const dirExists = await this.withTimeout(this.client.exists(itemsDir));
+      if (!dirExists) {
+        return false;
+      }
+
+      const files = await this.withTimeout(
+        this.client.getDirectoryContents(itemsDir)
+      ) as Array<{ basename: string }>;
+
+      // 检查是否有任何 JSON 文件
+      return files.some(f => f.basename.endsWith('.json'));
+    } catch (error) {
+      console.error('Failed to check existing data:', error);
+      // 回退到检查元数据
+      const meta = await this.getRemoteMeta();
+      return meta.last_sync_time !== null;
+    }
   }
 }
+
 
 export default WebDAVAdapter;

@@ -9,6 +9,7 @@ export interface Note {
   folderId: string | null;
   isPinned: boolean;
   isLocked: boolean;
+  lockPasswordHash: string | null;
   tags: string[];
   createdAt: number;
   updatedAt: number;
@@ -23,6 +24,7 @@ function itemToNote(item: ItemBase): Note {
     folderId: payload.folder_id,
     isPinned: payload.is_pinned,
     isLocked: payload.is_locked,
+    lockPasswordHash: payload.lock_password_hash,
     tags: payload.tags,
     createdAt: item.created_time,
     updatedAt: item.updated_time,
@@ -85,13 +87,17 @@ export function useNotes(folderId: string | null) {
     const note = notes.find(n => n.id === id);
     if (!note) return null;
 
+    // 获取当前笔记的完整 payload（包括 lock_password_hash）
+    const currentItem = await itemsApi.getById(id);
+    const currentPayload = currentItem ? parsePayload<NotePayload>(currentItem) : null;
+
     const payload: NotePayload = {
       title: updates.title ?? note.title,
       content: updates.content ?? note.content,
       folder_id: updates.folder_id ?? note.folderId,
       is_pinned: updates.is_pinned ?? note.isPinned,
       is_locked: updates.is_locked ?? note.isLocked,
-      lock_password_hash: updates.lock_password_hash ?? null,
+      lock_password_hash: 'lock_password_hash' in updates ? (updates.lock_password_hash ?? null) : (currentPayload?.lock_password_hash ?? null),
       tags: updates.tags ?? note.tags,
     };
 
@@ -122,6 +128,52 @@ export function useNotes(folderId: string | null) {
     }
   }, [loadNotes]);
 
+  // 锁定笔记
+  const lockNote = useCallback(async (id: string, passwordHash: string) => {
+    const note = notes.find(n => n.id === id);
+    if (!note) return null;
+
+    const payload: NotePayload = {
+      title: note.title,
+      content: note.content,
+      folder_id: note.folderId,
+      is_pinned: note.isPinned,
+      is_locked: true,
+      lock_password_hash: passwordHash,
+      tags: note.tags,
+    };
+
+    const item = await notesApi.update(id, payload);
+    if (item) {
+      await loadNotes();
+      return itemToNote(item);
+    }
+    return null;
+  }, [notes, loadNotes]);
+
+  // 解锁笔记（移除加密）
+  const unlockNote = useCallback(async (id: string) => {
+    const note = notes.find(n => n.id === id);
+    if (!note) return null;
+
+    const payload: NotePayload = {
+      title: note.title,
+      content: note.content,
+      folder_id: note.folderId,
+      is_pinned: note.isPinned,
+      is_locked: false,
+      lock_password_hash: null,
+      tags: note.tags,
+    };
+
+    const item = await notesApi.update(id, payload);
+    if (item) {
+      await loadNotes();
+      return itemToNote(item);
+    }
+    return null;
+  }, [notes, loadNotes]);
+
   return {
     notes,
     loading,
@@ -130,6 +182,8 @@ export function useNotes(folderId: string | null) {
     updateNote,
     deleteNote,
     searchNotes,
+    lockNote,
+    unlockNote,
     refresh: loadNotes,
   };
 }

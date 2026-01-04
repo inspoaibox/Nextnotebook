@@ -36,6 +36,7 @@ function itemToNote(item: ItemBase) {
     folderId: payload.folder_id,
     isPinned: payload.is_pinned,
     isLocked: payload.is_locked,
+    lockPasswordHash: payload.lock_password_hash,
     tags: payload.tags,
     createdAt: item.created_time,
     updatedAt: item.updated_time,
@@ -55,6 +56,8 @@ const App: React.FC = () => {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error' | 'offline'>('idle');
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
   const [pendingChanges, setPendingChanges] = useState(0);
+  const [syncProgress, setSyncProgress] = useState<any>(null);
+  const [lastSyncResult, setLastSyncResult] = useState<any>(null);
   const [filteredNotes, setFilteredNotes] = useState<any[]>([]);
   const [syncInitialized, setSyncInitialized] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -305,11 +308,15 @@ const App: React.FC = () => {
           console.log('Sync service initialized successfully');
         } else {
           setSyncInitialized(false);
-          console.error('Failed to initialize sync service');
+          setSyncStatus('error');
+          console.warn('Sync service initialization failed - server may be unreachable');
+          // 不显示错误消息，因为这可能只是暂时的网络问题
+          // 用户可以稍后手动点击同步按钮重试
         }
       } catch (error) {
         console.error('Error initializing sync service:', error);
         setSyncInitialized(false);
+        setSyncStatus('error');
       }
     };
     initSync();
@@ -325,11 +332,20 @@ const App: React.FC = () => {
         setSyncStatus(state.status);
         setLastSyncTime(state.lastSyncTime);
         setPendingChanges(state.pendingChanges);
+        // 只有在同步中才显示进度，否则清除进度
+        if (state.status === 'syncing') {
+          setSyncProgress(state.progress);
+        } else {
+          setSyncProgress(null);
+        }
+        if (state.lastSyncResult) {
+          setLastSyncResult(state.lastSyncResult);
+        }
       }
     };
 
     updateSyncState();
-    const interval = setInterval(updateSyncState, 5000);
+    const interval = setInterval(updateSyncState, 1000);  // 更频繁更新以显示进度
     return () => clearInterval(interval);
   }, [syncInitialized]);
 
@@ -483,6 +499,110 @@ const App: React.FC = () => {
     message.info('请在编辑器中修改笔记的文件夹');
   }, []);
 
+  // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
+  const computePasswordHash = async (password: string): Promise<string> => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  // 锁定笔记（从 Editor 组件调用）
+  const handleLockNoteFromEditor = useCallback(async (noteId: string, passwordHash: string) => {
+    await updateNote(noteId, { is_locked: true, lock_password_hash: passwordHash });
+    await refresh();
+  }, [updateNote, refresh]);
+
+  // 解锁笔记（从 Editor 组件调用，移除加密）
+  const handleUnlockNoteFromEditor = useCallback(async (noteId: string) => {
+    await updateNote(noteId, { is_locked: false, lock_password_hash: null });
+    await refresh();
+  }, [updateNote, refresh]);
+
+  // 锁定笔记（从 NoteList 调用）
+  const handleLockNote = useCallback(async (noteId: string) => {
+    // 弹出密码输入框
+    let password = '';
+    Modal.confirm({
+      title: '锁定笔记',
+      content: (
+        <div>
+          <p style={{ marginBottom: 8 }}>请设置笔记密码：</p>
+          <input 
+            type="password" 
+            placeholder="输入密码" 
+            style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
+            onChange={(e) => { password = e.target.value; }}
+          />
+        </div>
+      ),
+      okText: '锁定',
+      cancelText: '取消',
+      onOk: async () => {
+        if (!password || password.length < 4) {
+          message.error('密码至少 4 位');
+          return Promise.reject();
+        }
+        // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
+        const passwordHash = await computePasswordHash(password);
+        
+        await updateNote(noteId, { is_locked: true, lock_password_hash: passwordHash });
+        await refresh();
+        message.success('笔记已锁定');
+      },
+    });
+  }, [updateNote, refresh]);
+
+  // 解锁笔记（从 NoteList 调用）
+  const handleUnlockNote = useCallback(async (noteId: string) => {
+    // 获取笔记的密码哈希
+    const note = filteredNotes.find(n => n.id === noteId);
+    if (!note) return;
+    
+    // 从数据库获取完整笔记信息
+    const noteItem = await itemsApi.getById(noteId);
+    if (!noteItem) return;
+    
+    const payload = parsePayload<NotePayload>(noteItem);
+    const storedHash = payload.lock_password_hash;
+    
+    let password = '';
+    Modal.confirm({
+      title: '解锁笔记',
+      content: (
+        <div>
+          <p style={{ marginBottom: 8 }}>请输入笔记密码：</p>
+          <input 
+            type="password" 
+            placeholder="输入密码" 
+            style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
+            onChange={(e) => { password = e.target.value; }}
+          />
+        </div>
+      ),
+      okText: '解锁',
+      cancelText: '取消',
+      onOk: async () => {
+        if (!password) {
+          message.error('请输入密码');
+          return Promise.reject();
+        }
+        // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
+        const inputHash = await computePasswordHash(password);
+        
+        if (inputHash !== storedHash) {
+          message.error('密码错误');
+          return Promise.reject();
+        }
+        
+        await updateNote(noteId, { is_locked: false, lock_password_hash: null });
+        await refresh();
+        message.success('笔记已解锁');
+      },
+    });
+  }, [filteredNotes, updateNote, refresh]);
+
   // 删除文件夹
   const handleDeleteFolder = useCallback(async (folderId: string) => {
     const success = await deleteFolderApi(folderId);
@@ -555,13 +675,16 @@ const App: React.FC = () => {
     }
     
     setSyncStatus('syncing');
+    setSyncProgress({ phase: 'connecting', message: '正在连接服务器...' });
     
     try {
       const result = await syncApi.trigger();
       
       if (result) {
+        setLastSyncResult(result);  // 立即更新结果
         if (result.success) {
           setSyncStatus('idle');
+          setSyncProgress(null);  // 清除进度
           setLastSyncTime(Date.now());
           setPendingChanges(0);
           message.success(`同步完成: 上传 ${result.pushed} 项, 下载 ${result.pulled} 项`);
@@ -569,6 +692,7 @@ const App: React.FC = () => {
           await refresh();
         } else {
           setSyncStatus('error');
+          setSyncProgress(null);  // 清除进度
           // 检查是否是密钥不匹配错误
           const keyMismatchError = result.errors.find(e => e.includes('key mismatch'));
           if (keyMismatchError) {
@@ -582,13 +706,48 @@ const App: React.FC = () => {
         }
       } else {
         setSyncStatus('error');
+        setSyncProgress(null);  // 清除进度
         message.error('同步失败');
       }
     } catch (error) {
       setSyncStatus('error');
+      setSyncProgress(null);  // 清除进度
       message.error('同步出错');
     }
   }, [syncConfig, syncInitialized, refresh]);
+
+  // 强制重新同步
+  const handleForceResync = useCallback(async () => {
+    if (!syncConfig.enabled) {
+      message.warning('请先在设置中配置同步');
+      return;
+    }
+
+    Modal.confirm({
+      title: '强制重新同步',
+      content: '这将标记所有本地数据为待同步状态，然后执行同步。确定要继续吗？',
+      okText: '确定',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          message.loading({ content: '正在标记数据...', key: 'force-resync' });
+          const result = await syncApi.forceResync();
+          
+          if (result.success) {
+            message.success({ content: `已标记 ${result.count} 项数据，开始同步...`, key: 'force-resync' });
+            // 更新待同步数量
+            setPendingChanges(result.count);
+            // 触发同步
+            await handleSync();
+          } else {
+            message.error({ content: result.error || '标记失败', key: 'force-resync' });
+          }
+        } catch (error) {
+          message.error({ content: '操作失败', key: 'force-resync' });
+        }
+      },
+    });
+  }, [syncConfig, handleSync]);
 
   // 选择工具
   const handleSelectTool = useCallback((tool: string | null) => {
@@ -788,6 +947,8 @@ const App: React.FC = () => {
                 onToggleStar={handleTogglePin}
                 onDuplicateNote={handleDuplicateNote}
                 onMoveToFolder={handleMoveToFolder}
+                onLockNote={handleLockNote}
+                onUnlockNote={handleUnlockNote}
                 onCreateNote={handleQuickCreateNote}
                 onCreateTemplateNote={handleCreateNote}
                 isTrashView={selectedView === 'trash'}
@@ -803,6 +964,8 @@ const App: React.FC = () => {
                   onUpdateTags={handleUpdateNoteTags}
                   onDelete={handleDeleteNote}
                   onDuplicate={handleDuplicateNote}
+                  onLockNote={handleLockNoteFromEditor}
+                  onUnlockNote={handleUnlockNoteFromEditor}
                   allTags={tags}
                   onCreateTag={createTag}
                   isTrashView={selectedView === 'trash'}
@@ -820,7 +983,10 @@ const App: React.FC = () => {
                   status={syncStatus}
                   lastSyncTime={lastSyncTime}
                   pendingChanges={pendingChanges}
+                  progress={syncProgress}
+                  lastResult={lastSyncResult}
                   onSync={handleSync}
+                  onForceResync={handleForceResync}
                   onOpenSettings={() => setSettingsOpen(true)}
                 />
               </Footer>
