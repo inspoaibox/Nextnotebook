@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Select, Switch, InputNumber, Input, Button, Space, message, Divider, List, Popconfirm, Tag, Typography, Checkbox } from 'antd';
+import { Modal, Form, Select, Switch, InputNumber, Input, Button, Space, message, Divider, List, Popconfirm, Tag, Typography, Checkbox, Radio, Progress } from 'antd';
 import {
   SettingOutlined,
   CloudOutlined,
@@ -15,6 +15,9 @@ import {
   DatabaseOutlined,
   FolderOpenOutlined,
   CopyOutlined,
+  ExportOutlined,
+  ImportOutlined,
+  FileOutlined,
 } from '@ant-design/icons';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAISettings } from '../hooks/useAI';
@@ -129,6 +132,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     isDev: boolean;
   } | null>(null);
 
+  // 导入导出状态
+  const [exportLoading, setExportLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [includeResources, setIncludeResources] = useState(true);
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
+  const [importPreview, setImportPreview] = useState<{
+    filePath: string;
+    version: string;
+    exportTime: number;
+    appVersion: string;
+    itemsCount: number;
+    resourcesCount: number;
+    typeCounts: Record<string, number>;
+  } | null>(null);
+
   // 加载应用路径信息
   useEffect(() => {
     if (open && activeTab === 'data') {
@@ -142,6 +161,103 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
       loadPaths();
     }
   }, [open, activeTab]);
+
+  // 导出数据
+  const handleExportData = async () => {
+    setExportLoading(true);
+    try {
+      const api = (window as any).electronAPI;
+      if (api?.data?.export) {
+        const result = await api.data.export({ includeResources });
+        if (result.success) {
+          message.success(`导出成功！共导出 ${result.itemsCount} 条数据${includeResources ? `，${result.resourcesCount} 个附件` : ''}`);
+        } else if (result.error !== '已取消') {
+          message.error(`导出失败: ${result.error}`);
+        }
+      } else {
+        message.error('导出功能不可用');
+      }
+    } catch (error) {
+      message.error(`导出失败: ${(error as Error).message}`);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  // 预览导入文件
+  const handlePreviewImport = async () => {
+    try {
+      const api = (window as any).electronAPI;
+      if (api?.data?.previewImport) {
+        const result = await api.data.previewImport();
+        if (result.success) {
+          setImportPreview({
+            filePath: result.filePath,
+            version: result.version,
+            exportTime: result.exportTime,
+            appVersion: result.appVersion,
+            itemsCount: result.itemsCount,
+            resourcesCount: result.resourcesCount,
+            typeCounts: result.typeCounts,
+          });
+          setShowImportConfirm(true);
+        } else if (result.error !== '已取消') {
+          message.error(`读取文件失败: ${result.error}`);
+        }
+      } else {
+        message.error('导入功能不可用');
+      }
+    } catch (error) {
+      message.error(`读取文件失败: ${(error as Error).message}`);
+    }
+  };
+
+  // 执行导入
+  const handleImportData = async () => {
+    setImportLoading(true);
+    setShowImportConfirm(false);
+    try {
+      const api = (window as any).electronAPI;
+      if (api?.data?.import) {
+        const result = await api.data.import({ mode: importMode });
+        if (result.success) {
+          const msg = importMode === 'merge' 
+            ? `导入成功！新增 ${result.itemsImported} 条数据，跳过 ${result.itemsSkipped} 条已存在数据，导入 ${result.resourcesImported} 个附件`
+            : `导入成功！共导入 ${result.itemsImported} 条数据，${result.resourcesImported} 个附件`;
+          message.success(msg);
+          // 刷新页面以显示新数据
+          window.location.reload();
+        } else if (result.error !== '已取消') {
+          message.error(`导入失败: ${result.error}`);
+        }
+      }
+    } catch (error) {
+      message.error(`导入失败: ${(error as Error).message}`);
+    } finally {
+      setImportLoading(false);
+      setImportPreview(null);
+    }
+  };
+
+  // 获取类型的中文名称
+  const getTypeName = (type: string): string => {
+    const typeNames: Record<string, string> = {
+      note: '笔记',
+      folder: '文件夹',
+      tag: '标签',
+      resource: '附件',
+      bookmark: '书签',
+      bookmark_folder: '书签文件夹',
+      vault_entry: '密码条目',
+      vault_folder: '密码文件夹',
+      todo: '待办事项',
+      diagram: '图表',
+      ai_config: 'AI 配置',
+      ai_conversation: 'AI 对话',
+      ai_message: 'AI 消息',
+    };
+    return typeNames[type] || type;
+  };
 
   // 简单的密码哈希函数（使用 SHA-256）
   const hashPassword = async (password: string): Promise<string> => {
@@ -1248,7 +1364,54 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
         return (
           <div>
             <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 500 }}>数据</h3>
-            <p style={{ color: '#888', fontSize: 13, marginBottom: 24 }}>
+            
+            {/* 导入导出区域 */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontWeight: 500, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+                <DatabaseOutlined style={{ marginRight: 8, color: '#1890ff' }} />
+                数据导入导出
+              </div>
+              <p style={{ color: '#888', fontSize: 13, marginBottom: 16 }}>
+                导出数据可用于备份或迁移到其他设备，导入数据可恢复之前的备份
+              </p>
+              
+              <div style={{ background: '#fafafa', padding: 16, borderRadius: 8, marginBottom: 16 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <Checkbox 
+                    checked={includeResources} 
+                    onChange={(e) => setIncludeResources(e.target.checked)}
+                  >
+                    包含附件资源（图片、文件等）
+                  </Checkbox>
+                </div>
+                <Space>
+                  <Button 
+                    type="primary"
+                    icon={<ExportOutlined />}
+                    loading={exportLoading}
+                    onClick={handleExportData}
+                  >
+                    导出数据
+                  </Button>
+                  <Button 
+                    icon={<ImportOutlined />}
+                    loading={importLoading}
+                    onClick={handlePreviewImport}
+                  >
+                    导入数据
+                  </Button>
+                </Space>
+              </div>
+            </div>
+
+            <Divider style={{ margin: '16px 0' }} />
+
+            {/* 数据路径信息 */}
+            <div style={{ fontWeight: 500, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              <FolderOpenOutlined style={{ marginRight: 8, color: '#52c41a' }} />
+              数据存储位置
+            </div>
+            <p style={{ color: '#888', fontSize: 13, marginBottom: 16 }}>
               查看应用的安装目录和数据存储位置
             </p>
 
@@ -1375,6 +1538,83 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                 加载中...
               </div>
             )}
+
+            {/* 导入确认对话框 */}
+            <Modal
+              title="确认导入数据"
+              open={showImportConfirm}
+              onCancel={() => {
+                setShowImportConfirm(false);
+                setImportPreview(null);
+              }}
+              onOk={handleImportData}
+              okText="开始导入"
+              cancelText="取消"
+              confirmLoading={importLoading}
+            >
+              {importPreview && (
+                <div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                      <FileOutlined style={{ marginRight: 8 }} />
+                      <Text strong>文件信息</Text>
+                    </div>
+                    <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 6, fontSize: 13 }}>
+                      <p style={{ margin: '0 0 4px' }}>导出时间: {new Date(importPreview.exportTime).toLocaleString()}</p>
+                      <p style={{ margin: '0 0 4px' }}>导出版本: {importPreview.appVersion}</p>
+                      <p style={{ margin: '0 0 4px' }}>数据条数: {importPreview.itemsCount}</p>
+                      <p style={{ margin: 0 }}>附件数量: {importPreview.resourcesCount}</p>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: 16 }}>
+                    <Text strong>数据类型统计</Text>
+                    <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {Object.entries(importPreview.typeCounts).map(([type, count]) => (
+                        <Tag key={type}>{getTypeName(type)}: {count}</Tag>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Text strong>导入模式</Text>
+                    <Radio.Group 
+                      value={importMode} 
+                      onChange={(e) => setImportMode(e.target.value)}
+                      style={{ marginTop: 8, display: 'block' }}
+                    >
+                      <Radio value="merge" style={{ display: 'block', marginBottom: 8 }}>
+                        <span style={{ fontWeight: 500 }}>合并</span>
+                        <span style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>
+                          保留现有数据，仅导入新数据或更新较旧的数据
+                        </span>
+                      </Radio>
+                      <Radio value="replace" style={{ display: 'block' }}>
+                        <span style={{ fontWeight: 500, color: '#ff4d4f' }}>替换</span>
+                        <span style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>
+                          清空现有数据，完全使用导入的数据（谨慎操作）
+                        </span>
+                      </Radio>
+                    </Radio.Group>
+                  </div>
+
+                  {importMode === 'replace' && (
+                    <div style={{ 
+                      marginTop: 16, 
+                      padding: 12, 
+                      background: '#fff2f0', 
+                      border: '1px solid #ffccc7',
+                      borderRadius: 6 
+                    }}>
+                      <Text type="danger" strong>⚠️ 警告</Text>
+                      <p style={{ margin: '8px 0 0', color: '#ff4d4f', fontSize: 13 }}>
+                        替换模式将删除所有现有数据，此操作不可撤销！建议先导出当前数据作为备份。
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Modal>
           </div>
         );
 

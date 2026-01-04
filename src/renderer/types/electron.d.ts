@@ -88,6 +88,42 @@ export interface PDFAPI {
   saveFile: (buffer: string, defaultName: string) => Promise<boolean>;
 }
 
+export interface DataExportResult {
+  success: boolean;
+  filePath?: string;
+  itemsCount?: number;
+  resourcesCount?: number;
+  error?: string;
+}
+
+export interface DataImportResult {
+  success: boolean;
+  itemsImported?: number;
+  itemsSkipped?: number;
+  resourcesImported?: number;
+  totalItems?: number;
+  totalResources?: number;
+  error?: string;
+}
+
+export interface DataPreviewResult {
+  success: boolean;
+  filePath?: string;
+  version?: string;
+  exportTime?: number;
+  appVersion?: string;
+  itemsCount?: number;
+  resourcesCount?: number;
+  typeCounts?: Record<string, number>;
+  error?: string;
+}
+
+export interface DataAPI {
+  export: (options: { includeResources: boolean }) => Promise<DataExportResult>;
+  import: (options: { mode: 'merge' | 'replace' }) => Promise<DataImportResult>;
+  previewImport: () => Promise<DataPreviewResult>;
+}
+
 export interface ElectronAPI {
   getAppPath: () => Promise<string>;
   getAppPaths: () => Promise<{
@@ -116,6 +152,7 @@ export interface ElectronAPI {
   };
   image: ImageAPI;
   pdf: PDFAPI;
+  data: DataAPI;
 }
 
 declare global {

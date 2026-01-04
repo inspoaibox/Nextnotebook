@@ -582,18 +582,29 @@ class SettingsViewModel @Inject constructor(
                     
                     val message = buildString {
                         append("同步成功")
-                        if (result.pushed > 0 || result.pulled > 0) {
+                        if (result.pushed > 0 || result.pulled > 0 || result.decryptionFailed > 0) {
                             append(" (上传 ${result.pushed}, 下载 ${result.pulled}")
                             if (result.conflicts > 0) {
                                 append(", ${result.conflicts} 个冲突")
                             }
+                            if (result.decryptionFailed > 0) {
+                                append(", ${result.decryptionFailed} 个解密失败")
+                            }
                             append(")")
                         }
                     }
+                    
+                    // 如果有解密失败的项目，显示警告
+                    val finalMessage = if (result.decryptionFailed > 0) {
+                        "$message\n⚠️ 部分数据解密失败，请检查加密密钥是否与电脑端一致"
+                    } else {
+                        message
+                    }
+                    
                     _uiState.update { it.copy(
                         syncStatus = SyncStatus.SUCCESS, 
                         lastSyncTime = now, 
-                        message = message
+                        message = finalMessage
                     ) }
                 } else {
                     _uiState.update { it.copy(

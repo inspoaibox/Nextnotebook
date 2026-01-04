@@ -81,6 +81,7 @@ data class SyncResult(
     val pushed: Int = 0,
     val pulled: Int = 0,
     val conflicts: Int = 0,
+    val decryptionFailed: Int = 0,  // 解密失败的项目数
     val error: String? = null,
     val duration: Long = 0
 )

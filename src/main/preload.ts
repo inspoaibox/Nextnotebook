@@ -117,4 +117,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     linearize: (file: string) => ipcRenderer.invoke('pdf:linearize', file),
     saveFile: (buffer: string, defaultName: string) => ipcRenderer.invoke('pdf:saveFile', buffer, defaultName),
   },
+
+  // Data API - 数据导入导出
+  data: {
+    export: (options: { includeResources: boolean }) => ipcRenderer.invoke('data:export', options),
+    import: (options: { mode: 'merge' | 'replace' }) => ipcRenderer.invoke('data:import', options),
+    previewImport: () => ipcRenderer.invoke('data:previewImport'),
+  },
 });

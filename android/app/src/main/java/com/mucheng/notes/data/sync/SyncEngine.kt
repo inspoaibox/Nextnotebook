@@ -72,6 +72,7 @@ class SyncEngine @Inject constructor(
         var pushed = 0
         var pulled = 0
         var conflicts = 0
+        var decryptionFailed = 0
         
         try {
             // 1. 获取锁（超时时间 2 分钟）
@@ -100,6 +101,7 @@ class SyncEngine @Inject constructor(
                 val pullResult = pullChanges(cfg)
                 pulled = pullResult.count
                 conflicts = pullResult.conflicts
+                decryptionFailed = pullResult.decryptionFailed
                 
             } finally {
                 // 5. 释放锁
@@ -111,6 +113,7 @@ class SyncEngine @Inject constructor(
                 pushed = pushed,
                 pulled = pulled,
                 conflicts = conflicts,
+                decryptionFailed = decryptionFailed,
                 duration = System.currentTimeMillis() - startTime
             )
         } catch (e: Exception) {
@@ -166,6 +169,7 @@ class SyncEngine @Inject constructor(
         
         var count = 0
         var conflicts = 0
+        var decryptionFailed = 0
         var nextCursor = cursor
         
         android.util.Log.d("SyncEngine", "Starting pull, cursor=$cursor, isFirstSync=${cursor == null}, enabledTypes=$enabledTypes")
@@ -198,6 +202,11 @@ class SyncEngine @Inject constructor(
                 if (localItem == null) {
                     // 本地不存在，直接插入
                     val decryptedItem = prepareForLocal(remoteItem, cfg)
+                    if (decryptedItem == null) {
+                        android.util.Log.e("SyncEngine", "Failed to decrypt new item ${remoteItem.id}, skipping")
+                        decryptionFailed++
+                        continue
+                    }
                     itemDao.upsert(decryptedItem.copy(syncStatus = "clean"))
                     android.util.Log.d("SyncEngine", "Inserted new item: ${remoteItem.id}")
                     count++
@@ -206,6 +215,11 @@ class SyncEngine @Inject constructor(
                     if (localItem.contentHash != remoteItem.contentHash) {
                         // 内容有变化，更新
                         val decryptedItem = prepareForLocal(remoteItem, cfg)
+                        if (decryptedItem == null) {
+                            android.util.Log.e("SyncEngine", "Failed to decrypt updated item ${remoteItem.id}, skipping")
+                            decryptionFailed++
+                            continue
+                        }
                         itemDao.upsert(decryptedItem.copy(syncStatus = "clean"))
                         android.util.Log.d("SyncEngine", "Updated existing item: ${remoteItem.id}")
                         count++
@@ -219,6 +233,11 @@ class SyncEngine @Inject constructor(
                     itemDao.upsert(conflictItem)
                     
                     val decryptedItem = prepareForLocal(remoteItem, cfg)
+                    if (decryptedItem == null) {
+                        android.util.Log.e("SyncEngine", "Failed to decrypt conflicting item ${remoteItem.id}, skipping")
+                        decryptionFailed++
+                        continue
+                    }
                     itemDao.upsert(decryptedItem.copy(syncStatus = "clean"))
                     
                     count++
@@ -234,8 +253,8 @@ class SyncEngine @Inject constructor(
             webDAVAdapter.setSyncCursor(SyncCursor(nextCursor, System.currentTimeMillis()))
         }
         
-        android.util.Log.d("SyncEngine", "Pull completed: count=$count, conflicts=$conflicts")
-        return PullResult(count, conflicts)
+        android.util.Log.d("SyncEngine", "Pull completed: count=$count, conflicts=$conflicts, decryptionFailed=$decryptionFailed")
+        return PullResult(count, conflicts, decryptionFailed)
     }
     
     /**
@@ -257,16 +276,19 @@ class SyncEngine @Inject constructor(
     
     /**
      * 准备本地存储的项目（解密处理）
+     * 
+     * @return 解密后的项目，如果解密失败返回 null
      */
-    private fun prepareForLocal(item: ItemEntity, cfg: SyncConfig): ItemEntity {
+    private fun prepareForLocal(item: ItemEntity, cfg: SyncConfig): ItemEntity? {
         android.util.Log.d("SyncEngine", "prepareForLocal: id=${item.id}, type=${item.type}, encryptionApplied=${item.encryptionApplied}")
         android.util.Log.d("SyncEngine", "prepareForLocal: hasMasterKey=${cryptoEngine.hasMasterKey()}")
         android.util.Log.d("SyncEngine", "prepareForLocal: payload preview: ${item.payload.take(200)}...")
         
         if (item.encryptionApplied == 1) {
             if (!cryptoEngine.hasMasterKey()) {
-                android.util.Log.w("SyncEngine", "Item ${item.id} is encrypted but no master key available, keeping encrypted")
-                return item
+                android.util.Log.e("SyncEngine", "Item ${item.id} is encrypted but no master key available")
+                // 返回 null 表示无法处理此项目
+                return null
             }
             
             return try {
@@ -281,10 +303,10 @@ class SyncEngine @Inject constructor(
                 // 解密失败，记录详细错误
                 android.util.Log.e("SyncEngine", "Failed to decrypt item ${item.id}, type=${item.type}: ${e.message}")
                 android.util.Log.e("SyncEngine", "Encrypted payload preview: ${item.payload.take(200)}...")
+                android.util.Log.e("SyncEngine", "This usually means the encryption key doesn't match. Please ensure the same key is used on all devices.")
                 e.printStackTrace()
-                // 返回原始项目，但标记为未加密以避免重复解密尝试
-                // 这会导致 payload 解析失败，显示"解析错误"
-                item
+                // 返回 null 表示解密失败
+                null
             }
         } else {
             android.util.Log.d("SyncEngine", "Item ${item.id} is not encrypted, using as-is")
@@ -401,4 +423,4 @@ class SyncEngine @Inject constructor(
 }
 
 private data class PushResult(val count: Int)
-private data class PullResult(val count: Int, val conflicts: Int)
+private data class PullResult(val count: Int, val conflicts: Int, val decryptionFailed: Int)
