@@ -442,12 +442,62 @@ const App: React.FC = () => {
   }, [updateNote, refresh]);
 
   const handleDeleteNote = useCallback(async (id: string) => {
+    // 检查笔记是否加密
+    const note = filteredNotes.find(n => n.id === id);
+    if (note?.isLocked) {
+      // 获取完整笔记信息
+      const noteItem = await itemsApi.getById(id);
+      if (!noteItem) return;
+      
+      const payload = parsePayload<NotePayload>(noteItem);
+      const storedHash = payload.lock_password_hash;
+      
+      let password = '';
+      Modal.confirm({
+        title: '删除加密笔记',
+        content: (
+          <div>
+            <p style={{ marginBottom: 8, color: '#666' }}>此笔记已加密，删除前需要验证密码：</p>
+            <input 
+              type="password" 
+              placeholder="输入笔记密码" 
+              style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
+              onChange={(e) => { password = e.target.value; }}
+            />
+          </div>
+        ),
+        okText: '确认删除',
+        okType: 'danger',
+        cancelText: '取消',
+        onOk: async () => {
+          if (!password) {
+            message.error('请输入密码');
+            return Promise.reject();
+          }
+          const inputHash = await computePasswordHash(password);
+          
+          if (inputHash !== storedHash) {
+            message.error('密码错误');
+            return Promise.reject();
+          }
+          
+          await deleteNote(id);
+          if (selectedNoteId === id) {
+            setSelectedNoteId(null);
+          }
+          message.success('笔记已移至回收站');
+        },
+      });
+      return;
+    }
+    
+    // 非加密笔记直接删除
     await deleteNote(id);
     if (selectedNoteId === id) {
       setSelectedNoteId(null);
     }
     message.success('笔记已移至回收站');
-  }, [deleteNote, selectedNoteId]);
+  }, [deleteNote, selectedNoteId, filteredNotes]);
 
   // 永久删除笔记（从回收站彻底删除）
   const handlePermanentDeleteNote = useCallback(async (id: string) => {

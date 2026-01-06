@@ -39,12 +39,25 @@ interface TocItem {
   text: string;
 }
 
-// 从 Markdown 内容提取标题
+// 从 Markdown 内容提取标题（过滤代码块中的内容）
 const extractHeadings = (content: string): TocItem[] => {
   const headings: TocItem[] = [];
   const lines = content.split('\n');
   
+  let inCodeBlock = false;
+  
   lines.forEach((line, index) => {
+    // 检测代码块的开始和结束（支持 ``` 和 ~~~）
+    if (line.trim().startsWith('```') || line.trim().startsWith('~~~')) {
+      inCodeBlock = !inCodeBlock;
+      return;
+    }
+    
+    // 如果在代码块内，跳过
+    if (inCodeBlock) {
+      return;
+    }
+    
     const match = line.match(/^(#{1,6})\s+(.+)$/);
     if (match) {
       const level = match[1].length;
@@ -208,6 +221,10 @@ const Editor: React.FC<EditorProps> = ({
   const [lockPassword, setLockPassword] = useState('');
   const [lockPasswordConfirm, setLockPasswordConfirm] = useState('');
   const [lockError, setLockError] = useState('');
+  // 删除加密笔记验证状态
+  const [showDeletePasswordDialog, setShowDeletePasswordDialog] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletePasswordError, setDeletePasswordError] = useState('');
 
   // 提取标题生成目录
   const headings = useMemo(() => extractHeadings(content), [content]);
@@ -367,6 +384,14 @@ const Editor: React.FC<EditorProps> = ({
   };
 
   const handleDelete = () => {
+    // 如果笔记已加密且未解锁，需要先验证密码
+    if (note?.isLocked && !isUnlocked) {
+      setShowDeletePasswordDialog(true);
+      setDeletePassword('');
+      setDeletePasswordError('');
+      return;
+    }
+    
     Modal.confirm({
       title: '删除笔记',
       content: '确定要删除这篇笔记吗？',
@@ -380,6 +405,24 @@ const Editor: React.FC<EditorProps> = ({
       },
     });
   };
+
+  // 验证密码后删除加密笔记
+  const handleDeleteWithPassword = useCallback(async () => {
+    if (!note || !note.lockPasswordHash) return;
+    
+    const inputHash = await computePasswordHash(deletePassword);
+    if (inputHash === note.lockPasswordHash) {
+      setShowDeletePasswordDialog(false);
+      setDeletePassword('');
+      setDeletePasswordError('');
+      // 密码验证通过，执行删除
+      if (noteId && onDelete) {
+        await onDelete(noteId);
+      }
+    } else {
+      setDeletePasswordError('密码错误，请重试');
+    }
+  }, [note, deletePassword, noteId, onDelete]);
 
   const handleDuplicate = () => {
     if (noteId && onDuplicate) {
@@ -863,6 +906,42 @@ const Editor: React.FC<EditorProps> = ({
           {lockError && (
             <div style={{ color: '#ff4d4f', fontSize: 13, marginTop: 8 }}>
               {lockError}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* 删除加密笔记密码验证 Modal */}
+      <Modal
+        title="删除加密笔记"
+        open={showDeletePasswordDialog}
+        onOk={handleDeleteWithPassword}
+        onCancel={() => {
+          setShowDeletePasswordDialog(false);
+          setDeletePassword('');
+          setDeletePasswordError('');
+        }}
+        okText="确认删除"
+        okType="danger"
+        cancelText="取消"
+      >
+        <div>
+          <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 16 }}>
+            此笔记已加密，删除前需要验证密码。
+          </p>
+          <div style={{ marginBottom: 4, fontWeight: 500 }}>输入密码：</div>
+          <Input.Password
+            placeholder="请输入笔记密码"
+            value={deletePassword}
+            onChange={(e) => {
+              setDeletePassword(e.target.value);
+              setDeletePasswordError('');
+            }}
+            onPressEnter={handleDeleteWithPassword}
+          />
+          {deletePasswordError && (
+            <div style={{ color: '#ff4d4f', fontSize: 13, marginTop: 8 }}>
+              {deletePasswordError}
             </div>
           )}
         </div>

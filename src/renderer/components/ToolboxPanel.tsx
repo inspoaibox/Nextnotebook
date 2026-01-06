@@ -87,6 +87,7 @@ const tools: Tool[] = [
   { id: 'url-extract', name: 'URL提取', icon: <LinkOutlined />, category: 'text' },
   { id: 'text-merge-split', name: '合并拆分', icon: <SwapOutlined />, category: 'text' },
   { id: 'text-prefix-suffix', name: '前后缀处理', icon: <OrderedListOutlined />, category: 'text' },
+  { id: 'text-compare', name: '文本对比', icon: <DiffOutlined />, category: 'text' },
   // 编程工具
   { id: 'json-format', name: 'JSON格式化', icon: <CodeOutlined />, category: 'code' },
   { id: 'base64', name: 'Base64编解码', icon: <LockOutlined />, category: 'code' },
@@ -171,6 +172,8 @@ const ToolboxPanel: React.FC = () => {
         return <TextMergeSplitTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'text-prefix-suffix':
         return <TextPrefixSuffixTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
+      case 'text-compare':
+        return <TextCompareTool />;
       case 'json-format':
         return <JsonFormatTool input={input} setInput={setInput} output={output} setOutput={setOutput} />;
       case 'base64':
@@ -2669,6 +2672,701 @@ const HtmlEditorTool: React.FC = () => {
           />
         )}
       </div>
+    </div>
+  );
+};
+
+// 文本对比工具 - 支持多种格式对比，差异高亮显示
+// 字符级别差异结果类型
+interface CharDiff {
+  type: 'equal' | 'added' | 'removed';
+  text: string;
+}
+
+const TextCompareTool: React.FC = () => {
+  // 左右文本
+  const [leftText, setLeftText] = useState('');
+  const [rightText, setRightText] = useState('');
+  
+  // 对比结果
+  const [diffResult, setDiffResult] = useState<{
+    left: Array<{ type: 'equal' | 'removed' | 'modified'; text: string; lineNum: number; charDiffs?: CharDiff[] }>;
+    right: Array<{ type: 'equal' | 'added' | 'modified'; text: string; lineNum: number; charDiffs?: CharDiff[] }>;
+    stats: { added: number; removed: number; modified: number; unchanged: number };
+  } | null>(null);
+  
+  // 设置
+  const [ignoreCase, setIgnoreCase] = useState(false);
+  const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
+  const [ignoreEmptyLines, setIgnoreEmptyLines] = useState(true);
+  const [compareMode, setCompareMode] = useState<'line' | 'word' | 'char'>('char');
+  const [textFormat, setTextFormat] = useState<'plain' | 'json' | 'xml' | 'csv'>('plain');
+  
+  // 同步滚动
+  const [syncScroll, setSyncScroll] = useState(true);
+  const leftRef = React.useRef<HTMLDivElement>(null);
+  const rightRef = React.useRef<HTMLDivElement>(null);
+  const diffRef = React.useRef<HTMLDivElement>(null);
+  const isScrolling = React.useRef(false);
+
+  // 预处理文本
+  const preprocessText = (text: string): string => {
+    let processed = text;
+    
+    // 格式化 JSON
+    if (textFormat === 'json') {
+      try {
+        const obj = JSON.parse(text);
+        processed = JSON.stringify(obj, null, 2);
+      } catch {
+        // 保持原样
+      }
+    }
+    
+    // 格式化 XML
+    if (textFormat === 'xml') {
+      try {
+        processed = text
+          .replace(/></g, '>\n<')
+          .replace(/(<[^/][^>]*>)/g, '\n$1')
+          .replace(/(<\/[^>]+>)/g, '$1\n')
+          .split('\n')
+          .filter(line => line.trim())
+          .join('\n');
+      } catch {
+        // 保持原样
+      }
+    }
+    
+    if (ignoreCase) {
+      processed = processed.toLowerCase();
+    }
+    
+    if (ignoreWhitespace) {
+      processed = processed.replace(/\s+/g, ' ').trim();
+    }
+    
+    return processed;
+  };
+
+  // 字符级别 LCS 算法
+  const computeCharLCS = (a: string, b: string): string => {
+    const m = a.length;
+    const n = b.length;
+    
+    // 优化：如果字符串太长，使用简化算法
+    if (m * n > 100000) {
+      return '';
+    }
+    
+    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+    
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (a[i - 1] === b[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1] + 1;
+        } else {
+          dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+      }
+    }
+    
+    // 回溯找出 LCS
+    let lcs = '';
+    let i = m, j = n;
+    while (i > 0 && j > 0) {
+      if (a[i - 1] === b[j - 1]) {
+        lcs = a[i - 1] + lcs;
+        i--;
+        j--;
+      } else if (dp[i - 1][j] > dp[i][j - 1]) {
+        i--;
+      } else {
+        j--;
+      }
+    }
+    
+    return lcs;
+  };
+
+  // 计算字符级别差异
+  const computeCharDiffs = (leftStr: string, rightStr: string): { leftDiffs: CharDiff[]; rightDiffs: CharDiff[] } => {
+    const lcs = computeCharLCS(leftStr, rightStr);
+    
+    const leftDiffs: CharDiff[] = [];
+    const rightDiffs: CharDiff[] = [];
+    
+    let li = 0, ri = 0, lcsIdx = 0;
+    
+    while (li < leftStr.length || ri < rightStr.length) {
+      // 收集左侧删除的字符
+      let removedChars = '';
+      while (li < leftStr.length && (lcsIdx >= lcs.length || leftStr[li] !== lcs[lcsIdx])) {
+        removedChars += leftStr[li];
+        li++;
+      }
+      if (removedChars) {
+        leftDiffs.push({ type: 'removed', text: removedChars });
+      }
+      
+      // 收集右侧新增的字符
+      let addedChars = '';
+      while (ri < rightStr.length && (lcsIdx >= lcs.length || rightStr[ri] !== lcs[lcsIdx])) {
+        addedChars += rightStr[ri];
+        ri++;
+      }
+      if (addedChars) {
+        rightDiffs.push({ type: 'added', text: addedChars });
+      }
+      
+      // 收集相同的字符
+      let equalChars = '';
+      while (lcsIdx < lcs.length && li < leftStr.length && ri < rightStr.length &&
+             leftStr[li] === lcs[lcsIdx] && rightStr[ri] === lcs[lcsIdx]) {
+        equalChars += leftStr[li];
+        li++;
+        ri++;
+        lcsIdx++;
+      }
+      if (equalChars) {
+        leftDiffs.push({ type: 'equal', text: equalChars });
+        rightDiffs.push({ type: 'equal', text: equalChars });
+      }
+    }
+    
+    return { leftDiffs, rightDiffs };
+  };
+
+  // 执行对比
+  const performCompare = () => {
+    if (!leftText && !rightText) {
+      setDiffResult(null);
+      return;
+    }
+
+    const processedLeft = preprocessText(leftText);
+    const processedRight = preprocessText(rightText);
+    
+    let leftLines = processedLeft.split('\n');
+    let rightLines = processedRight.split('\n');
+    
+    if (ignoreEmptyLines) {
+      leftLines = leftLines.filter(l => l.trim());
+      rightLines = rightLines.filter(l => l.trim());
+    }
+
+    // 使用 LCS (最长公共子序列) 算法进行对比
+    const lcs = computeLCS(leftLines, rightLines);
+    
+    const leftResult: Array<{ type: 'equal' | 'removed' | 'modified'; text: string; lineNum: number; charDiffs?: CharDiff[] }> = [];
+    const rightResult: Array<{ type: 'equal' | 'added' | 'modified'; text: string; lineNum: number; charDiffs?: CharDiff[] }> = [];
+    
+    let leftIdx = 0;
+    let rightIdx = 0;
+    let lcsIdx = 0;
+    let leftLineNum = 1;
+    let rightLineNum = 1;
+    
+    let stats = { added: 0, removed: 0, modified: 0, unchanged: 0 };
+
+    while (leftIdx < leftLines.length || rightIdx < rightLines.length) {
+      if (lcsIdx < lcs.length && leftIdx < leftLines.length && leftLines[leftIdx] === lcs[lcsIdx] &&
+          rightIdx < rightLines.length && rightLines[rightIdx] === lcs[lcsIdx]) {
+        // 相同行
+        leftResult.push({ type: 'equal', text: leftLines[leftIdx], lineNum: leftLineNum++ });
+        rightResult.push({ type: 'equal', text: rightLines[rightIdx], lineNum: rightLineNum++ });
+        leftIdx++;
+        rightIdx++;
+        lcsIdx++;
+        stats.unchanged++;
+      } else if (leftIdx < leftLines.length && (lcsIdx >= lcs.length || leftLines[leftIdx] !== lcs[lcsIdx])) {
+        // 左侧有删除的行
+        leftResult.push({ type: 'removed', text: leftLines[leftIdx], lineNum: leftLineNum++ });
+        leftIdx++;
+        stats.removed++;
+      } else if (rightIdx < rightLines.length && (lcsIdx >= lcs.length || rightLines[rightIdx] !== lcs[lcsIdx])) {
+        // 右侧有新增的行
+        rightResult.push({ type: 'added', text: rightLines[rightIdx], lineNum: rightLineNum++ });
+        rightIdx++;
+        stats.added++;
+      }
+    }
+
+    // 对齐左右结果，并计算字符级别差异
+    const alignedLeft: typeof leftResult = [];
+    const alignedRight: typeof rightResult = [];
+    
+    let li = 0, ri = 0;
+    while (li < leftResult.length || ri < rightResult.length) {
+      const leftItem = leftResult[li];
+      const rightItem = rightResult[ri];
+      
+      if (leftItem?.type === 'equal' && rightItem?.type === 'equal') {
+        alignedLeft.push(leftItem);
+        alignedRight.push(rightItem);
+        li++;
+        ri++;
+      } else if (leftItem?.type === 'removed' && rightItem?.type === 'added') {
+        // 同时有删除和新增，计算字符级别差异
+        if (compareMode === 'char' || compareMode === 'word') {
+          const { leftDiffs, rightDiffs } = computeCharDiffs(leftItem.text, rightItem.text);
+          alignedLeft.push({ ...leftItem, type: 'modified', charDiffs: leftDiffs });
+          alignedRight.push({ ...rightItem, type: 'modified', charDiffs: rightDiffs });
+        } else {
+          alignedLeft.push(leftItem);
+          alignedRight.push(rightItem);
+        }
+        li++;
+        ri++;
+      } else if (leftItem?.type === 'removed') {
+        alignedLeft.push(leftItem);
+        alignedRight.push({ type: 'added', text: '', lineNum: -1 }); // 占位
+        li++;
+      } else if (rightItem?.type === 'added') {
+        alignedLeft.push({ type: 'removed', text: '', lineNum: -1 }); // 占位
+        alignedRight.push(rightItem);
+        ri++;
+      } else {
+        if (leftItem) {
+          alignedLeft.push(leftItem);
+          li++;
+        }
+        if (rightItem) {
+          alignedRight.push(rightItem);
+          ri++;
+        }
+      }
+    }
+
+    setDiffResult({
+      left: alignedLeft,
+      right: alignedRight,
+      stats,
+    });
+  };
+
+  // LCS 算法
+  const computeLCS = (a: string[], b: string[]): string[] => {
+    const m = a.length;
+    const n = b.length;
+    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+    
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (a[i - 1] === b[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1] + 1;
+        } else {
+          dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+      }
+    }
+    
+    // 回溯找出 LCS
+    const lcs: string[] = [];
+    let i = m, j = n;
+    while (i > 0 && j > 0) {
+      if (a[i - 1] === b[j - 1]) {
+        lcs.unshift(a[i - 1]);
+        i--;
+        j--;
+      } else if (dp[i - 1][j] > dp[i][j - 1]) {
+        i--;
+      } else {
+        j--;
+      }
+    }
+    
+    return lcs;
+  };
+
+  // 同步滚动处理
+  const handleScroll = (source: 'left' | 'right' | 'diff') => {
+    if (!syncScroll || isScrolling.current) return;
+    
+    isScrolling.current = true;
+    
+    const sourceRef = source === 'left' ? leftRef : source === 'right' ? rightRef : diffRef;
+    const scrollTop = sourceRef.current?.scrollTop || 0;
+    
+    if (source !== 'left' && leftRef.current) {
+      leftRef.current.scrollTop = scrollTop;
+    }
+    if (source !== 'right' && rightRef.current) {
+      rightRef.current.scrollTop = scrollTop;
+    }
+    if (source !== 'diff' && diffRef.current) {
+      diffRef.current.scrollTop = scrollTop;
+    }
+    
+    setTimeout(() => {
+      isScrolling.current = false;
+    }, 50);
+  };
+
+  // 渲染字符级别差异
+  const renderCharDiffs = (diffs: CharDiff[], side: 'left' | 'right') => {
+    return diffs.map((diff, idx) => {
+      let style: React.CSSProperties = {};
+      
+      if (diff.type === 'removed') {
+        style = { 
+          backgroundColor: '#ffc0c0', 
+          color: '#a00',
+          textDecoration: side === 'left' ? 'line-through' : 'none',
+        };
+      } else if (diff.type === 'added') {
+        style = { 
+          backgroundColor: '#c0ffc0', 
+          color: '#080',
+          fontWeight: 500,
+        };
+      }
+      
+      return (
+        <span key={idx} style={style}>
+          {diff.text}
+        </span>
+      );
+    });
+  };
+
+  // 渲染差异行
+  const renderDiffLine = (item: { type: string; text: string; lineNum: number; charDiffs?: CharDiff[] }, side: 'left' | 'right') => {
+    const bgColors: Record<string, string> = {
+      equal: 'transparent',
+      removed: '#ffebe9',
+      added: '#e6ffec',
+      modified: '#fffbdd',
+    };
+    
+    const textColors: Record<string, string> = {
+      equal: 'inherit',
+      removed: '#cf222e',
+      added: '#1a7f37',
+      modified: 'inherit',
+    };
+
+    // 占位行（空行）使用更浅的背景
+    const isPlaceholder = item.lineNum < 0;
+    const actualBgColor = isPlaceholder ? '#f8f8f8' : bgColors[item.type];
+
+    const lineNumStyle: React.CSSProperties = {
+      width: 40,
+      minWidth: 40,
+      textAlign: 'right',
+      paddingRight: 8,
+      color: '#6e7781',
+      fontSize: 12,
+      userSelect: 'none',
+      borderRight: '1px solid #d0d7de',
+      background: isPlaceholder ? '#f8f8f8' : (item.type === 'equal' ? '#f6f8fa' : actualBgColor),
+    };
+
+    const contentStyle: React.CSSProperties = {
+      flex: 1,
+      padding: '2px 8px',
+      background: actualBgColor,
+      color: item.charDiffs ? 'inherit' : textColors[item.type],
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-all',
+      fontFamily: 'monospace',
+      fontSize: 13,
+      minHeight: 22,
+    };
+
+    return (
+      <div style={{ display: 'flex', borderBottom: '1px solid #eaecef' }}>
+        <div style={lineNumStyle}>
+          {item.lineNum > 0 ? item.lineNum : ''}
+        </div>
+        <div style={contentStyle}>
+          {item.charDiffs ? (
+            renderCharDiffs(item.charDiffs, side)
+          ) : (
+            item.text || '\u00A0'
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // 清空
+  const clearAll = () => {
+    setLeftText('');
+    setRightText('');
+    setDiffResult(null);
+  };
+
+  // 交换左右
+  const swapTexts = () => {
+    const temp = leftText;
+    setLeftText(rightText);
+    setRightText(temp);
+    setDiffResult(null);
+  };
+
+  // 复制差异报告
+  const copyDiffReport = () => {
+    if (!diffResult) return;
+    
+    let report = '=== 文本对比报告 ===\n\n';
+    report += `统计: 新增 ${diffResult.stats.added} 行, 删除 ${diffResult.stats.removed} 行, 未变 ${diffResult.stats.unchanged} 行\n\n`;
+    report += '--- 左侧文本 ---\n';
+    diffResult.left.forEach(item => {
+      if (item.lineNum > 0) {
+        const prefix = item.type === 'removed' ? '- ' : item.type === 'modified' ? '~ ' : '  ';
+        report += `${prefix}${item.lineNum}: ${item.text}\n`;
+      }
+    });
+    report += '\n+++ 右侧文本 +++\n';
+    diffResult.right.forEach(item => {
+      if (item.lineNum > 0) {
+        const prefix = item.type === 'added' ? '+ ' : item.type === 'modified' ? '~ ' : '  ';
+        report += `${prefix}${item.lineNum}: ${item.text}\n`;
+      }
+    });
+    
+    navigator.clipboard.writeText(report);
+    message.success('差异报告已复制');
+  };
+
+  return (
+    <div style={{ height: 'calc(100vh - 180px)', display: 'flex', flexDirection: 'column' }}>
+      {/* 工具栏 */}
+      <Card size="small" style={{ marginBottom: 12 }}>
+        <Row gutter={16} align="middle">
+          <Col span={3}>
+            <Text strong>文本格式</Text>
+            <Select
+              value={textFormat}
+              onChange={setTextFormat}
+              style={{ width: '100%', marginTop: 4 }}
+              size="small"
+            >
+              <Select.Option value="plain">纯文本</Select.Option>
+              <Select.Option value="json">JSON</Select.Option>
+              <Select.Option value="xml">XML/HTML</Select.Option>
+              <Select.Option value="csv">CSV</Select.Option>
+            </Select>
+          </Col>
+          <Col span={3}>
+            <Text strong>对比模式</Text>
+            <Select
+              value={compareMode}
+              onChange={setCompareMode}
+              style={{ width: '100%', marginTop: 4 }}
+              size="small"
+            >
+              <Select.Option value="line">按行对比</Select.Option>
+              <Select.Option value="word">按词对比</Select.Option>
+              <Select.Option value="char">按字符对比</Select.Option>
+            </Select>
+          </Col>
+          <Col span={10}>
+            <div style={{ marginTop: 20 }}>
+              <Space wrap>
+                <Checkbox checked={ignoreCase} onChange={e => setIgnoreCase(e.target.checked)}>
+                  忽略大小写
+                </Checkbox>
+                <Checkbox checked={ignoreWhitespace} onChange={e => setIgnoreWhitespace(e.target.checked)}>
+                  忽略空白
+                </Checkbox>
+                <Checkbox checked={ignoreEmptyLines} onChange={e => setIgnoreEmptyLines(e.target.checked)}>
+                  忽略空行
+                </Checkbox>
+                <Checkbox checked={syncScroll} onChange={e => setSyncScroll(e.target.checked)}>
+                  同步滚动
+                </Checkbox>
+              </Space>
+            </div>
+          </Col>
+          <Col span={8} style={{ textAlign: 'right' }}>
+            <Space>
+              <Button type="primary" onClick={performCompare} icon={<DiffOutlined />}>
+                开始对比
+              </Button>
+              <Button onClick={swapTexts} icon={<SwapOutlined />}>
+                交换
+              </Button>
+              <Button onClick={clearAll} icon={<ClearOutlined />}>
+                清空
+              </Button>
+              {diffResult && (
+                <Button onClick={copyDiffReport} icon={<CopyOutlined />}>
+                  复制报告
+                </Button>
+              )}
+            </Space>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* 统计信息 */}
+      {diffResult && (
+        <div style={{ marginBottom: 8, padding: '8px 12px', background: '#f6f8fa', borderRadius: 4 }}>
+          <Space size="large">
+            <Text>
+              <span style={{ color: '#1a7f37' }}>● 新增: {diffResult.stats.added} 行</span>
+            </Text>
+            <Text>
+              <span style={{ color: '#cf222e' }}>● 删除: {diffResult.stats.removed} 行</span>
+            </Text>
+            <Text>
+              <span style={{ color: '#6e7781' }}>● 未变: {diffResult.stats.unchanged} 行</span>
+            </Text>
+          </Space>
+        </div>
+      )}
+
+      {/* 三栏布局：左侧输入 | 差异视图 | 右侧输入 */}
+      <div style={{ flex: 1, display: 'flex', gap: 8, minHeight: 0 }}>
+        {/* 左侧文本输入 */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <Text strong>原始文本 (左)</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {leftText.split('\n').length} 行
+            </Text>
+          </div>
+          {!diffResult ? (
+            <TextArea
+              value={leftText}
+              onChange={e => setLeftText(e.target.value)}
+              placeholder="粘贴或输入原始文本..."
+              style={{ 
+                flex: 1, 
+                fontFamily: 'monospace', 
+                fontSize: 13,
+                resize: 'none',
+              }}
+            />
+          ) : (
+            <div
+              ref={leftRef}
+              onScroll={() => handleScroll('left')}
+              style={{
+                flex: 1,
+                border: '1px solid #d9d9d9',
+                borderRadius: 6,
+                overflow: 'auto',
+                background: '#fff',
+              }}
+            >
+              {diffResult.left.map((item, idx) => (
+                <div key={idx}>{renderDiffLine(item, 'left')}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 中间差异视图 */}
+        {diffResult && (
+          <div style={{ width: 60, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Text strong style={{ marginBottom: 4, fontSize: 12 }}>差异</Text>
+            <div
+              ref={diffRef}
+              onScroll={() => handleScroll('diff')}
+              style={{
+                flex: 1,
+                width: '100%',
+                border: '1px solid #d9d9d9',
+                borderRadius: 6,
+                overflow: 'auto',
+                background: '#f6f8fa',
+              }}
+            >
+              {diffResult.left.map((leftItem, idx) => {
+                const rightItem = diffResult.right[idx];
+                let indicator = '';
+                let color = '#6e7781';
+                
+                // 只有当左右两边都有实际内容时才显示指示器
+                const leftHasContent = leftItem.lineNum > 0;
+                const rightHasContent = rightItem?.lineNum > 0;
+                
+                if (leftItem.type === 'modified' || rightItem?.type === 'modified') {
+                  indicator = '≠';
+                  color = '#9a6700';
+                } else if (leftItem.type === 'removed' && leftHasContent) {
+                  indicator = '◀';
+                  color = '#cf222e';
+                } else if (rightItem?.type === 'added' && rightHasContent) {
+                  indicator = '▶';
+                  color = '#1a7f37';
+                } else if (leftItem.type === 'equal' && leftHasContent) {
+                  indicator = '';
+                }
+                
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      height: 25,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderBottom: '1px solid #eaecef',
+                      color,
+                      fontSize: 14,
+                      fontWeight: 500,
+                    }}
+                  >
+                    {indicator}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 右侧文本输入 */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <Text strong>修改文本 (右)</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {rightText.split('\n').length} 行
+            </Text>
+          </div>
+          {!diffResult ? (
+            <TextArea
+              value={rightText}
+              onChange={e => setRightText(e.target.value)}
+              placeholder="粘贴或输入修改后的文本..."
+              style={{ 
+                flex: 1, 
+                fontFamily: 'monospace', 
+                fontSize: 13,
+                resize: 'none',
+              }}
+            />
+          ) : (
+            <div
+              ref={rightRef}
+              onScroll={() => handleScroll('right')}
+              style={{
+                flex: 1,
+                border: '1px solid #d9d9d9',
+                borderRadius: 6,
+                overflow: 'auto',
+                background: '#fff',
+              }}
+            >
+              {diffResult.right.map((item, idx) => (
+                <div key={idx}>{renderDiffLine(item, 'right')}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 返回编辑按钮 */}
+      {diffResult && (
+        <div style={{ marginTop: 8, textAlign: 'center' }}>
+          <Button onClick={() => setDiffResult(null)}>
+            返回编辑
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
