@@ -1,16 +1,14 @@
-import { ipcMain, IpcMainInvokeEvent } from 'electron';
+import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron';
 import { SyncEngine, SyncResult, SyncOptions } from '@core/sync/SyncEngine';
 import { SyncScheduler, SyncState } from '@core/sync/SyncScheduler';
 import { WebDAVAdapter } from '@core/sync/WebDAVAdapter';
 import { ServerAdapter } from '@core/sync/ServerAdapter';
 import { StorageAdapter, WebDAVConfig, ServerConfig } from '@core/sync/StorageAdapter';
-import { CryptoEngine } from '@core/crypto/CryptoEngine';
 import { SyncModules, DEFAULT_SYNC_MODULES } from '@shared/types';
 import { getItemsManager } from './DatabaseService';
 
 let syncEngine: SyncEngine | null = null;
 let syncScheduler: SyncScheduler | null = null;
-let cryptoEngine: CryptoEngine | null = null;
 let currentAdapter: StorageAdapter | null = null;
 
 export interface SyncServiceConfig {
@@ -21,10 +19,9 @@ export interface SyncServiceConfig {
   username?: string;
   password?: string;
   apiKey?: string;
-  encryptionEnabled: boolean;
-  encryptionKey?: string;
   syncInterval: number;
   syncModules?: SyncModules;  // 同步模块配置
+  lastSyncTime?: number | null;  // 上次同步时间（从持久化存储加载）
 }
 
 // 首次同步检测结果
@@ -73,6 +70,12 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       currentAdapter = new ServerAdapter(serverConfig);
     }
 
+    // 确保 adapter 已创建
+    if (!currentAdapter) {
+      console.error('Failed to create storage adapter');
+      return false;
+    }
+
     // 测试连接
     const connected = await currentAdapter.testConnection();
     if (!connected) {
@@ -80,31 +83,13 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       return false;
     }
 
-    // 创建加密引擎
-    // 注意：即使用户不开启全局加密，也需要创建加密引擎用于敏感数据（密码库）
-    // 如果用户提供了加密密钥，使用用户密钥；否则使用默认密钥
-    cryptoEngine = new CryptoEngine();
-    const fixedSalt = Buffer.from('mucheng-sync-salt-2024-fixed-key', 'utf8');
-    
-    if (config.encryptionKey) {
-      // 使用用户提供的密钥
-      const { key } = cryptoEngine.deriveKeyFromPassword(config.encryptionKey, fixedSalt);
-      cryptoEngine.setMasterKey(key);
-    } else {
-      // 使用默认密钥（仅用于密码库等敏感数据的基本保护）
-      // 注意：这不如用户自定义密钥安全，但比明文好
-      const { key } = cryptoEngine.deriveKeyFromPassword('mucheng-default-vault-key-2024', fixedSalt);
-      cryptoEngine.setMasterKey(key);
-    }
-
-    // 创建同步引擎
+    // 创建同步引擎（明文同步，不再需要加密）
     const itemsManager = getItemsManager();
     const syncOptions: Partial<SyncOptions> = {
-      encryptionEnabled: config.encryptionEnabled,
       conflictStrategy: 'create-copy',
       syncModules: config.syncModules || DEFAULT_SYNC_MODULES,
     };
-    syncEngine = new SyncEngine(currentAdapter, itemsManager, cryptoEngine, syncOptions);
+    syncEngine = new SyncEngine(currentAdapter, itemsManager, syncOptions);
 
     // 检测是否首次同步（远端没有元数据或没有同步游标）
     // 如果是首次同步，自动标记所有本地数据为待同步
@@ -129,13 +114,21 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
     }
 
     // 创建调度器
-    // 只有设置了同步间隔才自动同步，间隔为0表示纯手动模式
+    // 启动时不自动同步，只按时间间隔定时同步，用户可手动触发同步
     // syncOnChange 设为 false，不在内容变更时触发同步，只按时间间隔同步
     syncScheduler = new SyncScheduler(syncEngine, {
-      autoSyncOnStart: config.syncInterval > 0,
+      autoSyncOnStart: false,  // 启动时不自动同步，避免网络问题导致卡顿
       syncInterval: config.syncInterval,
       syncOnChange: false,  // 不在内容变更时触发同步
       changeDebounce: 30,
+      initialLastSyncTime: config.lastSyncTime,  // 从配置加载上次同步时间
+      onSyncComplete: (lastSyncTime: number) => {
+        // 同步完成后通知渲染进程更新持久化存储
+        const windows = BrowserWindow.getAllWindows();
+        windows.forEach(win => {
+          win.webContents.send('sync:lastSyncTimeUpdated', lastSyncTime);
+        });
+      },
     });
 
     return true;
@@ -184,24 +177,47 @@ export function notifySyncChange(): void {
 
 // 测试连接
 export async function testSyncConnection(config: SyncServiceConfig): Promise<boolean> {
+  console.log('[SyncService] testSyncConnection called with config:', {
+    type: config.type,
+    url: config.url,
+    syncPath: config.syncPath,
+    username: config.username,
+    passwordLength: config.password?.length || 0,
+  });
+
+  if (!config.url) {
+    console.error('[SyncService] No URL provided');
+    return false;
+  }
+
   try {
     let adapter: StorageAdapter;
-    
+
     if (config.type === 'webdav') {
       // 移除 URL 末尾斜杠
       const baseUrl = config.url.replace(/\/+$/, '');
       // 确保 syncPath 以 / 开头
-      const syncPath = config.syncPath 
+      const syncPath = config.syncPath
         ? (config.syncPath.startsWith('/') ? config.syncPath : '/' + config.syncPath)
         : '/mucheng-notes';
-      
+
+      console.log('[SyncService] Creating WebDAV adapter with:', {
+        url: baseUrl,
+        syncPath,
+        username: config.username,
+        passwordLength: config.password?.length || 0,
+      });
+
       const webdavConfig: WebDAVConfig = {
         url: baseUrl,
         username: config.username || '',
         password: config.password || '',
-        basePath: syncPath,  // 将 syncPath 作为 basePath 传递
+        basePath: syncPath,
       };
+      
+      console.log('[SyncService] WebDAV config created, creating adapter...');
       adapter = new WebDAVAdapter(webdavConfig);
+      console.log('[SyncService] WebDAV adapter created successfully');
     } else {
       const serverConfig: ServerConfig = {
         url: config.url,
@@ -210,9 +226,23 @@ export async function testSyncConnection(config: SyncServiceConfig): Promise<boo
       adapter = new ServerAdapter(serverConfig);
     }
 
-    return await adapter.testConnection();
-  } catch (error) {
-    console.error('Connection test failed:', error);
+    console.log('[SyncService] Calling adapter.testConnection()...');
+    const startTime = Date.now();
+    const result = await adapter.testConnection();
+    const duration = Date.now() - startTime;
+    console.log('[SyncService] testConnection result:', result, `(${duration}ms)`);
+    return result;
+  } catch (error: any) {
+    console.error('[SyncService] testSyncConnection error:', error);
+    if (error instanceof Error) {
+      console.error('[SyncService] Error name:', error.name);
+      console.error('[SyncService] Error message:', error.message);
+      console.error('[SyncService] Error stack:', error.stack);
+    }
+    // 检查是否是网络错误
+    if (error?.code) {
+      console.error('[SyncService] Error code:', error.code);
+    }
     return false;
   }
 }
@@ -254,7 +284,21 @@ export function registerSyncIpcHandlers(): void {
 
   // 测试连接
   ipcMain.handle('sync:testConnection', async (_event: IpcMainInvokeEvent, config: SyncServiceConfig) => {
-    return testSyncConnection(config);
+    try {
+      console.log('[SyncService IPC] Received testConnection request:', {
+        type: config.type,
+        url: config.url,
+        syncPath: config.syncPath,
+        username: config.username,
+        passwordLength: config.password?.length || 0,
+      });
+      const result = await testSyncConnection(config);
+      console.log('[SyncService IPC] testConnection result:', result);
+      return result;
+    } catch (error) {
+      console.error('[SyncService IPC] testConnection error:', error);
+      return false;
+    }
   });
 
   // 强制重新同步（标记所有数据为待同步）
@@ -294,7 +338,7 @@ export function registerSyncIpcHandlers(): void {
       const remoteHasData = await syncEngine.checkRemoteHasData();
       const itemsManager = getItemsManager();
       const stats = itemsManager.getStats();
-      
+
       return {
         isFirstSync: !remoteMeta.last_sync_time && !syncCursor,
         remoteHasData,

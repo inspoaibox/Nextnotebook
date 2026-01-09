@@ -213,23 +213,27 @@ const AIAssistantPanel: React.FC = () => {
       </Sider>
 
       {/* 右侧聊天区域 */}
-      <Layout>
+      <Layout style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 顶部工具栏 */}
         <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border-color, #f0f0f0)', display: 'flex', alignItems: 'center', gap: 12 }}>
           <RobotOutlined style={{ fontSize: 18, color: '#1890ff' }} />
           <span style={{ fontWeight: 500 }}>智能助理</span>
           <div style={{ flex: 1 }} />
-          <Select
-            value={currentModel}
-            onChange={setCurrentModel}
-            style={{ width: 180 }}
-            size="small"
-            placeholder="选择模型"
-            options={allModels.map(m => ({
-              value: m.id,
-              label: `${m.name} (${m.channelName})`,
-            }))}
-          />
+          {allModels.length > 0 ? (
+            <Select
+              value={currentModel}
+              onChange={setCurrentModel}
+              style={{ width: 180 }}
+              size="small"
+              placeholder="选择模型"
+              options={allModels.map(m => ({
+                value: m.id,
+                label: `${m.name} (${m.channelName})`,
+              }))}
+            />
+          ) : (
+            <span style={{ fontSize: 12, color: '#999' }}>请先在设置中配置 AI 渠道</span>
+          )}
           <Tooltip title="对话设置">
             <Button type="text" size="small" icon={<SettingOutlined />} onClick={() => setShowSettings(!showSettings)} />
           </Tooltip>
@@ -269,11 +273,16 @@ const AIAssistantPanel: React.FC = () => {
         )}
 
         {/* 消息列表 */}
-        <Content style={{ overflow: 'auto', padding: 16 }}>
+        <Content style={{ flex: 1, overflow: 'auto', padding: 16 }}>
           {!selectedConversationId && messages.length === 0 ? (
             <div style={{ textAlign: 'center', paddingTop: 100, color: 'var(--text-secondary, #888)' }}>
               <RobotOutlined style={{ fontSize: 48, marginBottom: 16, color: 'var(--text-disabled, #d9d9d9)' }} />
               <p>选择一个对话或创建新对话开始聊天</p>
+              {allModels.length === 0 && (
+                <p style={{ marginTop: 16, fontSize: 12 }}>
+                  提示：请先在设置中配置 AI 渠道和模型
+                </p>
+              )}
             </div>
           ) : (
             <>
@@ -331,16 +340,16 @@ const AIAssistantPanel: React.FC = () => {
           )}
         </Content>
 
-        {/* 输入区域 */}
-        <div style={{ padding: 16, borderTop: '1px solid var(--border-color, #f0f0f0)' }}>
+        {/* 输入区域 - 始终显示 */}
+        <div style={{ padding: 16, borderTop: '1px solid var(--border-color, #f0f0f0)', flexShrink: 0 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <TextArea
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入消息，按 Enter 发送，Shift+Enter 换行"
+              placeholder={allModels.length === 0 ? "请先在设置中配置 AI 渠道和模型" : "输入消息，按 Enter 发送，Shift+Enter 换行"}
               autoSize={{ minRows: 1, maxRows: 4 }}
-              disabled={streaming}
+              disabled={streaming || allModels.length === 0}
               style={{ flex: 1 }}
             />
             <Button
@@ -348,7 +357,7 @@ const AIAssistantPanel: React.FC = () => {
               icon={<SendOutlined />}
               onClick={handleSend}
               loading={streaming}
-              disabled={!inputValue.trim() || streaming}
+              disabled={!inputValue.trim() || streaming || allModels.length === 0}
             >
               发送
             </Button>

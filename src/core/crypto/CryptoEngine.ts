@@ -57,6 +57,31 @@ export class CryptoEngine {
     return this.masterKey !== null;
   }
 
+  // 获取主密钥（Base64格式）
+  getMasterKey(): string {
+    if (!this.masterKey) {
+      throw new Error('No master key available');
+    }
+    return this.masterKey.toString('base64');
+  }
+
+  // 获取密钥指纹（用于验证密钥是否匹配）
+  // 返回密钥的 SHA-256 哈希值（Base64编码）
+  getKeyFingerprint(): string | null {
+    if (!this.masterKey) {
+      return null;
+    }
+    const hash = crypto.createHash('sha256');
+    hash.update(this.masterKey);
+    return hash.digest('base64');
+  }
+
+  // 验证密钥指纹是否匹配
+  verifyKeyFingerprint(fingerprint: string): boolean {
+    const currentFingerprint = this.getKeyFingerprint();
+    return currentFingerprint === fingerprint;
+  }
+
   // 加密数据
   encrypt(plaintext: string, key?: Buffer): EncryptedData {
     const useKey = key || this.masterKey;
@@ -162,20 +187,35 @@ export class CryptoEngine {
     return crypto.createHash('sha256').update(useKey).digest('hex').substring(0, 16);
   }
 
-  // 导出密钥（加密后）
-  exportKey(exportPassword: string): string {
+  // 导出密钥（明文 Base64）
+  // 注意：导出密码只是本地操作保护，不参与密钥加密
+  exportKey(_exportPassword: string): string {
     if (!this.masterKey) {
       throw new Error('No master key to export');
     }
-    const encrypted = this.encryptWithPassword(this.masterKey.toString('base64'), exportPassword);
-    return JSON.stringify(encrypted);
+    // 直接返回主密钥的 Base64 编码
+    return this.masterKey.toString('base64');
   }
 
-  // 导入密钥
-  importKey(encryptedKey: string, importPassword: string): void {
-    const encrypted = JSON.parse(encryptedKey) as EncryptedData;
-    const keyBase64 = this.decryptWithPassword(encrypted, importPassword);
-    this.masterKey = Buffer.from(keyBase64, 'base64');
+  // 导入密钥（明文 Base64）
+  // 注意：导入密码只是本地操作保护，不参与密钥解密
+  importKey(encryptedKey: string, _importPassword: string): void {
+    // 尝试解析为 JSON（兼容旧格式）
+    try {
+      const parsed = JSON.parse(encryptedKey);
+      if (parsed.ciphertext && parsed.iv && parsed.authTag) {
+        // 旧格式：加密的密钥，无法解密（因为不知道原密码）
+        throw new Error('旧格式密钥不兼容，请在电脑端重新导出密钥');
+      }
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        // 不是 JSON，继续处理为 Base64
+      } else {
+        throw e;
+      }
+    }
+    // 新格式：直接是 Base64 编码的主密钥
+    this.masterKey = Buffer.from(encryptedKey, 'base64');
   }
 }
 

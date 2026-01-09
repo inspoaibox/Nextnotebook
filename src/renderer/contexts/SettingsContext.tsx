@@ -1,5 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { AppSettings, SyncConfig, DEFAULT_SYNC_MODULES } from '@shared/types';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  ReactNode,
+} from 'react';
+import { AppSettings, SyncConfig, SyncModules, DEFAULT_SYNC_MODULES } from '@shared/types';
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
@@ -17,10 +25,9 @@ const DEFAULT_SYNC_CONFIG: SyncConfig = {
   enabled: false,
   type: 'webdav',
   url: '',
-  sync_path: '/mucheng-notes',  // 默认同步目录
+  sync_path: '/mucheng-notes',
   username: '',
   password: '',
-  encryption_enabled: false,
   sync_interval: 5,
   last_sync_time: null,
   sync_cursor: null,
@@ -30,8 +37,19 @@ const DEFAULT_SYNC_CONFIG: SyncConfig = {
 interface SettingsContextType {
   settings: AppSettings;
   syncConfig: SyncConfig;
+  syncConfigLoaded: boolean;
   updateSettings: (updates: Partial<AppSettings>) => void;
   updateSyncConfig: (updates: Partial<SyncConfig>) => void;
+  // 独立的同步配置更新方法（参考手机端实现，每个字段独立保存）
+  setSyncEnabled: (enabled: boolean) => void;
+  setSyncType: (type: 'webdav' | 'server') => void;
+  setSyncUrl: (url: string) => void;
+  setSyncPath: (path: string) => void;
+  setSyncUsername: (username: string) => void;
+  setSyncPassword: (password: string) => void;
+  setSyncApiKey: (apiKey: string) => void;
+  setSyncInterval: (interval: number) => void;
+  setSyncModule: (module: keyof SyncModules, enabled: boolean) => void;
   resetSettings: () => void;
   isDarkMode: boolean;
 }
@@ -51,11 +69,6 @@ interface SettingsProviderProps {
 }
 
 export function SettingsProvider({ children }: SettingsProviderProps) {
-  // 调试：在组件挂载时打印 localStorage 状态
-  console.log('[SettingsProvider] Component mounting...');
-  console.log('[SettingsProvider] localStorage keys:', Object.keys(localStorage));
-  console.log('[SettingsProvider] mucheng-sync-config raw:', localStorage.getItem('mucheng-sync-config'));
-  
   // 使用惰性初始化，在组件首次渲染时就从 localStorage 读取配置
   const [settings, setSettings] = useState<AppSettings>(() => {
     const savedSettings = localStorage.getItem('mucheng-settings');
@@ -68,48 +81,104 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     }
     return DEFAULT_SETTINGS;
   });
-  
-  const [syncConfig, setSyncConfig] = useState<SyncConfig>(() => {
-    const savedSyncConfig = localStorage.getItem('mucheng-sync-config');
-    console.log('[SettingsContext] Initial load sync config from localStorage:', savedSyncConfig);
-    if (savedSyncConfig) {
+
+  // 同步配置初始化为默认值，然后通过 useEffect 从主进程加载
+  const [syncConfig, setSyncConfigState] = useState<SyncConfig>(DEFAULT_SYNC_CONFIG);
+  const [syncConfigLoaded, setSyncConfigLoaded] = useState(false);
+  const [systemDarkMode, setSystemDarkMode] = useState(false);
+
+  // 使用 ref 来存储最新的配置，避免闭包问题
+  const syncConfigRef = useRef<SyncConfig>(DEFAULT_SYNC_CONFIG);
+
+  // 保存同步配置到主进程和 localStorage
+  const persistSyncConfig = useCallback(async (newConfig: SyncConfig) => {
+    console.log('[SettingsContext] Persisting sync config:', newConfig);
+
+    // 更新 ref
+    syncConfigRef.current = newConfig;
+
+    // 保存到主进程文件系统
+    try {
+      const api = (window as any).electronAPI;
+      if (api?.saveSyncConfig) {
+        await api.saveSyncConfig(newConfig);
+        console.log('[SettingsContext] Saved sync config to main process');
+      }
+    } catch (e) {
+      console.error('Failed to save sync config to main process:', e);
+    }
+
+    // 同时保存到 localStorage 作为备份
+    localStorage.setItem('mucheng-sync-config', JSON.stringify(newConfig));
+  }, []);
+
+  // 从主进程加载同步配置
+  useEffect(() => {
+    const loadSyncConfig = async () => {
       try {
-        const parsed = JSON.parse(savedSyncConfig);
-        console.log('[SettingsContext] Initial parsed sync config:', parsed);
-        return { ...DEFAULT_SYNC_CONFIG, ...parsed };
+        let savedConfig = null;
+
+        // 先尝试从主进程加载
+        const api = (window as any).electronAPI;
+        if (api?.loadSyncConfig) {
+          savedConfig = await api.loadSyncConfig();
+          console.log('[SettingsContext] Loaded sync config from main process:', savedConfig);
+        }
+
+        // 如果主进程配置为空或不完整，尝试从 localStorage 恢复
+        if (!savedConfig || (savedConfig.enabled && !savedConfig.url)) {
+          const localConfig = localStorage.getItem('mucheng-sync-config');
+          if (localConfig) {
+            try {
+              const parsed = JSON.parse(localConfig);
+              if (parsed.url) {
+                console.log('[SettingsContext] Recovering config from localStorage:', parsed);
+                savedConfig = parsed;
+                // 同步回主进程
+                if (api?.saveSyncConfig) {
+                  await api.saveSyncConfig(savedConfig);
+                }
+              }
+            } catch (e) {
+              console.error('Failed to parse localStorage config:', e);
+            }
+          }
+        }
+
+        if (savedConfig) {
+          const mergedConfig = { ...DEFAULT_SYNC_CONFIG, ...savedConfig };
+          setSyncConfigState(mergedConfig);
+          syncConfigRef.current = mergedConfig;
+        }
       } catch (e) {
         console.error('Failed to load sync config:', e);
+      } finally {
+        setSyncConfigLoaded(true);
       }
-    }
-    return DEFAULT_SYNC_CONFIG;
-  });
-  
-  const [systemDarkMode, setSystemDarkMode] = useState(false);
+    };
+    loadSyncConfig();
+  }, []);
 
   // 监听系统主题变化
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setSystemDarkMode(mediaQuery.matches);
-
     const handler = (e: MediaQueryListEvent) => setSystemDarkMode(e.matches);
     mediaQuery.addEventListener('change', handler);
     return () => mediaQuery.removeEventListener('change', handler);
   }, []);
 
-  // 从本地存储加载设置 - 仅用于同步主题到主进程
+  // 同步主题设置到主进程
   useEffect(() => {
-    // 同步主题设置到主进程（确保下次启动时背景色正确）
     const api = (window as any).electronAPI;
     if (api?.saveThemeSettings) {
       api.saveThemeSettings({ theme: settings.theme }).catch(() => {});
     }
   }, [settings.theme]);
 
-  // 保存设置到本地存储
+  // 保存应用设置
   const saveSettings = useCallback(async (newSettings: AppSettings) => {
     localStorage.setItem('mucheng-settings', JSON.stringify(newSettings));
-    
-    // 同时保存主题设置到主进程可读取的文件（用于启动时背景色）
     try {
       const api = (window as any).electronAPI;
       if (api?.saveThemeSettings) {
@@ -120,37 +189,99 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     }
   }, []);
 
-  const saveSyncConfig = useCallback((newConfig: SyncConfig) => {
-    // 保存完整配置到 localStorage（包括密码）
-    // 注意：在生产环境中应该使用更安全的存储方式如 keytar
-    console.log('[SettingsContext] Saving sync config to localStorage:', newConfig);
-    const jsonStr = JSON.stringify(newConfig);
-    localStorage.setItem('mucheng-sync-config', jsonStr);
-    
-    // 立即验证保存是否成功
-    const saved = localStorage.getItem('mucheng-sync-config');
-    console.log('[SettingsContext] Verification - saved value:', saved);
-    console.log('[SettingsContext] Verification - match:', saved === jsonStr);
-    
-    // 列出所有 localStorage keys
-    console.log('[SettingsContext] All localStorage keys:', Object.keys(localStorage));
-  }, []);
+  const updateSettings = useCallback(
+    (updates: Partial<AppSettings>) => {
+      setSettings((prev: AppSettings) => {
+        const newSettings = { ...prev, ...updates };
+        saveSettings(newSettings);
+        return newSettings;
+      });
+    },
+    [saveSettings]
+  );
 
-  const updateSettings = useCallback((updates: Partial<AppSettings>) => {
-    setSettings((prev: AppSettings) => {
-      const newSettings = { ...prev, ...updates };
-      saveSettings(newSettings);
-      return newSettings;
-    });
-  }, [saveSettings]);
+  // 通用的同步配置更新方法
+  const updateSyncConfig = useCallback(
+    (updates: Partial<SyncConfig>) => {
+      setSyncConfigState((prev: SyncConfig) => {
+        const newConfig = { ...prev, ...updates };
+        // 始终保存配置（移除 syncConfigLoaded 检查，避免配置丢失）
+        persistSyncConfig(newConfig);
+        return newConfig;
+      });
+    },
+    [persistSyncConfig]
+  );
 
-  const updateSyncConfig = useCallback((updates: Partial<SyncConfig>) => {
-    setSyncConfig((prev: SyncConfig) => {
-      const newConfig = { ...prev, ...updates };
-      saveSyncConfig(newConfig);
-      return newConfig;
-    });
-  }, [saveSyncConfig]);
+  // ========== 独立的同步配置更新方法（参考手机端实现） ==========
+
+  const setSyncEnabled = useCallback(
+    (enabled: boolean) => {
+      updateSyncConfig({ enabled });
+    },
+    [updateSyncConfig]
+  );
+
+  const setSyncType = useCallback(
+    (type: 'webdav' | 'server') => {
+      updateSyncConfig({ type });
+    },
+    [updateSyncConfig]
+  );
+
+  const setSyncUrl = useCallback(
+    (url: string) => {
+      updateSyncConfig({ url });
+    },
+    [updateSyncConfig]
+  );
+
+  const setSyncPath = useCallback(
+    (path: string) => {
+      updateSyncConfig({ sync_path: path });
+    },
+    [updateSyncConfig]
+  );
+
+  const setSyncUsername = useCallback(
+    (username: string) => {
+      updateSyncConfig({ username });
+    },
+    [updateSyncConfig]
+  );
+
+  const setSyncPassword = useCallback(
+    (password: string) => {
+      updateSyncConfig({ password });
+    },
+    [updateSyncConfig]
+  );
+
+  const setSyncApiKey = useCallback(
+    (apiKey: string) => {
+      updateSyncConfig({ api_key: apiKey });
+    },
+    [updateSyncConfig]
+  );
+
+  const setSyncInterval = useCallback(
+    (interval: number) => {
+      updateSyncConfig({ sync_interval: interval });
+    },
+    [updateSyncConfig]
+  );
+
+  const setSyncModule = useCallback(
+    (module: keyof SyncModules, enabled: boolean) => {
+      setSyncConfigState((prev: SyncConfig) => {
+        const newModules = { ...prev.sync_modules, [module]: enabled };
+        const newConfig = { ...prev, sync_modules: newModules };
+        persistSyncConfig(newConfig);
+        return newConfig;
+      });
+    },
+    [persistSyncConfig]
+  );
 
   const resetSettings = useCallback(() => {
     setSettings(DEFAULT_SETTINGS);
@@ -165,8 +296,18 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
       value={{
         settings,
         syncConfig,
+        syncConfigLoaded,
         updateSettings,
         updateSyncConfig,
+        setSyncEnabled,
+        setSyncType,
+        setSyncUrl,
+        setSyncPath,
+        setSyncUsername,
+        setSyncPassword,
+        setSyncApiKey,
+        setSyncInterval,
+        setSyncModule,
         resetSettings,
         isDarkMode,
       }}

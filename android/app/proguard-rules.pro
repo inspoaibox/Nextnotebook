@@ -36,6 +36,12 @@
 -keep class com.thegrizzlylabs.sardineandroid.** { *; }
 -dontwarn com.thegrizzlylabs.sardineandroid.**
 
+# XmlPullParser - avoid conflict with Android built-in
+-dontwarn org.xmlpull.v1.**
+-keep class org.xmlpull.v1.** { *; }
+-dontwarn org.kxml2.**
+-keep class org.kxml2.** { *; }
+
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**

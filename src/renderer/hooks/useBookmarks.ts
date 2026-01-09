@@ -115,9 +115,19 @@ export function useBookmarkFolders() {
   return { folders, loading, createFolder, updateFolder, deleteFolder, refresh: loadFolders };
 }
 
-export function useBookmarks(folderId?: string | null) {
+export function useBookmarks(folderId?: string | null, folders?: BookmarkFolder[]) {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 获取文件夹及其所有子文件夹的ID
+  const getAllDescendantFolderIds = useCallback((parentId: string, allFolders: BookmarkFolder[]): string[] => {
+    const result: string[] = [parentId];
+    const children = allFolders.filter(f => f.parentId === parentId);
+    for (const child of children) {
+      result.push(...getAllDescendantFolderIds(child.id, allFolders));
+    }
+    return result;
+  }, []);
 
   const loadBookmarks = useCallback(async () => {
     try {
@@ -126,7 +136,17 @@ export function useBookmarks(folderId?: string | null) {
       if (items) {
         let list = items.filter(i => !i.deleted_time).map(itemToBookmark);
         if (folderId !== undefined) {
-          list = list.filter(b => b.folderId === folderId);
+          if (folderId === null) {
+            // 未分类：只显示没有文件夹的书签
+            list = list.filter(b => b.folderId === null);
+          } else if (folders && folders.length > 0) {
+            // 有文件夹：显示该文件夹及其所有子文件夹下的书签
+            const folderIds = getAllDescendantFolderIds(folderId, folders);
+            list = list.filter(b => b.folderId && folderIds.includes(b.folderId));
+          } else {
+            // 没有传入folders，只过滤当前文件夹
+            list = list.filter(b => b.folderId === folderId);
+          }
         }
         list.sort((a, b) => a.name.localeCompare(b.name));
         setBookmarks(list);
@@ -136,7 +156,7 @@ export function useBookmarks(folderId?: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [folderId]);
+  }, [folderId, folders, getAllDescendantFolderIds]);
 
   useEffect(() => { loadBookmarks(); }, [loadBookmarks]);
 

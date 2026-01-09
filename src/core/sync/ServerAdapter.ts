@@ -4,7 +4,6 @@ import {
   RemoteMeta,
   SyncCursor,
   ServerConfig,
-  DEFAULT_LOCK_TIMEOUT,
 } from './StorageAdapter';
 import { ItemBase } from '@shared/types';
 
@@ -197,41 +196,6 @@ export class ServerAdapter implements StorageAdapter {
     }
   }
 
-  async acquireLock(deviceId: string, timeout: number = DEFAULT_LOCK_TIMEOUT): Promise<boolean> {
-    try {
-      const result = await this.request<{ acquired: boolean }>(
-        'POST',
-        '/api/sync/lock',
-        { deviceId, timeout }
-      );
-      return result.acquired;
-    } catch (error) {
-      console.error('Failed to acquire lock:', error);
-      return false;
-    }
-  }
-
-  async releaseLock(deviceId: string): Promise<boolean> {
-    try {
-      await this.request<void>('DELETE', '/api/sync/lock', { deviceId });
-      return true;
-    } catch (error) {
-      console.error('Failed to release lock:', error);
-      return false;
-    }
-  }
-
-  async checkLock(): Promise<{ locked: boolean; owner?: string; expires?: number }> {
-    try {
-      return await this.request<{ locked: boolean; owner?: string; expires?: number }>(
-        'GET',
-        '/api/sync/lock'
-      );
-    } catch (error) {
-      return { locked: false };
-    }
-  }
-
   // 清理过期的变更日志
   async cleanupChangeLogs(beforeTimestamp: number): Promise<number> {
     try {
@@ -290,6 +254,43 @@ export class ServerAdapter implements StorageAdapter {
     } catch (error) {
       return { healthy: false, version: 'unknown', storage: { used: 0, total: 0 } };
     }
+  }
+
+  // 获取远端密钥指纹
+  async getKeyFingerprint(): Promise<string | null> {
+    try {
+      const result = await this.request<{ fingerprint: string | null }>('GET', '/api/sync/key-fingerprint');
+      return result.fingerprint;
+    } catch (error) {
+      console.error('Failed to get key fingerprint:', error);
+      return null;
+    }
+  }
+
+  // 保存密钥指纹
+  async saveKeyFingerprint(fingerprint: string): Promise<boolean> {
+    try {
+      await this.request<void>('PUT', '/api/sync/key-fingerprint', { fingerprint });
+      return true;
+    } catch (error) {
+      console.error('Failed to save key fingerprint:', error);
+      return false;
+    }
+  }
+
+  // 验证密钥指纹
+  async verifyKeyFingerprint(localFingerprint: string): Promise<{ valid: boolean; remoteFingerprint: string | null }> {
+    const remoteFingerprint = await this.getKeyFingerprint();
+
+    if (remoteFingerprint === null) {
+      // 远端没有指纹，这是首次同步，保存本地指纹
+      await this.saveKeyFingerprint(localFingerprint);
+      return { valid: true, remoteFingerprint: null };
+    }
+
+    // 验证指纹是否匹配
+    const valid = remoteFingerprint === localFingerprint;
+    return { valid, remoteFingerprint };
   }
 }
 

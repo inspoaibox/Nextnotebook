@@ -186,7 +186,8 @@ const BookmarkPanel: React.FC = () => {
 
   const { folders, createFolder, deleteFolder } = useBookmarkFolders();
   const { bookmarks, createBookmark, updateBookmark, deleteBookmark } = useBookmarks(
-    selectedFolderId === 'all' ? undefined : selectedFolderId
+    selectedFolderId === 'all' ? undefined : selectedFolderId,
+    folders  // 传入 folders 以支持递归获取子文件夹书签
   );
 
   // 过滤书签
@@ -525,9 +526,21 @@ const BookmarkPanel: React.FC = () => {
             allowClear
             style={{ width: '100%' }}
           >
-            {folders.map(f => (
-              <Select.Option key={f.id} value={f.id}>{f.name}</Select.Option>
-            ))}
+            {(() => {
+              // 构建层级文件夹选项
+              const buildFolderOptions = (parentId: string | null = null, level: number = 0): React.ReactNode[] => {
+                const childFolders = folders.filter(f => f.parentId === parentId);
+                return childFolders.flatMap(folder => [
+                  <Select.Option key={folder.id} value={folder.id}>
+                    <span style={{ paddingLeft: level * 16 }}>
+                      {'└─ '.repeat(level > 0 ? 1 : 0)}{folder.name}
+                    </span>
+                  </Select.Option>,
+                  ...buildFolderOptions(folder.id, level + 1),
+                ]);
+              };
+              return buildFolderOptions(null);
+            })()}
           </Select>
         </div>
       </Modal>

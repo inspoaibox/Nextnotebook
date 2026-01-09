@@ -278,7 +278,6 @@ export interface SyncConfig {
   username?: string;
   password?: string;
   api_key?: string;
-  encryption_enabled: boolean;
   sync_interval: number;  // 分钟
   last_sync_time: number | null;
   sync_cursor: string | null;

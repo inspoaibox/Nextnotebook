@@ -5,6 +5,8 @@ export interface SyncSchedulerOptions {
   syncInterval: number;  // 分钟
   syncOnChange: boolean;
   changeDebounce: number;  // 秒
+  initialLastSyncTime?: number | null;  // 初始的上次同步时间（从持久化存储加载）
+  onSyncComplete?: (lastSyncTime: number) => void;  // 同步完成回调（用于持久化）
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
@@ -39,7 +41,7 @@ export class SyncScheduler {
     };
     this.state = {
       status: 'idle',
-      lastSyncTime: null,
+      lastSyncTime: this.options.initialLastSyncTime || null,  // 从选项中加载初始值
       lastSyncResult: null,
       pendingChanges: 0,
       isOnline: true,
@@ -92,13 +94,20 @@ export class SyncScheduler {
 
     try {
       const result = await this.syncEngine.sync();
+      const syncTime = Date.now();
       this.updateState({
         status: result.success ? 'idle' : 'error',
-        lastSyncTime: Date.now(),
+        lastSyncTime: syncTime,
         lastSyncResult: result,
         pendingChanges: 0,
         progress: null,
       });
+      
+      // 通知外部持久化同步时间
+      if (result.success && this.options.onSyncComplete) {
+        this.options.onSyncComplete(syncTime);
+      }
+      
       return result;
     } catch (error) {
       console.error('Sync failed:', error);

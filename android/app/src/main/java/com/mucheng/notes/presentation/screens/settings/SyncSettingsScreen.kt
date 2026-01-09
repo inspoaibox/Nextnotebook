@@ -1,10 +1,5 @@
 package com.mucheng.notes.presentation.screens.settings
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -42,33 +37,7 @@ fun SyncSettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     var showPasswordField by remember { mutableStateOf(false) }
-    var showEncryptionPasswordField by remember { mutableStateOf(false) }
     var showSyncIntervalMenu by remember { mutableStateOf(false) }
-    var showImportKeyDialog by remember { mutableStateOf(false) }
-    var importKeyText by remember { mutableStateOf("") }
-    
-    // 文件选择器
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let {
-            try {
-                context.contentResolver.openInputStream(it)?.use { stream ->
-                    val content = stream.bufferedReader().readText()
-                    // 尝试解析 JSON 格式
-                    val key = try {
-                        val json = org.json.JSONObject(content)
-                        json.optString("key", content)
-                    } catch (e: Exception) {
-                        content.trim()
-                    }
-                    viewModel.importEncryptionKey(key)
-                }
-            } catch (e: Exception) {
-                viewModel.showMessage("导入失败: ${e.message}")
-            }
-        }
-    }
     
     LaunchedEffect(uiState.message) {
         uiState.message?.let {
@@ -228,114 +197,6 @@ fun SyncSettingsScreen(
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // 端到端加密
-                SettingsSwitch(
-                    title = "端到端加密",
-                    checked = uiState.encryptionEnabled,
-                    onCheckedChange = { viewModel.setEncryptionEnabled(it) }
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // 密钥警告提示 - 始终显示
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Icon(
-                            Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                "重要提示",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            Text(
-                                "加密密钥必须与电脑端完全一致，否则无法解密同步数据。如果密钥不匹配，同步将失败并提示「同步密钥不匹配」。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // 加密密钥输入框 - 始终显示
-                OutlinedTextField(
-                    value = uiState.encryptionPassword,
-                    onValueChange = { viewModel.setEncryptionPassword(it) },
-                    label = { Text("加密密钥") },
-                    supportingText = { Text("用于加密同步数据，请妥善备份，与电脑端保持一致") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = if (showEncryptionPasswordField) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { showEncryptionPasswordField = !showEncryptionPasswordField }) {
-                            Icon(
-                                if (showEncryptionPasswordField) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = null
-                            )
-                        }
-                    }
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // 密钥操作按钮 - 始终显示
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { viewModel.generateEncryptionKey() },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("生成")
-                    }
-                    OutlinedButton(
-                        onClick = { viewModel.exportEncryptionKey() },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Upload, null, Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("导出")
-                    }
-                    OutlinedButton(
-                        onClick = { showImportKeyDialog = true },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Download, null, Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("导入")
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // 从文件导入 - 始终显示
-                TextButton(
-                    onClick = { filePickerLauncher.launch("application/json") }
-                ) {
-                    Icon(Icons.Default.FileOpen, null, Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("从文件导入密钥")
-                }
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
                 // 同步间隔
                 ExposedDropdownMenuBox(
                     expanded = showSyncIntervalMenu,
@@ -437,7 +298,7 @@ fun SyncSettingsScreen(
                         Text("立即同步")
                     }
                 }
-                
+
                 // 上次同步时间
                 uiState.lastSyncTime?.let { time ->
                     Spacer(modifier = Modifier.height(16.dp))
@@ -458,55 +319,6 @@ fun SyncSettingsScreen(
                 }
             }
         }
-    }
-    
-    // 导入密钥对话框
-    if (showImportKeyDialog) {
-        AlertDialog(
-            onDismissRequest = { showImportKeyDialog = false },
-            title = { Text("导入密钥") },
-            text = {
-                Column {
-                    Text(
-                        "请输入从电脑端导出的加密密钥",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = importKeyText,
-                        onValueChange = { importKeyText = it },
-                        label = { Text("密钥") },
-                        placeholder = { Text("粘贴密钥...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2,
-                        maxLines = 4
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (importKeyText.isNotBlank()) {
-                            viewModel.importEncryptionKey(importKeyText.trim())
-                            showImportKeyDialog = false
-                            importKeyText = ""
-                        }
-                    },
-                    enabled = importKeyText.isNotBlank()
-                ) {
-                    Text("导入")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showImportKeyDialog = false
-                    importKeyText = ""
-                }) {
-                    Text("取消")
-                }
-            }
-        )
     }
 }
 

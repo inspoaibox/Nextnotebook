@@ -1,16 +1,32 @@
 package com.mucheng.notes.data.remote
 
 import com.mucheng.notes.data.local.entity.ItemEntity
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /**
- * 远程变更记录
+ * 远程变更记录 - 与桌面端 RemoteChange 完全一致
+ *
+ * 对应桌面端 src/core/sync/StorageAdapter.ts 中的 RemoteChange 接口
  */
+@Serializable
 data class RemoteChange(
-    val id: String,
-    val type: String,
-    val action: String, // "create", "update", "delete"
-    val item: ItemEntity?,
-    val timestamp: Long
+    @SerialName("change_id")
+    val changeId: Long,           // 变更ID = 时间戳
+
+    @SerialName("item_id")
+    val itemId: String,           // 数据项ID
+
+    val type: String,             // 数据类型
+
+    @SerialName("updated_time")
+    val updatedTime: Long,        // 更新时间
+
+    @SerialName("deleted_time")
+    val deletedTime: Long?,       // 删除时间
+
+    @SerialName("content_hash")
+    val contentHash: String       // 内容哈希
 )
 
 /**
@@ -23,12 +39,12 @@ data class ChangeListResult(
 )
 
 /**
- * 同步游标
+ * 同步游标 - 与桌面端 SyncCursor 完全一致
  */
-@kotlinx.serialization.Serializable
+@Serializable
 data class SyncCursor(
-    val cursor: String,
-    val timestamp: Long
+    val cursor: String,           // 最后处理的变更文件名 (如 "1704537600000.json")
+    val timestamp: Long           // 游标更新时间
 )
 
 /**
@@ -64,16 +80,6 @@ interface WebDAVAdapter {
     suspend fun listChanges(cursor: String?, limit: Int = 100): ChangeListResult
     
     /**
-     * 获取同步锁
-     */
-    suspend fun acquireLock(deviceId: String, timeout: Long): Boolean
-    
-    /**
-     * 释放同步锁
-     */
-    suspend fun releaseLock(deviceId: String): Boolean
-    
-    /**
      * 获取同步游标
      */
     suspend fun getSyncCursor(): SyncCursor?
@@ -106,20 +112,45 @@ interface WebDAVAdapter {
     suspend fun listResources(): List<String>
     
     // 密钥标识符操作
-    
+
     /**
      * 获取远端密钥标识符
      */
     suspend fun getKeyIdentifier(): String?
-    
+
     /**
      * 设置远端密钥标识符
      */
     suspend fun setKeyIdentifier(keyId: String): Boolean
-    
+
     /**
      * 检查远端是否有数据
      * 用于判断是否为首次同步
      */
     suspend fun hasData(): Boolean
+
+    // 密钥指纹验证
+
+    /**
+     * 获取远端密钥指纹
+     */
+    suspend fun getKeyFingerprint(): String?
+
+    /**
+     * 保存密钥指纹
+     */
+    suspend fun saveKeyFingerprint(fingerprint: String): Boolean
+
+    /**
+     * 验证密钥指纹
+     */
+    suspend fun verifyKeyFingerprint(localFingerprint: String): KeyFingerprintResult
 }
+
+/**
+ * 密钥指纹验证结果
+ */
+data class KeyFingerprintResult(
+    val valid: Boolean,
+    val remoteFingerprint: String?
+)

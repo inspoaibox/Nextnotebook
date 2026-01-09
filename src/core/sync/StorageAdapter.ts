@@ -24,9 +24,6 @@ export interface SyncCursor {
   timestamp: number;
 }
 
-// 默认锁超时时间（毫秒）- 统一为 3 分钟
-export const DEFAULT_LOCK_TIMEOUT = 180000;
-
 // 变更日志保留时间（毫秒）- 7 天
 export const CHANGE_LOG_RETENTION = 7 * 24 * 60 * 60 * 1000;
 
@@ -70,16 +67,16 @@ export interface StorageAdapter {
   // 获取/设置远端元数据
   putRemoteMeta(meta: RemoteMeta): Promise<boolean>;
 
-  // 锁定（防止并发同步）
-  acquireLock(deviceId: string, timeout?: number): Promise<boolean>;
-  releaseLock(deviceId: string): Promise<boolean>;
-  checkLock(): Promise<{ locked: boolean; owner?: string; expires?: number }>;
-
   // 清理过期的变更日志
   cleanupChangeLogs?(beforeTimestamp: number): Promise<number>;
 
   // 检查远端是否已有数据（用于首次同步检测）
   hasExistingData?(): Promise<boolean>;
+
+  // 密钥指纹验证
+  getKeyFingerprint(): Promise<string | null>;
+  saveKeyFingerprint(fingerprint: string): Promise<boolean>;
+  verifyKeyFingerprint(localFingerprint: string): Promise<{ valid: boolean; remoteFingerprint: string | null }>;
 }
 
 // 适配器配置

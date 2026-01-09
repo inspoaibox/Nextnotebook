@@ -200,9 +200,35 @@ class WebDAVAdapter implements StorageAdapter {
   //   ├── workspace.json      # 元数据
   //   ├── items/              # 数据项（笔记、文件夹、标签）
   //   ├── resources/          # 附件文件
-  //   ├── changes/            # 变更日志
+  //   ├── changes/            # 变更日志 (新增)
   //   ├── locks/              # 同步锁
   //   └── sync-cursor.json    # 同步游标
+}
+```
+
+**变更日志机制** (v2.0+):
+- 每次上传数据时，同时创建变更日志文件 `/changes/{timestamp}.json`
+- 变更日志包含：`change_id`, `item_id`, `type`, `updated_time`, `deleted_time`, `content_hash`
+- Pull 时读取变更日志，而不是扫描所有 items 文件
+- 优势：性能更好、不依赖服务器时间、支持删除追踪
+
+**RemoteChange 结构**:
+```typescript
+interface RemoteChange {
+  change_id: number;        // 变更ID = 时间戳
+  item_id: string;          // 数据项ID
+  type: ItemType;           // 数据类型
+  updated_time: number;     // 更新时间
+  deleted_time: number | null; // 删除时间
+  content_hash: string;     // 内容哈希
+}
+```
+
+**游标格式**:
+```json
+{
+  "cursor": "1704537600000.json",  // 最后处理的变更文件名
+  "timestamp": 1704537600000       // 游标更新时间
 }
 ```
 
@@ -213,14 +239,43 @@ class SyncEngine {
   // 同步流程：
   // 1. acquireLock()     - 获取同步锁
   // 2. verifyKey()       - 验证加密密钥
-  // 3. pushChanges()     - 上传本地变更
-  // 4. pullChanges()     - 拉取远端变更
+  // 3. pushChanges()     - 上传本地变更 + 记录变更日志
+  // 4. pullChanges()     - 拉取远端变更（读取变更日志）
   // 5. commitSync()      - 提交同步状态
   // 6. releaseLock()     - 释放锁
-  
+
   async sync(): Promise<SyncResult>;
 }
 ```
+
+**Push 流程** (桌面端和移动端统一):
+```typescript
+1. 查询 sync_status = 'modified' 的数据
+2. 对每个数据项:
+   a. 加密 payload (如果启用加密)
+   b. 上传到 /items/{id}.json
+   c. 创建变更日志 /changes/{timestamp}.json  ← 关键
+   d. 更新本地 sync_status = 'clean'
+```
+
+**Pull 流程** (桌面端和移动端统一):
+```typescript
+1. 读取游标 /sync-cursor.json
+2. 列出 /changes 目录中的变更文件
+3. 过滤出游标之后的变更
+4. 对每个变更:
+   a. 从 /items/{id}.json 获取完整数据
+   b. 检查本地是否存在
+   c. 检查是否有冲突 (本地 sync_status = 'modified')
+   d. 解密 payload (如果启用加密)
+   e. 写入本地数据库，标记 sync_status = 'clean'
+5. 更新游标到最后处理的变更
+```
+
+**向后兼容**:
+- 如果 `/changes` 目录不存在，自动回退到扫描 `/items` 目录
+- 首次同步或从旧版本升级时自动处理
+- 后续同步会自动创建变更日志
 
 #### SyncScheduler（同步调度器）
 ```typescript
@@ -443,6 +498,31 @@ $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"; npm run dist:win
 # 测试
 npm test               # 运行测试
 npm run lint           # 代码检查
+```
+
+## 构建安卓客户端
+
+1. **进入 Android 目录**
+```bash
+cd android
+```
+
+2. **构建 Release APK**
+```bash
+# Windows
+.\gradlew.bat assembleRelease
+
+# macOS/Linux
+./gradlew assembleRelease
+```
+
+3. **清理后重新构建（可选）**
+```bash
+# Windows
+.\gradlew.bat clean assembleRelease
+
+# macOS/Linux
+./gradlew clean assembleRelease
 ```
 
 ---

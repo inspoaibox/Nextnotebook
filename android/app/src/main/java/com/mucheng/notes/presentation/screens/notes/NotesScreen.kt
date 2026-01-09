@@ -21,12 +21,14 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -182,13 +184,22 @@ fun NotesScreen(
         }
     }
     
-    // 过滤笔记
-    val filteredNotes = if (selectedFolderId == null) {
-        notes
-    } else {
-        notes.filter { it.folderId == selectedFolderId }
+    // 过滤笔记：先按文件夹过滤，再按搜索查询过滤
+    val filteredNotes = notes.filter { note ->
+        // 文件夹过滤
+        if (selectedFolderId != null && note.folderId != selectedFolderId) {
+            return@filter false
+        }
+        // 搜索过滤
+        if (uiState.searchQuery.isNotBlank()) {
+            val query = uiState.searchQuery.lowercase()
+            note.title.lowercase().contains(query) ||
+            note.content.lowercase().contains(query)
+        } else {
+            true
+        }
     }
-    
+
     // 按置顶排序
     val sortedNotes = filteredNotes.sortedWith(
         compareByDescending<NoteItem> { it.isPinned }
@@ -280,30 +291,51 @@ fun NotesScreen(
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { 
-                        Text(
-                            text = if (selectedFolderId == null) {
-                                stringResource(R.string.nav_notes)
-                            } else {
-                                folders.find { it.id == selectedFolderId }?.name ?: stringResource(R.string.nav_notes)
+                Column {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = if (selectedFolderId == null) {
+                                    stringResource(R.string.nav_notes)
+                                } else {
+                                    folders.find { it.id == selectedFolderId }?.name ?: stringResource(R.string.nav_notes)
+                                }
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(Icons.Default.Menu, contentDescription = "打开文件夹")
                             }
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "打开文件夹")
+                        },
+                        actions = {
+                            // 同步状态指示器
+                            SyncStatusIndicator(
+                                status = uiState.syncStatus,
+                                lastSyncTime = uiState.lastSyncTime,
+                                onClick = { viewModel.sync() }
+                            )
                         }
-                    },
-                    actions = {
-                        // 同步状态指示器
-                        SyncStatusIndicator(
-                            status = uiState.syncStatus,
-                            lastSyncTime = uiState.lastSyncTime,
-                            onClick = { viewModel.sync() }
-                        )
-                    }
-                )
+                    )
+                    // 搜索框
+                    OutlinedTextField(
+                        value = uiState.searchQuery,
+                        onValueChange = { viewModel.search(it) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = { Text("搜索笔记...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "搜索") },
+                        trailingIcon = {
+                            if (uiState.searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.search("") }) {
+                                    Icon(Icons.Default.Close, contentDescription = "清除")
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+                    )
+                }
             },
             floatingActionButton = {
                 FloatingActionButton(

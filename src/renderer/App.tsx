@@ -86,7 +86,7 @@ const App: React.FC = () => {
     filteredNotes: any[];
   }>();
 
-  const { syncConfig, updateSettings, isDarkMode, settings } = useSettings();
+  const { syncConfig, updateSettings, updateSyncConfig, isDarkMode, settings } = useSettings();
   const { settings: featureSettings } = useFeatureSettings();
   const { notes, createNote, updateNote, deleteNote, searchNotes, refresh } = useNotes(selectedFolderId);
   const { note: currentNote } = useNote(selectedNoteId, selectedView === 'trash');
@@ -281,7 +281,6 @@ const App: React.FC = () => {
       }
       
       try {
-        const encryptionKey = localStorage.getItem('mucheng-sync-key') || undefined;
         console.log('Initializing sync service...', { 
           enabled: syncConfig.enabled, 
           url: syncConfig.url,
@@ -296,15 +295,18 @@ const App: React.FC = () => {
           username: syncConfig.username,
           password: syncConfig.password,
           apiKey: syncConfig.api_key,
-          encryptionEnabled: syncConfig.encryption_enabled,
-          encryptionKey,
           syncInterval: syncConfig.sync_interval,
           syncModules: syncConfig.sync_modules,
+          lastSyncTime: syncConfig.last_sync_time,  // 传递上次同步时间
         });
         
         if (success) {
           await syncApi.start();
           setSyncInitialized(true);
+          // 从配置加载上次同步时间
+          if (syncConfig.last_sync_time) {
+            setLastSyncTime(syncConfig.last_sync_time);
+          }
           console.log('Sync service initialized successfully');
         } else {
           setSyncInitialized(false);
@@ -320,7 +322,20 @@ const App: React.FC = () => {
       }
     };
     initSync();
-  }, [syncConfig.enabled, syncConfig.url, syncConfig.type, syncConfig.username, syncConfig.password, syncConfig.sync_path, syncConfig.encryption_enabled, syncConfig.sync_interval, syncConfig.api_key, syncConfig.sync_modules]);
+  }, [syncConfig.enabled, syncConfig.url, syncConfig.type, syncConfig.username, syncConfig.password, syncConfig.sync_path, syncConfig.sync_interval, syncConfig.api_key, syncConfig.sync_modules]);
+
+  // 监听同步时间更新事件，持久化到配置
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (api?.sync?.onLastSyncTimeUpdated) {
+      api.sync.onLastSyncTimeUpdated((lastSyncTime: number) => {
+        console.log('Received lastSyncTime update:', lastSyncTime);
+        setLastSyncTime(lastSyncTime);
+        // 持久化到 syncConfig
+        updateSyncConfig({ last_sync_time: lastSyncTime });
+      });
+    }
+  }, [updateSyncConfig]);
 
   // 定期更新同步状态
   useEffect(() => {
@@ -695,7 +710,6 @@ const App: React.FC = () => {
     if (!syncInitialized) {
       message.loading({ content: '正在初始化同步服务...', key: 'sync-init' });
       try {
-        const encryptionKey = localStorage.getItem('mucheng-sync-key') || undefined;
         const success = await syncApi.initialize({
           enabled: syncConfig.enabled,
           type: syncConfig.type,
@@ -704,8 +718,6 @@ const App: React.FC = () => {
           username: syncConfig.username,
           password: syncConfig.password,
           apiKey: syncConfig.api_key,
-          encryptionEnabled: syncConfig.encryption_enabled,
-          encryptionKey,
           syncInterval: syncConfig.sync_interval,
           syncModules: syncConfig.sync_modules,
         });

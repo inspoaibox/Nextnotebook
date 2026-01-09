@@ -18,9 +18,15 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.mucheng.notes.presentation.viewmodel.SettingsViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * AI 渠道类型
@@ -173,7 +179,8 @@ fun AISettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    
+    val scope = rememberCoroutineScope()
+
     // 从 ViewModel 加载渠道列表
     var channels by remember { mutableStateOf<List<AIChannel>>(emptyList()) }
     
@@ -335,6 +342,85 @@ fun AISettingsScreen(
                                     ch.copy(models = ch.models.filter { it.id != modelId })
                                 } else ch
                             })
+                        },
+                        onFetchModels = {
+                            // 从API获取模型列表
+                            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                try {
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        viewModel.showMessage("正在获取模型列表...")
+                                    }
+
+                                    // 提取基础URL
+                                    var baseUrl = channel.apiUrl
+                                    if (baseUrl.endsWith("/chat/completions")) {
+                                        baseUrl = baseUrl.replace("/chat/completions", "")
+                                    } else if (baseUrl.endsWith("/messages")) {
+                                        baseUrl = baseUrl.replace("/messages", "")
+                                    } else if (baseUrl.endsWith("/")) {
+                                        baseUrl = baseUrl.dropLast(1)
+                                    }
+
+                                    // 调用 /models API
+                                    val client = okhttp3.OkHttpClient.Builder()
+                                        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                                        .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                                        .build()
+
+                                    val request = okhttp3.Request.Builder()
+                                        .url("$baseUrl/models")
+                                        .addHeader("Authorization", "Bearer ${channel.apiKey}")
+                                        .get()
+                                        .build()
+
+                                    val response = client.newCall(request).execute()
+                                    val responseBody = response.body?.string() ?: ""
+
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        if (response.isSuccessful) {
+                                            try {
+                                                val jsonResponse = kotlinx.serialization.json.Json {
+                                                    ignoreUnknownKeys = true
+                                                    isLenient = true
+                                                }.parseToJsonElement(responseBody).jsonObject
+
+                                                val modelsArray = jsonResponse["data"]?.jsonArray
+                                                    ?: kotlinx.serialization.json.JsonArray(emptyList())
+
+                                                val fetchedModels = modelsArray.mapNotNull { element ->
+                                                    try {
+                                                        val modelObj = element.jsonObject
+                                                        val modelId = modelObj["id"]?.jsonPrimitive?.content
+                                                            ?: return@mapNotNull null
+                                                        AIModel(id = modelId, name = modelId)
+                                                    } catch (e: Exception) {
+                                                        null
+                                                    }
+                                                }
+
+                                                if (fetchedModels.isNotEmpty()) {
+                                                    saveChannels(channels.map { ch ->
+                                                        if (ch.id == channel.id) {
+                                                            ch.copy(models = fetchedModels)
+                                                        } else ch
+                                                    })
+                                                    viewModel.showMessage("已获取 ${fetchedModels.size} 个模型")
+                                                } else {
+                                                    viewModel.showMessage("未找到可用模型")
+                                                }
+                                            } catch (e: Exception) {
+                                                viewModel.showMessage("解析失败: ${e.message}")
+                                            }
+                                        } else {
+                                            viewModel.showMessage("获取失败: ${response.code} - $responseBody")
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        viewModel.showMessage("网络错误: ${e.message}")
+                                    }
+                                }
+                            }
                         }
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -655,7 +741,8 @@ private fun ChannelCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onAddModel: () -> Unit,
-    onDeleteModel: (String) -> Unit
+    onDeleteModel: (String) -> Unit,
+    onFetchModels: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -736,7 +823,7 @@ private fun ChannelCard(
             
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
             
-            // 模型列表
+            // 模型列表标题和操作按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -747,8 +834,25 @@ private fun ChannelCard(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.outline
                 )
+                // 获取模型按钮
+                TextButton(
+                    onClick = onFetchModels,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "获取模型",
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        "获取模型",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
-            
+
             Spacer(modifier = Modifier.height(8.dp))
             
             // 模型标签

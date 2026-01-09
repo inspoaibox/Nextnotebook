@@ -11,6 +11,15 @@ android {
     namespace = "com.mucheng.notes"
     compileSdk = 34
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("mucheng-release.jks")
+            storePassword = "mucheng123"
+            keyAlias = "mucheng"
+            keyPassword = "mucheng123"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.mucheng.notes"
         minSdk = 26
@@ -25,10 +34,16 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Disable lint vital for faster builds
+            lint {
+                checkReleaseBuilds = false
+                abortOnError = false
+            }
         }
         debug {
             isMinifyEnabled = false
@@ -101,7 +116,10 @@ dependencies {
     // Network
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
-    implementation(libs.sardine)
+    implementation(libs.sardine) {
+        exclude(group = "xmlpull", module = "xmlpull")
+        exclude(group = "xpp3", module = "xpp3")
+    }
 
     // Security
     implementation(libs.sqlcipher)

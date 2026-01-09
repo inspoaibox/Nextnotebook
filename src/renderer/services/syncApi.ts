@@ -12,10 +12,9 @@ export interface SyncApiConfig {
   username?: string;
   password?: string;
   apiKey?: string;
-  encryptionEnabled: boolean;
-  encryptionKey?: string;
   syncInterval: number;
   syncModules?: SyncModules;
+  lastSyncTime?: number | null;  // 上次同步时间
 }
 
 export interface SyncResult {

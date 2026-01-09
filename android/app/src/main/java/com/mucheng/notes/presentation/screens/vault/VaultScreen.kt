@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,8 +80,22 @@ fun VaultScreen(
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var createFolderParentId by remember { mutableStateOf<String?>(null) }
 
-    val filteredEntries = if (selectedFolderId == null) entries
-        else entries.filter { it.folderId == selectedFolderId }
+    // 过滤条目：先按文件夹过滤，再按搜索查询过滤
+    val filteredEntries = entries
+        .filter { entry ->
+            // 文件夹过滤
+            if (selectedFolderId != null && entry.folderId != selectedFolderId) {
+                return@filter false
+            }
+            // 搜索过滤
+            if (uiState.searchQuery.isNotBlank()) {
+                val query = uiState.searchQuery.lowercase()
+                entry.name.lowercase().contains(query) ||
+                entry.username.lowercase().contains(query)
+            } else {
+                true
+            }
+        }
 
     val folderItems = folders.map { f ->
         FolderItem(f.id, f.name, f.parentId, entries.count { it.folderId == f.id })
@@ -135,19 +150,40 @@ fun VaultScreen(
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text(if (selectedFolderId == null) stringResource(R.string.nav_vault)
-                        else folders.find { it.id == selectedFolderId }?.name ?: stringResource(R.string.nav_vault)) },
-                    navigationIcon = { IconButton({ scope.launch { drawerState.open() } }) {
-                        Icon(Icons.Default.Menu, "打开文件夹") } }
-                )
+                Column {
+                    TopAppBar(
+                        title = { Text(if (selectedFolderId == null) stringResource(R.string.nav_vault)
+                            else folders.find { it.id == selectedFolderId }?.name ?: stringResource(R.string.nav_vault)) },
+                        navigationIcon = { IconButton({ scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, "打开文件夹") } }
+                    )
+                    // 搜索框
+                    OutlinedTextField(
+                        value = uiState.searchQuery,
+                        onValueChange = { viewModel.search(it) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = { Text("搜索密码库...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "搜索") },
+                        trailingIcon = {
+                            if (uiState.searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.search("") }) {
+                                    Icon(Icons.Default.Close, contentDescription = "清除")
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+                    )
+                }
             },
             floatingActionButton = {
                 FloatingActionButton(
                     onClick = { showAddEntryDialog = true },
                     modifier = Modifier.padding(bottom = bottomPadding.calculateBottomPadding())
-                ) { 
-                    Icon(Icons.Default.Add, stringResource(R.string.add)) 
+                ) {
+                    Icon(Icons.Default.Add, stringResource(R.string.add))
                 }
             },
             snackbarHost = { SnackbarHost(snackbarHostState) }

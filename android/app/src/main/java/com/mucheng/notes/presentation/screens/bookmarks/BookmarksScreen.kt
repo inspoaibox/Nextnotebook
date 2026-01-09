@@ -21,10 +21,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -56,9 +58,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.mucheng.notes.R
@@ -98,14 +102,24 @@ fun BookmarksScreen(
     var selectedBookmark by remember { mutableStateOf<BookmarkItem?>(null) }
     var selectedFolderForEdit by remember { mutableStateOf<String?>(null) }
     var createFolderParentId by remember { mutableStateOf<String?>(null) }
-    
-    // 过滤书签
-    val filteredBookmarks = if (selectedFolderId == null) {
-        bookmarks
-    } else {
-        bookmarks.filter { it.folderId == selectedFolderId }
+
+    // 过滤书签：先按文件夹过滤，再按搜索查询过滤
+    val filteredBookmarks = bookmarks.filter { bookmark ->
+        // 文件夹过滤
+        if (selectedFolderId != null && bookmark.folderId != selectedFolderId) {
+            return@filter false
+        }
+        // 搜索过滤
+        if (uiState.searchQuery.isNotBlank()) {
+            val query = uiState.searchQuery.lowercase()
+            bookmark.name.lowercase().contains(query) ||
+            bookmark.url.lowercase().contains(query) ||
+            (bookmark.description.lowercase().contains(query))
+        } else {
+            true
+        }
     }
-    
+
     // 转换文件夹数据
     val folderItems = folders.map { folder ->
         FolderItem(
@@ -186,22 +200,43 @@ fun BookmarksScreen(
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { 
-                        Text(
-                            text = if (selectedFolderId == null) {
-                                stringResource(R.string.nav_bookmarks)
-                            } else {
-                                folders.find { it.id == selectedFolderId }?.name ?: stringResource(R.string.nav_bookmarks)
+                Column {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = if (selectedFolderId == null) {
+                                    stringResource(R.string.nav_bookmarks)
+                                } else {
+                                    folders.find { it.id == selectedFolderId }?.name ?: stringResource(R.string.nav_bookmarks)
+                                }
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(Icons.Default.Menu, contentDescription = "打开文件夹")
                             }
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "打开文件夹")
                         }
-                    }
-                )
+                    )
+                    // 搜索框
+                    OutlinedTextField(
+                        value = uiState.searchQuery,
+                        onValueChange = { viewModel.search(it) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = { Text("搜索书签...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "搜索") },
+                        trailingIcon = {
+                            if (uiState.searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.search("") }) {
+                                    Icon(Icons.Default.Close, contentDescription = "清除")
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+                    )
+                }
             },
             floatingActionButton = {
                 FloatingActionButton(

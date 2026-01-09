@@ -18,10 +18,11 @@ import javax.inject.Singleton
 @Singleton
 class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
     
-    private val json = Json { 
+    private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
         isLenient = true  // 允许更宽松的 JSON 解析
+        coerceInputValues = true  // 将缺失的字段填充为默认值
     }
     
     private var sardine: Sardine? = null
@@ -57,23 +58,9 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
         return "${cfg.url}${cfg.syncPath}/resources"
     }
     
-    private fun getLocksPath(): String {
-        val cfg = getConfig()
-        return "${cfg.url}${cfg.syncPath}/locks"
-    }
-    
     private fun getChangesPath(): String {
         val cfg = getConfig()
         return "${cfg.url}${cfg.syncPath}/changes"
-    }
-    
-    private fun getSyncCursorPath(): String {
-        val cfg = getConfig()
-        return "${cfg.url}${cfg.syncPath}/sync-cursor.json"
-    }
-    
-    private fun getLockFilePath(): String {
-        return "${getLocksPath()}/lock.json"
     }
     
     override suspend fun testConnection(): Boolean = withContext(Dispatchers.IO) {
@@ -81,18 +68,30 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
             val cfg = getConfig()
             val sardine = getSardine()
             
+            android.util.Log.d("WebDAV", "Testing connection to: ${cfg.url}${cfg.syncPath}")
+            android.util.Log.d("WebDAV", "Username: ${cfg.username}, Password length: ${cfg.password?.length ?: 0}")
+            
             // 尝试访问同步目录
             val path = "${cfg.url}${cfg.syncPath}"
-            if (!sardine.exists(path)) {
+            val exists = sardine.exists(path)
+            android.util.Log.d("WebDAV", "Path exists: $exists")
+            
+            if (!exists) {
                 // 创建目录结构
+                android.util.Log.d("WebDAV", "Creating directory structure...")
                 sardine.createDirectory(path)
                 sardine.createDirectory(getItemsPath())
                 sardine.createDirectory(getResourcesPath())
-                sardine.createDirectory(getLocksPath())
                 sardine.createDirectory(getChangesPath())
+                android.util.Log.d("WebDAV", "Directory structure created")
             }
+            
+            android.util.Log.d("WebDAV", "Connection test successful")
             true
         } catch (e: Exception) {
+            android.util.Log.e("WebDAV", "Connection test failed: ${e.message}")
+            android.util.Log.e("WebDAV", "Exception type: ${e.javaClass.simpleName}")
+            e.printStackTrace()
             false
         }
     }
@@ -101,19 +100,45 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
         try {
             val sardine = getSardine()
             val path = "${getItemsPath()}/$id.json"
-            
+
             if (!sardine.exists(path)) {
                 android.util.Log.d("WebDAV", "getItem: file does not exist: $path")
                 return@withContext null
             }
-            
+
             val inputStream = sardine.get(path)
             val content = inputStream.bufferedReader().use { it.readText() }
             android.util.Log.d("WebDAV", "getItem: read content for $id, length=${content.length}")
-            
-            val item = json.decodeFromString<ItemEntity>(content)
-            android.util.Log.d("WebDAV", "getItem: parsed item $id, type=${item.type}")
-            item
+
+            // 添加详细的解析日志
+            try {
+                // 先打印原始JSON的前200字符，帮助调试
+                val preview = if (content.length > 200) content.substring(0, 200) + "..." else content
+                android.util.Log.d("WebDAV", "getItem: JSON preview: $preview")
+
+                val item = json.decodeFromString<ItemEntity>(content)
+                android.util.Log.d("WebDAV", "getItem: ✅ Successfully parsed item $id, type=${item.type}, encryptionApplied=${item.encryptionApplied}")
+                item
+            } catch (parseError: Exception) {
+                // 详细的解析错误日志
+                android.util.Log.e("WebDAV", "❌ JSON Parse Error for item $id:")
+                android.util.Log.e("WebDAV", "  Error Type: ${parseError.javaClass.simpleName}")
+                android.util.Log.e("WebDAV", "  Error Message: ${parseError.message}")
+                android.util.Log.e("WebDAV", "  Content Length: ${content.length}")
+                android.util.Log.e("WebDAV", "  Content Preview (first 500 chars):")
+                android.util.Log.e("WebDAV", content.take(500))
+
+                // 尝试解析为通用JSON对象，检查字段
+                try {
+                    val jsonElement = kotlinx.serialization.json.Json.parseToJsonElement(content)
+                    android.util.Log.e("WebDAV", "  Available fields: ${jsonElement}")
+                } catch (e: Exception) {
+                    android.util.Log.e("WebDAV", "  Cannot parse as JSON at all: ${e.message}")
+                }
+
+                parseError.printStackTrace()
+                null
+            }
         } catch (e: Exception) {
             android.util.Log.e("WebDAV", "getItem: failed to get item $id: ${e.message}")
             e.printStackTrace()
@@ -126,12 +151,17 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
             val sardine = getSardine()
             val path = "${getItemsPath()}/${item.id}.json"
             val content = json.encodeToString(item)
-            
+
             sardine.put(path, content.toByteArray(), "application/json")
-            
+
+            // 记录变更到变更日志 (与桌面端保持一致)
+            recordChange(item)
+
             // 返回时间戳作为版本号
-            Result.success(System.currentTimeMillis().toString())
+            val remoteRev = System.currentTimeMillis().toString()
+            Result.success(remoteRev)
         } catch (e: Exception) {
+            android.util.Log.e("WebDAV", "Failed to put item ${item.id}: ${e.message}")
             Result.failure(e)
         }
     }
@@ -153,65 +183,79 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
     override suspend fun listChanges(cursor: String?, limit: Int): ChangeListResult = withContext(Dispatchers.IO) {
         try {
             val sardine = getSardine()
-            val itemsPath = getItemsPath()
-            
-            // 检查 items 目录是否存在
-            if (!sardine.exists(itemsPath)) {
-                android.util.Log.d("WebDAV", "Items directory does not exist")
+            val changesPath = getChangesPath()
+
+            // 检查 changes 目录是否存在
+            val dirExists = sardine.exists(changesPath)
+            if (!dirExists) {
+                android.util.Log.d("WebDAV", "Changes directory does not exist, creating...")
+                try {
+                    sardine.createDirectory(changesPath)
+                } catch (e: Exception) {
+                    android.util.Log.w("WebDAV", "Failed to create changes directory: ${e.message}")
+                }
+
+                // 向后兼容：如果没有changes目录，回退到扫描items目录 (首次同步或旧版本数据)
+                android.util.Log.d("WebDAV", "Falling back to items directory scan for backward compatibility")
+                return@withContext listChangesFromItems(cursor, limit)
+            }
+
+            // 列出所有变更文件
+            val resources = sardine.list(changesPath)
+
+            // 过滤并排序 JSON 文件
+            val sortedFiles = resources
+                .filter { !it.isDirectory && it.name.endsWith(".json") }
+                .sortedBy { it.name }
+
+            android.util.Log.d("WebDAV", "Found ${sortedFiles.size} change files, cursor=$cursor")
+
+            // 如果没有变更文件，回退到扫描items目录 (向后兼容)
+            if (sortedFiles.isEmpty()) {
+                android.util.Log.d("WebDAV", "No change files found, falling back to items directory scan")
+                return@withContext listChangesFromItems(cursor, limit)
+            }
+
+            // 找到游标位置
+            var startIndex = 0
+            if (cursor != null) {
+                val cursorIndex = sortedFiles.indexOfFirst { it.name == cursor }
+                if (cursorIndex >= 0) {
+                    startIndex = cursorIndex + 1
+                }
+            }
+
+            // 如果游标已经在末尾，没有更多变更
+            if (startIndex >= sortedFiles.size) {
+                android.util.Log.d("WebDAV", "Cursor at end, no more changes")
                 return@withContext ChangeListResult(emptyList(), null, false)
             }
-            
-            // 列出所有项目文件
-            val resources = sardine.list(itemsPath)
-            
-            // 解析游标
-            val cursorTime = cursor?.toLongOrNull() ?: 0L
-            val isFirstSync = cursorTime == 0L
-            
-            // 过滤出需要同步的文件
-            val filesToSync = resources
-                .filter { !it.isDirectory && it.name.endsWith(".json") }
-                .filter { resource ->
-                    val modified = resource.modified?.time ?: System.currentTimeMillis()
-                    isFirstSync || modified >= cursorTime
-                }
-            
-            android.util.Log.d("WebDAV", "Found ${filesToSync.size} files to sync (total: ${resources.size}, cursor: $cursor)")
-            
-            // 批量读取文件内容
+
+            // 读取变更
             val changes = mutableListOf<RemoteChange>()
-            for (resource in filesToSync) {
-                val id = resource.name.removeSuffix(".json")
-                val modified = resource.modified?.time ?: System.currentTimeMillis()
-                
+            val endIndex = minOf(startIndex + limit, sortedFiles.size)
+
+            for (i in startIndex until endIndex) {
                 try {
-                    val item = getItem(id)
-                    if (item != null) {
-                        changes.add(RemoteChange(
-                            id = id,
-                            type = item.type,
-                            action = if (item.deletedTime != null) "delete" else "update",
-                            item = item,
-                            timestamp = modified
-                        ))
-                    }
+                    val inputStream = sardine.get("$changesPath/${sortedFiles[i].name}")
+                    val content = inputStream.bufferedReader().use { it.readText() }
+                    val change = json.decodeFromString<RemoteChange>(content)
+                    changes.add(change)
                 } catch (e: Exception) {
-                    android.util.Log.e("WebDAV", "Failed to get item $id: ${e.message}")
+                    android.util.Log.w("WebDAV", "Failed to read change file ${sortedFiles[i].name}: ${e.message}")
+                    // 跳过损坏的文件，继续处理
                 }
             }
-            
-            android.util.Log.d("WebDAV", "Successfully loaded ${changes.size} items")
-            
-            // 按时间排序
-            val sortedChanges = changes.sortedBy { it.timestamp }
-            val nextCursor = sortedChanges.lastOrNull()?.let { 
-                (it.timestamp + 1).toString() 
-            }
-            
+
+            val hasMore = endIndex < sortedFiles.size
+            val nextCursor = if (changes.isNotEmpty()) sortedFiles[endIndex - 1].name else null
+
+            android.util.Log.d("WebDAV", "Loaded ${changes.size} changes, hasMore=$hasMore, nextCursor=$nextCursor")
+
             ChangeListResult(
-                changes = sortedChanges,
+                changes = changes,
                 nextCursor = nextCursor,
-                hasMore = false  // 一次性返回所有
+                hasMore = hasMore
             )
         } catch (e: Exception) {
             android.util.Log.e("WebDAV", "Failed to list changes: ${e.message}")
@@ -220,164 +264,17 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
         }
     }
     
-    override suspend fun acquireLock(deviceId: String, timeout: Long): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val sardine = getSardine()
-            val lockPath = getLockFilePath()
-            
-            android.util.Log.d("WebDAV", "Attempting to acquire lock, deviceId=$deviceId, timeout=$timeout")
-            
-            // 检查是否已有锁
-            if (sardine.exists(lockPath)) {
-                android.util.Log.d("WebDAV", "Lock file exists, checking...")
-                try {
-                    val inputStream = sardine.get(lockPath)
-                    val content = inputStream.bufferedReader().use { it.readText() }
-                    android.util.Log.d("WebDAV", "Lock file content: $content")
-                    
-                    // 尝试解析锁信息
-                    val lockInfo = try {
-                        json.decodeFromString<LockInfo>(content)
-                    } catch (e: Exception) {
-                        // 解析失败，可能是旧格式或损坏的锁文件，直接删除
-                        android.util.Log.w("WebDAV", "Lock file parse failed, deleting: ${e.message}")
-                        try {
-                            sardine.delete(lockPath)
-                        } catch (de: Exception) {
-                            android.util.Log.e("WebDAV", "Failed to delete corrupted lock: ${de.message}")
-                        }
-                        null
-                    }
-                    
-                    if (lockInfo != null) {
-                        val now = System.currentTimeMillis()
-                        
-                        android.util.Log.d("WebDAV", "Lock info: owner=${lockInfo.owner}, acquired=${lockInfo.acquired}, expires=${lockInfo.expires}, now=$now")
-                        android.util.Log.d("WebDAV", "Lock expired: ${now >= lockInfo.expires}, same device: ${lockInfo.owner == deviceId}")
-                        
-                        // 检查锁是否过期
-                        if (now >= lockInfo.expires) {
-                            // 锁已过期，删除旧锁
-                            android.util.Log.d("WebDAV", "Lock expired (${(now - lockInfo.expires) / 1000}s ago), deleting old lock")
-                            try {
-                                sardine.delete(lockPath)
-                                android.util.Log.d("WebDAV", "Expired lock deleted successfully")
-                            } catch (de: Exception) {
-                                android.util.Log.e("WebDAV", "Failed to delete expired lock: ${de.message}")
-                                // 继续尝试创建新锁
-                            }
-                        } else if (lockInfo.owner != deviceId) {
-                            // 锁未过期且不是同一设备
-                            val remaining = lockInfo.expires - now
-                            android.util.Log.d("WebDAV", "Lock held by another device (${lockInfo.owner}), remaining: ${remaining}ms")
-                            
-                            // 如果剩余时间很短（小于10秒），等待后重试
-                            if (remaining < 10_000) {
-                                android.util.Log.d("WebDAV", "Waiting ${remaining + 1000}ms for lock to expire...")
-                                kotlinx.coroutines.delay(remaining + 1000)
-                                // 递归重试
-                                return@withContext acquireLock(deviceId, timeout)
-                            }
-                            
-                            android.util.Log.w("WebDAV", "Cannot acquire lock - held by ${lockInfo.owner}, expires in ${remaining / 1000}s")
-                            return@withContext false
-                        } else {
-                            // 是同一设备，可以续期
-                            android.util.Log.d("WebDAV", "Lock owned by this device, will renew")
-                        }
-                    }
-                } catch (e: Exception) {
-                    // 读取锁文件失败，尝试删除
-                    android.util.Log.e("WebDAV", "Failed to read lock file: ${e.message}")
-                    try {
-                        sardine.delete(lockPath)
-                        android.util.Log.d("WebDAV", "Deleted unreadable lock file")
-                    } catch (de: Exception) {
-                        android.util.Log.e("WebDAV", "Failed to delete unreadable lock: ${de.message}")
-                    }
-                }
-            } else {
-                android.util.Log.d("WebDAV", "No existing lock file")
-            }
-            
-            // 确保 locks 目录存在
-            val locksPath = getLocksPath()
-            if (!sardine.exists(locksPath)) {
-                try {
-                    sardine.createDirectory(locksPath)
-                    android.util.Log.d("WebDAV", "Created locks directory")
-                } catch (e: Exception) {
-                    // 目录可能已存在
-                    android.util.Log.d("WebDAV", "Locks directory creation: ${e.message}")
-                }
-            }
-            
-            // 创建新锁 - 使用与 PC 端相同的格式
-            val lockInfo = LockInfo(
-                owner = deviceId,
-                acquired = System.currentTimeMillis(),
-                expires = System.currentTimeMillis() + timeout
-            )
-            val content = json.encodeToString(lockInfo)
-            android.util.Log.d("WebDAV", "Creating new lock: $content")
-            sardine.put(lockPath, content.toByteArray(), "application/json")
-            
-            android.util.Log.d("WebDAV", "Lock acquired successfully")
-            true
-        } catch (e: Exception) {
-            android.util.Log.e("WebDAV", "Failed to acquire lock: ${e.message}")
-            e.printStackTrace()
-            false
-        }
-    }
-    
-    override suspend fun releaseLock(deviceId: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val sardine = getSardine()
-            val lockPath = getLockFilePath()
-            
-            if (sardine.exists(lockPath)) {
-                val inputStream = sardine.get(lockPath)
-                val content = inputStream.bufferedReader().use { it.readText() }
-                val lockInfo = json.decodeFromString<LockInfo>(content)
-                
-                // 只能释放自己的锁
-                if (lockInfo.owner == deviceId) {
-                    sardine.delete(lockPath)
-                }
-            }
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-    
+    // ❌ 游标已移至本地存储，不再从WebDAV读写
+    // 保留这两个方法是为了兼容 WebDAVAdapter 接口
+    // 但实际上不再使用，游标由 SyncEngine 的 SharedPreferences 管理
     override suspend fun getSyncCursor(): SyncCursor? = withContext(Dispatchers.IO) {
-        try {
-            val sardine = getSardine()
-            val cursorPath = getSyncCursorPath()
-            
-            if (!sardine.exists(cursorPath)) return@withContext null
-            
-            val inputStream = sardine.get(cursorPath)
-            val content = inputStream.bufferedReader().use { it.readText() }
-            json.decodeFromString<SyncCursor>(content)
-        } catch (e: Exception) {
-            null
-        }
+        android.util.Log.w("WebDAVAdapter", "getSyncCursor is deprecated. Use SyncEngine.getLocalSyncCursor() instead.")
+        return@withContext null
     }
-    
+
     override suspend fun setSyncCursor(cursor: SyncCursor): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val sardine = getSardine()
-            val cursorPath = getSyncCursorPath()
-            val content = json.encodeToString(cursor)
-            
-            sardine.put(cursorPath, content.toByteArray(), "application/json")
-            true
-        } catch (e: Exception) {
-            false
-        }
+        android.util.Log.w("WebDAVAdapter", "setSyncCursor is deprecated. Use SyncEngine.setLocalSyncCursor() instead.")
+        return@withContext true
     }
     
     // 资源文件操作
@@ -491,12 +388,12 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
         try {
             val sardine = getSardine()
             val itemsPath = getItemsPath()
-            
+
             // 检查 items 目录是否存在且有文件
             if (!sardine.exists(itemsPath)) {
                 return@withContext false
             }
-            
+
             val items = sardine.list(itemsPath)
             // 过滤掉目录本身，只检查文件
             items.any { !it.isDirectory && it.name.endsWith(".json") }
@@ -505,17 +402,166 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
             false
         }
     }
-}
 
-/**
- * 锁信息 - 与桌面端格式一致
- */
-@kotlinx.serialization.Serializable
-private data class LockInfo(
-    val owner: String,
-    val acquired: Long,
-    val expires: Long
-)
+    override suspend fun getKeyFingerprint(): String? = withContext(Dispatchers.IO) {
+        try {
+            val sardine = getSardine()
+            val cfg = getConfig()
+            val path = "${cfg.url}${cfg.syncPath}/.encryption-key-fingerprint"
+
+            if (!sardine.exists(path)) {
+                return@withContext null
+            }
+
+            val inputStream = sardine.get(path)
+            val content = inputStream.bufferedReader().use { it.readText() }
+            content
+        } catch (e: Exception) {
+            android.util.Log.e("WebDAV", "Failed to get key fingerprint: ${e.message}")
+            null
+        }
+    }
+
+    override suspend fun saveKeyFingerprint(fingerprint: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val sardine = getSardine()
+            val cfg = getConfig()
+            val path = "${cfg.url}${cfg.syncPath}/.encryption-key-fingerprint"
+
+            sardine.put(path, fingerprint.toByteArray(), "text/plain")
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("WebDAV", "Failed to save key fingerprint: ${e.message}")
+            false
+        }
+    }
+
+    override suspend fun verifyKeyFingerprint(localFingerprint: String): KeyFingerprintResult = withContext(Dispatchers.IO) {
+        val remoteFingerprint = getKeyFingerprint()
+
+        if (remoteFingerprint == null) {
+            // 远端没有指纹，检查是否有加密数据
+            // 如果有加密数据但没有指纹，说明是旧版本数据或指纹丢失，应该报错
+            val hasData = hasData()
+            if (hasData) {
+                // 远端有数据但没有指纹，可能是密钥不匹配
+                return@withContext KeyFingerprintResult(valid = false, remoteFingerprint = null)
+            }
+            // 远端没有数据，这是真正的首次同步，保存本地指纹
+            saveKeyFingerprint(localFingerprint)
+            return@withContext KeyFingerprintResult(valid = true, remoteFingerprint = null)
+        }
+
+        // 验证指纹是否匹配
+        val valid = remoteFingerprint == localFingerprint
+        KeyFingerprintResult(valid = valid, remoteFingerprint = remoteFingerprint)
+    }
+
+    /**
+     * 记录变更到变更日志 (与桌面端保持一致)
+     *
+     * 对应桌面端 src/core/sync/WebDAVAdapter.ts 中的 recordChange 方法
+     */
+    private suspend fun recordChange(item: ItemEntity) = withContext(Dispatchers.IO) {
+        try {
+            val change = RemoteChange(
+                changeId = System.currentTimeMillis(),
+                itemId = item.id,
+                type = item.type,
+                updatedTime = item.updatedTime,
+                deletedTime = item.deletedTime,
+                contentHash = item.contentHash
+            )
+
+            val changePath = "${getChangesPath()}/${change.changeId}.json"
+            val content = json.encodeToString(change)
+
+            val sardine = getSardine()
+            sardine.put(changePath, content.toByteArray(), "application/json")
+
+            android.util.Log.d("WebDAV", "Recorded change: ${change.changeId} for item ${item.id}")
+        } catch (e: Exception) {
+            android.util.Log.e("WebDAV", "Failed to record change for item ${item.id}: ${e.message}")
+            // 不抛出异常，避免影响主流程
+        }
+    }
+
+    /**
+     * 从items目录扫描变更 (向后兼容旧版本)
+     *
+     * 用于首次同步或从旧版本升级时的回退逻辑
+     */
+    private suspend fun listChangesFromItems(cursor: String?, limit: Int): ChangeListResult = withContext(Dispatchers.IO) {
+        try {
+            val sardine = getSardine()
+            val itemsPath = getItemsPath()
+
+            if (!sardine.exists(itemsPath)) {
+                android.util.Log.d("WebDAV", "Items directory does not exist")
+                return@withContext ChangeListResult(emptyList(), null, false)
+            }
+
+            // 列出所有项目文件
+            val resources = sardine.list(itemsPath)
+
+            // 解析游标 (时间戳格式，用于向后兼容)
+            val cursorTime = cursor?.toLongOrNull() ?: 0L
+            val isFirstSync = cursorTime == 0L
+
+            // 过滤出需要同步的文件
+            val filesToSync = resources
+                .filter { !it.isDirectory && it.name.endsWith(".json") }
+                .filter { resource ->
+                    val modified = resource.modified?.time ?: System.currentTimeMillis()
+                    isFirstSync || modified >= cursorTime
+                }
+
+            android.util.Log.d("WebDAV", "[Fallback] Found ${filesToSync.size} files to sync (total: ${resources.size})")
+
+            // 批量读取文件内容并转换为RemoteChange格式
+            val changes = mutableListOf<RemoteChange>()
+            for (resource in filesToSync) {
+                val id = resource.name.removeSuffix(".json")
+                val modified = resource.modified?.time ?: System.currentTimeMillis()
+
+                try {
+                    val item = getItem(id)
+                    if (item != null) {
+                        // 转换为新的RemoteChange格式
+                        changes.add(RemoteChange(
+                            changeId = modified,
+                            itemId = item.id,
+                            type = item.type,
+                            updatedTime = item.updatedTime,
+                            deletedTime = item.deletedTime,
+                            contentHash = item.contentHash
+                        ))
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("WebDAV", "[Fallback] Failed to get item $id: ${e.message}")
+                }
+            }
+
+            // 按时间排序
+            val sortedChanges = changes.sortedBy { it.changeId }
+            val nextCursor = sortedChanges.lastOrNull()?.let {
+                (it.changeId + 1).toString()
+            }
+
+            android.util.Log.d("WebDAV", "[Fallback] Loaded ${changes.size} items")
+
+            ChangeListResult(
+                changes = sortedChanges,
+                nextCursor = nextCursor,
+                hasMore = false  // 一次性返回所有
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("WebDAV", "[Fallback] Failed to list changes from items: ${e.message}")
+            e.printStackTrace()
+            ChangeListResult(emptyList(), null, false)
+        }
+    }
+}
 
 /**
  * 工作区元数据 - 与桌面端 workspace.json 格式一致

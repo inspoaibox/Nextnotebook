@@ -13,7 +13,6 @@ import com.mucheng.notes.security.AuthResult
 import com.mucheng.notes.security.BiometricManager
 import com.mucheng.notes.security.BiometricManagerImpl
 import com.mucheng.notes.security.BiometricStatus
-import com.mucheng.notes.security.CryptoEngine
 import com.mucheng.notes.security.LockType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -71,8 +70,6 @@ data class SettingsUiState(
     val password: String = "",
     val syncPath: String = "/mucheng-notes",
     val apiKey: String = "", // 用于 server 类型
-    val encryptionEnabled: Boolean = true,
-    val encryptionPassword: String = "",
     val syncInterval: SyncInterval = SyncInterval.FIVE_MINUTES,
     val syncModules: SyncModules = SyncModules(),
     val lastSyncTime: Long? = null,
@@ -112,8 +109,7 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val appLockManager: AppLockManager,
     private val biometricManager: BiometricManager,
-    private val syncEngine: SyncEngine,
-    private val cryptoEngine: CryptoEngine
+    private val syncEngine: SyncEngine
 ) : ViewModel() {
     
     companion object {
@@ -129,8 +125,6 @@ class SettingsViewModel @Inject constructor(
         private const val KEY_PASSWORD = "password"
         private const val KEY_SYNC_PATH = "sync_path"
         private const val KEY_API_KEY = "api_key"
-        private const val KEY_ENCRYPTION_ENABLED = "encryption_enabled"
-        private const val KEY_ENCRYPTION_PASSWORD = "encryption_password"
         private const val KEY_SYNC_INTERVAL = "sync_interval"
         private const val KEY_LAST_SYNC_TIME = "last_sync_time"
         private const val KEY_SYNC_NOTES = "sync_notes"
@@ -168,9 +162,7 @@ class SettingsViewModel @Inject constructor(
         
         // 调试日志
         val loadedSyncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false)
-        val loadedEncryptionEnabled = prefs.getBoolean(KEY_ENCRYPTION_ENABLED, true)
-        val loadedEncryptionPassword = prefs.getString(KEY_ENCRYPTION_PASSWORD, "") ?: ""
-        android.util.Log.d("SettingsViewModel", "loadSettings: syncEnabled=$loadedSyncEnabled, encryptionEnabled=$loadedEncryptionEnabled, encryptionPassword=${if (loadedEncryptionPassword.isNotEmpty()) "[SET:${loadedEncryptionPassword.length}chars]" else "[EMPTY]"}")
+        android.util.Log.d("SettingsViewModel", "loadSettings: syncEnabled=$loadedSyncEnabled")
         
         _uiState.update { state ->
             state.copy(
@@ -192,8 +184,6 @@ class SettingsViewModel @Inject constructor(
                 password = prefs.getString(KEY_PASSWORD, "") ?: "",
                 syncPath = prefs.getString(KEY_SYNC_PATH, "/mucheng-notes") ?: "/mucheng-notes",
                 apiKey = prefs.getString(KEY_API_KEY, "") ?: "",
-                encryptionEnabled = prefs.getBoolean(KEY_ENCRYPTION_ENABLED, true),
-                encryptionPassword = prefs.getString(KEY_ENCRYPTION_PASSWORD, "") ?: "",
                 syncInterval = syncInterval,
                 lastSyncTime = prefs.getLong(KEY_LAST_SYNC_TIME, 0).takeIf { it > 0 },
                 syncModules = SyncModules(
@@ -286,21 +276,6 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(apiKey = apiKey) }
     }
     
-    fun setEncryptionEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_ENCRYPTION_ENABLED, enabled).apply()
-        _uiState.update { it.copy(encryptionEnabled = enabled) }
-    }
-    
-    fun setEncryptionPassword(password: String) {
-        android.util.Log.d("SettingsViewModel", "setEncryptionPassword: saving password with ${password.length} chars")
-        prefs.edit().putString(KEY_ENCRYPTION_PASSWORD, password).apply()
-        _uiState.update { it.copy(encryptionPassword = password) }
-        
-        // 验证保存是否成功
-        val saved = prefs.getString(KEY_ENCRYPTION_PASSWORD, "") ?: ""
-        android.util.Log.d("SettingsViewModel", "setEncryptionPassword: verified saved=${if (saved.isNotEmpty()) "[SET:${saved.length}chars]" else "[EMPTY]"}")
-    }
-    
     fun setSyncInterval(interval: SyncInterval) {
         prefs.edit().putInt(KEY_SYNC_INTERVAL, interval.minutes).apply()
         _uiState.update { it.copy(syncInterval = interval) }
@@ -334,6 +309,7 @@ class SettingsViewModel @Inject constructor(
     
     /**
      * 测试连接
+     * 使用 Sardine 库（与实际同步相同）来测试 WebDAV 连接
      */
     fun testConnection() {
         viewModelScope.launch {
@@ -355,155 +331,12 @@ class SettingsViewModel @Inject constructor(
             
             // 在 IO 线程执行网络请求
             val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                try {
-                    // 构建完整的测试 URL（包含同步路径）
-                    val syncPath = _uiState.value.syncPath
-                    val fullUrl = if (url.endsWith("/")) {
-                        url.dropLast(1) + syncPath
-                    } else {
-                        url + syncPath
-                    }
-                    
-                    val testUrl = java.net.URL(fullUrl)
-                    val connection = testUrl.openConnection() as java.net.HttpURLConnection
-                    
-                    // 使用 PROPFIND 方法测试 WebDAV
-                    if (_uiState.value.syncType == "webdav") {
-                        // 尝试使用 PROPFIND，如果不支持则回退到 GET
-                        try {
-                            connection.requestMethod = "PROPFIND"
-                            connection.setRequestProperty("Depth", "0")
-                            connection.setRequestProperty("Content-Type", "application/xml")
-                        } catch (e: java.net.ProtocolException) {
-                            // 某些实现不支持 PROPFIND，使用 GET
-                            connection.requestMethod = "GET"
-                        }
-                    } else {
-                        connection.requestMethod = "GET"
-                    }
-                    
-                    connection.connectTimeout = 10000
-                    connection.readTimeout = 10000
-                    connection.instanceFollowRedirects = true
-                    
-                    // 添加认证
-                    if (_uiState.value.syncType == "webdav") {
-                        val username = _uiState.value.username
-                        val password = _uiState.value.password
-                        if (username.isNotBlank() && password.isNotBlank()) {
-                            val auth = android.util.Base64.encodeToString(
-                                "$username:$password".toByteArray(),
-                                android.util.Base64.NO_WRAP
-                            )
-                            connection.setRequestProperty("Authorization", "Basic $auth")
-                        }
-                    } else {
-                        // Server 类型，添加 API Key
-                        val apiKey = _uiState.value.apiKey
-                        if (apiKey.isNotBlank()) {
-                            connection.setRequestProperty("Authorization", "Bearer $apiKey")
-                        }
-                    }
-                    
-                    val responseCode = connection.responseCode
-                    connection.disconnect()
-                    
-                    when {
-                        responseCode in 200..299 -> "连接成功"
-                        responseCode == 207 -> "连接成功" // WebDAV Multi-Status
-                        responseCode == 401 -> "连接失败: 认证失败，请检查账号密码"
-                        responseCode == 403 -> "连接失败: 访问被拒绝，请检查账号密码"
-                        responseCode == 404 -> {
-                            // 路径不存在，尝试测试根 URL 是否可访问
-                            // 这可能是因为同步目录还没有被创建（首次同步时会自动创建）
-                            val rootUrl = java.net.URL(url)
-                            val rootConnection = rootUrl.openConnection() as java.net.HttpURLConnection
-                            
-                            try {
-                                if (_uiState.value.syncType == "webdav") {
-                                    try {
-                                        rootConnection.requestMethod = "PROPFIND"
-                                        rootConnection.setRequestProperty("Depth", "0")
-                                    } catch (e: java.net.ProtocolException) {
-                                        rootConnection.requestMethod = "GET"
-                                    }
-                                } else {
-                                    rootConnection.requestMethod = "GET"
-                                }
-                                
-                                rootConnection.connectTimeout = 10000
-                                rootConnection.readTimeout = 10000
-                                
-                                val username = _uiState.value.username
-                                val password = _uiState.value.password
-                                if (username.isNotBlank() && password.isNotBlank()) {
-                                    val auth = android.util.Base64.encodeToString(
-                                        "$username:$password".toByteArray(),
-                                        android.util.Base64.NO_WRAP
-                                    )
-                                    rootConnection.setRequestProperty("Authorization", "Basic $auth")
-                                }
-                                
-                                val rootResponseCode = rootConnection.responseCode
-                                rootConnection.disconnect()
-                                
-                                when {
-                                    rootResponseCode in 200..299 || rootResponseCode == 207 -> 
-                                        "连接成功（同步目录将在首次同步时自动创建）"
-                                    rootResponseCode == 401 -> "连接失败: 认证失败，请检查账号密码"
-                                    rootResponseCode == 403 -> "连接失败: 访问被拒绝，请检查账号密码"
-                                    else -> "连接失败: 服务器根路径不可访问 ($rootResponseCode)"
-                                }
-                            } catch (e: Exception) {
-                                "连接失败: 路径不存在，请检查同步路径"
-                            } finally {
-                                try { rootConnection.disconnect() } catch (e: Exception) {}
-                            }
-                        }
-                        responseCode == 405 -> {
-                            // Method Not Allowed，尝试用 GET 再测试一次
-                            val getConnection = testUrl.openConnection() as java.net.HttpURLConnection
-                            getConnection.requestMethod = "GET"
-                            getConnection.connectTimeout = 10000
-                            getConnection.readTimeout = 10000
-                            
-                            val username = _uiState.value.username
-                            val password = _uiState.value.password
-                            if (username.isNotBlank() && password.isNotBlank()) {
-                                val auth = android.util.Base64.encodeToString(
-                                    "$username:$password".toByteArray(),
-                                    android.util.Base64.NO_WRAP
-                                )
-                                getConnection.setRequestProperty("Authorization", "Basic $auth")
-                            }
-                            
-                            val getResponseCode = getConnection.responseCode
-                            getConnection.disconnect()
-                            
-                            when {
-                                getResponseCode in 200..299 -> "连接成功"
-                                getResponseCode == 401 -> "连接失败: 认证失败，请检查账号密码"
-                                getResponseCode == 403 -> "连接失败: 访问被拒绝，请检查账号密码"
-                                else -> "连接成功（服务器可达）"
-                            }
-                        }
-                        responseCode >= 500 -> "连接失败: 服务器错误 ($responseCode)"
-                        else -> "连接失败: HTTP $responseCode"
-                    }
-                } catch (e: java.net.MalformedURLException) {
-                    "无效的 URL 格式"
-                } catch (e: java.net.UnknownHostException) {
-                    "无法解析主机名，请检查网络连接"
-                } catch (e: java.net.ConnectException) {
-                    "连接被拒绝，请检查服务器地址和端口"
-                } catch (e: java.net.SocketTimeoutException) {
-                    "连接超时，请检查网络连接"
-                } catch (e: javax.net.ssl.SSLException) {
-                    "SSL/TLS 错误: ${e.message ?: "证书验证失败"}"
-                } catch (e: java.io.IOException) {
-                    "网络错误: ${e.message ?: "IO 异常"}"
-                } catch (e: Exception) {
-                    "连接失败: ${e.javaClass.simpleName} - ${e.message ?: "未知错误"}"
+                if (_uiState.value.syncType == "webdav") {
+                    // 使用 Sardine 库测试 WebDAV 连接（与实际同步使用相同的库）
+                    testWebDAVConnectionWithSardine()
+                } else {
+                    // Server 类型使用 HTTP 测试
+                    testServerConnection()
                 }
             }
             
@@ -512,54 +345,175 @@ class SettingsViewModel @Inject constructor(
     }
     
     /**
+     * 使用 Sardine 库测试 WebDAV 连接
+     */
+    private fun testWebDAVConnectionWithSardine(): String {
+        val url = _uiState.value.webdavUrl
+        val syncPath = _uiState.value.syncPath
+        val username = _uiState.value.username
+        val password = _uiState.value.password
+        
+        return try {
+            // 创建 Sardine 客户端
+            val sardine = com.thegrizzlylabs.sardineandroid.impl.OkHttpSardine()
+            if (username.isNotBlank() && password.isNotBlank()) {
+                sardine.setCredentials(username, password)
+            }
+            
+            // 规范化 URL（移除末尾斜杠）
+            val baseUrl = if (url.endsWith("/")) url.dropLast(1) else url
+            val fullPath = "$baseUrl$syncPath"
+            
+            android.util.Log.d("SettingsViewModel", "Testing WebDAV connection to: $fullPath")
+            android.util.Log.d("SettingsViewModel", "Username: $username, Password length: ${password.length}")
+            
+            // 第一步：尝试访问根 URL 验证认证
+            try {
+                val rootExists = sardine.exists(baseUrl)
+                android.util.Log.d("SettingsViewModel", "Root URL accessible: $rootExists")
+            } catch (e: com.thegrizzlylabs.sardineandroid.impl.SardineException) {
+                android.util.Log.e("SettingsViewModel", "Root access failed: ${e.statusCode} - ${e.message}")
+                return when (e.statusCode) {
+                    401 -> "连接失败: 认证失败，请检查账号密码"
+                    403 -> "连接失败: 访问被拒绝，请检查账号密码"
+                    else -> "连接失败: HTTP ${e.statusCode}"
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Root access error: ${e.javaClass.simpleName} - ${e.message}")
+                // 继续尝试完整路径
+            }
+            
+            // 第二步：检查同步目录是否存在
+            try {
+                val pathExists = sardine.exists(fullPath)
+                android.util.Log.d("SettingsViewModel", "Sync path exists: $pathExists")
+                
+                if (pathExists) {
+                    "连接成功"
+                } else {
+                    // 目录不存在，尝试创建
+                    try {
+                        sardine.createDirectory(fullPath)
+                        android.util.Log.d("SettingsViewModel", "Created sync directory")
+                        "连接成功（已创建同步目录）"
+                    } catch (createError: Exception) {
+                        android.util.Log.w("SettingsViewModel", "Failed to create directory: ${createError.message}")
+                        // 创建失败可能是因为父目录不存在，但认证是成功的
+                        "连接成功（同步目录将在首次同步时自动创建）"
+                    }
+                }
+            } catch (e: com.thegrizzlylabs.sardineandroid.impl.SardineException) {
+                android.util.Log.e("SettingsViewModel", "Path check failed: ${e.statusCode} - ${e.message}")
+                when (e.statusCode) {
+                    401 -> "连接失败: 认证失败，请检查账号密码"
+                    403 -> "连接失败: 访问被拒绝，请检查账号密码"
+                    404 -> "连接成功（同步目录将在首次同步时自动创建）"
+                    else -> "连接失败: HTTP ${e.statusCode}"
+                }
+            }
+        } catch (e: java.net.UnknownHostException) {
+            android.util.Log.e("SettingsViewModel", "Unknown host: ${e.message}")
+            "无法解析主机名，请检查网络连接"
+        } catch (e: java.net.ConnectException) {
+            android.util.Log.e("SettingsViewModel", "Connection refused: ${e.message}")
+            "连接被拒绝，请检查服务器地址和端口"
+        } catch (e: java.net.SocketTimeoutException) {
+            android.util.Log.e("SettingsViewModel", "Timeout: ${e.message}")
+            "连接超时，请检查网络连接"
+        } catch (e: javax.net.ssl.SSLException) {
+            android.util.Log.e("SettingsViewModel", "SSL error: ${e.message}")
+            "SSL/TLS 错误: ${e.message ?: "证书验证失败"}"
+        } catch (e: java.io.IOException) {
+            android.util.Log.e("SettingsViewModel", "IO error: ${e.message}")
+            "网络错误: ${e.message ?: "IO 异常"}"
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsViewModel", "Unexpected error: ${e.javaClass.simpleName} - ${e.message}")
+            e.printStackTrace()
+            "连接失败: ${e.javaClass.simpleName} - ${e.message ?: "未知错误"}"
+        }
+    }
+    
+    /**
+     * 测试 Server 类型连接
+     */
+    private fun testServerConnection(): String {
+        val url = _uiState.value.webdavUrl
+        val syncPath = _uiState.value.syncPath
+        val apiKey = _uiState.value.apiKey
+        
+        return try {
+            val fullUrl = if (url.endsWith("/")) {
+                url.dropLast(1) + syncPath
+            } else {
+                url + syncPath
+            }
+            
+            val testUrl = java.net.URL(fullUrl)
+            val connection = testUrl.openConnection() as java.net.HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.instanceFollowRedirects = true
+            
+            if (apiKey.isNotBlank()) {
+                connection.setRequestProperty("Authorization", "Bearer $apiKey")
+            }
+            
+            val responseCode = connection.responseCode
+            connection.disconnect()
+            
+            when {
+                responseCode in 200..299 -> "连接成功"
+                responseCode == 401 -> "连接失败: 认证失败，请检查 API Key"
+                responseCode == 403 -> "连接失败: 访问被拒绝"
+                responseCode == 404 -> "连接成功（同步目录将在首次同步时自动创建）"
+                responseCode >= 500 -> "连接失败: 服务器错误 ($responseCode)"
+                else -> "连接失败: HTTP $responseCode"
+            }
+        } catch (e: java.net.MalformedURLException) {
+            "无效的 URL 格式"
+        } catch (e: java.net.UnknownHostException) {
+            "无法解析主机名，请检查网络连接"
+        } catch (e: java.net.ConnectException) {
+            "连接被拒绝，请检查服务器地址和端口"
+        } catch (e: java.net.SocketTimeoutException) {
+            "连接超时，请检查网络连接"
+        } catch (e: javax.net.ssl.SSLException) {
+            "SSL/TLS 错误: ${e.message ?: "证书验证失败"}"
+        } catch (e: java.io.IOException) {
+            "网络错误: ${e.message ?: "IO 异常"}"
+        } catch (e: Exception) {
+            "连接失败: ${e.javaClass.simpleName} - ${e.message ?: "未知错误"}"
+        }
+    }
+
+    /**
      * 立即同步
      */
     fun syncNow() {
         viewModelScope.launch {
             val url = _uiState.value.webdavUrl
-            val encryptionEnabled = _uiState.value.encryptionEnabled
-            val encryptionPassword = _uiState.value.encryptionPassword
-            
-            // 调试日志
-            android.util.Log.d("SettingsViewModel", "syncNow: encryptionEnabled=$encryptionEnabled, encryptionPassword=${if (encryptionPassword.isNotEmpty()) "[SET:${encryptionPassword.length}chars]" else "[EMPTY]"}")
-            
+
             // 验证同步配置
             if (!_uiState.value.syncEnabled) {
                 _uiState.update { it.copy(message = "请先启用同步") }
                 return@launch
             }
-            
+
             if (url.isBlank()) {
                 _uiState.update { it.copy(message = "请先配置服务器地址") }
                 return@launch
             }
-            
+
             if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 _uiState.update { it.copy(message = "服务器地址格式无效") }
-                return@launch
-            }
-            
-            // 初始化加密引擎的主密钥
-            // 注意：即使用户没有启用全局加密，也需要初始化密钥用于敏感数据（密码库）
-            // 如果用户提供了加密密钥，使用用户密钥；否则使用默认密钥
-            try {
-                if (encryptionPassword.isNotBlank()) {
-                    // 使用用户提供的密钥
-                    cryptoEngine.initMasterKey(encryptionPassword)
-                } else {
-                    // 使用默认密钥（与桌面端保持一致）
-                    // 注意：这不如用户自定义密钥安全，但比明文好
-                    cryptoEngine.initMasterKey("mucheng-default-vault-key-2024")
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(message = "密钥初始化失败: ${e.message}") }
                 return@launch
             }
             
             _uiState.update { it.copy(syncStatus = SyncStatus.SYNCING) }
             
             try {
-                // 构建同步配置
+                // 构建同步配置（明文同步）
                 val syncConfig = SyncConfig(
                     enabled = true,
                     type = _uiState.value.syncType,
@@ -568,7 +522,6 @@ class SettingsViewModel @Inject constructor(
                     username = _uiState.value.username.ifBlank { null },
                     password = _uiState.value.password.ifBlank { null },
                     apiKey = _uiState.value.apiKey.ifBlank { null },
-                    encryptionEnabled = _uiState.value.encryptionEnabled,
                     syncModules = _uiState.value.syncModules
                 )
                 
@@ -582,29 +535,19 @@ class SettingsViewModel @Inject constructor(
                     
                     val message = buildString {
                         append("同步成功")
-                        if (result.pushed > 0 || result.pulled > 0 || result.decryptionFailed > 0) {
+                        if (result.pushed > 0 || result.pulled > 0) {
                             append(" (上传 ${result.pushed}, 下载 ${result.pulled}")
                             if (result.conflicts > 0) {
                                 append(", ${result.conflicts} 个冲突")
-                            }
-                            if (result.decryptionFailed > 0) {
-                                append(", ${result.decryptionFailed} 个解密失败")
                             }
                             append(")")
                         }
                     }
                     
-                    // 如果有解密失败的项目，显示警告
-                    val finalMessage = if (result.decryptionFailed > 0) {
-                        "$message\n⚠️ 部分数据解密失败，请检查加密密钥是否与电脑端一致"
-                    } else {
-                        message
-                    }
-                    
                     _uiState.update { it.copy(
                         syncStatus = SyncStatus.SUCCESS, 
                         lastSyncTime = now, 
-                        message = finalMessage
+                        message = message
                     ) }
                 } else {
                     _uiState.update { it.copy(
@@ -697,6 +640,22 @@ class SettingsViewModel @Inject constructor(
     }
     
     /**
+     * 检查应用锁是否启用
+     */
+    fun isAppLockEnabled(): Boolean {
+        return appLockManager.isLockEnabled() && appLockManager.getLockType() != LockType.NONE
+    }
+    
+    /**
+     * 验证 PIN 码
+     * @param pin 用户输入的 PIN 码
+     * @return 验证是否成功
+     */
+    suspend fun verifyPin(pin: String): Boolean {
+        return appLockManager.verifyPin(pin)
+    }
+    
+    /**
      * 检查功能是否启用
      */
     fun isFeatureEnabled(feature: String): Boolean {
@@ -707,40 +666,6 @@ class SettingsViewModel @Inject constructor(
             "ai" -> _uiState.value.aiEnabled
             else -> true
         }
-    }
-    
-    /**
-     * 生成加密密钥
-     */
-    fun generateEncryptionKey() {
-        val key = java.util.UUID.randomUUID().toString().replace("-", "")
-        prefs.edit().putString(KEY_ENCRYPTION_PASSWORD, key).apply()
-        _uiState.update { it.copy(encryptionPassword = key, message = "已生成新密钥") }
-    }
-    
-    /**
-     * 导出加密密钥
-     */
-    fun exportEncryptionKey() {
-        val key = _uiState.value.encryptionPassword
-        if (key.isEmpty()) {
-            _uiState.update { it.copy(message = "请先设置或生成密钥") }
-            return
-        }
-        // TODO: 实现导出到文件
-        _uiState.update { it.copy(message = "密钥已复制到剪贴板") }
-    }
-    
-    /**
-     * 导入加密密钥
-     */
-    fun importEncryptionKey(key: String) {
-        if (key.isBlank()) {
-            _uiState.update { it.copy(message = "密钥不能为空") }
-            return
-        }
-        prefs.edit().putString(KEY_ENCRYPTION_PASSWORD, key).apply()
-        _uiState.update { it.copy(encryptionPassword = key, message = "密钥导入成功") }
     }
     
     /**

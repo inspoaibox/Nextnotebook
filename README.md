@@ -48,6 +48,9 @@ npm start
 ```
 
 ### 打包发布
+
+详细构建流程请参考下方 [构建指南](#-构建指南) 章节。
+
 ```bash
 # Windows
 npm run dist:win
@@ -55,6 +58,169 @@ npm run dist:win
 # 所有平台
 npm run dist
 ```
+
+## 🔨 构建指南
+
+### 电脑端 (Windows/Electron)
+
+#### 环境要求
+- Node.js >= 18
+- npm >= 9
+- Windows 10/11 (用于构建 Windows 版本)
+
+#### 构建步骤
+
+1. **安装依赖**
+```bash
+npm install
+```
+
+2. **构建代码**
+```bash
+npm run build
+```
+此命令会依次执行：
+- `npm run build:main` - 构建 Electron 主进程
+- `npm run build:renderer` - 构建 React 渲染进程
+
+3. **打包 Windows 安装包**
+```bash
+npm run dist:win
+```
+
+#### 输出文件
+构建完成后，输出文件位于 `release/` 目录：
+- `暮城笔记 Setup 1.0.0.exe` - NSIS 安装版（支持自定义安装目录）
+- `暮城笔记 1.0.0.exe` - 便携版（无需安装，直接运行）
+
+#### 其他平台
+```bash
+# macOS
+npm run dist:mac
+
+# Linux
+npm run dist:linux
+
+# 所有平台
+npm run dist
+```
+
+---
+
+### 安卓端 (Android)
+
+#### 环境要求
+- JDK 17+
+- Android SDK (API 34)
+- Gradle 8.9+
+
+#### 项目结构
+```
+android/
+├── app/
+│   ├── build.gradle.kts      # 应用构建配置
+│   ├── proguard-rules.pro    # ProGuard 混淆规则
+│   ├── mucheng-release.jks   # 签名密钥文件
+│   └── src/
+│       └── main/
+│           ├── AndroidManifest.xml
+│           ├── java/com/mucheng/notes/  # Kotlin 源码
+│           └── res/                      # 资源文件
+├── build.gradle.kts          # 项目构建配置
+├── gradle.properties         # Gradle 属性
+├── settings.gradle.kts       # 项目设置
+└── gradlew.bat              # Gradle 包装器 (Windows)
+```
+
+#### 签名配置
+签名信息已配置在 `android/app/build.gradle.kts` 中：
+```kotlin
+signingConfigs {
+    create("release") {
+        storeFile = file("mucheng-release.jks")
+        storePassword = "mucheng123"
+        keyAlias = "mucheng"
+        keyPassword = "mucheng123"
+    }
+}
+```
+
+> ⚠️ **安全提示**: 生产环境建议将签名信息移至 `local.properties` 或环境变量中，不要提交到版本控制。
+
+#### 构建步骤
+
+1. **进入 Android 目录**
+```bash
+cd android
+```
+
+2. **构建 Release APK**
+```bash
+# Windows
+.\gradlew.bat assembleRelease
+
+# macOS/Linux
+./gradlew assembleRelease
+```
+
+3. **清理后重新构建（可选）**
+```bash
+# Windows
+.\gradlew.bat clean assembleRelease
+
+# macOS/Linux
+./gradlew clean assembleRelease
+```
+
+#### 输出文件
+构建完成后，APK 文件位于：
+```
+android/app/build/outputs/apk/release/app-release.apk
+```
+
+#### 构建 Debug 版本
+```bash
+.\gradlew.bat assembleDebug
+```
+输出：`android/app/build/outputs/apk/debug/app-debug.apk`
+
+#### 常见问题
+
+1. **R8 混淆错误 (XmlPullParser 冲突)**
+   
+   已在 `build.gradle.kts` 中排除冲突依赖：
+   ```kotlin
+   implementation(libs.sardine) {
+       exclude(group = "xmlpull", module = "xmlpull")
+       exclude(group = "xpp3", module = "xpp3")
+   }
+   ```
+
+2. **Lint 检查失败**
+   
+   已禁用 Release 构建的 Lint 检查以加快构建速度。
+
+3. **签名密钥丢失**
+   
+   重新生成签名密钥：
+   ```bash
+   keytool -genkey -v -keystore android/app/mucheng-release.jks \
+     -keyalg RSA -keysize 2048 -validity 10000 \
+     -alias mucheng -storepass mucheng123 -keypass mucheng123 \
+     -dname "CN=MuchengNotes, OU=Dev, O=Mucheng, L=Beijing, ST=Beijing, C=CN"
+   ```
+   > ⚠️ 注意：更换签名密钥后，用户需要卸载旧版本才能安装新版本。
+
+---
+
+### 构建脚本速查
+
+| 平台 | 命令 | 输出 |
+|------|------|------|
+| Windows 电脑端 | `npm run dist:win` | `release/暮城笔记 Setup 1.0.0.exe` |
+| Windows 便携版 | `npm run dist:win` | `release/暮城笔记 1.0.0.exe` |
+| Android Release | `cd android && .\gradlew.bat assembleRelease` | `android/app/build/outputs/apk/release/app-release.apk` |
+| Android Debug | `cd android && .\gradlew.bat assembleDebug` | `android/app/build/outputs/apk/debug/app-debug.apk` |
 
 ## 📁 项目结构
 

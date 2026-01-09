@@ -112,4 +112,29 @@ interface CryptoEngine {
      * 检查是否有主密钥
      */
     fun hasMasterKey(): Boolean
+
+    /**
+     * 获取密钥指纹（用于验证密钥是否匹配）
+     * 返回密钥的 SHA-256 哈希值（Base64编码）
+     */
+    fun getKeyFingerprint(): String?
+
+    /**
+     * 验证密钥指纹是否匹配
+     */
+    fun verifyKeyFingerprint(fingerprint: String): Boolean
+
+    /**
+     * 导出密钥（使用密码加密）
+     * @param exportPassword 导出密码
+     * @return 加密后的密钥 JSON 字符串
+     */
+    fun exportKey(exportPassword: String): String
+
+    /**
+     * 导入密钥（使用密码解密）
+     * @param encryptedKey 加密的密钥 JSON 字符串
+     * @param importPassword 导入密码
+     */
+    fun importKey(encryptedKey: String, importPassword: String)
 }

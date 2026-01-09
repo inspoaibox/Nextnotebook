@@ -2,7 +2,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { ItemBase, ItemType, SyncModules, SYNC_MODULE_TYPES } from '@shared/types';
 import { StorageAdapter, RemoteChange, CHANGE_LOG_RETENTION } from './StorageAdapter';
 import { ItemsManager } from '../database/ItemsManager';
-import { CryptoEngine } from '../crypto/CryptoEngine';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
@@ -19,7 +18,7 @@ export interface SyncResult {
 
 // 同步进度信息
 export interface SyncProgress {
-  phase: 'idle' | 'connecting' | 'acquiring-lock' | 'verifying-key' | 'pushing' | 'pulling' | 'committing' | 'done' | 'error';
+  phase: 'idle' | 'connecting' | 'pushing' | 'pulling' | 'committing' | 'done' | 'error';
   message: string;
   current?: number;
   total?: number;
@@ -29,14 +28,10 @@ export interface SyncProgress {
 export type SyncProgressCallback = (progress: SyncProgress) => void;
 
 export interface SyncOptions {
-  encryptionEnabled: boolean;
   conflictStrategy: 'remote-wins' | 'local-wins' | 'create-copy';
   syncModules: SyncModules;
   onProgress?: SyncProgressCallback;
 }
-
-// 敏感数据类型 - 这些类型始终需要加密同步（包含密码、API Key 等敏感信息）
-const SENSITIVE_TYPES = ['vault_entry', 'vault_folder', 'ai_config'];
 
 // 获取或创建持久化的设备 ID
 function getOrCreateDeviceId(): string {
@@ -65,8 +60,6 @@ function getOrCreateDeviceId(): string {
 export class SyncEngine {
   private adapter: StorageAdapter;
   private itemsManager: ItemsManager;
-  private cryptoEngine: CryptoEngine | null;
-  private deviceId: string;
   private options: SyncOptions;
   private allowedTypes: Set<ItemType>;
   private progressCallback: SyncProgressCallback | null = null;
@@ -74,16 +67,11 @@ export class SyncEngine {
   constructor(
     adapter: StorageAdapter,
     itemsManager: ItemsManager,
-    cryptoEngine: CryptoEngine | null = null,
     options: Partial<SyncOptions> = {}
   ) {
     this.adapter = adapter;
     this.itemsManager = itemsManager;
-    this.cryptoEngine = cryptoEngine;
-    // 使用持久化的设备 ID，确保同一设备始终使用相同的 ID
-    this.deviceId = getOrCreateDeviceId();
     this.options = {
-      encryptionEnabled: false,
       conflictStrategy: 'create-copy',
       syncModules: {
         notes: true,
@@ -142,64 +130,37 @@ export class SyncEngine {
     };
 
     try {
-      // 1. 获取锁
-      this.reportProgress({ phase: 'acquiring-lock', message: '正在获取同步锁...' });
-      const lockAcquired = await this.adapter.acquireLock(this.deviceId);
-      if (!lockAcquired) {
-        this.reportProgress({ phase: 'error', message: '获取同步锁失败', detail: '可能有其他设备正在同步' });
-        result.errors.push('Failed to acquire sync lock - another device may be syncing');
-        return result;
+      // 1. Push 阶段 - 上传本地变更
+      this.reportProgress({ phase: 'pushing', message: '正在检查本地变更...' });
+      const pushResult = await this.pushChanges();
+      result.pushed = pushResult.count;
+      result.errors.push(...pushResult.errors);
+
+      // 2. Pull 阶段 - 拉取远端变更
+      this.reportProgress({ phase: 'pulling', message: '正在检查远端变更...' });
+      const pullResult = await this.pullChanges();
+      result.pulled = pullResult.count;
+      result.conflicts = pullResult.conflicts;
+      result.errors.push(...pullResult.errors);
+
+      // 3. Commit 阶段 - 更新同步状态
+      this.reportProgress({ phase: 'committing', message: '正在完成同步...' });
+      await this.commitSync();
+
+      // 4. 清理过期的变更日志
+      if (this.adapter.cleanupChangeLogs) {
+        const cleanupBefore = Date.now() - CHANGE_LOG_RETENTION;
+        result.cleanedChangeLogs = await this.adapter.cleanupChangeLogs(cleanupBefore);
       }
-      this.reportProgress({ phase: 'acquiring-lock', message: '已获取同步锁' });
 
-      try {
-        // 2. 验证密钥（如果启用加密）
-        if (this.options.encryptionEnabled) {
-          this.reportProgress({ phase: 'verifying-key', message: '正在验证加密密钥...' });
-          const keyValid = await this.verifyEncryptionKey();
-          if (!keyValid) {
-            this.reportProgress({ phase: 'error', message: '密钥验证失败', detail: '同步密钥不匹配' });
-            result.errors.push('Encryption key mismatch - 同步密钥不匹配，请确保使用相同的密钥');
-            return result;
-          }
-          this.reportProgress({ phase: 'verifying-key', message: '密钥验证通过' });
-        }
-
-        // 3. Push 阶段 - 上传本地变更
-        this.reportProgress({ phase: 'pushing', message: '正在检查本地变更...' });
-        const pushResult = await this.pushChanges();
-        result.pushed = pushResult.count;
-        result.errors.push(...pushResult.errors);
-
-        // 4. Pull 阶段 - 拉取远端变更
-        this.reportProgress({ phase: 'pulling', message: '正在检查远端变更...' });
-        const pullResult = await this.pullChanges();
-        result.pulled = pullResult.count;
-        result.conflicts = pullResult.conflicts;
-        result.errors.push(...pullResult.errors);
-
-        // 5. Commit 阶段 - 更新同步状态
-        this.reportProgress({ phase: 'committing', message: '正在完成同步...' });
-        await this.commitSync();
-
-        // 6. 清理过期的变更日志
-        if (this.adapter.cleanupChangeLogs) {
-          const cleanupBefore = Date.now() - CHANGE_LOG_RETENTION;
-          result.cleanedChangeLogs = await this.adapter.cleanupChangeLogs(cleanupBefore);
-        }
-
-        result.success = result.errors.length === 0;
-        
-        const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
-        this.reportProgress({ 
-          phase: 'done', 
-          message: `同步完成 (${durationSec}s)`,
-          detail: `上传 ${result.pushed} 项, 下载 ${result.pulled} 项${result.conflicts > 0 ? `, ${result.conflicts} 个冲突` : ''}`
-        });
-      } finally {
-        // 释放锁
-        await this.adapter.releaseLock(this.deviceId);
-      }
+      result.success = result.errors.length === 0;
+      
+      const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+      this.reportProgress({ 
+        phase: 'done', 
+        message: `同步完成 (${durationSec}s)`,
+        detail: `上传 ${result.pushed} 项, 下载 ${result.pulled} 项${result.conflicts > 0 ? `, ${result.conflicts} 个冲突` : ''}`
+      });
     } catch (error) {
       this.reportProgress({ phase: 'error', message: '同步失败', detail: (error as Error).message });
       result.errors.push(`Sync failed: ${(error as Error).message}`);
@@ -227,18 +188,11 @@ export class SyncEngine {
 
     for (const item of pendingItems) {
       try {
-        // 判断是否需要加密
-        const isSensitive = SENSITIVE_TYPES.includes(item.type);
-        const shouldEncrypt = (this.options.encryptionEnabled || isSensitive) && this.cryptoEngine;
-        
-        let itemToUpload = item;
-        if (shouldEncrypt) {
-          itemToUpload = {
-            ...item,
-            payload: this.cryptoEngine!.encryptPayload(item.payload),
-            encryption_applied: 1,
-          };
-        }
+        // 明文同步：确保 encryption_applied = 0
+        const itemToUpload: ItemBase = {
+          ...item,
+          encryption_applied: 0 as const,
+        };
 
         // 上传
         const result = await this.adapter.putItem(itemToUpload);
@@ -272,11 +226,12 @@ export class SyncEngine {
     let count = 0;
     let conflicts = 0;
 
-    // 获取当前游标
-    const cursor = await this.adapter.getSyncCursor();
-    let currentCursor = cursor?.cursor || null;
+    // ✅ 从本地数据库获取游标（每个设备独立维护）
+    const localCursor = this.itemsManager.getLocalSyncCursor();
+    let currentCursor = localCursor?.cursor || null;
     let lastSuccessfulCursor = currentCursor;  // 记录最后成功处理的游标
 
+    console.log('[SyncEngine] Pull starting with local cursor:', currentCursor);
     this.reportProgress({ phase: 'pulling', message: '正在获取远端变更列表...' });
 
     // 循环拉取所有变更
@@ -331,13 +286,15 @@ export class SyncEngine {
           }
         }
 
-        // 每批次处理完成后更新游标（增量更新，避免重复处理）
+        // 每批次处理完成后更新本地游标（增量更新，避免重复处理）
         if (nextCursor && batchSuccessful) {
           lastSuccessfulCursor = nextCursor;
-          await this.adapter.setSyncCursor({
+          // ✅ 保存到本地数据库（不再保存到WebDAV）
+          this.itemsManager.setLocalSyncCursor({
             cursor: lastSuccessfulCursor,
             timestamp: Date.now(),
           });
+          console.log('[SyncEngine] Updated local cursor to:', lastSuccessfulCursor);
         }
 
         currentCursor = nextCursor;
@@ -407,27 +364,16 @@ export class SyncEngine {
       return { success: true, conflict: false };
     }
 
-    // 解密（如果需要）
-    let decryptedItem = remoteItem;
-    if (remoteItem.encryption_applied && this.cryptoEngine) {
-      try {
-        decryptedItem = {
-          ...remoteItem,
-          payload: this.cryptoEngine.decryptPayload(remoteItem.payload),
-          encryption_applied: 0,
-        };
-      } catch (error) {
-        return { success: false, conflict: false, error: `Failed to decrypt item ${change.item_id}: ${(error as Error).message}` };
-      }
-    }
+    // 直接使用远端数据（不再需要解密）
+    const itemToSave = remoteItem;
 
     // 写入本地
     if (localItem) {
       // 更新现有记录
-      this.itemsManager.update(change.item_id, JSON.parse(decryptedItem.payload));
+      this.itemsManager.update(change.item_id, JSON.parse(itemToSave.payload));
     } else {
       // 创建新记录（使用远端的 ID）
-      this.itemsManager.createWithId(decryptedItem);
+      this.itemsManager.createWithId(itemToSave);
     }
 
     return { success: true, conflict: false };
@@ -471,31 +417,11 @@ export class SyncEngine {
   }
 
   // 验证加密密钥
-  private async verifyEncryptionKey(): Promise<boolean> {
-    if (!this.cryptoEngine) return true;
-
-    const remoteMeta = await this.adapter.getRemoteMeta();
-
-    // 如果远端没有密钥标识，说明是首次同步
-    if (!remoteMeta.key_identifier) {
-      return true;
-    }
-
-    // 比较密钥标识
-    const localKeyId = this.cryptoEngine.generateKeyIdentifier();
-    return localKeyId === remoteMeta.key_identifier;
-  }
-
   // Commit 阶段
   private async commitSync(): Promise<void> {
     // 更新远端元数据
     const meta = await this.adapter.getRemoteMeta();
     meta.last_sync_time = Date.now();
-
-    if (this.options.encryptionEnabled && this.cryptoEngine) {
-      meta.key_identifier = this.cryptoEngine.generateKeyIdentifier();
-    }
-
     await this.adapter.putRemoteMeta(meta);
   }
 
@@ -525,13 +451,12 @@ export class SyncEngine {
   }> {
     const pendingItems = this.itemsManager.getPendingSync()
       .filter(item => this.shouldSyncType(item.type));
-    const cursor = await this.adapter.getSyncCursor();
-    const lockStatus = await this.adapter.checkLock();
+    const localCursor = this.itemsManager.getLocalSyncCursor();
 
     return {
       pendingPush: pendingItems.length,
-      lastSyncTime: cursor?.timestamp || null,
-      isLocked: lockStatus.locked,
+      lastSyncTime: localCursor?.timestamp || null,
+      isLocked: false,  // 锁机制已移除
     };
   }
 

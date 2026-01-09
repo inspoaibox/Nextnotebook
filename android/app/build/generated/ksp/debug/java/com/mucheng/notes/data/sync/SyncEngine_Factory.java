@@ -1,8 +1,8 @@
 package com.mucheng.notes.data.sync;
 
+import android.content.Context;
 import com.mucheng.notes.data.local.dao.ItemDao;
 import com.mucheng.notes.data.remote.WebDAVAdapter;
-import com.mucheng.notes.security.CryptoEngine;
 import dagger.internal.DaggerGenerated;
 import dagger.internal.Factory;
 import dagger.internal.QualifierMetadata;
@@ -11,7 +11,7 @@ import javax.annotation.processing.Generated;
 import javax.inject.Provider;
 
 @ScopeMetadata("javax.inject.Singleton")
-@QualifierMetadata
+@QualifierMetadata("dagger.hilt.android.qualifiers.ApplicationContext")
 @DaggerGenerated
 @Generated(
     value = "dagger.internal.codegen.ComponentProcessor",
@@ -30,27 +30,27 @@ public final class SyncEngine_Factory implements Factory<SyncEngine> {
 
   private final Provider<ItemDao> itemDaoProvider;
 
-  private final Provider<CryptoEngine> cryptoEngineProvider;
+  private final Provider<Context> contextProvider;
 
   public SyncEngine_Factory(Provider<WebDAVAdapter> webDAVAdapterProvider,
-      Provider<ItemDao> itemDaoProvider, Provider<CryptoEngine> cryptoEngineProvider) {
+      Provider<ItemDao> itemDaoProvider, Provider<Context> contextProvider) {
     this.webDAVAdapterProvider = webDAVAdapterProvider;
     this.itemDaoProvider = itemDaoProvider;
-    this.cryptoEngineProvider = cryptoEngineProvider;
+    this.contextProvider = contextProvider;
   }
 
   @Override
   public SyncEngine get() {
-    return newInstance(webDAVAdapterProvider.get(), itemDaoProvider.get(), cryptoEngineProvider.get());
+    return newInstance(webDAVAdapterProvider.get(), itemDaoProvider.get(), contextProvider.get());
   }
 
   public static SyncEngine_Factory create(Provider<WebDAVAdapter> webDAVAdapterProvider,
-      Provider<ItemDao> itemDaoProvider, Provider<CryptoEngine> cryptoEngineProvider) {
-    return new SyncEngine_Factory(webDAVAdapterProvider, itemDaoProvider, cryptoEngineProvider);
+      Provider<ItemDao> itemDaoProvider, Provider<Context> contextProvider) {
+    return new SyncEngine_Factory(webDAVAdapterProvider, itemDaoProvider, contextProvider);
   }
 
   public static SyncEngine newInstance(WebDAVAdapter webDAVAdapter, ItemDao itemDao,
-      CryptoEngine cryptoEngine) {
-    return new SyncEngine(webDAVAdapter, itemDao, cryptoEngine);
+      Context context) {
+    return new SyncEngine(webDAVAdapter, itemDao, context);
   }
 }

@@ -2,12 +2,66 @@ import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 import { ItemBase, ItemType, SyncStatus } from '@shared/types';
 import { DatabaseManager } from './Database';
+import { SyncCursor } from '../sync/StorageAdapter';
 
 export class ItemsManager {
   private db: DatabaseManager;
 
   constructor(db: DatabaseManager) {
     this.db = db;
+  }
+
+  // ========== 同步游标管理（本地存储）==========
+
+  /**
+   * 获取本地同步游标
+   */
+  getLocalSyncCursor(): SyncCursor | null {
+    try {
+      const result = this.db.get<{ value: string }>(
+        'SELECT value FROM sync_meta WHERE key = ?',
+        ['sync_cursor']
+      );
+      if (!result || !result.value || result.value === '0') {
+        return null;
+      }
+      return JSON.parse(result.value);
+    } catch (error) {
+      console.error('Failed to get local sync cursor:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 设置本地同步游标
+   */
+  setLocalSyncCursor(cursor: SyncCursor): boolean {
+    try {
+      this.db.run(
+        'INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)',
+        ['sync_cursor', JSON.stringify(cursor)]
+      );
+      return true;
+    } catch (error) {
+      console.error('Failed to set local sync cursor:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 清除本地同步游标（用于重置同步状态）
+   */
+  clearLocalSyncCursor(): boolean {
+    try {
+      this.db.run(
+        'INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)',
+        ['sync_cursor', '0']
+      );
+      return true;
+    } catch (error) {
+      console.error('Failed to clear local sync cursor:', error);
+      return false;
+    }
   }
 
   // 计算内容哈希

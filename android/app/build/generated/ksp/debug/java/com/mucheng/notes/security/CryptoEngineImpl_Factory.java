@@ -1,13 +1,15 @@
 package com.mucheng.notes.security;
 
+import android.content.Context;
 import dagger.internal.DaggerGenerated;
 import dagger.internal.Factory;
 import dagger.internal.QualifierMetadata;
 import dagger.internal.ScopeMetadata;
 import javax.annotation.processing.Generated;
+import javax.inject.Provider;
 
 @ScopeMetadata("javax.inject.Singleton")
-@QualifierMetadata
+@QualifierMetadata("dagger.hilt.android.qualifiers.ApplicationContext")
 @DaggerGenerated
 @Generated(
     value = "dagger.internal.codegen.ComponentProcessor",
@@ -22,20 +24,22 @@ import javax.annotation.processing.Generated;
     "deprecation"
 })
 public final class CryptoEngineImpl_Factory implements Factory<CryptoEngineImpl> {
+  private final Provider<Context> contextProvider;
+
+  public CryptoEngineImpl_Factory(Provider<Context> contextProvider) {
+    this.contextProvider = contextProvider;
+  }
+
   @Override
   public CryptoEngineImpl get() {
-    return newInstance();
+    return newInstance(contextProvider.get());
   }
 
-  public static CryptoEngineImpl_Factory create() {
-    return InstanceHolder.INSTANCE;
+  public static CryptoEngineImpl_Factory create(Provider<Context> contextProvider) {
+    return new CryptoEngineImpl_Factory(contextProvider);
   }
 
-  public static CryptoEngineImpl newInstance() {
-    return new CryptoEngineImpl();
-  }
-
-  private static final class InstanceHolder {
-    private static final CryptoEngineImpl_Factory INSTANCE = new CryptoEngineImpl_Factory();
+  public static CryptoEngineImpl newInstance(Context context) {
+    return new CryptoEngineImpl(context);
   }
 }

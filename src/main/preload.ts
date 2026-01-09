@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 主题设置（保存到主进程可读取的文件，用于启动时背景色）
   saveThemeSettings: (settings: { theme: string }) => ipcRenderer.invoke('save-theme-settings', settings),
   
+  // 同步配置（保存到主进程文件系统，确保持久化）
+  saveSyncConfig: (config: object) => ipcRenderer.invoke('save-sync-config', config),
+  loadSyncConfig: () => ipcRenderer.invoke('load-sync-config'),
+  
   // 窗口操作
   minimizeToTray: () => ipcRenderer.send('window-minimize-to-tray'),
   quitApp: () => ipcRenderer.send('window-quit'),
@@ -72,6 +76,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     forceResync: () => ipcRenderer.invoke('sync:forceResync'),
     resetStatus: () => ipcRenderer.invoke('sync:resetStatus'),
     checkFirstSync: () => ipcRenderer.invoke('sync:checkFirstSync'),
+    // 监听同步时间更新事件
+    onLastSyncTimeUpdated: (callback: (lastSyncTime: number) => void) => {
+      ipcRenderer.on('sync:lastSyncTimeUpdated', (_event, lastSyncTime: number) => callback(lastSyncTime));
+    },
+  },
+
+  // Crypto API
+  crypto: {
+    generateKey: (exportPassword: string) => ipcRenderer.invoke('crypto:generateKey', exportPassword),
+    exportKey: (masterKey: string, exportPassword: string) => ipcRenderer.invoke('crypto:exportKey', masterKey, exportPassword),
+    importKey: (encryptedKey: string, importPassword: string) => ipcRenderer.invoke('crypto:importKey', encryptedKey, importPassword),
   },
   
   // 文件操作

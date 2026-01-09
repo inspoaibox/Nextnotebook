@@ -425,42 +425,42 @@ public final class DaggerMuchengNotesApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
-      static String com_mucheng_notes_presentation_viewmodel_BookmarksViewModel = "com.mucheng.notes.presentation.viewmodel.BookmarksViewModel";
-
-      static String com_mucheng_notes_presentation_viewmodel_NotesViewModel = "com.mucheng.notes.presentation.viewmodel.NotesViewModel";
-
-      static String com_mucheng_notes_presentation_viewmodel_AIViewModel = "com.mucheng.notes.presentation.viewmodel.AIViewModel";
-
-      static String com_mucheng_notes_presentation_viewmodel_SettingsViewModel = "com.mucheng.notes.presentation.viewmodel.SettingsViewModel";
+      static String com_mucheng_notes_presentation_viewmodel_NoteDetailViewModel = "com.mucheng.notes.presentation.viewmodel.NoteDetailViewModel";
 
       static String com_mucheng_notes_presentation_viewmodel_TodosViewModel = "com.mucheng.notes.presentation.viewmodel.TodosViewModel";
 
-      static String com_mucheng_notes_presentation_viewmodel_LockScreenViewModel = "com.mucheng.notes.presentation.viewmodel.LockScreenViewModel";
+      static String com_mucheng_notes_presentation_viewmodel_AIViewModel = "com.mucheng.notes.presentation.viewmodel.AIViewModel";
 
-      static String com_mucheng_notes_presentation_viewmodel_NoteDetailViewModel = "com.mucheng.notes.presentation.viewmodel.NoteDetailViewModel";
+      static String com_mucheng_notes_presentation_viewmodel_BookmarksViewModel = "com.mucheng.notes.presentation.viewmodel.BookmarksViewModel";
+
+      static String com_mucheng_notes_presentation_viewmodel_SettingsViewModel = "com.mucheng.notes.presentation.viewmodel.SettingsViewModel";
+
+      static String com_mucheng_notes_presentation_viewmodel_NotesViewModel = "com.mucheng.notes.presentation.viewmodel.NotesViewModel";
+
+      static String com_mucheng_notes_presentation_viewmodel_LockScreenViewModel = "com.mucheng.notes.presentation.viewmodel.LockScreenViewModel";
 
       static String com_mucheng_notes_presentation_viewmodel_VaultViewModel = "com.mucheng.notes.presentation.viewmodel.VaultViewModel";
 
       @KeepFieldType
-      BookmarksViewModel com_mucheng_notes_presentation_viewmodel_BookmarksViewModel2;
-
-      @KeepFieldType
-      NotesViewModel com_mucheng_notes_presentation_viewmodel_NotesViewModel2;
-
-      @KeepFieldType
-      AIViewModel com_mucheng_notes_presentation_viewmodel_AIViewModel2;
-
-      @KeepFieldType
-      SettingsViewModel com_mucheng_notes_presentation_viewmodel_SettingsViewModel2;
+      NoteDetailViewModel com_mucheng_notes_presentation_viewmodel_NoteDetailViewModel2;
 
       @KeepFieldType
       TodosViewModel com_mucheng_notes_presentation_viewmodel_TodosViewModel2;
 
       @KeepFieldType
-      LockScreenViewModel com_mucheng_notes_presentation_viewmodel_LockScreenViewModel2;
+      AIViewModel com_mucheng_notes_presentation_viewmodel_AIViewModel2;
 
       @KeepFieldType
-      NoteDetailViewModel com_mucheng_notes_presentation_viewmodel_NoteDetailViewModel2;
+      BookmarksViewModel com_mucheng_notes_presentation_viewmodel_BookmarksViewModel2;
+
+      @KeepFieldType
+      SettingsViewModel com_mucheng_notes_presentation_viewmodel_SettingsViewModel2;
+
+      @KeepFieldType
+      NotesViewModel com_mucheng_notes_presentation_viewmodel_NotesViewModel2;
+
+      @KeepFieldType
+      LockScreenViewModel com_mucheng_notes_presentation_viewmodel_LockScreenViewModel2;
 
       @KeepFieldType
       VaultViewModel com_mucheng_notes_presentation_viewmodel_VaultViewModel2;
@@ -525,45 +525,45 @@ public final class DaggerMuchengNotesApp_HiltComponents_SingletonC {
 
     @IdentifierNameString
     private static final class LazyClassKeyProvider {
+      static String com_mucheng_notes_presentation_viewmodel_SettingsViewModel = "com.mucheng.notes.presentation.viewmodel.SettingsViewModel";
+
+      static String com_mucheng_notes_presentation_viewmodel_AIViewModel = "com.mucheng.notes.presentation.viewmodel.AIViewModel";
+
+      static String com_mucheng_notes_presentation_viewmodel_BookmarksViewModel = "com.mucheng.notes.presentation.viewmodel.BookmarksViewModel";
+
       static String com_mucheng_notes_presentation_viewmodel_NoteDetailViewModel = "com.mucheng.notes.presentation.viewmodel.NoteDetailViewModel";
+
+      static String com_mucheng_notes_presentation_viewmodel_VaultViewModel = "com.mucheng.notes.presentation.viewmodel.VaultViewModel";
+
+      static String com_mucheng_notes_presentation_viewmodel_LockScreenViewModel = "com.mucheng.notes.presentation.viewmodel.LockScreenViewModel";
 
       static String com_mucheng_notes_presentation_viewmodel_NotesViewModel = "com.mucheng.notes.presentation.viewmodel.NotesViewModel";
 
       static String com_mucheng_notes_presentation_viewmodel_TodosViewModel = "com.mucheng.notes.presentation.viewmodel.TodosViewModel";
 
-      static String com_mucheng_notes_presentation_viewmodel_AIViewModel = "com.mucheng.notes.presentation.viewmodel.AIViewModel";
+      @KeepFieldType
+      SettingsViewModel com_mucheng_notes_presentation_viewmodel_SettingsViewModel2;
 
-      static String com_mucheng_notes_presentation_viewmodel_LockScreenViewModel = "com.mucheng.notes.presentation.viewmodel.LockScreenViewModel";
+      @KeepFieldType
+      AIViewModel com_mucheng_notes_presentation_viewmodel_AIViewModel2;
 
-      static String com_mucheng_notes_presentation_viewmodel_SettingsViewModel = "com.mucheng.notes.presentation.viewmodel.SettingsViewModel";
-
-      static String com_mucheng_notes_presentation_viewmodel_VaultViewModel = "com.mucheng.notes.presentation.viewmodel.VaultViewModel";
-
-      static String com_mucheng_notes_presentation_viewmodel_BookmarksViewModel = "com.mucheng.notes.presentation.viewmodel.BookmarksViewModel";
+      @KeepFieldType
+      BookmarksViewModel com_mucheng_notes_presentation_viewmodel_BookmarksViewModel2;
 
       @KeepFieldType
       NoteDetailViewModel com_mucheng_notes_presentation_viewmodel_NoteDetailViewModel2;
+
+      @KeepFieldType
+      VaultViewModel com_mucheng_notes_presentation_viewmodel_VaultViewModel2;
+
+      @KeepFieldType
+      LockScreenViewModel com_mucheng_notes_presentation_viewmodel_LockScreenViewModel2;
 
       @KeepFieldType
       NotesViewModel com_mucheng_notes_presentation_viewmodel_NotesViewModel2;
 
       @KeepFieldType
       TodosViewModel com_mucheng_notes_presentation_viewmodel_TodosViewModel2;
-
-      @KeepFieldType
-      AIViewModel com_mucheng_notes_presentation_viewmodel_AIViewModel2;
-
-      @KeepFieldType
-      LockScreenViewModel com_mucheng_notes_presentation_viewmodel_LockScreenViewModel2;
-
-      @KeepFieldType
-      SettingsViewModel com_mucheng_notes_presentation_viewmodel_SettingsViewModel2;
-
-      @KeepFieldType
-      VaultViewModel com_mucheng_notes_presentation_viewmodel_VaultViewModel2;
-
-      @KeepFieldType
-      BookmarksViewModel com_mucheng_notes_presentation_viewmodel_BookmarksViewModel2;
     }
 
     private static final class SwitchingProvider<T> implements Provider<T> {
@@ -603,7 +603,7 @@ public final class DaggerMuchengNotesApp_HiltComponents_SingletonC {
           return (T) new NotesViewModel(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule), singletonCImpl.itemRepositoryImplProvider.get(), singletonCImpl.syncRepositoryImplProvider.get(), singletonCImpl.cryptoEngineImplProvider.get());
 
           case 5: // com.mucheng.notes.presentation.viewmodel.SettingsViewModel 
-          return (T) new SettingsViewModel(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule), singletonCImpl.appLockManagerImplProvider.get(), singletonCImpl.biometricManagerImplProvider.get(), singletonCImpl.syncEngineProvider.get(), singletonCImpl.cryptoEngineImplProvider.get());
+          return (T) new SettingsViewModel(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule), singletonCImpl.appLockManagerImplProvider.get(), singletonCImpl.biometricManagerImplProvider.get(), singletonCImpl.syncEngineProvider.get());
 
           case 6: // com.mucheng.notes.presentation.viewmodel.TodosViewModel 
           return (T) new TodosViewModel(singletonCImpl.itemRepositoryImplProvider.get());
@@ -780,13 +780,13 @@ public final class DaggerMuchengNotesApp_HiltComponents_SingletonC {
           return (T) new BiometricManagerImpl(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
 
           case 5: // com.mucheng.notes.security.CryptoEngineImpl 
-          return (T) new CryptoEngineImpl();
+          return (T) new CryptoEngineImpl(ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
 
           case 6: // com.mucheng.notes.data.repository.SyncRepositoryImpl 
           return (T) new SyncRepositoryImpl(singletonCImpl.syncEngineProvider.get());
 
           case 7: // com.mucheng.notes.data.sync.SyncEngine 
-          return (T) new SyncEngine(singletonCImpl.webDAVAdapterImplProvider.get(), singletonCImpl.provideItemDaoProvider.get(), singletonCImpl.cryptoEngineImplProvider.get());
+          return (T) new SyncEngine(singletonCImpl.webDAVAdapterImplProvider.get(), singletonCImpl.provideItemDaoProvider.get(), ApplicationContextModule_ProvideContextFactory.provideContext(singletonCImpl.applicationContextModule));
 
           case 8: // com.mucheng.notes.data.remote.WebDAVAdapterImpl 
           return (T) new WebDAVAdapterImpl();

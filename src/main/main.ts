@@ -13,6 +13,53 @@ let isQuitting = false;
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// 日志文件路径
+let logFilePath: string | null = null;
+
+// 初始化日志文件
+function initLogFile() {
+  try {
+    const userDataPath = app.getPath('userData');
+    logFilePath = path.join(userDataPath, 'main-process.log');
+    // 清空旧日志
+    fs.writeFileSync(logFilePath, `=== 暮城笔记 主进程日志 ===\n启动时间: ${new Date().toISOString()}\n\n`);
+  } catch (e) {
+    console.error('Failed to init log file:', e);
+  }
+}
+
+// 写入日志
+function writeLog(message: string) {
+  if (logFilePath) {
+    try {
+      const timestamp = new Date().toISOString();
+      fs.appendFileSync(logFilePath, `[${timestamp}] ${message}\n`);
+    } catch (e) {
+      // ignore
+    }
+  }
+}
+
+// 重写 console.log 以同时写入文件
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+console.log = (...args: any[]) => {
+  originalConsoleLog.apply(console, args);
+  writeLog('[LOG] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+};
+
+console.error = (...args: any[]) => {
+  originalConsoleError.apply(console, args);
+  writeLog('[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+};
+
+console.warn = (...args: any[]) => {
+  originalConsoleWarn.apply(console, args);
+  writeLog('[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+};
+
 // 获取用户设置文件路径
 function getSettingsPath(): string {
   const userDataPath = app.getPath('userData');
@@ -316,6 +363,8 @@ function createTray(): void {
 }
 
 app.whenReady().then(() => {
+  initLogFile();
+  console.log('App starting...');
   initializeDatabase();
   registerSyncIpcHandlers();
   createWindow();
@@ -381,6 +430,35 @@ ipcMain.handle('save-theme-settings', (_event, settings: { theme: string }) => {
   } catch (e) {
     console.error('Failed to save theme settings:', e);
     return false;
+  }
+});
+
+// 保存同步配置到文件系统（确保持久化）
+ipcMain.handle('save-sync-config', (_event, config: object) => {
+  try {
+    const syncConfigPath = path.join(app.getPath('userData'), 'sync-config.json');
+    fs.writeFileSync(syncConfigPath, JSON.stringify(config, null, 2), 'utf8');
+    console.log('[Main] Saved sync config to:', syncConfigPath);
+    return true;
+  } catch (e) {
+    console.error('Failed to save sync config:', e);
+    return false;
+  }
+});
+
+// 加载同步配置
+ipcMain.handle('load-sync-config', () => {
+  try {
+    const syncConfigPath = path.join(app.getPath('userData'), 'sync-config.json');
+    if (fs.existsSync(syncConfigPath)) {
+      const content = fs.readFileSync(syncConfigPath, 'utf8');
+      console.log('[Main] Loaded sync config from:', syncConfigPath);
+      return JSON.parse(content);
+    }
+    return null;
+  } catch (e) {
+    console.error('Failed to load sync config:', e);
+    return null;
   }
 });
 

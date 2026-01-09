@@ -28,7 +28,6 @@ data class SyncConfig(
     val username: String? = null,
     val password: String? = null,
     @SerialName("api_key") val apiKey: String? = null, // 用于 server 类型同步
-    @SerialName("encryption_enabled") val encryptionEnabled: Boolean = true,
     @SerialName("sync_interval") val syncInterval: Int = 5, // minutes
     @SerialName("last_sync_time") val lastSyncTime: Long? = null,
     @SerialName("sync_cursor") val syncCursor: String? = null,
@@ -81,7 +80,6 @@ data class SyncResult(
     val pushed: Int = 0,
     val pulled: Int = 0,
     val conflicts: Int = 0,
-    val decryptionFailed: Int = 0,  // 解密失败的项目数
     val error: String? = null,
     val duration: Long = 0
 )
