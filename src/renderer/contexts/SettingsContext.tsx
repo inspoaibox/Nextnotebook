@@ -50,6 +50,10 @@ interface SettingsContextType {
   setSyncApiKey: (apiKey: string) => void;
   setSyncInterval: (interval: number) => void;
   setSyncModule: (module: keyof SyncModules, enabled: boolean) => void;
+  // 服务器认证相关
+  setServerAuth: (username: string, password: string, syncKey: string) => void;
+  setServerToken: (token: string, refreshToken: string, expiresIn: number) => void;
+  clearServerAuth: () => void;
   resetSettings: () => void;
   isDarkMode: boolean;
 }
@@ -157,7 +161,25 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
       }
     };
     loadSyncConfig();
-  }, []);
+
+    // 监听 token 刷新事件
+    const api = (window as any).electronAPI;
+    if (api?.sync?.onTokenRefreshed) {
+      api.sync.onTokenRefreshed((data: { token: string; refreshToken: string; expiresIn: number }) => {
+        console.log('[SettingsContext] Token refreshed, updating config');
+        setSyncConfigState((prev: SyncConfig) => {
+          const newConfig = {
+            ...prev,
+            server_token: data.token,
+            server_refresh_token: data.refreshToken,
+            server_token_expires: Date.now() + data.expiresIn * 1000,
+          };
+          persistSyncConfig(newConfig);
+          return newConfig;
+        });
+      });
+    }
+  }, [persistSyncConfig]);
 
   // 监听系统主题变化
   useEffect(() => {
@@ -283,6 +305,40 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     [persistSyncConfig]
   );
 
+  // 服务器认证相关方法
+  const setServerAuth = useCallback(
+    (username: string, password: string, syncKey: string) => {
+      updateSyncConfig({
+        server_username: username,
+        server_password: password,
+        server_sync_key: syncKey,
+      });
+    },
+    [updateSyncConfig]
+  );
+
+  const setServerToken = useCallback(
+    (token: string, refreshToken: string, expiresIn: number) => {
+      updateSyncConfig({
+        server_token: token,
+        server_refresh_token: refreshToken,
+        server_token_expires: Date.now() + expiresIn * 1000,
+      });
+    },
+    [updateSyncConfig]
+  );
+
+  const clearServerAuth = useCallback(() => {
+    updateSyncConfig({
+      server_username: undefined,
+      server_password: undefined,
+      server_sync_key: undefined,
+      server_token: undefined,
+      server_refresh_token: undefined,
+      server_token_expires: undefined,
+    });
+  }, [updateSyncConfig]);
+
   const resetSettings = useCallback(() => {
     setSettings(DEFAULT_SETTINGS);
     saveSettings(DEFAULT_SETTINGS);
@@ -308,6 +364,9 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
         setSyncApiKey,
         setSyncInterval,
         setSyncModule,
+        setServerAuth,
+        setServerToken,
+        clearServerAuth,
         resetSettings,
         isDarkMode,
       }}

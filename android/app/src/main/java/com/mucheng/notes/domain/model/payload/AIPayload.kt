@@ -57,12 +57,13 @@ data class AIChannel(
 
 /**
  * AI 模型 - 与桌面端 AIModel 完全一致
+ * 注意: channelId 设为可选以兼容 AISettingsScreen 中的 AIModel
  */
 @Serializable
 data class AIModel(
     val id: String,
     val name: String,
-    @SerialName("channel_id") val channelId: String,
+    @SerialName("channel_id") val channelId: String = "",
     @SerialName("max_tokens") val maxTokens: Int = 4096,
     @SerialName("is_custom") val isCustom: Boolean = false
 )

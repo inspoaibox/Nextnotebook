@@ -12,6 +12,10 @@ export interface SyncApiConfig {
   username?: string;
   password?: string;
   apiKey?: string;
+  // 服务器认证字段
+  serverToken?: string;
+  serverRefreshToken?: string;
+  serverTokenExpires?: number;
   syncInterval: number;
   syncModules?: SyncModules;
   lastSyncTime?: number | null;  // 上次同步时间

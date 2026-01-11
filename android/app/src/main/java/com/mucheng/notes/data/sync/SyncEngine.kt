@@ -6,6 +6,7 @@ import com.mucheng.notes.data.local.dao.ItemDao
 import com.mucheng.notes.data.local.entity.ItemEntity
 import com.mucheng.notes.data.remote.SyncCursor
 import com.mucheng.notes.data.remote.WebDAVAdapter
+import com.mucheng.notes.data.remote.ServerAdapterImpl
 import com.mucheng.notes.domain.model.ItemType
 import com.mucheng.notes.domain.model.SyncConfig
 import com.mucheng.notes.domain.model.SyncModuleTypes
@@ -25,7 +26,7 @@ import javax.inject.Singleton
 
 /**
  * 同步引擎
- * 负责与 WebDAV 服务器同步数据（明文同步）
+ * 负责与 WebDAV 服务器或自建服务器同步数据（明文同步）
  */
 @Singleton
 class SyncEngine @Inject constructor(
@@ -59,6 +60,9 @@ class SyncEngine @Inject constructor(
     }
 
     private var config: SyncConfig? = null
+    
+    // 自建服务器适配器
+    private var serverAdapter: ServerAdapterImpl? = null
 
     // ========== 本地游标管理 ==========
 
@@ -97,9 +101,38 @@ class SyncEngine @Inject constructor(
      */
     fun setConfig(syncConfig: SyncConfig) {
         config = syncConfig
-        // 初始化 WebDAV 适配器
-        if (webDAVAdapter is com.mucheng.notes.data.remote.WebDAVAdapterImpl) {
-            webDAVAdapter.initialize(syncConfig)
+        
+        if (syncConfig.type == "server") {
+            // 初始化自建服务器适配器
+            serverAdapter = ServerAdapterImpl().apply {
+                initialize(syncConfig)
+                // 设置 token 刷新回调，用于持久化新 token
+                onTokenRefresh = { newToken, newRefreshToken, expiresIn ->
+                    android.util.Log.d("SyncEngine", "Token refreshed, saving to preferences")
+                    // 通过广播或回调通知 ViewModel 保存新 token
+                    // 这里暂时只记录日志，实际保存由 ViewModel 处理
+                }
+            }
+            android.util.Log.d("SyncEngine", "Initialized server adapter for self-hosted server sync")
+        } else {
+            // 初始化 WebDAV 适配器
+            serverAdapter = null
+            if (webDAVAdapter is com.mucheng.notes.data.remote.WebDAVAdapterImpl) {
+                webDAVAdapter.initialize(syncConfig)
+            }
+            android.util.Log.d("SyncEngine", "Initialized WebDAV adapter")
+        }
+    }
+    
+    /**
+     * 获取当前使用的适配器
+     */
+    private fun getAdapter(): WebDAVAdapter {
+        val cfg = config ?: throw IllegalStateException("Sync not configured")
+        return if (cfg.type == "server") {
+            serverAdapter ?: throw IllegalStateException("Server adapter not initialized")
+        } else {
+            webDAVAdapter
         }
     }
     
@@ -155,6 +188,7 @@ class SyncEngine @Inject constructor(
      * 推送本地变更到远端（明文同步）
      */
     private suspend fun pushChanges(cfg: SyncConfig): PushResult {
+        val adapter = getAdapter()
         val enabledTypes = SyncModuleTypes.getEnabledTypes(cfg.syncModules)
         val pendingItems = itemDao.getPendingSync()
             .filter { it.type in enabledTypes }
@@ -166,13 +200,13 @@ class SyncEngine @Inject constructor(
             
             if (item.syncStatus == "deleted") {
                 // 删除远端项目
-                if (webDAVAdapter.deleteItem(item.id)) {
+                if (adapter.deleteItem(item.id)) {
                     itemDao.hardDelete(item.id)
                     count++
                 }
             } else {
                 // 上传项目
-                val result = webDAVAdapter.putItem(itemToUpload)
+                val result = adapter.putItem(itemToUpload)
                 if (result.isSuccess) {
                     itemDao.markSynced(item.id, result.getOrThrow())
                     count++
@@ -187,6 +221,7 @@ class SyncEngine @Inject constructor(
      * 拉取远端变更到本地（明文同步）
      */
     private suspend fun pullChanges(cfg: SyncConfig): PullResult {
+        val adapter = getAdapter()
         val enabledTypes = SyncModuleTypes.getEnabledTypes(cfg.syncModules)
 
         // ✅ 从本地 SharedPreferences 获取游标（每个设备独立维护）
@@ -213,7 +248,7 @@ class SyncEngine @Inject constructor(
         android.util.Log.d("SyncEngine", "SyncModules: notes=${cfg.syncModules.notes}, bookmarks=${cfg.syncModules.bookmarks}, vault=${cfg.syncModules.vault}")
         
         do {
-            val result = webDAVAdapter.listChanges(nextCursor)
+            val result = adapter.listChanges(nextCursor)
             android.util.Log.d("SyncEngine", "Got ${result.changes.size} changes, hasMore=${result.hasMore}")
 
             // 打印所有变更的类型，帮助调试
@@ -227,8 +262,8 @@ class SyncEngine @Inject constructor(
                     continue
                 }
 
-                // 从WebDAV获取完整的item数据 (与桌面端逻辑一致)
-                val remoteItem = webDAVAdapter.getItem(change.itemId)
+                // 从远端获取完整的item数据 (与桌面端逻辑一致)
+                val remoteItem = adapter.getItem(change.itemId)
                 if (remoteItem == null) {
                     android.util.Log.w("SyncEngine", "Remote item ${change.itemId} not found, skipping")
                     continue

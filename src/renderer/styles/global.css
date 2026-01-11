@@ -246,6 +246,7 @@ body.dark-mode .ant-layout-sider-trigger {
   border-radius: 6px;
 }
 
+/* 子菜单项缩进 - 确保层级正确显示 */
 .sidebar-menu .ant-menu-sub .ant-menu-item {
   height: 28px !important;
   line-height: 28px !important;
@@ -257,6 +258,25 @@ body.dark-mode .ant-layout-sider-trigger {
   height: 28px !important;
   line-height: 28px !important;
   margin: 1px 4px !important;
+  padding-left: 24px !important;
+}
+
+/* 二级子菜单缩进 */
+.sidebar-menu .ant-menu-sub .ant-menu-sub .ant-menu-item {
+  padding-left: 40px !important;
+}
+
+.sidebar-menu .ant-menu-sub .ant-menu-sub .ant-menu-submenu-title {
+  padding-left: 40px !important;
+}
+
+/* 三级子菜单缩进 */
+.sidebar-menu .ant-menu-sub .ant-menu-sub .ant-menu-sub .ant-menu-item {
+  padding-left: 56px !important;
+}
+
+.sidebar-menu .ant-menu-sub .ant-menu-sub .ant-menu-sub .ant-menu-submenu-title {
+  padding-left: 56px !important;
 }
 
 .sidebar-menu .ant-menu-item-selected {

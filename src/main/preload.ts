@@ -80,6 +80,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onLastSyncTimeUpdated: (callback: (lastSyncTime: number) => void) => {
       ipcRenderer.on('sync:lastSyncTimeUpdated', (_event, lastSyncTime: number) => callback(lastSyncTime));
     },
+    // 监听 token 刷新事件
+    onTokenRefreshed: (callback: (data: { token: string; refreshToken: string; expiresIn: number }) => void) => {
+      ipcRenderer.on('sync:tokenRefreshed', (_event, data) => callback(data));
+    },
   },
 
   // Crypto API

@@ -1,0 +1,39 @@
+# 依赖
+node_modules
+
+# 构建输出
+dist
+
+# 数据文件
+data
+*.db
+
+# 开发文件
+.env
+.env.local
+*.log
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# 测试
+coverage
+*.test.ts
+*.spec.ts
+__tests__
+
+# 文档
+*.md
+!README.md
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

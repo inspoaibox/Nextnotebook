@@ -132,18 +132,20 @@ fun SyncSettingsScreen(
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                // 同步目录
-                OutlinedTextField(
-                    value = uiState.syncPath,
-                    onValueChange = { viewModel.setSyncPath(it) },
-                    label = { Text("同步目录") },
-                    placeholder = { Text("/mucheng-notes") },
-                    supportingText = { Text("数据将同步到此目录下") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
+                // 同步目录（仅 WebDAV 模式）
+                if (uiState.syncType == "webdav") {
+                    OutlinedTextField(
+                        value = uiState.syncPath,
+                        onValueChange = { viewModel.setSyncPath(it) },
+                        label = { Text("同步目录") },
+                        placeholder = { Text("/mucheng-notes") },
+                        supportingText = { Text("数据将同步到此目录下") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
                 
                 if (uiState.syncType == "webdav") {
                     // WebDAV 用户名密码
@@ -174,23 +176,97 @@ fun SyncSettingsScreen(
                         }
                     )
                 } else {
-                    // 自建服务器 API Key
-                    OutlinedTextField(
-                        value = uiState.apiKey,
-                        onValueChange = { viewModel.setApiKey(it) },
-                        label = { Text("API Key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        visualTransformation = if (showPasswordField) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showPasswordField = !showPasswordField }) {
+                    // 自建服务器认证
+                    if (uiState.serverLoggedIn) {
+                        // 已登录状态
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Icon(
-                                    if (showPasswordField) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = null
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "已登录",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        uiState.serverLoginUser ?: uiState.serverUsername,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    )
+                                }
+                                TextButton(onClick = { viewModel.serverLogout() }) {
+                                    Text("登出")
+                                }
                             }
                         }
-                    )
+                    } else {
+                        // 未登录状态 - 显示登录表单
+                        OutlinedTextField(
+                            value = uiState.serverUsername,
+                            onValueChange = { viewModel.setServerUsername(it) },
+                            label = { Text("用户名") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = uiState.serverPassword,
+                            onValueChange = { viewModel.setServerPassword(it) },
+                            label = { Text("密码") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            visualTransformation = if (showPasswordField) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { showPasswordField = !showPasswordField }) {
+                                    Icon(
+                                        if (showPasswordField) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = null
+                                    )
+                                }
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = uiState.serverSyncKey,
+                            onValueChange = { viewModel.setServerSyncKey(it) },
+                            label = { Text("同步密钥") },
+                            supportingText = { Text("用于数据加密，请妥善保管") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            visualTransformation = if (showPasswordField) VisualTransformation.None else PasswordVisualTransformation()
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { viewModel.serverLogin() },
+                            enabled = !uiState.serverLoggingIn,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (uiState.serverLoggingIn) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text("登录")
+                        }
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(24.dp))

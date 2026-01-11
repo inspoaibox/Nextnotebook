@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { 
-  Layout, Input, Button, Empty, Modal, message, Tooltip, 
+import React, { useState, useEffect } from 'react';
+import {
+  Layout, Input, Button, Empty, Modal, message, Tooltip,
   Space, Divider, Popconfirm, Select, Segmented
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, LinkOutlined,
   FolderOutlined, FolderAddOutlined, GlobalOutlined, SearchOutlined,
-  AppstoreOutlined,
+  AppstoreOutlined, RightOutlined, DownOutlined,
 } from '@ant-design/icons';
 import { useBookmarks, useBookmarkFolders, Bookmark } from '../hooks/useBookmarks';
 
@@ -22,6 +22,65 @@ const getFavicon = (url: string) => {
   } catch {
     return null;
   }
+};
+
+// 渲染自定义图标（支持 URL、base64、SVG 代码）
+const renderCustomIcon = (icon: string | null | undefined, fallbackUrl: string) => {
+  if (!icon) {
+    // 使用 favicon
+    const favicon = getFavicon(fallbackUrl);
+    return favicon ? (
+      <img
+        src={favicon}
+        alt=""
+        style={{ width: 18, height: 18, objectFit: 'contain' }}
+        onError={(e) => {
+          (e.target as HTMLImageElement).style.display = 'none';
+          (e.target as HTMLImageElement).parentElement!.innerHTML = '<span style="font-size:16px;opacity:0.6">🌍</span>';
+        }}
+      />
+    ) : <span style={{ fontSize: 16, opacity: 0.6 }}>🌍</span>;
+  }
+
+  const trimmed = icon.trim();
+
+  // SVG 代码（以 <svg 开头）
+  if (trimmed.startsWith('<svg') || trimmed.startsWith('<?xml')) {
+    return (
+      <div
+        style={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        dangerouslySetInnerHTML={{ __html: trimmed.replace(/width="[^"]*"/, 'width="18"').replace(/height="[^"]*"/, 'height="18"') }}
+      />
+    );
+  }
+
+  // base64 编码（data:image 开头）
+  if (trimmed.startsWith('data:image')) {
+    return (
+      <img
+        src={trimmed}
+        alt=""
+        style={{ width: 18, height: 18, objectFit: 'contain' }}
+        onError={(e) => {
+          (e.target as HTMLImageElement).style.display = 'none';
+          (e.target as HTMLImageElement).parentElement!.innerHTML = '<span style="font-size:16px;opacity:0.6">🌍</span>';
+        }}
+      />
+    );
+  }
+
+  // 普通 URL
+  return (
+    <img
+      src={trimmed}
+      alt=""
+      style={{ width: 18, height: 18, objectFit: 'contain' }}
+      onError={(e) => {
+        (e.target as HTMLImageElement).style.display = 'none';
+        (e.target as HTMLImageElement).parentElement!.innerHTML = '<span style="font-size:16px;opacity:0.6">🌍</span>';
+      }}
+    />
+  );
 };
 
 // 安全获取域名
@@ -54,113 +113,183 @@ const openInBrowser = async (url: string) => {
   }
 };
 
+// 注入样式
+const styles = `
+  .nav-site-container {
+    background: #f5f7fa !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+  
+  .nav-sider {
+    background: #fff !important;
+    border-right: 1px solid rgba(0,0,0,0.03) !important;
+  }
+
+  /* Compact Folder Items */
+  .nav-folder-item {
+    transition: all 0.2s ease;
+    border-radius: 4px;
+    margin: 1px 4px;
+    color: #555;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  
+  .nav-folder-item:hover {
+    background: rgba(0,0,0,0.03);
+    color: #333;
+  }
+  
+  .nav-folder-item.selected {
+    background: #e6f7ff;
+    color: #1890ff;
+    font-weight: 600;
+  }
+
+  /* Compact Card */
+  .nav-card {
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #f0f0f0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .nav-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    border-color: rgba(24, 144, 255, 0.2);
+    z-index: 10;
+  }
+
+  .nav-card-icon {
+    transition: transform 0.3s ease;
+  }
+  
+  .nav-card:hover .nav-card-icon {
+    transform: scale(1.05);
+  }
+
+  .nav-card-actions {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    background: linear-gradient(90deg, transparent, #fff 30%);
+  }
+
+  .nav-card:hover .nav-card-actions {
+    opacity: 1;
+  }
+  
+  .bookmark-toolbar {
+    background: rgba(255,255,255,0.9);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+`;
+
 // 书签卡片组件
 const BookmarkCard: React.FC<{
   bookmark: Bookmark;
   onEdit: (bookmark: Bookmark) => void;
   onDelete: (id: string) => void;
 }> = ({ bookmark, onEdit, onDelete }) => {
-  const [hovered, setHovered] = useState(false);
-
   return (
     <div
       onClick={() => openInBrowser(bookmark.url)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className="bookmark-card"
+      className="nav-card"
       style={{
         display: 'flex',
         alignItems: 'center',
-        padding: '12px 16px',
-        borderRadius: 8,
+        padding: '16px',
         cursor: 'pointer',
-        transition: 'all 0.2s',
-        border: '1px solid var(--border-color, #e8e8e8)',
-        position: 'relative',
+        height: '100%',
       }}
     >
       {/* 图标 */}
-      <div style={{
-        width: 40,
-        height: 40,
-        borderRadius: 8,
-        background: '#f5f5f5',
+      <div className="nav-card-icon" style={{
+        width: 32,
+        height: 32,
+        borderRadius: 6,
+        background: '#f7f9fc',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 12,
+        marginRight: 10,
         flexShrink: 0,
+        border: '1px solid rgba(0,0,0,0.04)',
       }}>
-        <img 
-          src={getFavicon(bookmark.url) || ''} 
-          alt="" 
-          style={{ width: 24, height: 24, objectFit: 'contain' }}
-          onError={(e) => { 
-            (e.target as HTMLImageElement).style.display = 'none';
-            (e.target as HTMLImageElement).parentElement!.innerHTML = '<span style="font-size:18px;color:#1890ff">🔗</span>';
-          }}
-        />
+        {renderCustomIcon(bookmark.icon, bookmark.url)}
       </div>
 
       {/* 内容 */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ 
-          fontWeight: 500, 
-          fontSize: 14,
-          color: '#333',
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div style={{
+          fontWeight: 600,
+          fontSize: 15,
+          color: '#262626',
+          marginBottom: 4,
+          whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
         }}>
           {bookmark.name}
         </div>
-        <div style={{ 
-          fontSize: 12, 
-          color: '#999',
+        <div style={{
+          fontSize: 12,
+          color: '#8c8c8c',
+          whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          marginTop: 2,
         }}>
           {bookmark.description || getDomain(bookmark.url)}
         </div>
       </div>
 
-      {/* 操作按钮 */}
-      {hovered && (
-        <div 
-          style={{ 
-            display: 'flex', 
-            gap: 4,
-            marginLeft: 8,
-          }}
-          onClick={e => e.stopPropagation()}
+      {/* 操作按钮 - 悬浮显示 */}
+      <div
+        className="nav-card-actions"
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          paddingRight: 8,
+          paddingLeft: 24,
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <Tooltip title="编辑">
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => onEdit(bookmark)}
+            style={{ color: '#666' }}
+          />
+        </Tooltip>
+        <Popconfirm
+          title="删除此书签？"
+          onConfirm={() => onDelete(bookmark.id)}
+          placement="topRight"
+          okText="删除"
+          cancelText="取消"
         >
-          <Tooltip title="编辑">
-            <Button 
-              type="text" 
-              size="small" 
-              icon={<EditOutlined />} 
-              onClick={() => onEdit(bookmark)}
-              style={{ color: '#666' }}
+          <Tooltip title="删除">
+            <Button
+              type="text"
+              size="small"
+              icon={<DeleteOutlined />}
+              style={{ color: '#ff4d4f' }}
             />
           </Tooltip>
-          <Popconfirm 
-            title="删除此书签？" 
-            onConfirm={() => onDelete(bookmark.id)}
-            placement="left"
-          >
-            <Tooltip title="删除">
-              <Button 
-                type="text" 
-                size="small" 
-                icon={<DeleteOutlined />} 
-                style={{ color: '#ff4d4f' }}
-              />
-            </Tooltip>
-          </Popconfirm>
-        </div>
-      )}
+        </Popconfirm>
+      </div>
     </div>
   );
 };
@@ -173,10 +302,49 @@ const BookmarkPanel: React.FC = () => {
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderParentId, setNewFolderParentId] = useState<string | null>(null);
+  const [formIcon, setFormIcon] = useState('');
+  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const [columns, setColumns] = useState<number>(() => {
     const saved = localStorage.getItem('bookmark-columns');
     return saved ? parseInt(saved) : 3;
   });
+  // 文件夹展开状态（默认全部折叠）
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+
+  // 切换文件夹展开状态
+  const toggleFolderExpand = (folderId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
+
+
+
+  // 处理文件夹点击 - 聚合逻辑
+  const handleFolderClick = (folder: { id: string, parentId: string | null }) => {
+    if (folder.parentId) {
+      // 是子文件夹：跳转到父文件夹页面并滚动
+      setSelectedFolderId(folder.parentId);
+      setScrollTarget(folder.id);
+    } else {
+      // 是根文件夹：直接进入
+      setSelectedFolderId(folder.id);
+      setScrollTarget(null);
+    }
+  };
+
+  // 检查文件夹是否有子文件夹
+  const hasChildren = (folderId: string) => {
+    return folders.some(f => f.parentId === folderId);
+  };
 
   // 表单状态
   const [formName, setFormName] = useState('');
@@ -184,82 +352,242 @@ const BookmarkPanel: React.FC = () => {
   const [formDescription, setFormDescription] = useState('');
   const [formFolderId, setFormFolderId] = useState<string | null>(null);
 
-  const { folders, createFolder, deleteFolder } = useBookmarkFolders();
-  const { bookmarks, createBookmark, updateBookmark, deleteBookmark } = useBookmarks(
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    folderId: string | null;
+  }>({ visible: false, x: 0, y: 0, folderId: null });
+
+  // 重命名状态
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renamingName, setRenamingName] = useState('');
+
+  const { folders, createFolder, updateFolder, deleteFolder } = useBookmarkFolders();
+  const { bookmarks, createBookmark, updateBookmark, deleteBookmark, loading: bookmarksLoading } = useBookmarks(
     selectedFolderId === 'all' ? undefined : selectedFolderId,
     folders  // 传入 folders 以支持递归获取子文件夹书签
   );
 
-  // 过滤书签
-  const filteredBookmarks = searchQuery
-    ? bookmarks.filter(b => 
-        b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        b.url.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        b.description.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : bookmarks;
+  // 关闭右键菜单
+  useEffect(() => {
+    const handleClick = () => setContextMenu({ ...contextMenu, visible: false });
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [contextMenu]);
 
-  // 按文件夹分组书签（仅在"所有书签"视图时）
-  const groupedBookmarks = selectedFolderId === 'all' 
-    ? (() => {
-        const groups: { [key: string]: Bookmark[] } = { '未分类': [] };
-        folders.forEach(f => { groups[f.name] = []; });
-        filteredBookmarks.forEach(b => {
-          const folder = folders.find(f => f.id === b.folderId);
-          const groupName = folder ? folder.name : '未分类';
-          if (!groups[groupName]) groups[groupName] = [];
-          groups[groupName].push(b);
-        });
-        return groups;
-      })()
-    : null;
+  // 处理文件夹右键点击
+  const handleFolderContextMenu = (e: React.MouseEvent, folderId: string | null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      folderId
+    });
+  };
+
+  // 开始重命名
+  const startRename = (folder: { id: string, name: string }) => {
+    setRenamingFolderId(folder.id);
+    setRenamingName(folder.name);
+    setContextMenu({ ...contextMenu, visible: false });
+  };
+
+  // 提交重命名
+  const submitRename = async () => {
+    if (renamingFolderId && renamingName.trim()) {
+      await updateFolder(renamingFolderId, { name: renamingName.trim() });
+      message.success('重命名成功');
+    }
+    setRenamingFolderId(null);
+  };
+
+  // 排序文件夹 (字母顺序)
+  const sortedFolders = React.useMemo(() => {
+    return [...folders].sort((a, b) => a.name.localeCompare(b.name));
+  }, [folders]);
 
   // 构建文件夹树
   const buildFolderTree = (parentId: string | null = null, level: number = 0): React.ReactNode[] => {
-    const childFolders = folders.filter(f => f.parentId === parentId);
-    return childFolders.flatMap(folder => [
-      <div
-        key={folder.id}
-        onClick={() => setSelectedFolderId(folder.id)}
-        className={`bookmark-folder-item ${selectedFolderId === folder.id ? 'selected' : ''}`}
-        style={{
-          padding: '8px 12px',
-          paddingLeft: 12 + level * 16,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderRadius: 4,
-          margin: '2px 8px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FolderOutlined style={{ color: '#faad14' }} />
-          <span style={{ fontSize: 13 }}>{folder.name}</span>
-        </div>
-        <Space size={0}>
-          <Tooltip title="添加子文件夹">
-            <Button 
-              type="text" 
-              size="small" 
-              icon={<FolderAddOutlined />} 
-              onClick={e => { e.stopPropagation(); setNewFolderParentId(folder.id); setFolderModalOpen(true); }} 
-            />
-          </Tooltip>
-          <Popconfirm title="删除此文件夹？" onConfirm={() => deleteFolder(folder.id)}>
-            <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={e => e.stopPropagation()} />
-          </Popconfirm>
-        </Space>
-      </div>,
-      ...buildFolderTree(folder.id, level + 1),
-    ]);
+    const childFolders = sortedFolders.filter(f => f.parentId === parentId);
+
+    return childFolders.flatMap(folder => {
+      const isExpanded = expandedFolders.has(folder.id);
+      const hasChildFolders = hasChildren(folder.id);
+      const indent = level * 16;
+      const isRenaming = renamingFolderId === folder.id;
+
+      return [
+        <div
+          key={folder.id}
+          onClick={() => !isRenaming && handleFolderClick(folder)}
+          onContextMenu={(e) => handleFolderContextMenu(e, folder.id)}
+          className={`nav-folder-item ${selectedFolderId === folder.id || scrollTarget === folder.id ? 'selected' : ''}`}
+          style={{
+            padding: '8px 10px',
+            paddingLeft: collapsed ? 10 : 10 + indent,
+            fontSize: 13,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            position: 'relative' // For context menu positioning rely on fixed/absolute global
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+            <FolderOutlined style={{
+              color: selectedFolderId === folder.id || scrollTarget === folder.id ? '#1890ff' : '#ffc66d',
+              fontSize: 16,
+              flexShrink: 0,
+            }} />
+
+            {isRenaming && !collapsed ? (
+              <Input
+                value={renamingName}
+                onChange={e => setRenamingName(e.target.value)}
+                onBlur={submitRename}
+                onPressEnter={submitRename}
+                autoFocus
+                size="small"
+                onClick={e => e.stopPropagation()}
+                style={{ flex: 1, height: 24, fontSize: 13 }}
+              />
+            ) : (
+              !collapsed && (
+                <span style={{
+                  fontWeight: selectedFolderId === folder.id || scrollTarget === folder.id ? 500 : 400,
+                  fontSize: 13,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  flex: 1,
+                  userSelect: 'none'
+                }}>
+                  {folder.name}
+                </span>
+              )
+            )}
+
+            {/* 展开/折叠按钮 */}
+            {!collapsed && hasChildFolders ? (
+              <span
+                onClick={(e) => toggleFolderExpand(folder.id, e)}
+                style={{
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  width: 16,
+                  justifyContent: 'center',
+                  color: '#999',
+                  fontSize: 10,
+                  flexShrink: 0,
+                }}
+              >
+                {isExpanded ? <DownOutlined /> : <RightOutlined />}
+              </span>
+            ) : null}
+          </div>
+
+          {!collapsed && !isRenaming && (
+            <Space size={0} className="folder-actions" style={{ opacity: selectedFolderId === folder.id ? 1 : 0.4, flexShrink: 0 }}>
+              {/* Actions are now mainly in context menu, but keep hover optional if desired. Removing to clean up UI as requested context menu focus */}
+            </Space>
+          )}
+        </div>,
+        ...(isExpanded ? buildFolderTree(folder.id, level + 1) : []),
+      ];
+    });
   };
+
+  // 过滤书签
+  const filteredBookmarks = searchQuery
+    ? bookmarks.filter(b =>
+      b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.url.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      b.description.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    : bookmarks;
+
+  // 当前选中的文件夹信息
+  const currentFolder = folders.find(f => f.id === selectedFolderId);
+  // 当前文件夹的直接子文件夹
+  const subFolders = currentFolder
+    ? folders.filter(f => f.parentId === currentFolder.id)
+    : [];
+
+  // 滚动到锚点
+  React.useEffect(() => {
+    if (scrollTarget && !bookmarksLoading) {
+      setTimeout(() => {
+        const el = document.getElementById(`folder-section-${scrollTarget}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+    }
+  }, [scrollTarget, bookmarks, bookmarksLoading]);
+
+  // 聚合/分组书签逻辑
+  const groupedBookmarks = React.useMemo(() => {
+    // 只有在 "所有书签" 或 "有子文件夹的文件夹" 时才分组
+    const shouldGroup = selectedFolderId === 'all' || subFolders.length > 0;
+    if (!shouldGroup) return null;
+
+    const groups: Record<string, Bookmark[]> = {};
+
+    if (selectedFolderId === 'all') {
+      groups['未分类'] = [];
+      folders.forEach(f => { groups[f.name] = []; });
+      filteredBookmarks.forEach(b => {
+        const folder = folders.find(f => f.id === b.folderId);
+        const groupName = folder ? folder.name : '未分类';
+        if (!groups[groupName]) groups[groupName] = [];
+        groups[groupName].push(b);
+      });
+    } else {
+      // 特定文件夹的聚合视图
+      groups['root'] = []; // 直接属于该文件夹的书签
+      subFolders.forEach(sf => groups[sf.id] = []);
+
+      filteredBookmarks.forEach(b => {
+        if (b.folderId === selectedFolderId) {
+          groups['root'].push(b);
+        } else {
+          // 查找该书签属于哪个直接子文件夹（处理多级嵌套）
+          let curr = folders.find(f => f.id === b.folderId);
+          let targetSubFolderId = null;
+
+          // 向上追溯，直到找到 parentId 为 selectedFolderId 的节点
+          while (curr && curr.parentId !== selectedFolderId && curr.id !== selectedFolderId) {
+            const parent = folders.find(f => f.id === curr?.parentId);
+            if (!parent) break;
+            curr = parent;
+          }
+
+          if (curr && curr.parentId === selectedFolderId) {
+            targetSubFolderId = curr.id;
+          }
+
+          if (targetSubFolderId && groups[targetSubFolderId]) {
+            groups[targetSubFolderId].push(b);
+          } else {
+            groups['root'].push(b);
+          }
+        }
+      });
+    }
+    return groups;
+  }, [selectedFolderId, filteredBookmarks, folders, subFolders]);
 
   const handleCreateBookmark = () => {
     setEditingBookmark(null);
     setFormName('');
     setFormUrl('');
     setFormDescription('');
+    setFormIcon('');
     setFormFolderId(selectedFolderId === 'all' ? null : selectedFolderId);
     setEditModalOpen(true);
   };
@@ -269,6 +597,7 @@ const BookmarkPanel: React.FC = () => {
     setFormName(bookmark.name);
     setFormUrl(bookmark.url);
     setFormDescription(bookmark.description);
+    setFormIcon(bookmark.icon || '');
     setFormFolderId(bookmark.folderId);
     setEditModalOpen(true);
   };
@@ -278,17 +607,18 @@ const BookmarkPanel: React.FC = () => {
       message.warning('请填写名称和网址');
       return;
     }
-    
+
     let url = formUrl.trim();
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = 'https://' + url;
     }
-    
+
     const data = {
       name: formName.trim(),
       url,
       description: formDescription.trim(),
       folder_id: formFolderId,
+      icon: formIcon.trim() || null,
     };
 
     if (editingBookmark) {
@@ -349,129 +679,344 @@ const BookmarkPanel: React.FC = () => {
   );
 
   return (
-    <Layout style={{ height: '100%' }} className="bookmark-panel">
+    <Layout style={{ height: '100%' }} className="nav-site-container">
+      <style>{styles}</style>
+
+      {/* Context Menu */}
+      {contextMenu.visible && (
+        <div style={{
+          position: 'fixed',
+          top: contextMenu.y,
+          left: contextMenu.x,
+          background: '#fff',
+          borderRadius: 4,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          zIndex: 1000,
+          padding: '4px 0',
+          minWidth: 120,
+          border: '1px solid #eee'
+        }}>
+          {contextMenu.folderId ? (
+            <>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  setNewFolderParentId(contextMenu.folderId);
+                  setFolderModalOpen(true);
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+                style={{ padding: '6px 12px', cursor: 'pointer', fontSize: 13, color: '#333' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
+                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+              >
+                <FolderAddOutlined style={{ marginRight: 8 }} />新建子文件夹
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  const folder = folders.find(f => f.id === contextMenu.folderId);
+                  if (folder) startRename(folder);
+                }}
+                style={{ padding: '6px 12px', cursor: 'pointer', fontSize: 13, color: '#333' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
+                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+              >
+                <EditOutlined style={{ marginRight: 8 }} />重命名
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => {
+                  setFormFolderId(contextMenu.folderId);
+                  handleCreateBookmark();
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+                style={{ padding: '6px 12px', cursor: 'pointer', fontSize: 13, color: '#333' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
+                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+              >
+                <PlusOutlined style={{ marginRight: 8 }} />新建书签
+              </div>
+              <Divider style={{ margin: '4px 0' }} />
+              <Popconfirm
+                title="确定删除此文件夹？"
+                description="文件夹内的书签也会被删除"
+                onConfirm={() => deleteFolder(contextMenu.folderId!)}
+                placement="rightTop"
+                okType="danger"
+              >
+                <div
+                  className="context-menu-item"
+                  style={{ padding: '6px 12px', cursor: 'pointer', fontSize: 13, color: '#ff4d4f' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#fff1f0'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                >
+                  <DeleteOutlined style={{ marginRight: 8 }} />删除文件夹
+                </div>
+              </Popconfirm>
+            </>
+          ) : (
+            // Root context menu
+            <div
+              className="context-menu-item"
+              onClick={() => {
+                setNewFolderParentId(null);
+                setFolderModalOpen(true);
+                setContextMenu({ ...contextMenu, visible: false });
+              }}
+              style={{ padding: '6px 12px', cursor: 'pointer', fontSize: 13, color: '#333' }}
+            >
+              <FolderAddOutlined style={{ marginRight: 8 }} />新建文件夹
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 左侧文件夹列表 */}
-      <Sider width={260} theme="light" className="bookmark-folder-sider" style={{ borderRight: '1px solid var(--border-color, #f0f0f0)' }}>
+      <Sider
+        width={220}
+        className="nav-sider"
+        collapsible
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        theme="light"
+        collapsedWidth={60}
+        onContextMenu={(e) => handleFolderContextMenu(e, null)} // Root context menu
+      >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color, #f0f0f0)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <LinkOutlined style={{ fontSize: 16, color: '#1890ff' }} />
-            <span style={{ fontWeight: 500 }}>书签收藏</span>
+          {/* Logo / Header */}
+          <div style={{
+            padding: collapsed ? '16px 0' : '16px 16px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            gap: 10,
+          }}>
+            <div style={{
+              width: 28, height: 28,
+              background: 'linear-gradient(135deg, #1890ff 0%, #36cfc9 100%)',
+              borderRadius: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 6px rgba(24, 144, 255, 0.2)'
+            }}>
+              <GlobalOutlined style={{ fontSize: 16, color: '#fff' }} />
+            </div>
+            {!collapsed && <span style={{ fontWeight: 700, fontSize: 15, color: '#333', letterSpacing: 0.5 }}>书签导航</span>}
           </div>
-          <div style={{ flex: 1, overflow: 'auto', paddingTop: 8 }}>
+
+          <div style={{ flex: 1, overflow: 'auto', padding: '0 4px 10px' }}>
             <div
               onClick={() => setSelectedFolderId('all')}
-              className={`bookmark-folder-item ${selectedFolderId === 'all' ? 'selected' : ''}`}
+              className={`nav-folder-item ${selectedFolderId === 'all' ? 'selected' : ''}`}
               style={{
-                padding: '8px 12px',
+                padding: '8px 10px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
-                borderRadius: 4,
-                margin: '2px 8px',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                gap: 10,
               }}
             >
-              <GlobalOutlined style={{ color: '#1890ff' }} />
-              <span>所有书签</span>
+              <AppstoreOutlined style={{ color: selectedFolderId === 'all' ? '#1890ff' : '#bbb', fontSize: 16 }} />
+              {!collapsed && <span>全部书签</span>}
             </div>
             <div
               onClick={() => setSelectedFolderId(null)}
-              className={`bookmark-folder-item ${selectedFolderId === null ? 'selected' : ''}`}
+              className={`nav-folder-item ${selectedFolderId === null ? 'selected' : ''}`}
               style={{
-                padding: '8px 12px',
+                padding: '8px 10px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
-                borderRadius: 4,
-                margin: '2px 8px',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                gap: 10,
               }}
             >
-              <FolderOutlined style={{ color: '#999' }} />
-              <span>未分类</span>
+              <FolderOutlined style={{ color: selectedFolderId === null ? '#1890ff' : '#bbb', fontSize: 16 }} />
+              {!collapsed && <span>未分类</span>}
             </div>
-            <Divider style={{ margin: '12px 0 8px' }} />
-            <div style={{ padding: '4px 16px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary, #888)', fontWeight: 500 }}>分类文件夹</span>
-              <Tooltip title="新建文件夹">
-                <Button type="text" size="small" icon={<FolderAddOutlined />} onClick={() => { setNewFolderParentId(null); setFolderModalOpen(true); }} />
-              </Tooltip>
+
+            <Divider style={{ margin: '8px 6px', borderColor: 'rgba(0,0,0,0.04)' }} />
+
+            {!collapsed && (
+              <div style={{ padding: '0 8px 4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Folders</span>
+                <Tooltip title="新建文件夹">
+                  <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => { setNewFolderParentId(null); setFolderModalOpen(true); }} style={{ color: '#888' }} />
+                </Tooltip>
+              </div>
+            )}
+
+            <div className="folder-tree-container">
+              {buildFolderTree(null)}
             </div>
-            {buildFolderTree(null)}
           </div>
         </div>
       </Sider>
 
       {/* 右侧书签内容 */}
-      <Content className="bookmark-content" style={{ display: 'flex', flexDirection: 'column' }}>
+      <Content className="bookmark-content" style={{ display: 'flex', flexDirection: 'column', background: 'transparent' }}>
         {/* 工具栏 */}
-        <div className="bookmark-toolbar" style={{ 
-          padding: '12px 20px', 
-          borderBottom: '1px solid var(--border-color, #f0f0f0)', 
-          display: 'flex', 
-          gap: 12, 
+        <div className="bookmark-toolbar" style={{
+          padding: '10px 20px',
+          borderBottom: '1px solid rgba(0,0,0,0.03)',
+          display: 'flex',
+          justifyContent: 'space-between',
           alignItems: 'center',
         }}>
           <Input
-            placeholder="搜索书签..."
-            prefix={<SearchOutlined style={{ color: '#bbb' }} />}
+            placeholder="搜索您的书签..."
+            prefix={<SearchOutlined style={{ color: '#bbb', fontSize: 16, marginRight: 4 }} />}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             allowClear
-            style={{ width: 280 }}
+            bordered={false}
+            style={{
+              width: 320,
+              background: '#f0f2f5',
+              padding: '8px 16px',
+              borderRadius: 20
+            }}
           />
-          <Tooltip title="布局列数">
+
+          <Space size={16}>
             <Segmented
               value={columns}
               onChange={(v) => handleColumnsChange(v as number)}
               options={[
-                { value: 2, icon: <AppstoreOutlined />, label: '2列' },
-                { value: 3, icon: <AppstoreOutlined />, label: '3列' },
-                { value: 4, icon: <AppstoreOutlined />, label: '4列' },
+                { value: 2, icon: <AppstoreOutlined />, label: '宽屏' },
+                { value: 3, icon: <AppstoreOutlined />, label: '标准' },
+                { value: 4, icon: <AppstoreOutlined />, label: '紧凑' },
               ]}
-              size="small"
+              size="middle"
             />
-          </Tooltip>
-          <div style={{ flex: 1 }} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateBookmark}>
-            添加书签
-          </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={handleCreateBookmark}
+              shape="round"
+              size="middle"
+              style={{ boxShadow: '0 4px 10px rgba(24, 144, 255, 0.3)', paddingLeft: 20, paddingRight: 20 }}
+            >
+              添加书签
+            </Button>
+          </Space>
         </div>
 
         {/* 书签内容区 */}
-        <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
+        {/* 书签内容区 */}
+        <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
           {filteredBookmarks.length === 0 ? (
-            <Empty 
-              description="暂无书签，点击上方按钮添加" 
-              image={Empty.PRESENTED_IMAGE_SIMPLE} 
-              style={{ marginTop: 80 }} 
-            />
-          ) : selectedFolderId === 'all' && groupedBookmarks ? (
+            <div style={{
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#999'
+            }}>
+              <Empty
+                description={false}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+              <div style={{ marginTop: 16 }}>还没有书签，去添加一个吧</div>
+              <Button type="dashed" onClick={handleCreateBookmark} style={{ marginTop: 16 }}>
+                立即添加
+              </Button>
+            </div>
+          ) : groupedBookmarks ? (
             // 分组显示
             <div>
-              {Object.entries(groupedBookmarks).map(([groupName, items]) => 
-                items.length > 0 && (
-                  <div key={groupName} style={{ marginBottom: 24 }}>
-                    <div style={{ 
-                      fontSize: 14, 
-                      fontWeight: 500, 
-                      color: '#666', 
-                      marginBottom: 12,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}>
-                      <FolderOutlined style={{ color: groupName === '未分类' ? '#999' : '#faad14' }} />
-                      {groupName}
-                      <span style={{ fontSize: 12, color: '#999', fontWeight: 400 }}>({items.length})</span>
+              {selectedFolderId === 'all' ? (
+                // "所有书签" 视图：按文件夹名分组
+                Object.entries(groupedBookmarks).map(([groupName, items]) =>
+                  items.length > 0 && (
+                    <div key={groupName} style={{ marginBottom: 32 }}>
+                      <div style={{
+                        fontSize: 18,
+                        fontWeight: 600,
+                        color: '#333',
+                        marginBottom: 16,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                      }} className="nav-section-title">
+                        {groupName}
+                        <span style={{
+                          fontSize: 13,
+                          color: '#bbb',
+                          background: '#f5f5f5',
+                          padding: '1px 8px',
+                          borderRadius: 10,
+                          fontWeight: 400
+                        }}>{items.length}</span>
+                      </div>
+                      {renderBookmarkGrid(items)}
                     </div>
-                    {renderBookmarkGrid(items)}
-                  </div>
+                  )
                 )
+              ) : (
+                // 一级目录聚合视图：显示本级书签 + 按二级目录分组
+                <>
+                  {/* 本级书签（直接属于该文件夹的） */}
+                  {groupedBookmarks['root'] && groupedBookmarks['root'].length > 0 && (
+                    <div style={{ marginBottom: 32 }}>
+                      <div style={{
+                        fontSize: 18,
+                        fontWeight: 600,
+                        color: '#333',
+                        marginBottom: 16,
+                        paddingBottom: 8,
+                        borderBottom: '1px solid #f0f0f0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8
+                      }}>
+                        {currentFolder?.name || '通用'}
+                        <span style={{
+                          fontSize: 12, color: '#bbb', background: '#f5f5f5',
+                          padding: '2px 8px', borderRadius: 10, fontWeight: 400
+                        }}>{groupedBookmarks['root'].length}</span>
+                      </div>
+                      {renderBookmarkGrid(groupedBookmarks['root'])}
+                    </div>
+                  )}
+
+                  {/* 二级目录书签 - 按子文件夹分组显示 */}
+                  {subFolders.map(sf => {
+                    const items = groupedBookmarks[sf.id] || [];
+                    if (items.length === 0) return null;
+                    return (
+                      <div
+                        key={sf.id}
+                        id={`folder-section-${sf.id}`}
+                        style={{ marginBottom: 32, scrollMarginTop: 80, transition: 'background 0.5s' }}
+                      >
+                        <div style={{
+                          fontSize: 18,
+                          fontWeight: 600,
+                          color: '#333',
+                          marginBottom: 16,
+                          paddingBottom: 8,
+                          borderBottom: '1px solid #f0f0f0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8
+                        }}>
+                          {sf.name}
+                          <span style={{
+                            fontSize: 12, color: '#bbb', background: '#f5f5f5',
+                            padding: '2px 8px', borderRadius: 10, fontWeight: 400
+                          }}>{items.length}</span>
+                        </div>
+                        {renderBookmarkGrid(items)}
+                      </div>
+                    );
+                  })}
+                </>
               )}
             </div>
           ) : (
-            // 单文件夹显示
+            // 单文件夹显示（没有子文件夹的情况）
             renderBookmarkGrid(filteredBookmarks)
           )}
         </div>
@@ -516,6 +1061,18 @@ const BookmarkPanel: React.FC = () => {
             onChange={e => setFormDescription(e.target.value)}
             rows={2}
           />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 6, fontSize: 13, color: '#333', fontWeight: 500 }}>自定义图标</label>
+          <TextArea
+            placeholder="支持：图片URL、base64编码（data:image/...）、SVG代码（<svg>...</svg>）"
+            value={formIcon}
+            onChange={e => setFormIcon(e.target.value)}
+            rows={2}
+          />
+          <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
+            留空则自动获取网站图标
+          </div>
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: 6, fontSize: 13, color: '#333', fontWeight: 500 }}>文件夹</label>

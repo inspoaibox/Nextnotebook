@@ -260,7 +260,10 @@ export function useAIMessages(conversationId: string | null) {
       setLoading(true);
       const items = await aiMessagesApi.getByConversation(conversationId);
       if (items) {
-        setMessages(items.map(itemToMessage));
+        const msgs = items.map(itemToMessage);
+        // 按创建时间排序
+        msgs.sort((a, b) => a.createdAt - b.createdAt);
+        setMessages(msgs);
       }
     } catch (err) {
       console.error('Failed to load AI messages:', err);

@@ -19,6 +19,10 @@ export interface SyncServiceConfig {
   username?: string;
   password?: string;
   apiKey?: string;
+  // 服务器认证字段
+  serverToken?: string;
+  serverRefreshToken?: string;
+  serverTokenExpires?: number;
   syncInterval: number;
   syncModules?: SyncModules;  // 同步模块配置
   lastSyncTime?: number | null;  // 上次同步时间（从持久化存储加载）
@@ -66,8 +70,29 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       const serverConfig: ServerConfig = {
         url: config.url,
         apiKey: config.apiKey || '',
+        token: config.serverToken,
       };
-      currentAdapter = new ServerAdapter(serverConfig);
+      const serverAdapter = new ServerAdapter(serverConfig);
+      
+      // 设置认证信息
+      if (config.serverToken) {
+        serverAdapter.setAuth(
+          config.serverToken,
+          config.serverRefreshToken,
+          config.serverTokenExpires
+        );
+      }
+      
+      // 设置 token 刷新回调
+      serverAdapter.setTokenRefreshCallback((token, refreshToken, expiresIn) => {
+        // 通知渲染进程更新 token
+        const windows = BrowserWindow.getAllWindows();
+        windows.forEach(win => {
+          win.webContents.send('sync:tokenRefreshed', { token, refreshToken, expiresIn });
+        });
+      });
+      
+      currentAdapter = serverAdapter;
     }
 
     // 确保 adapter 已创建
@@ -222,8 +247,20 @@ export async function testSyncConnection(config: SyncServiceConfig): Promise<boo
       const serverConfig: ServerConfig = {
         url: config.url,
         apiKey: config.apiKey || '',
+        token: config.serverToken,
       };
-      adapter = new ServerAdapter(serverConfig);
+      const serverAdapter = new ServerAdapter(serverConfig);
+      
+      // 设置认证信息
+      if (config.serverToken) {
+        serverAdapter.setAuth(
+          config.serverToken,
+          config.serverRefreshToken,
+          config.serverTokenExpires
+        );
+      }
+      
+      adapter = serverAdapter;
     }
 
     console.log('[SyncService] Calling adapter.testConnection()...');

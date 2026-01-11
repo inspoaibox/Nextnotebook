@@ -4,7 +4,6 @@ node_modules/
 # Build output
 dist/
 release/
-dist/
 out/
 win-unpacked/
 
@@ -28,6 +27,7 @@ coverage/
 # Environment
 .env
 .env.local
+.env.*.local
 
 # Database
 *.db
@@ -36,7 +36,42 @@ coverage/
 # User data
 userData/
 
-# electron
+# Electron
 *.exe
 *.asar
 *.blockmap
+
+# Android
+android/.gradle/
+android/.idea/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/*.iml
+android/app/*.iml
+
+# Sync Server
+sync-server/data/
+sync-server/dist/
+sync-server/node_modules/
+sync-server/.env
+
+# Ghostscript portable (大文件，用户需要自行下载)
+gs-portable/bin/
+gs-portable/lib/
+gs-portable/Resource/
+
+# Test files
+test-*.html
+test-*.bat
+*.test.ts.snap
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Package manager locks (可选，根据团队规范决定是否保留)
+# package-lock.json
+# sync-server/package-lock.json

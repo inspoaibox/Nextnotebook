@@ -9,6 +9,14 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -72,7 +80,7 @@ data class Usage(
 
 /**
  * AI API 客户端
- * 支持 OpenAI、Anthropic 和自定义 API
+ * 支持 OpenAI、Anthropic、Gemini 和自定义 API
  */
 @Singleton
 class AIApiClient @Inject constructor() {
@@ -89,6 +97,22 @@ class AIApiClient @Inject constructor() {
         .build()
     
     /**
+     * 规范化 API URL，自动补全 /chat/completions
+     */
+    private fun normalizeApiUrl(url: String): String {
+        var normalized = url.trim()
+        // 移除末尾斜杠
+        if (normalized.endsWith("/")) {
+            normalized = normalized.dropLast(1)
+        }
+        // 如果 URL 不以 /chat/completions 结尾，自动补全
+        if (!normalized.endsWith("/chat/completions")) {
+            normalized = "$normalized/chat/completions"
+        }
+        return normalized
+    }
+    
+    /**
      * 发送聊天请求（流式响应）
      */
     fun streamChat(
@@ -98,6 +122,21 @@ class AIApiClient @Inject constructor() {
         temperature: Float = 0.7f,
         maxTokens: Int = 4096
     ): Flow<String> = flow {
+        // Gemini API 使用不同的格式
+        if (channel.type.equals("gemini", ignoreCase = true)) {
+            streamGeminiChat(channel, model, messages, temperature, maxTokens).collect { emit(it) }
+            return@flow
+        }
+        
+        // Anthropic API 处理
+        if (channel.type.equals("anthropic", ignoreCase = true)) {
+            streamAnthropicChat(channel, model, messages, temperature, maxTokens).collect { emit(it) }
+            return@flow
+        }
+        
+        // 自动补全 API URL (OpenAI 兼容)
+        val apiUrl = normalizeApiUrl(channel.apiUrl)
+        
         val request = ChatCompletionRequest(
             model = model,
             messages = messages,
@@ -105,12 +144,12 @@ class AIApiClient @Inject constructor() {
             maxTokens = maxTokens,
             stream = true
         )
-        
+        // ... (existing OpenAI logic) ...
         val requestBody = json.encodeToString(request)
             .toRequestBody("application/json".toMediaType())
         
         val httpRequest = Request.Builder()
-            .url(channel.apiUrl)
+            .url(apiUrl)
             .addHeader("Authorization", "Bearer ${channel.apiKey}")
             .addHeader("Content-Type", "application/json")
             .post(requestBody)
@@ -144,6 +183,175 @@ class AIApiClient @Inject constructor() {
             }
         }
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * Anthropic API 流式聊天
+     */
+    private fun streamAnthropicChat(
+        channel: AIChannel,
+        model: String,
+        messages: List<ChatMessage>,
+        temperature: Float,
+        maxTokens: Int
+    ): Flow<String> = flow {
+        val apiUrl = channel.apiUrl.ifBlank { "https://api.anthropic.com/v1/messages" }
+        
+        // 提取 system prompt
+        val systemMsg = messages.find { it.role == "system" }
+        val otherMsgs = messages.filter { it.role != "system" }
+        
+        val bodyMap = mutableMapOf<String, Any>(
+            "model" to model,
+            "messages" to otherMsgs,
+            "max_tokens" to maxTokens,
+            "temperature" to temperature,
+            "stream" to true
+        )
+        if (systemMsg != null) {
+            bodyMap["system"] = systemMsg.content
+        }
+        
+        val requestBody = json.encodeToString(JsonObject.serializer(), buildJsonObject {
+            put("model", model)
+            put("max_tokens", maxTokens)
+            put("temperature", temperature)
+            put("stream", true)
+            systemMsg?.let { put("system", it.content) }
+            put("messages", buildJsonArray {
+                otherMsgs.forEach { msg ->
+                    add(buildJsonObject {
+                        put("role", msg.role)
+                        put("content", msg.content)
+                    })
+                }
+            })
+        }).toRequestBody("application/json".toMediaType())
+        
+        val httpRequest = Request.Builder()
+            .url(apiUrl)
+            .addHeader("x-api-key", channel.apiKey)
+            .addHeader("anthropic-version", "2023-06-01")
+            .addHeader("Content-Type", "application/json")
+            .post(requestBody)
+            .build()
+            
+        val response = httpClient.newCall(httpRequest).execute()
+        if (!response.isSuccessful) {
+             val errorBody = response.body?.string() ?: ""
+             throw IOException("Anthropic API 请求失败: ${response.code} - $errorBody")
+        }
+        
+        val source = response.body?.source() ?: throw IOException("响应体为空")
+        
+        while (!source.exhausted()) {
+            val line = source.readUtf8Line() ?: break
+            
+            if (line.startsWith("event: content_block_delta")) {
+                // The next line should be data: ...
+                val dataLine = source.readUtf8Line() ?: break
+                if (dataLine.startsWith("data: ")) {
+                    val data = dataLine.removePrefix("data: ").trim()
+                    try {
+                        val jsonElement = json.parseToJsonElement(data)
+                        val text = jsonElement.jsonObject["delta"]?.jsonObject?.get("text")?.jsonPrimitive?.content
+                        if (!text.isNullOrEmpty()) {
+                            emit(text)
+                        }
+                    } catch (e: Exception) { }
+                }
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+
+    
+    /**
+     * Gemini API 流式聊天
+     */
+    private fun streamGeminiChat(
+        channel: AIChannel,
+        model: String,
+        messages: List<ChatMessage>,
+        temperature: Float,
+        maxTokens: Int
+    ): Flow<String> = flow {
+        // Gemini API URL: {baseUrl}/models/{model}:streamGenerateContent?key={apiKey}
+        val url = "${channel.apiUrl}/models/$model:streamGenerateContent?key=${channel.apiKey}"
+        
+        // 转换消息格式
+        val contents = mutableListOf<JsonObject>()
+        var systemInstruction: String? = null
+        
+        for (msg in messages) {
+            if (msg.role == "system") {
+                systemInstruction = msg.content
+            } else {
+                contents.add(buildJsonObject {
+                    put("role", if (msg.role == "assistant") "model" else "user")
+                    put("parts", buildJsonArray {
+                        add(buildJsonObject { put("text", msg.content) })
+                    })
+                })
+            }
+        }
+        
+        val body = buildJsonObject {
+            put("contents", JsonArray(contents))
+            put("generationConfig", buildJsonObject {
+                put("temperature", temperature)
+                put("maxOutputTokens", maxTokens)
+            })
+            systemInstruction?.let {
+                put("systemInstruction", buildJsonObject {
+                    put("parts", buildJsonArray {
+                        add(buildJsonObject { put("text", it) })
+                    })
+                })
+            }
+        }
+        
+        val requestBody = body.toString().toRequestBody("application/json".toMediaType())
+        
+        val httpRequest = Request.Builder()
+            .url(url)
+            .addHeader("Content-Type", "application/json")
+            .post(requestBody)
+            .build()
+        
+        val response = httpClient.newCall(httpRequest).execute()
+        
+        if (!response.isSuccessful) {
+            val errorBody = response.body?.string() ?: ""
+            throw IOException("Gemini API 请求失败: ${response.code} - $errorBody")
+        }
+        
+        val source = response.body?.source() ?: throw IOException("响应体为空")
+        val buffer = StringBuilder()
+        
+        while (!source.exhausted()) {
+            val line = source.readUtf8Line() ?: break
+            val trimmed = line.trim()
+            
+            if (trimmed.isEmpty() || trimmed == "[" || trimmed == "]" || trimmed == ",") continue
+            
+            try {
+                val jsonStr = if (trimmed.startsWith(",")) trimmed.substring(1) else trimmed
+                val jsonElement = json.parseToJsonElement(jsonStr)
+                val text = jsonElement.jsonObject["candidates"]
+                    ?.jsonArray?.firstOrNull()
+                    ?.jsonObject?.get("content")
+                    ?.jsonObject?.get("parts")
+                    ?.jsonArray?.firstOrNull()
+                    ?.jsonObject?.get("text")
+                    ?.jsonPrimitive?.content
+                
+                if (!text.isNullOrEmpty()) {
+                    emit(text)
+                }
+            } catch (e: Exception) {
+                // 忽略解析错误
+            }
+        }
+    }.flowOn(Dispatchers.IO)
     
     /**
      * 发送聊天请求（非流式）
@@ -155,6 +363,9 @@ class AIApiClient @Inject constructor() {
         temperature: Float = 0.7f,
         maxTokens: Int = 4096
     ): ChatCompletionResponse {
+        // 自动补全 API URL
+        val apiUrl = normalizeApiUrl(channel.apiUrl)
+        
         val request = ChatCompletionRequest(
             model = model,
             messages = messages,
@@ -167,7 +378,7 @@ class AIApiClient @Inject constructor() {
             .toRequestBody("application/json".toMediaType())
         
         val httpRequest = Request.Builder()
-            .url(channel.apiUrl)
+            .url(apiUrl)
             .addHeader("Authorization", "Bearer ${channel.apiKey}")
             .addHeader("Content-Type", "application/json")
             .post(requestBody)

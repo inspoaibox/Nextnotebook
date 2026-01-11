@@ -27,11 +27,19 @@ data class SyncConfig(
     @SerialName("sync_path") val syncPath: String = "/mucheng-notes",
     val username: String? = null,
     val password: String? = null,
-    @SerialName("api_key") val apiKey: String? = null, // 用于 server 类型同步
+    @SerialName("api_key") val apiKey: String? = null, // 用于 server 类型同步（已废弃，改用三要素认证）
     @SerialName("sync_interval") val syncInterval: Int = 5, // minutes
     @SerialName("last_sync_time") val lastSyncTime: Long? = null,
     @SerialName("sync_cursor") val syncCursor: String? = null,
-    @SerialName("sync_modules") val syncModules: SyncModules = SyncModules()
+    @SerialName("sync_modules") val syncModules: SyncModules = SyncModules(),
+    
+    // 自建服务器认证字段（三要素：用户名 + 密码 + 同步密钥）
+    @SerialName("server_username") val serverUsername: String? = null,
+    @SerialName("server_password") val serverPassword: String? = null,
+    @SerialName("server_sync_key") val serverSyncKey: String? = null,
+    @SerialName("server_token") val serverToken: String? = null,
+    @SerialName("server_refresh_token") val serverRefreshToken: String? = null,
+    @SerialName("server_token_expires") val serverTokenExpires: Long? = null
 )
 
 /**

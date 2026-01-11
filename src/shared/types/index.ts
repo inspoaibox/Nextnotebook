@@ -179,7 +179,7 @@ export interface AIConfigPayload {
 export interface AIChannel {
   id: string;
   name: string;
-  type: 'openai' | 'anthropic' | 'custom';
+  type: 'openai' | 'anthropic' | 'gemini' | 'custom';
   api_url: string;
   api_key: string;
   models: AIModel[];
@@ -278,6 +278,13 @@ export interface SyncConfig {
   username?: string;
   password?: string;
   api_key?: string;
+  // 自建服务器认证字段
+  server_username?: string;   // 服务器用户名
+  server_password?: string;   // 服务器密码
+  server_sync_key?: string;   // 同步密钥
+  server_token?: string;      // JWT token
+  server_refresh_token?: string;  // 刷新 token
+  server_token_expires?: number;  // token 过期时间
   sync_interval: number;  // 分钟
   last_sync_time: number | null;
   sync_cursor: string | null;

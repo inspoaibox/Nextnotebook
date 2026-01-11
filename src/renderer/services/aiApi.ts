@@ -1,4 +1,4 @@
-import { ItemBase, ItemType, AIConversationPayload, AIMessagePayload, AIChannel, AISettings } from '@shared/types';
+import { ItemBase, AIConversationPayload, AIMessagePayload, AIChannel, AISettings } from '@shared/types';
 import { itemsApi } from './itemsApi';
 
 // 解析 payload 的辅助函数
@@ -142,7 +142,17 @@ export async function callAIApi(
   options: ChatCompletionOptions,
   onChunk?: (chunk: string) => void
 ): Promise<string> {
-  const { api_url, api_key, type } = channel;
+  let { api_url, api_key, type } = channel;
+  
+  // Gemini API 使用不同的 URL 和格式
+  if (type === 'gemini') {
+    return callGeminiApi(api_url, api_key, options, onChunk);
+  }
+  
+  // 自动补全 OpenAI 兼容的 API 地址（用户只需填 https://xxx/v1）
+  if ((type === 'openai' || type === 'custom') && !api_url.endsWith('/chat/completions')) {
+    api_url = api_url.replace(/\/$/, '') + '/chat/completions';
+  }
   
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -251,17 +261,124 @@ export async function callAIApi(
   return data.choices?.[0]?.message?.content || '';
 }
 
+// Gemini API 调用
+async function callGeminiApi(
+  baseUrl: string,
+  apiKey: string,
+  options: ChatCompletionOptions,
+  onChunk?: (chunk: string) => void
+): Promise<string> {
+  // Gemini API URL 格式: {baseUrl}/models/{model}:generateContent?key={apiKey}
+  // 或流式: {baseUrl}/models/{model}:streamGenerateContent?key={apiKey}
+  const isStream = options.stream && onChunk;
+  const endpoint = isStream ? 'streamGenerateContent' : 'generateContent';
+  const url = `${baseUrl}/models/${options.model}:${endpoint}?key=${apiKey}`;
+  
+  // 转换消息格式为 Gemini 格式
+  const contents: any[] = [];
+  let systemInstruction: string | undefined;
+  
+  for (const msg of options.messages) {
+    if (msg.role === 'system') {
+      systemInstruction = msg.content;
+    } else {
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      });
+    }
+  }
+  
+  const body: any = {
+    contents,
+    generationConfig: {
+      ...(options.temperature !== undefined && { temperature: options.temperature }),
+      ...(options.max_tokens && { maxOutputTokens: options.max_tokens }),
+    },
+  };
+  
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Gemini API 请求失败: ${response.status} - ${error}`);
+  }
+  
+  // 流式响应
+  if (isStream && onChunk) {
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('无法读取响应流');
+    
+    const decoder = new TextDecoder();
+    let fullContent = '';
+    let buffer = '';
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      
+      // Gemini 流式响应是 JSON 数组格式
+      // 尝试解析完整的 JSON 对象
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === '[' || trimmed === ']' || trimmed === ',') continue;
+        
+        try {
+          // 移除可能的前导逗号
+          const jsonStr = trimmed.startsWith(',') ? trimmed.slice(1) : trimmed;
+          const json = JSON.parse(jsonStr);
+          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          if (text) {
+            fullContent += text;
+            onChunk(text);
+          }
+        } catch { /* ignore parse errors */ }
+      }
+    }
+    
+    return fullContent;
+  }
+  
+  // 非流式响应
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
 // 预设渠道模板
 export const PRESET_CHANNELS: Partial<AIChannel>[] = [
   {
     name: 'OpenAI',
     type: 'openai',
-    api_url: 'https://api.openai.com/v1/chat/completions',
+    api_url: 'https://api.openai.com/v1',
     models: [
       { id: 'gpt-4o', name: 'GPT-4o', channel_id: '', max_tokens: 128000, is_custom: false },
       { id: 'gpt-4o-mini', name: 'GPT-4o Mini', channel_id: '', max_tokens: 128000, is_custom: false },
       { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', channel_id: '', max_tokens: 128000, is_custom: false },
       { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', channel_id: '', max_tokens: 16385, is_custom: false },
+    ],
+  },
+  {
+    name: 'Google Gemini',
+    type: 'gemini',
+    api_url: 'https://generativelanguage.googleapis.com/v1beta',
+    models: [
+      { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash', channel_id: '', max_tokens: 1048576, is_custom: false },
+      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', channel_id: '', max_tokens: 2097152, is_custom: false },
+      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', channel_id: '', max_tokens: 1048576, is_custom: false },
+      { id: 'gemini-1.5-flash-8b', name: 'Gemini 1.5 Flash-8B', channel_id: '', max_tokens: 1048576, is_custom: false },
     ],
   },
   {
@@ -272,6 +389,46 @@ export const PRESET_CHANNELS: Partial<AIChannel>[] = [
       { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', channel_id: '', max_tokens: 200000, is_custom: false },
       { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', channel_id: '', max_tokens: 200000, is_custom: false },
       { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', channel_id: '', max_tokens: 200000, is_custom: false },
+    ],
+  },
+  {
+    name: 'DeepSeek',
+    type: 'custom',
+    api_url: 'https://api.deepseek.com/v1',
+    models: [
+      { id: 'deepseek-chat', name: 'DeepSeek Chat', channel_id: '', max_tokens: 64000, is_custom: false },
+      { id: 'deepseek-coder', name: 'DeepSeek Coder', channel_id: '', max_tokens: 64000, is_custom: false },
+      { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', channel_id: '', max_tokens: 64000, is_custom: false },
+    ],
+  },
+  {
+    name: '月之暗面 (Moonshot)',
+    type: 'custom',
+    api_url: 'https://api.moonshot.cn/v1',
+    models: [
+      { id: 'moonshot-v1-8k', name: 'Moonshot V1 8K', channel_id: '', max_tokens: 8192, is_custom: false },
+      { id: 'moonshot-v1-32k', name: 'Moonshot V1 32K', channel_id: '', max_tokens: 32768, is_custom: false },
+      { id: 'moonshot-v1-128k', name: 'Moonshot V1 128K', channel_id: '', max_tokens: 131072, is_custom: false },
+    ],
+  },
+  {
+    name: '智谱 AI',
+    type: 'custom',
+    api_url: 'https://open.bigmodel.cn/api/paas/v4',
+    models: [
+      { id: 'glm-4', name: 'GLM-4', channel_id: '', max_tokens: 128000, is_custom: false },
+      { id: 'glm-4-flash', name: 'GLM-4 Flash', channel_id: '', max_tokens: 128000, is_custom: false },
+      { id: 'glm-3-turbo', name: 'GLM-3 Turbo', channel_id: '', max_tokens: 128000, is_custom: false },
+    ],
+  },
+  {
+    name: '通义千问',
+    type: 'custom',
+    api_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    models: [
+      { id: 'qwen-turbo', name: 'Qwen Turbo', channel_id: '', max_tokens: 8192, is_custom: false },
+      { id: 'qwen-plus', name: 'Qwen Plus', channel_id: '', max_tokens: 32768, is_custom: false },
+      { id: 'qwen-max', name: 'Qwen Max', channel_id: '', max_tokens: 32768, is_custom: false },
     ],
   },
   {

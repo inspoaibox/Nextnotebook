@@ -46,6 +46,9 @@ const { Text } = Typography;
 // 辅助函数：获取 Electron API
 const getElectronAPI = () => (window as any).electronAPI;
 
+// 辅助函数：规范化 URL（移除末尾斜杠）
+const normalizeUrl = (url: string): string => url.replace(/\/+$/, '');
+
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
@@ -107,6 +110,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     setSyncApiKey,
     setSyncInterval,
     setSyncModule,
+    setServerAuth,
+    setServerToken,
+    clearServerAuth,
     resetSettings,
   } = useSettings();
   const {
@@ -192,6 +198,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   const [importLoading, setImportLoading] = useState(false);
   const [includeResources, setIncludeResources] = useState(true);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+
+  // 服务器认证状态
+  const [serverUsername, setServerUsername] = useState('');
+  const [serverPassword, setServerPassword] = useState('');
+  const [serverSyncKey, setServerSyncKey] = useState('');
+  const [serverAuthLoading, setServerAuthLoading] = useState(false);
+  const [serverLoggedIn, setServerLoggedIn] = useState(false);
+  const [serverUserInfo, setServerUserInfo] = useState<{ username: string; role: string } | null>(null);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [importPreview, setImportPreview] = useState<{
     filePath: string;
@@ -602,10 +616,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     console.log('[SettingsModal] Current syncConfig:', syncConfig);
 
     const url = syncConfig.url || '';
-    const username = syncConfig.username || '';
-    const password = syncConfig.password || '';
     const syncPath = syncConfig.sync_path || '/mucheng-notes';
     const type = syncConfig.type || 'webdav';
+
+    // 根据同步类型获取不同的认证信息
+    const username = type === 'server' ? syncConfig.server_username : syncConfig.username;
+    const password = type === 'server' ? syncConfig.server_password : syncConfig.password;
 
     console.log('[SettingsModal] Values for test:', {
       url,
@@ -613,6 +629,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
       syncPath,
       type,
       passwordLength: password?.length || 0,
+      hasServerToken: !!syncConfig.server_token,
     });
 
     if (!url) {
@@ -620,8 +637,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
       return;
     }
 
-    if (!username) {
+    // WebDAV 需要用户名
+    if (type === 'webdav' && !username) {
       message.error('请填写用户名');
+      return;
+    }
+
+    // 自建服务器需要先登录
+    if (type === 'server' && !syncConfig.server_token) {
+      message.error('请先登录服务器');
       return;
     }
 
@@ -637,13 +661,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
           type: type,
           url: url,
           syncPath: syncPath,
-          username: username,
-          password: password,
+          username: username || '',
+          password: password || '',
           syncInterval: syncConfig.sync_interval || 5,
+          // 服务器认证信息
+          serverToken: syncConfig.server_token,
+          serverRefreshToken: syncConfig.server_refresh_token,
+          serverTokenExpires: syncConfig.server_token_expires,
         };
         console.log('[SettingsModal] Calling testConnection with config:', {
           ...testConfig,
           password: '***',
+          serverToken: testConfig.serverToken ? '***' : undefined,
         });
 
         const success = await api.sync.testConnection(testConfig);
@@ -667,6 +696,85 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     }
   };
 
+  // 服务器认证处理
+  const handleServerLogin = async () => {
+    if (!syncConfig.url) {
+      message.error('请先填写服务器地址');
+      return;
+    }
+    if (!serverUsername || !serverPassword || !serverSyncKey) {
+      message.error('请填写用户名、密码和同步密钥');
+      return;
+    }
+
+    setServerAuthLoading(true);
+    try {
+      const baseUrl = normalizeUrl(syncConfig.url);
+      const response = await fetch(`${baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: serverUsername,
+          password: serverPassword,
+          syncKey: serverSyncKey,
+        }),
+      });
+
+      const data = await response.json();
+      // 服务器返回 accessToken，兼容两种字段名
+      const token = data.accessToken || data.token;
+
+      if (response.ok && token) {
+        // 保存认证信息
+        setServerAuth(serverUsername, serverPassword, serverSyncKey);
+        setServerToken(token, data.refreshToken, data.expiresIn || 3600);
+        setServerLoggedIn(true);
+        setServerUserInfo({ username: data.user?.username || serverUsername, role: data.user?.role || 'user' });
+        message.success('登录成功');
+        // 清空输入
+        setServerPassword('');
+        setServerSyncKey('');
+      } else {
+        message.error(data.error?.message || data.message || '登录失败');
+      }
+    } catch (error) {
+      console.error('Login failed:', error);
+      message.error('登录失败：网络错误');
+    } finally {
+      setServerAuthLoading(false);
+    }
+  };
+
+  const handleServerLogout = async () => {
+    if (syncConfig.server_token) {
+      try {
+        const baseUrl = normalizeUrl(syncConfig.url);
+        await fetch(`${baseUrl}/api/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${syncConfig.server_token}`,
+          },
+        });
+      } catch (error) {
+        console.error('Logout request failed:', error);
+      }
+    }
+    clearServerAuth();
+    setServerLoggedIn(false);
+    setServerUserInfo(null);
+    setServerUsername('');
+    message.success('已退出登录');
+  };
+
+  // 初始化服务器登录状态
+  useEffect(() => {
+    if (syncConfig.type === 'server' && syncConfig.server_token) {
+      setServerLoggedIn(true);
+      setServerUsername(syncConfig.server_username || '');
+    }
+  }, [syncConfig.type, syncConfig.server_token, syncConfig.url]);
+
   const menuItems = [
     { key: 'general', icon: <SettingOutlined />, label: '通用设置' },
     { key: 'features', icon: <AppstoreOutlined />, label: '功能开关' },
@@ -687,7 +795,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     const channel: AIChannel = {
       id: `channel_${Date.now()}`,
       name: newChannelForm.name!,
-      type: newChannelForm.type as 'openai' | 'anthropic' | 'custom',
+      type: newChannelForm.type as 'openai' | 'anthropic' | 'gemini' | 'custom',
       api_url: newChannelForm.api_url!,
       api_key: newChannelForm.api_key!,
       models: newChannelForm.models || [],
@@ -737,7 +845,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     }
     updateChannel(editingChannel.id, {
       name: editChannelForm.name,
-      type: editChannelForm.type as 'openai' | 'anthropic' | 'custom',
+      type: editChannelForm.type as 'openai' | 'anthropic' | 'gemini' | 'custom',
       api_url: editChannelForm.api_url,
       api_key: editChannelForm.api_key,
     });
@@ -1101,14 +1209,66 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                       </Form.Item>
                     </>
                   ) : (
-                    <Form.Item label="API Key">
-                      <Input.Password
-                        placeholder="输入 API Key"
-                        style={{ width: 300 }}
-                        value={syncConfig.api_key || ''}
-                        onChange={e => setSyncApiKey(e.target.value)}
-                      />
-                    </Form.Item>
+                    <>
+                      {serverLoggedIn ? (
+                        <div style={{ background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div>
+                              <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                              <span style={{ fontWeight: 500 }}>已登录</span>
+                              <span style={{ marginLeft: 12, color: '#666' }}>
+                                用户: {syncConfig.server_username || serverUsername}
+                                {serverUserInfo?.role === 'admin' && <Tag color="gold" style={{ marginLeft: 8 }}>管理员</Tag>}
+                              </span>
+                            </div>
+                            <Button size="small" onClick={handleServerLogout}>退出登录</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ background: '#fafafa', border: '1px solid #d9d9d9', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                          <Form.Item label="用户名" style={{ marginBottom: 12 }}>
+                            <Input
+                              placeholder="输入用户名"
+                              style={{ width: 250 }}
+                              value={serverUsername}
+                              onChange={e => setServerUsername(e.target.value)}
+                              autoComplete="username"
+                            />
+                          </Form.Item>
+                          <Form.Item label="密码" style={{ marginBottom: 12 }}>
+                            <Input.Password
+                              placeholder="输入密码"
+                              style={{ width: 250 }}
+                              value={serverPassword}
+                              onChange={e => setServerPassword(e.target.value)}
+                              autoComplete="current-password"
+                            />
+                          </Form.Item>
+                          <Form.Item
+                            label="同步密钥"
+                            tooltip="用于加密同步数据，请妥善保管。不同设备需使用相同密钥才能同步。"
+                            style={{ marginBottom: 12 }}
+                          >
+                            <Input.Password
+                              placeholder="输入同步密钥"
+                              style={{ width: 250 }}
+                              value={serverSyncKey}
+                              onChange={e => setServerSyncKey(e.target.value)}
+                              autoComplete="off"
+                            />
+                          </Form.Item>
+                          <Form.Item style={{ marginBottom: 0 }}>
+                            <Button
+                              type="primary"
+                              loading={serverAuthLoading}
+                              onClick={handleServerLogin}
+                            >
+                              登录
+                            </Button>
+                          </Form.Item>
+                        </div>
+                      )}
+                    </>
                   )}
                   <Divider style={{ margin: '16px 0' }} />
                   <Form.Item label="同步间隔">
@@ -1513,20 +1673,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                 </Button>
               </div>
 
-              {/* 预设渠道快捷添加 */}
-              {aiSettings.channels.length === 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <p style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>快速添加预设渠道：</p>
-                  <Space>
-                    {PRESET_CHANNELS.map((preset, idx) => (
-                      <Button key={idx} size="small" onClick={() => handleAddPresetChannel(preset)}>
-                        {preset.name}
-                      </Button>
-                    ))}
-                  </Space>
-                </div>
-              )}
-
               {/* 渠道列表 */}
               {aiSettings.channels.map(channel => (
                 <div
@@ -1556,7 +1702,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                             ? 'green'
                             : channel.type === 'anthropic'
                               ? 'orange'
-                              : 'blue'
+                              : channel.type === 'gemini'
+                                ? 'blue'
+                                : 'default'
                         }
                       >
                         {channel.type}
@@ -1714,20 +1862,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
               >
                 <h4 style={{ margin: '0 0 12px' }}>添加新渠道</h4>
                 <Space direction="vertical" style={{ width: '100%' }}>
+                  <Select
+                    placeholder="选择预设渠道"
+                    style={{ width: '100%' }}
+                    onChange={(v) => {
+                      const preset = PRESET_CHANNELS.find(p => p.name === v);
+                      if (preset) {
+                        setNewChannelForm(prev => ({
+                          ...prev,
+                          name: preset.name || '',
+                          type: preset.type || 'custom',
+                          api_url: preset.api_url || '',
+                          models: preset.models || [],
+                        }));
+                      }
+                    }}
+                    options={PRESET_CHANNELS.map(p => ({ value: p.name, label: p.name }))}
+                  />
                   <Input
                     placeholder="渠道名称"
                     value={newChannelForm.name}
                     onChange={e => setNewChannelForm(prev => ({ ...prev, name: e.target.value }))}
-                  />
-                  <Select
-                    value={newChannelForm.type}
-                    onChange={v => setNewChannelForm(prev => ({ ...prev, type: v }))}
-                    style={{ width: '100%' }}
-                    options={[
-                      { value: 'openai', label: 'OpenAI 兼容' },
-                      { value: 'anthropic', label: 'Anthropic' },
-                      { value: 'custom', label: '自定义' },
-                    ]}
                   />
                   <Input
                     placeholder="API 地址"
@@ -1791,6 +1946,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                     style={{ width: '100%' }}
                     options={[
                       { value: 'openai', label: 'OpenAI 兼容' },
+                      { value: 'gemini', label: 'Google Gemini' },
                       { value: 'anthropic', label: 'Anthropic' },
                       { value: 'custom', label: '自定义' },
                     ]}

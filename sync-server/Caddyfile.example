@@ -1,0 +1,54 @@
+# 暮城笔记同步服务器 - Caddy 配置示例
+# 将此文件重命名为 Caddyfile 并修改域名
+
+# 基础配置 - 自动 HTTPS
+sync.yourdomain.com {
+    # 反向代理到同步服务器
+    reverse_proxy localhost:3000 {
+        # 传递真实客户端 IP（重要：用于频率限制）
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    
+    # 上传文件大小限制（与服务器 MAX_RESOURCE_SIZE 配置一致）
+    request_body {
+        max_size 100MB
+    }
+    
+    # 安全响应头
+    header {
+        # 防止 XSS 攻击
+        X-XSS-Protection "1; mode=block"
+        # 防止 MIME 类型嗅探
+        X-Content-Type-Options "nosniff"
+        # 防止点击劫持
+        X-Frame-Options "DENY"
+        # 严格传输安全（HSTS）
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # 内容安全策略
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+        # 移除服务器标识
+        -Server
+    }
+    
+    # 访问日志
+    log {
+        output file /var/log/caddy/sync-access.log {
+            roll_size 10MB
+            roll_keep 5
+            roll_keep_for 720h
+        }
+        format json
+    }
+    
+    # 错误日志
+    handle_errors {
+        respond "{err.status_code} {err.status_text}"
+    }
+}
+
+# 如果需要同时支持 www 子域名
+# www.sync.yourdomain.com {
+#     redir https://sync.yourdomain.com{uri} permanent
+# }

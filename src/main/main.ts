@@ -147,7 +147,7 @@ function createWindow(): void {
   });
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
+    mainWindow.loadURL('http://localhost:3001');
     // 开发模式下打开开发者工具
     mainWindow.webContents.openDevTools();
   } else {

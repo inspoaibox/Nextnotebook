@@ -159,7 +159,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       const subFolders = buildSubFolderItems(folder.id);
       const isSelected = selectedFolderId === folder.id;
 
-      return {
+      const item: any = {
         key: `folder-${folder.id}`,
         icon: isSelected ? <FolderOpenOutlined style={{ color: folder.color || '#1890ff' }} /> : <FolderOutlined style={{ color: folder.color || undefined }} />,
         label: (
@@ -167,8 +167,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             <span style={{ display: 'block' }}>{folder.name}</span>
           </Dropdown>
         ),
-        children: subFolders,
       };
+
+      // 只有当有子目录时才添加 children 属性
+      if (subFolders && subFolders.length > 0) {
+        item.children = subFolders;
+      }
+
+      return item;
     });
   };
 
@@ -192,7 +198,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       const subFolders = buildSubFolderItems(folder.id);
       const isSelected = selectedFolderId === folder.id;
 
-      return {
+      const item: any = {
         key: `folder-${folder.id}`,
         icon: isSelected ? <FolderOpenOutlined style={{ color: folder.color || '#1890ff' }} /> : <FolderOutlined style={{ color: folder.color || undefined }} />,
         label: (
@@ -200,8 +206,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             <span style={{ display: 'block' }}>{folder.name}</span>
           </Dropdown>
         ),
-        children: subFolders,
       };
+
+      // 只有当有子目录时才添加 children 属性
+      if (subFolders && subFolders.length > 0) {
+        item.children = subFolders;
+      }
+
+      return item;
     });
   };
 
@@ -266,9 +278,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       onSelectView('all');
       onSelectFolder(null);
     } else if (key === 'uncategorized') {
-      // 未分类 - 显示没有文件夹的笔记
-      onSelectView('all');
-      onSelectFolder(null);
+      // 未分类 - 显示没有文件夹的笔记，使用特殊标识 'uncategorized'
+      onSelectFolder('uncategorized');
     } else if (key === 'starred') {
       onSelectView('starred');
     } else if (key === 'trash') {
@@ -314,6 +325,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const getSelectedKeys = () => {
     if (selectedView === 'starred') return ['starred'];
     if (selectedView === 'trash') return ['trash'];
+    if (selectedFolderId === 'uncategorized') return ['uncategorized'];
     if (selectedFolderId) return [`folder-${selectedFolderId}`];
     return ['all'];
   };
@@ -425,6 +437,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           items={menuItems}
           className="sidebar-menu"
           style={{ background: 'transparent', borderRight: 0 }}
+          inlineIndent={16}
         />
       </div>
       

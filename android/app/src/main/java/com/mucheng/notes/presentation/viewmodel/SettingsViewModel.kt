@@ -69,12 +69,24 @@ data class SettingsUiState(
     val username: String = "",
     val password: String = "",
     val syncPath: String = "/mucheng-notes",
-    val apiKey: String = "", // 用于 server 类型
+    val apiKey: String = "", // 用于 server 类型（已废弃）
     val syncInterval: SyncInterval = SyncInterval.FIVE_MINUTES,
     val syncModules: SyncModules = SyncModules(),
     val lastSyncTime: Long? = null,
     val syncStatus: SyncStatus = SyncStatus.IDLE,
     val testingConnection: Boolean = false,
+    
+    // 自建服务器认证状态
+    val serverUsername: String = "",
+    val serverPassword: String = "",
+    val serverSyncKey: String = "",
+    val serverLoggedIn: Boolean = false,
+    val serverLoginUser: String? = null,
+    val serverLoggingIn: Boolean = false,
+    val serverRegistering: Boolean = false,
+    val serverToken: String? = null,
+    val serverRefreshToken: String? = null,
+    val serverTokenExpires: Long? = null,
     
     // 安全设置 - 应用锁
     val appLockEnabled: Boolean = false,
@@ -142,6 +154,14 @@ class SettingsViewModel @Inject constructor(
         private const val KEY_VAULT_PASSWORD = "vault_password"
         private const val KEY_VAULT_LOCK_ENABLED = "vault_lock_enabled"
         private const val KEY_VAULT_BIOMETRIC_ENABLED = "vault_biometric_enabled"
+        
+        // 自建服务器认证
+        private const val KEY_SERVER_USERNAME = "server_username"
+        private const val KEY_SERVER_PASSWORD = "server_password"
+        private const val KEY_SERVER_SYNC_KEY = "server_sync_key"
+        private const val KEY_SERVER_TOKEN = "server_token"
+        private const val KEY_SERVER_REFRESH_TOKEN = "server_refresh_token"
+        private const val KEY_SERVER_TOKEN_EXPIRES = "server_token_expires"
     }
     
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -214,7 +234,17 @@ class SettingsViewModel @Inject constructor(
                 // AI 设置
                 aiDefaultChannel = prefs.getString(KEY_AI_DEFAULT_CHANNEL, "") ?: "",
                 aiDefaultModel = prefs.getString(KEY_AI_DEFAULT_MODEL, "") ?: "",
-                aiChannelsJson = prefs.getString(KEY_AI_CHANNELS_JSON, "") ?: ""
+                aiChannelsJson = prefs.getString(KEY_AI_CHANNELS_JSON, "") ?: "",
+                
+                // 自建服务器认证
+                serverUsername = prefs.getString(KEY_SERVER_USERNAME, "") ?: "",
+                serverPassword = prefs.getString(KEY_SERVER_PASSWORD, "") ?: "",
+                serverSyncKey = prefs.getString(KEY_SERVER_SYNC_KEY, "") ?: "",
+                serverToken = prefs.getString(KEY_SERVER_TOKEN, null),
+                serverRefreshToken = prefs.getString(KEY_SERVER_REFRESH_TOKEN, null),
+                serverTokenExpires = prefs.getLong(KEY_SERVER_TOKEN_EXPIRES, 0).takeIf { it > 0 },
+                serverLoggedIn = prefs.getString(KEY_SERVER_TOKEN, null) != null,
+                serverLoginUser = prefs.getString(KEY_SERVER_USERNAME, null)
             )
         }
     }
@@ -274,6 +304,153 @@ class SettingsViewModel @Inject constructor(
     fun setApiKey(apiKey: String) {
         prefs.edit().putString(KEY_API_KEY, apiKey).apply()
         _uiState.update { it.copy(apiKey = apiKey) }
+    }
+    
+    // 自建服务器认证方法
+    fun setServerUsername(username: String) {
+        prefs.edit().putString(KEY_SERVER_USERNAME, username).apply()
+        _uiState.update { it.copy(serverUsername = username) }
+    }
+    
+    fun setServerPassword(password: String) {
+        prefs.edit().putString(KEY_SERVER_PASSWORD, password).apply()
+        _uiState.update { it.copy(serverPassword = password) }
+    }
+    
+    fun setServerSyncKey(syncKey: String) {
+        prefs.edit().putString(KEY_SERVER_SYNC_KEY, syncKey).apply()
+        _uiState.update { it.copy(serverSyncKey = syncKey) }
+    }
+    
+    /**
+     * 服务器登录
+     */
+    fun serverLogin() {
+        viewModelScope.launch {
+            val url = _uiState.value.webdavUrl
+            val username = _uiState.value.serverUsername
+            val password = _uiState.value.serverPassword
+            val syncKey = _uiState.value.serverSyncKey
+            
+            if (url.isBlank()) {
+                _uiState.update { it.copy(message = "请输入服务器地址") }
+                return@launch
+            }
+            if (username.isBlank() || password.isBlank() || syncKey.isBlank()) {
+                _uiState.update { it.copy(message = "请填写用户名、密码和同步密钥") }
+                return@launch
+            }
+            
+            _uiState.update { it.copy(serverLoggingIn = true) }
+            
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val adapter = com.mucheng.notes.data.remote.ServerAdapterImpl()
+                adapter.initialize(com.mucheng.notes.domain.model.SyncConfig(url = url))
+                adapter.login(username, password, syncKey)
+            }
+            
+            if (result.success && result.accessToken != null) {
+                // 保存 token
+                prefs.edit()
+                    .putString(KEY_SERVER_TOKEN, result.accessToken)
+                    .putString(KEY_SERVER_REFRESH_TOKEN, result.refreshToken)
+                    .putLong(KEY_SERVER_TOKEN_EXPIRES, System.currentTimeMillis() + (result.expiresIn ?: 3600) * 1000L)
+                    .apply()
+                
+                _uiState.update { it.copy(
+                    serverLoggingIn = false,
+                    serverLoggedIn = true,
+                    serverLoginUser = result.user?.username ?: username,
+                    serverToken = result.accessToken,
+                    serverRefreshToken = result.refreshToken,
+                    serverTokenExpires = System.currentTimeMillis() + (result.expiresIn ?: 3600) * 1000L,
+                    message = "登录成功"
+                ) }
+            } else {
+                _uiState.update { it.copy(
+                    serverLoggingIn = false,
+                    message = result.error?.message ?: result.message ?: "登录失败"
+                ) }
+            }
+        }
+    }
+    
+    /**
+     * 服务器注册
+     */
+    fun serverRegister() {
+        viewModelScope.launch {
+            val url = _uiState.value.webdavUrl
+            val username = _uiState.value.serverUsername
+            val password = _uiState.value.serverPassword
+            val syncKey = _uiState.value.serverSyncKey
+            
+            if (url.isBlank()) {
+                _uiState.update { it.copy(message = "请输入服务器地址") }
+                return@launch
+            }
+            if (username.isBlank() || password.isBlank() || syncKey.isBlank()) {
+                _uiState.update { it.copy(message = "请填写用户名、密码和同步密钥") }
+                return@launch
+            }
+            
+            _uiState.update { it.copy(serverRegistering = true) }
+            
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val adapter = com.mucheng.notes.data.remote.ServerAdapterImpl()
+                adapter.initialize(com.mucheng.notes.domain.model.SyncConfig(url = url))
+                adapter.register(username, password, syncKey)
+            }
+            
+            if (result.success) {
+                _uiState.update { it.copy(
+                    serverRegistering = false,
+                    message = "注册成功，请登录"
+                ) }
+            } else {
+                _uiState.update { it.copy(
+                    serverRegistering = false,
+                    message = result.error?.message ?: result.message ?: "注册失败"
+                ) }
+            }
+        }
+    }
+    
+    /**
+     * 服务器登出
+     */
+    fun serverLogout() {
+        viewModelScope.launch {
+            val url = _uiState.value.webdavUrl
+            val token = _uiState.value.serverToken
+            
+            if (token != null) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val adapter = com.mucheng.notes.data.remote.ServerAdapterImpl()
+                    adapter.initialize(com.mucheng.notes.domain.model.SyncConfig(
+                        url = url,
+                        serverToken = token
+                    ))
+                    adapter.logout()
+                }
+            }
+            
+            // 清除本地 token
+            prefs.edit()
+                .remove(KEY_SERVER_TOKEN)
+                .remove(KEY_SERVER_REFRESH_TOKEN)
+                .remove(KEY_SERVER_TOKEN_EXPIRES)
+                .apply()
+            
+            _uiState.update { it.copy(
+                serverLoggedIn = false,
+                serverLoginUser = null,
+                serverToken = null,
+                serverRefreshToken = null,
+                serverTokenExpires = null,
+                message = "已登出"
+            ) }
+        }
     }
     
     fun setSyncInterval(interval: SyncInterval) {
@@ -438,25 +615,26 @@ class SettingsViewModel @Inject constructor(
      */
     private fun testServerConnection(): String {
         val url = _uiState.value.webdavUrl
-        val syncPath = _uiState.value.syncPath
-        val apiKey = _uiState.value.apiKey
         
         return try {
-            val fullUrl = if (url.endsWith("/")) {
-                url.dropLast(1) + syncPath
+            // 测试 /api/health 端点
+            val healthUrl = if (url.endsWith("/")) {
+                url.dropLast(1) + "/api/health"
             } else {
-                url + syncPath
+                url + "/api/health"
             }
             
-            val testUrl = java.net.URL(fullUrl)
+            val testUrl = java.net.URL(healthUrl)
             val connection = testUrl.openConnection() as java.net.HttpURLConnection
             connection.requestMethod = "GET"
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
             connection.instanceFollowRedirects = true
             
-            if (apiKey.isNotBlank()) {
-                connection.setRequestProperty("Authorization", "Bearer $apiKey")
+            // 如果已登录，添加认证头
+            val token = _uiState.value.serverToken
+            if (!token.isNullOrBlank()) {
+                connection.setRequestProperty("Authorization", "Bearer $token")
             }
             
             val responseCode = connection.responseCode
@@ -464,9 +642,8 @@ class SettingsViewModel @Inject constructor(
             
             when {
                 responseCode in 200..299 -> "连接成功"
-                responseCode == 401 -> "连接失败: 认证失败，请检查 API Key"
+                responseCode == 401 -> "连接成功（需要登录）"
                 responseCode == 403 -> "连接失败: 访问被拒绝"
-                responseCode == 404 -> "连接成功（同步目录将在首次同步时自动创建）"
                 responseCode >= 500 -> "连接失败: 服务器错误 ($responseCode)"
                 else -> "连接失败: HTTP $responseCode"
             }
@@ -510,6 +687,12 @@ class SettingsViewModel @Inject constructor(
                 return@launch
             }
             
+            // 自建服务器需要先登录
+            if (_uiState.value.syncType == "server" && !_uiState.value.serverLoggedIn) {
+                _uiState.update { it.copy(message = "请先登录服务器") }
+                return@launch
+            }
+            
             _uiState.update { it.copy(syncStatus = SyncStatus.SYNCING) }
             
             try {
@@ -522,7 +705,14 @@ class SettingsViewModel @Inject constructor(
                     username = _uiState.value.username.ifBlank { null },
                     password = _uiState.value.password.ifBlank { null },
                     apiKey = _uiState.value.apiKey.ifBlank { null },
-                    syncModules = _uiState.value.syncModules
+                    syncModules = _uiState.value.syncModules,
+                    // 自建服务器认证信息
+                    serverUsername = _uiState.value.serverUsername.ifBlank { null },
+                    serverPassword = _uiState.value.serverPassword.ifBlank { null },
+                    serverSyncKey = _uiState.value.serverSyncKey.ifBlank { null },
+                    serverToken = _uiState.value.serverToken,
+                    serverRefreshToken = _uiState.value.serverRefreshToken,
+                    serverTokenExpires = _uiState.value.serverTokenExpires
                 )
                 
                 // 设置同步配置并执行同步

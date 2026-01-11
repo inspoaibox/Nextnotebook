@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,6 +22,7 @@ import com.mucheng.notes.presentation.viewmodel.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -46,8 +48,8 @@ data class AIChannel(
     val id: String,
     val name: String,
     val type: String, // 使用 String 以便序列化
-    val apiUrl: String,
-    val apiKey: String,
+    @SerialName("api_url") val apiUrl: String,
+    @SerialName("api_key") val apiKey: String,
     val models: List<AIModel> = emptyList(),
     val enabled: Boolean = true
 )
@@ -59,7 +61,7 @@ data class AIChannel(
 data class AIModel(
     val id: String,
     val name: String,
-    val isCustom: Boolean = false
+    @SerialName("is_custom") val isCustom: Boolean = false
 )
 
 /**
@@ -452,7 +454,7 @@ fun AISettingsScreen(
                         readOnly = true,
                         label = { Text("默认模型") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showDefaultModelMenu) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
                     )
                     ExposedDropdownMenu(
                         expanded = showDefaultModelMenu,
@@ -928,7 +930,7 @@ private fun AddEditChannelDialog(
                         readOnly = true,
                         label = { Text("渠道类型") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showTypeMenu) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
                     )
                     ExposedDropdownMenu(
                         expanded = showTypeMenu,

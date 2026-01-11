@@ -32,6 +32,7 @@ data class RemoteChange(
 /**
  * 变更列表结果
  */
+@Serializable
 data class ChangeListResult(
     val changes: List<RemoteChange>,
     val nextCursor: String?,
@@ -44,6 +45,7 @@ data class ChangeListResult(
 @Serializable
 data class SyncCursor(
     val cursor: String,           // 最后处理的变更文件名 (如 "1704537600000.json")
+    @SerialName("updated_at")
     val timestamp: Long           // 游标更新时间
 )
 

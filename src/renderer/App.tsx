@@ -295,6 +295,10 @@ const App: React.FC = () => {
           username: syncConfig.username,
           password: syncConfig.password,
           apiKey: syncConfig.api_key,
+          // 服务器认证信息
+          serverToken: syncConfig.server_token,
+          serverRefreshToken: syncConfig.server_refresh_token,
+          serverTokenExpires: syncConfig.server_token_expires,
           syncInterval: syncConfig.sync_interval,
           syncModules: syncConfig.sync_modules,
           lastSyncTime: syncConfig.last_sync_time,  // 传递上次同步时间
@@ -322,7 +326,7 @@ const App: React.FC = () => {
       }
     };
     initSync();
-  }, [syncConfig.enabled, syncConfig.url, syncConfig.type, syncConfig.username, syncConfig.password, syncConfig.sync_path, syncConfig.sync_interval, syncConfig.api_key, syncConfig.sync_modules]);
+  }, [syncConfig.enabled, syncConfig.url, syncConfig.type, syncConfig.username, syncConfig.password, syncConfig.sync_path, syncConfig.sync_interval, syncConfig.api_key, syncConfig.sync_modules, syncConfig.server_token]);
 
   // 监听同步时间更新事件，持久化到配置
   useEffect(() => {
@@ -388,13 +392,28 @@ const App: React.FC = () => {
             .filter(note => note.tags.includes(selectedTagId));
           setFilteredNotes(taggedNotes);
         }
+      } else if (selectedFolderId === 'uncategorized') {
+        // 加载未分类笔记（没有文件夹的笔记）
+        const allNotes = await notesApi.getAll();
+        if (allNotes) {
+          const uncategorizedNotes = allNotes
+            .map(itemToNote)
+            .filter(note => !note.folderId);
+          // 置顶笔记优先
+          uncategorizedNotes.sort((a, b) => {
+            if (a.isPinned && !b.isPinned) return -1;
+            if (!a.isPinned && b.isPinned) return 1;
+            return b.updatedAt - a.updatedAt;
+          });
+          setFilteredNotes(uncategorizedNotes);
+        }
       } else {
         // 使用默认的 notes（按文件夹过滤）
         setFilteredNotes(notes);
       }
     };
     loadFilteredNotes();
-  }, [selectedView, selectedTagId, notes]);
+  }, [selectedView, selectedTagId, selectedFolderId, notes]);
 
   const handleSelectView = useCallback((view: 'all' | 'starred' | 'trash') => {
     setSelectedView(view);
@@ -404,8 +423,13 @@ const App: React.FC = () => {
   }, []);
 
   const handleSelectFolder = useCallback((folderId: string | null) => {
-    setSelectedView(folderId ? 'folder' : 'all');
-    setSelectedFolderId(folderId);
+    if (folderId === 'uncategorized') {
+      setSelectedView('all');
+      setSelectedFolderId('uncategorized');
+    } else {
+      setSelectedView(folderId ? 'folder' : 'all');
+      setSelectedFolderId(folderId);
+    }
     setSelectedTagId(null);
     setSelectedNoteId(null);
   }, []);

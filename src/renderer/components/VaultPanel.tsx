@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { 
-  Layout, Input, Button, List, Empty, Modal, message, Tooltip, Dropdown, 
+import {
+  Layout, Input, Button, List, Empty, Modal, message, Tooltip, Dropdown,
   Tag, Form, Select, Tabs, Space, Divider, Popconfirm, Progress
 } from 'antd';
 import {
@@ -17,6 +17,135 @@ import * as OTPAuth from 'otpauth';
 
 const { Sider, Content } = Layout;
 const { TextArea } = Input;
+
+// 注入样式
+const styles = `
+  .vault-panel {
+    background: #f0f2f5 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  .vault-sider-light {
+    background: #fff !important;
+    border-right: 1px solid rgba(0,0,0,0.06) !important;
+  }
+
+  /* Compact Sidebar Items */
+  .vault-nav-item {
+    padding: 6px 12px;
+    margin: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #4b5563;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .vault-nav-item:hover {
+    background: rgba(0,0,0,0.04);
+    color: #111827;
+  }
+
+  .vault-nav-item.selected {
+    background: #e6f7ff;
+    color: #096dd9;
+  }
+
+  /* Compact Entry List */
+  .vault-entry-card {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 52px;
+  }
+
+  .vault-entry-card:hover {
+    background: #fafafa;
+  }
+
+  .vault-entry-card.selected {
+    background: #e6f7ff;
+    border-right: 3px solid #1890ff;
+  }
+
+  /* Compact Detail View */
+  .vault-detail-header {
+    background: #fff;
+    padding: 16px 24px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 72px;
+    height: auto;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  }
+
+  .vault-detail-body {
+    padding: 20px 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  
+  .vault-detail-section {
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+  }
+  
+  .vault-row {
+     display: flex;
+     gap: 24px;
+     margin-bottom: 12px;
+  }
+  
+  .vault-col {
+     flex: 1;
+     min-width: 0;
+  }
+
+  .vault-field-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #6b7280;
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+  
+  .secure-input-wrapper {
+    background: #f9fafb;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    padding: 0 4px 0 8px;
+    height: 32px;
+    transition: all 0.2s;
+  }
+  
+  .secure-input-wrapper:focus-within {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    background: #fff;
+  }
+  
+  .secure-input-wrapper input {
+    font-size: 13px; 
+  }
+`;
 
 // 规范化 URL，自动添加 https:// 前缀
 const normalizeUrl = (url: string): string => {
@@ -42,16 +171,27 @@ const ENTRY_TYPE_CONFIG: Record<VaultEntryType, { label: string; icon: React.Rea
 const PasswordField: React.FC<{ value: string; onCopy: () => void }> = ({ value, onCopy }) => {
   const [visible, setVisible] = useState(false);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <Input.Password
+    <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+      <Input
+        type={visible ? 'text' : 'password'}
         value={value}
-        visibilityToggle={{ visible, onVisibleChange: setVisible }}
         readOnly
-        style={{ flex: 1 }}
+        bordered={false}
+        style={{ flex: 1, fontSize: 13, padding: 0 }}
       />
-      <Tooltip title="复制">
-        <Button type="text" icon={<CopyOutlined />} onClick={onCopy} />
-      </Tooltip>
+      <Space size={4}>
+        <Tooltip title={visible ? '隐藏' : '显示'}>
+          <Button
+            type="text"
+            icon={visible ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+            onClick={() => setVisible(!visible)}
+            style={{ color: '#6b7280' }}
+          />
+        </Tooltip>
+        <Tooltip title="复制">
+          <Button type="text" icon={<CopyOutlined />} onClick={onCopy} style={{ color: '#6b7280' }} />
+        </Tooltip>
+      </Space>
     </div>
   );
 };
@@ -61,10 +201,10 @@ const parseOtpAuthUri = (uri: string): { secret: string; name: string; issuer?: 
   try {
     const trimmedUri = uri.trim();
     if (!trimmedUri.startsWith('otpauth://')) return null;
-    
+
     const totp = OTPAuth.URI.parse(trimmedUri);
     if (!totp.secret) return null;
-    
+
     return {
       secret: totp.secret.base32,
       name: totp.label || '',
@@ -83,7 +223,7 @@ const generateTotpCode = (secret: string): string | null => {
     // 清理 secret：移除空格，转大写，移除非 Base32 字符
     const cleanSecret = secret.replace(/[\s-]/g, '').toUpperCase().replace(/[^A-Z2-7]/g, '');
     if (!cleanSecret || cleanSecret.length < 8) return null;
-    
+
     const totp = new OTPAuth.TOTP({
       secret: OTPAuth.Secret.fromBase32(cleanSecret),
       digits: 6,
@@ -124,9 +264,9 @@ const TotpDisplay: React.FC<{ secret: string; name: string; account?: string; on
   const displayName = account ? `${name} (${account})` : (name || '验证码');
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      alignItems: 'center', 
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
       gap: 12,
       padding: '8px 12px',
       background: '#f6ffed',
@@ -135,9 +275,9 @@ const TotpDisplay: React.FC<{ secret: string; name: string; account?: string; on
     }}>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{displayName}</div>
-        <div style={{ 
-          fontSize: 24, 
-          fontWeight: 600, 
+        <div style={{
+          fontSize: 24,
+          fontWeight: 600,
           fontFamily: 'monospace',
           color: remaining <= 5 ? '#ff4d4f' : '#52c41a',
           letterSpacing: 2,
@@ -146,9 +286,9 @@ const TotpDisplay: React.FC<{ secret: string; name: string; account?: string; on
         </div>
       </div>
       <div style={{ width: 40, textAlign: 'center' }}>
-        <Progress 
-          type="circle" 
-          percent={(remaining / 30) * 100} 
+        <Progress
+          type="circle"
+          percent={(remaining / 30) * 100}
           size={36}
           format={() => remaining}
           strokeColor={remaining <= 5 ? '#ff4d4f' : '#52c41a'}
@@ -173,32 +313,77 @@ const EntryListItem: React.FC<{
   return (
     <div
       onClick={onSelect}
-      className={`vault-entry-item ${selected ? 'selected' : ''}`}
+      className={`vault-entry-card ${selected ? 'selected' : ''}`}
       style={{
         padding: '10px 12px',
+        borderBottom: '1px solid #f0f0f0',
         cursor: 'pointer',
-        borderLeft: selected ? '3px solid #1890ff' : '3px solid transparent',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         gap: 10,
+        background: selected ? '#e6f7ff' : undefined,
+        borderRight: selected ? '3px solid #1890ff' : undefined,
       }}
     >
-      <span style={{ color: config.color }}>{config.icon}</span>
+      <div style={{
+        width: 32,
+        height: 32,
+        borderRadius: 6,
+        background: selected ? '#fff' : '#f3f4f6',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 14,
+        color: config.color,
+        border: '1px solid rgba(0,0,0,0.05)',
+        flexShrink: 0,
+        marginTop: 2
+      }}>
+        {config.icon}
+      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 500, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {/* 名称区域 - 允许换行显示完整内容 */}
+        <div style={{
+          fontWeight: 500,
+          fontSize: 13,
+          color: '#1f2937',
+          lineHeight: 1.4,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          marginBottom: 4
+        }}>
           {entry.name}
         </div>
-        {entry.username && (
-          <div style={{ fontSize: 12, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {entry.username}
-          </div>
-        )}
+        {/* 用户名/类型 和 时间 - 固定在底部一行 */}
+        <div style={{
+          fontSize: 11,
+          color: '#9ca3af',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          lineHeight: 1.2
+        }}>
+          <span style={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+            marginRight: 8
+          }}>
+            {entry.username || config.label}
+          </span>
+          <span style={{ whiteSpace: 'nowrap', flexShrink: 0, color: '#bfbfbf', fontSize: 10 }}>
+            {entry.updatedAt ? new Date(entry.updatedAt).toLocaleDateString() : ''}
+          </span>
+        </div>
       </div>
       <Button
         type="text"
         size="small"
-        icon={entry.favorite ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
+        icon={entry.favorite ? <StarFilled style={{ color: '#fbbf24' }} /> : <StarOutlined style={{ color: '#d1d5db' }} />}
         onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
+        style={{ flexShrink: 0, marginTop: 2 }}
       />
     </div>
   );
@@ -270,10 +455,10 @@ const TotpEditor: React.FC<{
         // 从 otpauth://totp/GitHub:aorxuck41 格式中提取
         // issuer = GitHub, name/label = GitHub:aorxuck41 或 aorxuck41
         const currentTotp = totps.find(t => t.id === id);
-        
+
         // 提取服务名称（issuer）
         const serviceName = parsed.issuer || '';
-        
+
         // 提取账户名（从 label 中提取，格式可能是 "issuer:account" 或 "account"）
         let accountName = '';
         if (parsed.name) {
@@ -281,9 +466,9 @@ const TotpEditor: React.FC<{
           const colonIndex = parsed.name.indexOf(':');
           accountName = colonIndex >= 0 ? parsed.name.substring(colonIndex + 1) : parsed.name;
         }
-        
-        updateTotp(id, { 
-          secret: parsed.secret, 
+
+        updateTotp(id, {
+          secret: parsed.secret,
           name: currentTotp?.name || serviceName,
           account: currentTotp?.account || accountName,
         });
@@ -443,10 +628,10 @@ const VaultPanel: React.FC = () => {
 
   // 过滤条目
   const filteredEntries = searchQuery
-    ? entries.filter(e => 
-        e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.username.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    ? entries.filter(e =>
+      e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      e.username.toLowerCase().includes(searchQuery.toLowerCase())
+    )
     : entries;
 
   const handleCreateEntry = () => {
@@ -541,79 +726,75 @@ const VaultPanel: React.FC = () => {
   return (
     <Layout style={{ height: '100%' }} className="vault-panel">
       {/* 左侧文件夹列表 */}
-      <Sider width={180} theme="light" className="vault-folder-sider" style={{ borderRight: '1px solid var(--border-color, #f0f0f0)' }}>
+      <Sider width={240} className="vault-sider-light" style={{ borderRight: '1px solid rgba(0,0,0,0.06)' }}>
+        <style>{styles}</style>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color, #f0f0f0)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <KeyOutlined style={{ fontSize: 16, color: '#1890ff' }} />
-            <span style={{ fontWeight: 500 }}>密码库</span>
+          {/* Header */}
+          <div style={{
+            padding: '24px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12
+          }}>
+            <div style={{
+              width: 32, height: 32,
+              background: '#096dd9',
+              borderRadius: 6,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 6px rgba(9, 109, 217, 0.2)'
+            }}>
+              <SafetyOutlined style={{ fontSize: 18, color: '#fff' }} />
+            </div>
+            <span style={{ fontWeight: 700, fontSize: 16, color: '#111827', letterSpacing: -0.5 }}>安全保险箱</span>
           </div>
-          <div style={{ flex: 1, overflow: 'auto' }}>
+
+          <div style={{ flex: 1, overflow: 'auto', padding: '0 8px' }}>
+            <div style={{ padding: '0 12px 8px', fontSize: 11, fontWeight: 700, color: '#9ca3af', letterSpacing: 0.5 }}>
+              DASHBOARD
+            </div>
             <div
               onClick={() => { setSelectedFolderId('all'); setSelectedEntryId(null); setViewMode('normal'); }}
-              className={`vault-folder-item ${selectedFolderId === 'all' && viewMode === 'normal' ? 'selected' : ''}`}
-              style={{
-                padding: '8px 12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
+              className={`vault-nav-item ${selectedFolderId === 'all' && viewMode === 'normal' ? 'selected' : ''}`}
             >
               <GlobalOutlined />
               <span>所有项目</span>
             </div>
             <div
               onClick={() => { setSelectedFolderId(null); setSelectedEntryId(null); setViewMode('normal'); }}
-              className={`vault-folder-item ${selectedFolderId === null && viewMode === 'normal' ? 'selected' : ''}`}
-              style={{
-                padding: '8px 12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
+              className={`vault-nav-item ${selectedFolderId === null && viewMode === 'normal' ? 'selected' : ''}`}
             >
               <FolderOutlined />
               <span>未分类</span>
             </div>
-            <Divider style={{ margin: '8px 0' }} />
-            <div style={{ padding: '4px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary, #888)' }}>文件夹</span>
-              <Button type="text" size="small" icon={<FolderAddOutlined />} onClick={() => setFolderModalOpen(true)} />
+            <div
+              onClick={() => { setViewMode('generator'); setSelectedEntryId(null); }}
+              className={`vault-nav-item ${viewMode === 'generator' ? 'selected' : ''}`}
+            >
+              <ThunderboltOutlined />
+              <span>密码生成器</span>
+            </div>
+
+            <Divider style={{ margin: '16px 12px', borderColor: '#f3f4f6' }} />
+
+            <div style={{ padding: '0 12px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', letterSpacing: 0.5 }}>FOLDERS</span>
+              <Tooltip title="新建文件夹">
+                <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => setFolderModalOpen(true)} style={{ color: '#6b7280' }} />
+              </Tooltip>
             </div>
             {folders.map(folder => (
               <div
                 key={folder.id}
                 onClick={() => { setSelectedFolderId(folder.id); setSelectedEntryId(null); setViewMode('normal'); }}
-                className={`vault-folder-item ${selectedFolderId === folder.id && viewMode === 'normal' ? 'selected' : ''}`}
-                style={{
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
+                className={`vault-nav-item ${selectedFolderId === folder.id && viewMode === 'normal' ? 'selected' : ''}`}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FolderOutlined />
-                  <span>{folder.name}</span>
-                </div>
+                <FolderOutlined style={{ color: selectedFolderId === folder.id ? '#096dd9' : '#d1d5db' }} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder.name}</span>
                 <Popconfirm title="删除此文件夹？" onConfirm={() => deleteFolder(folder.id)}>
-                  <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={e => e.stopPropagation()} />
+                  <Button type="text" size="small" className="delete-btn" icon={<DeleteOutlined />} onClick={e => e.stopPropagation()} style={{ opacity: 0.5 }} />
                 </Popconfirm>
               </div>
             ))}
-          </div>
-          {/* 生成器按钮 */}
-          <div style={{ padding: '12px', borderTop: '1px solid var(--border-color, #f0f0f0)' }}>
-            <Button
-              type={viewMode === 'generator' ? 'primary' : 'default'}
-              icon={<ThunderboltOutlined />}
-              block
-              onClick={() => setViewMode('generator')}
-            >
-              生成器
-            </Button>
           </div>
         </div>
       </Sider>
@@ -631,158 +812,218 @@ const VaultPanel: React.FC = () => {
       ) : (
         <>
           {/* 中间条目列表 */}
-          <Sider width={260} theme="light" className="vault-entry-sider" style={{ borderRight: '1px solid var(--border-color, #f0f0f0)' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color, #f0f0f0)' }}>
-            <Input
-              placeholder="搜索..."
-              prefix={<SearchOutlined />}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              allowClear
-            />
-          </div>
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color, #f0f0f0)' }}>
-            <Button type="primary" icon={<PlusOutlined />} block size="small" onClick={handleCreateEntry}>
-              新建条目
-            </Button>
-          </div>
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            {filteredEntries.length === 0 ? (
-              <Empty description="暂无条目" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginTop: 40 }} />
-            ) : (
-              filteredEntries.map(entry => (
-                <EntryListItem
-                  key={entry.id}
-                  entry={entry}
-                  selected={selectedEntryId === entry.id}
-                  onSelect={() => setSelectedEntryId(entry.id)}
-                  onToggleFavorite={() => toggleFavorite(entry.id)}
-                  onDelete={() => handleDeleteEntry(entry.id)}
+          {/* 中间条目列表 */}
+          <Sider width={260} theme="light" style={{ borderRight: '1px solid rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0f0f0' }}>
+                <Input
+                  placeholder="搜索保险箱..."
+                  prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  allowClear
+                  bordered={false}
+                  style={{ background: '#f5f7f9', padding: '8px 12px', borderRadius: 8 }}
                 />
-              ))
-            )}
-          </div>
-        </div>
-      </Sider>
-
-      {/* 右侧详情 */}
-      <Content className="vault-detail-content" style={{ overflow: 'auto' }}>
-        {selectedEntry ? (
-          <div style={{ padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 20 }}>{selectedEntry.name}</h2>
-                <Tag color={ENTRY_TYPE_CONFIG[selectedEntry.entryType].color} style={{ marginTop: 8 }}>
-                  {ENTRY_TYPE_CONFIG[selectedEntry.entryType].label}
-                </Tag>
               </div>
-              <Space>
-                <Button icon={<EditOutlined />} onClick={() => handleEditEntry(selectedEntry)}>编辑</Button>
-                <Popconfirm title="确定删除？" onConfirm={() => handleDeleteEntry(selectedEntry.id)}>
-                  <Button danger icon={<DeleteOutlined />}>删除</Button>
-                </Popconfirm>
-              </Space>
-            </div>
-
-            {selectedEntry.entryType === 'login' && (
-              <>
-                {selectedEntry.uris.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ fontSize: 12, color: '#888' }}>网站</label>
-                    {selectedEntry.uris.map(uri => (
-                      <div key={uri.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                        <GlobalOutlined />
-                        <a href={normalizeUrl(uri.uri)} target="_blank" rel="noopener noreferrer">{uri.name || uri.uri}</a>
-                      </div>
-                    ))}
-                  </div>
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                {filteredEntries.length === 0 ? (
+                  <Empty description={false} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginTop: 60, opacity: 0.5 }} />
+                ) : (
+                  filteredEntries.map(entry => (
+                    <EntryListItem
+                      key={entry.id}
+                      entry={entry}
+                      selected={selectedEntryId === entry.id}
+                      onSelect={() => setSelectedEntryId(entry.id)}
+                      onToggleFavorite={() => toggleFavorite(entry.id)}
+                      onDelete={() => handleDeleteEntry(entry.id)}
+                    />
+                  ))
                 )}
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 12, color: '#888' }}>用户名</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Input value={selectedEntry.username} readOnly style={{ flex: 1 }} />
-                    <Tooltip title="复制"><Button type="text" icon={<CopyOutlined />} onClick={() => copyToClipboard(selectedEntry.username, '用户名')} /></Tooltip>
-                  </div>
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 12, color: '#888' }}>密码</label>
-                  <PasswordField value={selectedEntry.password} onCopy={() => copyToClipboard(selectedEntry.password, '密码')} />
-                </div>
-                {selectedEntry.totpSecrets && selectedEntry.totpSecrets.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>TOTP 验证码</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {selectedEntry.totpSecrets.map(totp => (
-                        <TotpDisplay 
-                          key={totp.id} 
-                          secret={totp.secret} 
-                          name={totp.name}
-                          account={totp.account}
-                          onCopy={(code) => copyToClipboard(code, `验证码 (${totp.name || '未命名'})`)}
-                        />
-                      ))}
+              </div>
+              <div style={{ padding: '10px 16px', borderTop: '1px solid #f0f0f0' }}>
+                <Button type="primary" icon={<PlusOutlined />} block onClick={handleCreateEntry} style={{ borderRadius: 6 }}>
+                  新建条目
+                </Button>
+              </div>
+            </div>
+          </Sider>
+
+          {/* 右侧详情 - 紧凑型展示 */}
+          <Content className="vault-detail-content" style={{ overflow: 'auto', background: '#f5f7fa' }}>
+            {selectedEntry ? (
+              <div>
+                <div className="vault-detail-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div style={{
+                      width: 48, height: 48,
+                      borderRadius: 12,
+                      background: '#f9fafb',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 24,
+                      color: ENTRY_TYPE_CONFIG[selectedEntry.entryType].color,
+                      border: '1px solid #e5e7eb',
+                    }}>
+                      {ENTRY_TYPE_CONFIG[selectedEntry.entryType].icon}
+                    </div>
+                    <div>
+                      <h2 style={{ margin: '0 0 2px', fontSize: 20, fontWeight: 700, color: '#111827' }}>
+                        {selectedEntry.name}
+                      </h2>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Tag color={ENTRY_TYPE_CONFIG[selectedEntry.entryType].color} style={{ border: 'none', padding: '0 6px', height: 20, lineHeight: '20px', borderRadius: 10, fontSize: 11 }}>
+                          {ENTRY_TYPE_CONFIG[selectedEntry.entryType].label}
+                        </Tag>
+                        {selectedEntry.updatedAt && (
+                          <span style={{ fontSize: 12, color: '#9ca3af' }}>{new Date(selectedEntry.updatedAt).toLocaleDateString()}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                )}
-              </>
-            )}
+                  <Space size={8}>
+                    <Button icon={<EditOutlined />} onClick={() => handleEditEntry(selectedEntry)}>编辑</Button>
+                    <Popconfirm title="确定删除？" onConfirm={() => handleDeleteEntry(selectedEntry.id)}>
+                      <Button danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                  </Space>
+                </div>
 
-            {selectedEntry.entryType === 'card' && (
-              <>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 12, color: '#888' }}>持卡人</label>
-                  <Input value={selectedEntry.cardHolderName} readOnly />
-                </div>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 12, color: '#888' }}>卡号</label>
-                  <PasswordField value={selectedEntry.cardNumber} onCopy={() => copyToClipboard(selectedEntry.cardNumber, '卡号')} />
-                </div>
-                <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 12, color: '#888' }}>有效期</label>
-                    <Input value={`${selectedEntry.cardExpMonth}/${selectedEntry.cardExpYear}`} readOnly />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 12, color: '#888' }}>CVV</label>
-                    <PasswordField value={selectedEntry.cardCvv} onCopy={() => copyToClipboard(selectedEntry.cardCvv, 'CVV')} />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {selectedEntry.customFields.length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <Divider>自定义字段</Divider>
-                {selectedEntry.customFields.map(field => (
-                  <div key={field.id} style={{ marginBottom: 12 }}>
-                    <label style={{ fontSize: 12, color: '#888' }}>{field.name}</label>
-                    {field.type === 'hidden' ? (
-                      <PasswordField value={field.value} onCopy={() => copyToClipboard(field.value, field.name)} />
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Input value={field.value} readOnly style={{ flex: 1 }} />
-                        <Tooltip title="复制"><Button type="text" icon={<CopyOutlined />} onClick={() => copyToClipboard(field.value, field.name)} /></Tooltip>
+                <div className="vault-detail-body">
+                  {selectedEntry.entryType === 'login' && (
+                    <>
+                      <div className="vault-detail-section">
+                        <div className="vault-row">
+                          <div className="vault-col">
+                            <div className="vault-field-label">用户名</div>
+                            <div className="secure-input-wrapper">
+                              <Input
+                                value={selectedEntry.username}
+                                readOnly
+                                bordered={false}
+                                style={{ flex: 1, fontSize: 13, padding: 0 }}
+                              />
+                              <Tooltip title="复制">
+                                <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyToClipboard(selectedEntry.username, '用户名')} style={{ width: 24, height: 24 }} />
+                              </Tooltip>
+                            </div>
+                          </div>
+                          <div className="vault-col">
+                            <div className="vault-field-label">密码</div>
+                            <div className="secure-input-wrapper">
+                              <PasswordField value={selectedEntry.password} onCopy={() => copyToClipboard(selectedEntry.password, '密码')} />
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
 
-            {selectedEntry.notes && (
-              <div>
-                <Divider>备注</Divider>
-                <div style={{ whiteSpace: 'pre-wrap', color: '#666' }}>{selectedEntry.notes}</div>
+                      {selectedEntry.uris.length > 0 && (
+                        <div className="vault-detail-section">
+                          <div className="vault-field-label" style={{ marginBottom: 8 }}>关联网站</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 }}>
+                            {selectedEntry.uris.map(uri => (
+                              <div key={uri.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#f9fafb', borderRadius: 4, border: '1px solid #f3f4f6' }}>
+                                <GlobalOutlined style={{ color: '#096dd9', fontSize: 14 }} />
+                                <a href={normalizeUrl(uri.uri)} target="_blank" rel="noopener noreferrer" style={{ flex: 1, fontWeight: 500, fontSize: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                  {uri.name || new URL(normalizeUrl(uri.uri)).hostname}
+                                </a>
+                                <a href={normalizeUrl(uri.uri)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#bbb' }}>↗</a>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedEntry.totpSecrets && selectedEntry.totpSecrets.length > 0 && (
+                        <div className="vault-detail-section" style={{ borderLeft: '4px solid #1890ff' }}>
+                          <div className="vault-field-label" style={{ marginBottom: 10 }}>两步验证 (TOTP)</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                            {selectedEntry.totpSecrets.map(totp => (
+                              <TotpDisplay
+                                key={totp.id}
+                                secret={totp.secret}
+                                name={totp.name}
+                                account={totp.account}
+                                onCopy={(code) => copyToClipboard(code, `验证码`)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {selectedEntry.entryType === 'card' && (
+                    <div className="vault-detail-section">
+                      <div className="vault-row">
+                        <div className="vault-col">
+                          <div className="vault-field-label">持卡人</div>
+                          <div className="secure-input-wrapper">
+                            <Input value={selectedEntry.cardHolderName} readOnly bordered={false} style={{ fontSize: 13, padding: 0 }} />
+                          </div>
+                        </div>
+                        <div className="vault-col" style={{ flex: 2 }}>
+                          <div className="vault-field-label">卡号</div>
+                          <div className="secure-input-wrapper">
+                            <PasswordField value={selectedEntry.cardNumber} onCopy={() => copyToClipboard(selectedEntry.cardNumber, '卡号')} />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="vault-row">
+                        <div className="vault-col">
+                          <div className="vault-field-label">有效期</div>
+                          <div className="secure-input-wrapper">
+                            <Input value={`${selectedEntry.cardExpMonth}/${selectedEntry.cardExpYear}`} readOnly bordered={false} style={{ fontSize: 13, padding: 0 }} />
+                          </div>
+                        </div>
+                        <div className="vault-col">
+                          <div className="vault-field-label">CVV</div>
+                          <div className="secure-input-wrapper">
+                            <PasswordField value={selectedEntry.cardCvv} onCopy={() => copyToClipboard(selectedEntry.cardCvv, 'CVV')} />
+                          </div>
+                        </div>
+                        <div className="vault-col" />
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedEntry.customFields.length > 0 && (
+                    <div className="vault-detail-section">
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px 24px' }}>
+                        {selectedEntry.customFields.map(field => (
+                          <div key={field.id}>
+                            <div className="vault-field-label">{field.name}</div>
+                            {field.type === 'hidden' ? (
+                              <div className="secure-input-wrapper">
+                                <PasswordField value={field.value} onCopy={() => copyToClipboard(field.value, field.name)} />
+                              </div>
+                            ) : (
+                              <div className="secure-input-wrapper">
+                                <Input value={field.value} readOnly bordered={false} style={{ flex: 1, fontSize: 13, padding: 0 }} />
+                                <Tooltip title="复制"><Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyToClipboard(field.value, field.name)} /></Tooltip>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedEntry.notes && (
+                    <div className="vault-detail-section">
+                      <div className="vault-field-label">备注</div>
+                      <div style={{ whiteSpace: 'pre-wrap', color: '#4b5563', lineHeight: 1.5, background: '#f9fafb', padding: 12, borderRadius: 6, fontSize: 13 }}>{selectedEntry.notes}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', color: '#9ca3af' }}>
+                <SafetyOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.2 }} />
+                <div style={{ fontSize: 14 }}>选择一个项目查看详情</div>
               </div>
             )}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-            <Empty description="选择一个条目查看详情" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          </div>
-        )}
-      </Content>
+          </Content>
         </>
       )}
 

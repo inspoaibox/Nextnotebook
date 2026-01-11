@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  sync-server:
+    build: .
+    container_name: mucheng-sync-server
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_PATH=/app/data/sync.db
+      - RESOURCES_PATH=/app/data/resources
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      - ACCESS_TOKEN_EXPIRES_IN=${ACCESS_TOKEN_EXPIRES_IN:-3600}
+      - REFRESH_TOKEN_EXPIRES_IN=${REFRESH_TOKEN_EXPIRES_IN:-604800}
+      - API_RATE_LIMIT=${API_RATE_LIMIT:-60}
+      - LOGIN_RATE_LIMIT=${LOGIN_RATE_LIMIT:-10}
+      - REGISTER_RATE_LIMIT=${REGISTER_RATE_LIMIT:-5}
+      - MAX_RESOURCE_SIZE=${MAX_RESOURCE_SIZE:-104857600}
+      - CHANGE_LOG_RETENTION_DAYS=${CHANGE_LOG_RETENTION_DAYS:-7}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  sync-data:
