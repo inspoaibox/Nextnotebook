@@ -135,6 +135,11 @@ fun AIScreen(
     
     // 判断是否应该显示输入框：有选中的对话ID即可（即使conversation列表还没加载完）
     val shouldShowInput = uiState.selectedConversationId != null
+    
+    // 调试日志
+    androidx.compose.runtime.LaunchedEffect(uiState.selectedConversationId) {
+        android.util.Log.d("AIScreen", "selectedConversationId changed: ${uiState.selectedConversationId}, shouldShowInput: $shouldShowInput")
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,

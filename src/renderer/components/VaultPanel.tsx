@@ -921,15 +921,24 @@ const VaultPanel: React.FC = () => {
                         <div className="vault-detail-section">
                           <div className="vault-field-label" style={{ marginBottom: 8 }}>关联网站</div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 }}>
-                            {selectedEntry.uris.map(uri => (
-                              <div key={uri.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#f9fafb', borderRadius: 4, border: '1px solid #f3f4f6' }}>
-                                <GlobalOutlined style={{ color: '#096dd9', fontSize: 14 }} />
-                                <a href={normalizeUrl(uri.uri)} target="_blank" rel="noopener noreferrer" style={{ flex: 1, fontWeight: 500, fontSize: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                                  {uri.name || new URL(normalizeUrl(uri.uri)).hostname}
-                                </a>
-                                <a href={normalizeUrl(uri.uri)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#bbb' }}>↗</a>
-                              </div>
-                            ))}
+                            {selectedEntry.uris.map(uri => {
+                              const url = normalizeUrl(uri.uri);
+                              const handleOpenUrl = (e: React.MouseEvent) => {
+                                e.preventDefault();
+                                window.electronAPI?.openExternal(url);
+                              };
+                              let hostname = url;
+                              try { hostname = new URL(url).hostname; } catch {}
+                              return (
+                                <div key={uri.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#f9fafb', borderRadius: 4, border: '1px solid #f3f4f6' }}>
+                                  <GlobalOutlined style={{ color: '#096dd9', fontSize: 14 }} />
+                                  <a href={url} onClick={handleOpenUrl} style={{ flex: 1, fontWeight: 500, fontSize: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', cursor: 'pointer' }}>
+                                    {uri.name || hostname}
+                                  </a>
+                                  <a href={url} onClick={handleOpenUrl} style={{ fontSize: 12, color: '#bbb', cursor: 'pointer' }}>↗</a>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}

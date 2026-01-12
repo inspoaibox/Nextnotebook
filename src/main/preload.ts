@@ -76,6 +76,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     forceResync: () => ipcRenderer.invoke('sync:forceResync'),
     resetStatus: () => ipcRenderer.invoke('sync:resetStatus'),
     checkFirstSync: () => ipcRenderer.invoke('sync:checkFirstSync'),
+    // 获取本地同步游标（可选指定服务器类型和 URL）
+    getLocalCursor: (serverType?: string, serverUrl?: string) => 
+      ipcRenderer.invoke('sync:getLocalCursor', serverType, serverUrl),
+    // 清除本地同步游标（可选指定服务器类型和 URL）
+    clearLocalCursor: (serverType?: string, serverUrl?: string) => 
+      ipcRenderer.invoke('sync:clearLocalCursor', serverType, serverUrl),
     // 监听同步时间更新事件
     onLastSyncTimeUpdated: (callback: (lastSyncTime: number) => void) => {
       ipcRenderer.on('sync:lastSyncTimeUpdated', (_event, lastSyncTime: number) => callback(lastSyncTime));
@@ -142,5 +148,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     export: (options: { includeResources: boolean }) => ipcRenderer.invoke('data:export', options),
     import: (options: { mode: 'merge' | 'replace' }) => ipcRenderer.invoke('data:import', options),
     previewImport: () => ipcRenderer.invoke('data:previewImport'),
+  },
+
+  // Resource API - 资源文件管理
+  resource: {
+    // 上传图片（从 base64 或文件路径）
+    uploadImage: (noteId: string, data: string, filename: string, mimeType: string) => 
+      ipcRenderer.invoke('resource:uploadImage', noteId, data, filename, mimeType),
+    // 上传附件
+    uploadAttachment: (noteId: string, data: string, filename: string, mimeType: string) => 
+      ipcRenderer.invoke('resource:uploadAttachment', noteId, data, filename, mimeType),
+    // 获取资源文件路径
+    getPath: (resourceId: string, ext: string) => 
+      ipcRenderer.invoke('resource:getPath', resourceId, ext),
+    // 读取资源文件（返回 base64）
+    read: (resourceId: string, ext: string) => 
+      ipcRenderer.invoke('resource:read', resourceId, ext),
+    // 删除资源
+    delete: (resourceId: string, ext: string) => 
+      ipcRenderer.invoke('resource:delete', resourceId, ext),
+    // 获取笔记的所有资源
+    getNoteResources: (noteId: string) => 
+      ipcRenderer.invoke('resource:getNoteResources', noteId),
   },
 });

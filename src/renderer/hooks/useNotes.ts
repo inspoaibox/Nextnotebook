@@ -19,13 +19,13 @@ function itemToNote(item: ItemBase): Note {
   const payload = parsePayload<NotePayload>(item);
   return {
     id: item.id,
-    title: payload.title,
-    content: payload.content,
-    folderId: payload.folder_id,
-    isPinned: payload.is_pinned,
-    isLocked: payload.is_locked,
-    lockPasswordHash: payload.lock_password_hash,
-    tags: payload.tags,
+    title: payload.title || '',
+    content: payload.content || '',
+    folderId: payload.folder_id ?? null,
+    isPinned: payload.is_pinned ?? false,
+    isLocked: payload.is_locked ?? false,
+    lockPasswordHash: payload.lock_password_hash ?? null,
+    tags: payload.tags || [],  // 确保 tags 始终是数组
     createdAt: item.created_time,
     updatedAt: item.updated_time,
   };

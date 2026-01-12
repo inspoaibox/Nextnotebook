@@ -249,8 +249,8 @@ class CryptoEngineImpl @Inject constructor(
     override fun computeHash(content: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
         val hashBytes = digest.digest(content.toByteArray(Charsets.UTF_8))
-        // 返回完整的 64 字符哈希，与桌面端保持一致
-        return hashBytes.joinToString("") { "%02x".format(it) }
+        // 返回前 16 字符哈希，与桌面端保持一致
+        return hashBytes.joinToString("") { "%02x".format(it) }.take(16)
     }
     
     override fun generateKeyIdentifier(): String {

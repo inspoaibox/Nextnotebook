@@ -474,6 +474,72 @@ const App: React.FC = () => {
     setPendingChanges(prev => prev + 1);
   }, [updateNote, syncInitialized]);
 
+  // 处理图片上传
+  const handleUploadImage = useCallback(async (file: File): Promise<string | null> => {
+    if (!selectedNoteId) return null;
+    
+    try {
+      // 读取文件为 base64
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      
+      // 上传到资源管理器
+      const url = await window.electronAPI.resource.uploadImage(
+        selectedNoteId,
+        base64,
+        file.name,
+        file.type
+      );
+      
+      // 通知同步服务有内容变更
+      if (syncInitialized) {
+        await syncApi.notifyChange();
+      }
+      
+      return url;
+    } catch (error) {
+      console.error('Upload image failed:', error);
+      return null;
+    }
+  }, [selectedNoteId, syncInitialized]);
+
+  // 处理附件上传
+  const handleUploadAttachment = useCallback(async (file: File): Promise<{ url: string; name: string } | null> => {
+    if (!selectedNoteId) return null;
+    
+    try {
+      // 读取文件为 base64
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      
+      // 上传到资源管理器
+      const result = await window.electronAPI.resource.uploadAttachment(
+        selectedNoteId,
+        base64,
+        file.name,
+        file.type || 'application/octet-stream'
+      );
+      
+      // 通知同步服务有内容变更
+      if (syncInitialized) {
+        await syncApi.notifyChange();
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Upload attachment failed:', error);
+      return null;
+    }
+  }, [selectedNoteId, syncInitialized]);
+
   const handleTogglePin = useCallback(async (id: string, isPinned: boolean) => {
     await updateNote(id, { is_pinned: isPinned });
     await refresh();
@@ -776,6 +842,8 @@ const App: React.FC = () => {
           message.success(`同步完成: 上传 ${result.pushed} 项, 下载 ${result.pulled} 项`);
           // 刷新笔记列表
           await refresh();
+          // 触发全局同步完成事件，通知其他组件刷新数据
+          window.dispatchEvent(new Event('sync-completed'));
         } else {
           setSyncStatus('error');
           setSyncProgress(null);  // 清除进度
@@ -1052,6 +1120,8 @@ const App: React.FC = () => {
                   onDuplicate={handleDuplicateNote}
                   onLockNote={handleLockNoteFromEditor}
                   onUnlockNote={handleUnlockNoteFromEditor}
+                  onUploadImage={handleUploadImage}
+                  onUploadAttachment={handleUploadAttachment}
                   allTags={tags}
                   onCreateTag={createTag}
                   isTrashView={selectedView === 'trash'}

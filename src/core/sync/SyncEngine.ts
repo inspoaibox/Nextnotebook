@@ -1,10 +1,6 @@
-import { v4 as uuidv4 } from 'uuid';
 import { ItemBase, ItemType, SyncModules, SYNC_MODULE_TYPES } from '@shared/types';
 import { StorageAdapter, RemoteChange, CHANGE_LOG_RETENTION } from './StorageAdapter';
 import { ItemsManager } from '../database/ItemsManager';
-import * as fs from 'fs';
-import * as path from 'path';
-import { app } from 'electron';
 
 export interface SyncResult {
   success: boolean;
@@ -27,34 +23,17 @@ export interface SyncProgress {
 
 export type SyncProgressCallback = (progress: SyncProgress) => void;
 
+// 服务器标识信息（用于区分不同的同步后端）
+export interface ServerIdentifier {
+  type: 'webdav' | 'server';
+  url: string;
+}
+
 export interface SyncOptions {
   conflictStrategy: 'remote-wins' | 'local-wins' | 'create-copy';
   syncModules: SyncModules;
   onProgress?: SyncProgressCallback;
-}
-
-// 获取或创建持久化的设备 ID
-function getOrCreateDeviceId(): string {
-  try {
-    const userDataPath = app.getPath('userData');
-    const deviceIdPath = path.join(userDataPath, 'device-id.txt');
-    
-    if (fs.existsSync(deviceIdPath)) {
-      const existingId = fs.readFileSync(deviceIdPath, 'utf-8').trim();
-      if (existingId) {
-        return existingId;
-      }
-    }
-    
-    // 创建新的设备 ID
-    const newId = uuidv4();
-    fs.writeFileSync(deviceIdPath, newId, 'utf-8');
-    return newId;
-  } catch (error) {
-    // 如果无法持久化，回退到随机 ID
-    console.warn('Failed to persist device ID:', error);
-    return uuidv4();
-  }
+  serverIdentifier?: ServerIdentifier;  // 服务器标识，用于独立存储游标
 }
 
 export class SyncEngine {
@@ -63,6 +42,7 @@ export class SyncEngine {
   private options: SyncOptions;
   private allowedTypes: Set<ItemType>;
   private progressCallback: SyncProgressCallback | null = null;
+  private serverIdentifier: ServerIdentifier | null = null;
 
   constructor(
     adapter: StorageAdapter,
@@ -85,6 +65,58 @@ export class SyncEngine {
     };
     this.allowedTypes = this.buildAllowedTypes();
     this.progressCallback = options.onProgress || null;
+    this.serverIdentifier = options.serverIdentifier || null;
+  }
+
+  // 设置服务器标识（用于独立存储游标）
+  setServerIdentifier(identifier: ServerIdentifier): void {
+    this.serverIdentifier = identifier;
+    console.log('[SyncEngine] Server identifier set:', identifier.type, identifier.url);
+  }
+
+  // 获取当前服务器的游标
+  private getServerCursor(): { cursor: string | null; timestamp: number | null } {
+    if (this.serverIdentifier) {
+      const cursorData = this.itemsManager.getLocalSyncCursor(
+        this.serverIdentifier.type,
+        this.serverIdentifier.url
+      );
+      return {
+        cursor: cursorData?.cursor || null,
+        timestamp: cursorData?.timestamp || null,
+      };
+    }
+    // 兼容旧版本
+    const cursorData = this.itemsManager.getLocalSyncCursor();
+    return {
+      cursor: cursorData?.cursor || null,
+      timestamp: cursorData?.timestamp || null,
+    };
+  }
+
+  // 保存当前服务器的游标
+  private setServerCursor(cursor: string, timestamp: number): boolean {
+    if (this.serverIdentifier) {
+      return this.itemsManager.setLocalSyncCursor(
+        { cursor, timestamp },
+        this.serverIdentifier.type,
+        this.serverIdentifier.url
+      );
+    }
+    // 兼容旧版本
+    return this.itemsManager.setLocalSyncCursor({ cursor, timestamp });
+  }
+
+  // 清除当前服务器的游标
+  private clearServerCursor(): boolean {
+    if (this.serverIdentifier) {
+      return this.itemsManager.clearLocalSyncCursor(
+        this.serverIdentifier.type,
+        this.serverIdentifier.url
+      );
+    }
+    // 兼容旧版本
+    return this.itemsManager.clearLocalSyncCursor();
   }
 
   // 报告进度
@@ -226,12 +258,33 @@ export class SyncEngine {
     let count = 0;
     let conflicts = 0;
 
-    // ✅ 从本地数据库获取游标（每个设备独立维护）
-    const localCursor = this.itemsManager.getLocalSyncCursor();
-    let currentCursor = localCursor?.cursor || null;
+    // ✅ 从本地数据库获取游标（按服务器独立存储）
+    const { cursor: localCursor, timestamp: localTimestamp } = this.getServerCursor();
+    let currentCursor = localCursor;
+    
+    // 检查游标格式是否兼容
+    // 自建服务器使用数字格式，WebDAV 使用文件名格式（包含 .json）
+    if (currentCursor) {
+      const isWebDAVFormat = currentCursor.includes('.json');
+      const isServerType = this.serverIdentifier?.type === 'server';
+      
+      // 如果当前是自建服务器但游标是 WebDAV 格式，清除游标
+      if (isServerType && isWebDAVFormat) {
+        console.log('[SyncEngine] Detected WebDAV cursor format for server sync, clearing');
+        this.clearServerCursor();
+        currentCursor = null;
+      }
+      // 如果当前是 WebDAV 但游标是数字格式（纯数字），清除游标
+      else if (!isServerType && this.serverIdentifier?.type === 'webdav' && /^\d+$/.test(currentCursor)) {
+        console.log('[SyncEngine] Detected server cursor format for WebDAV sync, clearing');
+        this.clearServerCursor();
+        currentCursor = null;
+      }
+    }
+    
     let lastSuccessfulCursor = currentCursor;  // 记录最后成功处理的游标
 
-    console.log('[SyncEngine] Pull starting with local cursor:', currentCursor);
+    console.log('[SyncEngine] Pull starting with cursor:', currentCursor, 'timestamp:', localTimestamp, 'server:', this.serverIdentifier);
     this.reportProgress({ phase: 'pulling', message: '正在获取远端变更列表...' });
 
     // 循环拉取所有变更
@@ -246,6 +299,12 @@ export class SyncEngine {
       try {
         const { changes, nextCursor, hasMore: more } = await this.adapter.listChanges(currentCursor);
         hasMore = more;
+
+        console.log(`[SyncEngine] listChanges: cursor=${currentCursor}, got ${changes.length} changes, hasMore=${more}, nextCursor=${nextCursor}`);
+        if (changes.length > 0) {
+          console.log(`[SyncEngine] First change: id=${changes[0].change_id}, item_id=${changes[0].item_id}, type=${changes[0].type}`);
+          console.log(`[SyncEngine] Last change: id=${changes[changes.length-1].change_id}, item_id=${changes[changes.length-1].item_id}`);
+        }
 
         const filteredChanges = changes.filter(c => this.shouldSyncType(c.type));
         totalChanges += filteredChanges.length;
@@ -263,7 +322,7 @@ export class SyncEngine {
         for (const change of filteredChanges) {
           try {
             const result = await this.processRemoteChange(change);
-            if (result.success) {
+            if (result.success && !result.skipped) {
               count++;
               this.reportProgress({ 
                 phase: 'pulling', 
@@ -289,12 +348,9 @@ export class SyncEngine {
         // 每批次处理完成后更新本地游标（增量更新，避免重复处理）
         if (nextCursor && batchSuccessful) {
           lastSuccessfulCursor = nextCursor;
-          // ✅ 保存到本地数据库（不再保存到WebDAV）
-          this.itemsManager.setLocalSyncCursor({
-            cursor: lastSuccessfulCursor,
-            timestamp: Date.now(),
-          });
-          console.log('[SyncEngine] Updated local cursor to:', lastSuccessfulCursor);
+          // ✅ 保存到本地数据库（按服务器独立存储）
+          this.setServerCursor(lastSuccessfulCursor, Date.now());
+          console.log('[SyncEngine] Updated cursor to:', lastSuccessfulCursor, 'for server:', this.serverIdentifier);
         }
 
         currentCursor = nextCursor;
@@ -323,17 +379,27 @@ export class SyncEngine {
   private async processRemoteChange(change: RemoteChange): Promise<{
     success: boolean;
     conflict: boolean;
+    skipped?: boolean;
     error?: string;
   }> {
     const localItem = this.itemsManager.getById(change.item_id);
 
-    // 如果本地已有该数据且状态为 clean，说明可能是自己刚上传的
+    console.log(`[SyncEngine] Processing remote change: item_id=${change.item_id}, type=${change.type}, remote_hash=${change.content_hash}`);
+    if (localItem) {
+      console.log(`[SyncEngine] Local item exists: sync_status=${localItem.sync_status}, local_hash=${localItem.content_hash}`);
+    } else {
+      console.log(`[SyncEngine] No local item found`);
+    }
+
+    // 如果本地已有该数据且状态为 clean，检查是否需要更新
     if (localItem && localItem.sync_status === 'clean') {
       // 检查内容哈希是否一致，一致则跳过
       if (localItem.content_hash === change.content_hash) {
-        return { success: true, conflict: false };
+        console.log(`[SyncEngine] Skipping - hash matches (no update needed)`);
+        return { success: true, conflict: false, skipped: true };  // 添加 skipped 标记
       }
       // 哈希不同但本地是 clean 状态，说明远端有更新，继续处理
+      console.log(`[SyncEngine] Remote update detected for ${change.item_id}, local_hash=${localItem.content_hash}, remote_hash=${change.content_hash}`);
     }
 
     // 检查是否有冲突
@@ -369,11 +435,13 @@ export class SyncEngine {
 
     // 写入本地
     if (localItem) {
-      // 更新现有记录
-      this.itemsManager.update(change.item_id, JSON.parse(itemToSave.payload));
+      // 更新现有记录（使用专门的同步更新方法，不改变 sync_status）
+      this.itemsManager.updateFromRemote(itemToSave);
+      console.log(`[SyncEngine] Updated local item ${change.item_id} from remote`);
     } else {
       // 创建新记录（使用远端的 ID）
       this.itemsManager.createWithId(itemToSave);
+      console.log(`[SyncEngine] Created new local item ${change.item_id} from remote`);
     }
 
     return { success: true, conflict: false };
@@ -383,6 +451,7 @@ export class SyncEngine {
   private async handleConflict(localItem: ItemBase, remoteChange: RemoteChange): Promise<{
     success: boolean;
     conflict: boolean;
+    skipped?: boolean;
     error?: string;
   }> {
     const remoteItem = await this.adapter.getItem(remoteChange.item_id);
@@ -392,8 +461,8 @@ export class SyncEngine {
 
     switch (this.options.conflictStrategy) {
       case 'remote-wins':
-        // 远端覆盖本地
-        this.itemsManager.update(localItem.id, JSON.parse(remoteItem.payload));
+        // 远端覆盖本地（使用专门的同步更新方法）
+        this.itemsManager.updateFromRemote(remoteItem);
         return { success: true, conflict: true };
 
       case 'local-wins':
@@ -409,8 +478,8 @@ export class SyncEngine {
 
         this.itemsManager.create(localItem.type, conflictPayload);
 
-        // 用远端版本覆盖原记录
-        this.itemsManager.update(localItem.id, JSON.parse(remoteItem.payload));
+        // 用远端版本覆盖原记录（使用专门的同步更新方法）
+        this.itemsManager.updateFromRemote(remoteItem);
 
         return { success: true, conflict: true };
     }
@@ -451,11 +520,11 @@ export class SyncEngine {
   }> {
     const pendingItems = this.itemsManager.getPendingSync()
       .filter(item => this.shouldSyncType(item.type));
-    const localCursor = this.itemsManager.getLocalSyncCursor();
+    const { timestamp } = this.getServerCursor();
 
     return {
       pendingPush: pendingItems.length,
-      lastSyncTime: localCursor?.timestamp || null,
+      lastSyncTime: timestamp,
       isLocked: false,  // 锁机制已移除
     };
   }
@@ -467,6 +536,10 @@ export class SyncEngine {
 
   // 重置同步状态（用于切换服务器或强制完全重新同步）
   resetSyncStatus(): number {
+    // 清除当前服务器的同步游标，这样下次同步会从头开始拉取所有变更
+    this.clearServerCursor();
+    console.log('[SyncEngine] Cleared sync cursor for server:', this.serverIdentifier);
+    
     return this.itemsManager.resetSyncStatus();
   }
 

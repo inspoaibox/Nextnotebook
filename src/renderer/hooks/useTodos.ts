@@ -26,16 +26,16 @@ function itemToTodo(item: ItemBase): Todo {
   const payload = parsePayload<TodoPayload>(item);
   return {
     id: item.id,
-    title: payload.title,
-    description: payload.description,
-    quadrant: payload.quadrant,
-    completed: payload.completed,
-    completedAt: payload.completed_at,
-    dueDate: payload.due_date,
+    title: payload.title || '',
+    description: payload.description || '',
+    quadrant: payload.quadrant || 'q4',
+    completed: payload.completed ?? false,
+    completedAt: payload.completed_at ?? null,
+    dueDate: payload.due_date ?? null,
     reminderTime: payload.reminder_time ?? null,
     reminderEnabled: payload.reminder_enabled ?? false,
-    priority: payload.priority,
-    tags: payload.tags,
+    priority: payload.priority ?? 0,
+    tags: payload.tags || [],  // 确保 tags 始终是数组
     createdAt: item.created_time,
     updatedAt: item.updated_time,
   };
@@ -84,6 +84,17 @@ export function useTodos() {
 
   useEffect(() => {
     loadTodos();
+  }, [loadTodos]);
+
+  // 监听同步完成事件，刷新待办列表
+  useEffect(() => {
+    const handleSyncCompleted = () => {
+      loadTodos();
+    };
+    window.addEventListener('sync-completed', handleSyncCompleted);
+    return () => {
+      window.removeEventListener('sync-completed', handleSyncCompleted);
+    };
   }, [loadTodos]);
 
   const createTodo = useCallback(async (

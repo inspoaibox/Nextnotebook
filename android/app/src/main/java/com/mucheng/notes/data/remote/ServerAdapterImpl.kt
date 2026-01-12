@@ -31,7 +31,7 @@ data class AuthResponse(
 
 @Serializable
 data class AuthUser(
-    val id: Int,
+    val id: String,
     val username: String,
     val role: String
 )

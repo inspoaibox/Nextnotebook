@@ -920,3 +920,183 @@ ipcMain.handle('pdf:saveFile', async (_event, buffer: string, defaultName: strin
     throw error;
   }
 });
+
+// ========== 资源文件管理 IPC ==========
+
+// 资源文件存储目录
+function getResourcesDir(): string {
+  const userDataPath = app.getPath('userData');
+  const resourcesDir = path.join(userDataPath, 'resources');
+  if (!fs.existsSync(resourcesDir)) {
+    fs.mkdirSync(resourcesDir, { recursive: true });
+  }
+  return resourcesDir;
+}
+
+// 计算文件哈希
+function computeFileHash(buffer: Buffer): string {
+  const crypto = require('crypto');
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+// 上传图片
+ipcMain.handle('resource:uploadImage', async (_event, noteId: string, data: string, filename: string, mimeType: string) => {
+  try {
+    const { v4: uuidv4 } = require('uuid');
+    const resourceId = uuidv4();
+    
+    // 解析 base64 数据
+    let buffer: Buffer;
+    if (data.startsWith('data:')) {
+      const base64Data = data.split(',')[1];
+      buffer = Buffer.from(base64Data, 'base64');
+    } else {
+      buffer = Buffer.from(data, 'base64');
+    }
+    
+    // 获取扩展名
+    const ext = path.extname(filename).toLowerCase() || '.png';
+    const resourceFilename = `${resourceId}${ext}`;
+    const resourcePath = path.join(getResourcesDir(), resourceFilename);
+    
+    // 写入文件
+    fs.writeFileSync(resourcePath, buffer);
+    
+    // 创建资源记录
+    const { getItemsManager } = require('./services/DatabaseService');
+    const itemsManager = getItemsManager();
+    
+    const payload = {
+      filename,
+      mime_type: mimeType,
+      size: buffer.length,
+      note_id: noteId,
+      file_hash: computeFileHash(buffer),
+    };
+    
+    itemsManager.create('resource', payload);
+    
+    // 返回资源引用 URL
+    const resourceUrl = `resource://${resourceId}${ext}`;
+    console.log('Resource uploaded:', resourceUrl);
+    
+    return resourceUrl;
+  } catch (error) {
+    console.error('resource:uploadImage error:', error);
+    throw error;
+  }
+});
+
+// 上传附件
+ipcMain.handle('resource:uploadAttachment', async (_event, noteId: string, data: string, filename: string, mimeType: string) => {
+  try {
+    const { v4: uuidv4 } = require('uuid');
+    const resourceId = uuidv4();
+    
+    // 解析 base64 数据
+    let buffer: Buffer;
+    if (data.startsWith('data:')) {
+      const base64Data = data.split(',')[1];
+      buffer = Buffer.from(base64Data, 'base64');
+    } else {
+      buffer = Buffer.from(data, 'base64');
+    }
+    
+    // 获取扩展名
+    const ext = path.extname(filename).toLowerCase() || '';
+    const resourceFilename = `${resourceId}${ext}`;
+    const resourcePath = path.join(getResourcesDir(), resourceFilename);
+    
+    // 写入文件
+    fs.writeFileSync(resourcePath, buffer);
+    
+    // 创建资源记录
+    const { getItemsManager } = require('./services/DatabaseService');
+    const itemsManager = getItemsManager();
+    
+    const payload = {
+      filename,
+      mime_type: mimeType,
+      size: buffer.length,
+      note_id: noteId,
+      file_hash: computeFileHash(buffer),
+    };
+    
+    itemsManager.create('resource', payload);
+    
+    // 返回资源信息
+    const resourceUrl = `resource://${resourceId}${ext}`;
+    console.log('Attachment uploaded:', resourceUrl);
+    
+    return { url: resourceUrl, name: filename };
+  } catch (error) {
+    console.error('resource:uploadAttachment error:', error);
+    throw error;
+  }
+});
+
+// 获取资源文件路径
+ipcMain.handle('resource:getPath', async (_event, resourceId: string, ext: string) => {
+  try {
+    const resourcePath = path.join(getResourcesDir(), `${resourceId}${ext}`);
+    if (fs.existsSync(resourcePath)) {
+      return resourcePath;
+    }
+    return null;
+  } catch (error) {
+    console.error('resource:getPath error:', error);
+    throw error;
+  }
+});
+
+// 读取资源文件（返回 base64）
+ipcMain.handle('resource:read', async (_event, resourceId: string, ext: string) => {
+  try {
+    const resourcePath = path.join(getResourcesDir(), `${resourceId}${ext}`);
+    if (fs.existsSync(resourcePath)) {
+      const buffer = fs.readFileSync(resourcePath);
+      return buffer.toString('base64');
+    }
+    return null;
+  } catch (error) {
+    console.error('resource:read error:', error);
+    throw error;
+  }
+});
+
+// 删除资源
+ipcMain.handle('resource:delete', async (_event, resourceId: string, ext: string) => {
+  try {
+    const resourcePath = path.join(getResourcesDir(), `${resourceId}${ext}`);
+    if (fs.existsSync(resourcePath)) {
+      fs.unlinkSync(resourcePath);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('resource:delete error:', error);
+    throw error;
+  }
+});
+
+// 获取笔记的所有资源
+ipcMain.handle('resource:getNoteResources', async (_event, noteId: string) => {
+  try {
+    const { getItemsManager } = require('./services/DatabaseService');
+    const itemsManager = getItemsManager();
+    
+    const resources = itemsManager.getByType('resource');
+    return resources
+      .filter((r: any) => {
+        const payload = JSON.parse(r.payload);
+        return payload.note_id === noteId;
+      })
+      .map((r: any) => ({
+        id: r.id,
+        ...JSON.parse(r.payload),
+      }));
+  } catch (error) {
+    console.error('resource:getNoteResources error:', error);
+    throw error;
+  }
+});

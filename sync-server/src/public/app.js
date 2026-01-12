@@ -128,6 +128,9 @@ function renderApp() {
         <div class="nav-item ${currentPage === 'vault' ? 'active' : ''}" onclick="navigate('vault')">
           <span class="icon">🔐</span> 保险库
         </div>
+        <div class="nav-item ${currentPage === 'ai' ? 'active' : ''}" onclick="navigate('ai')">
+          <span class="icon">🤖</span> AI 助手
+        </div>
         <div class="nav-item ${currentPage === 'resources' ? 'active' : ''}" onclick="navigate('resources')">
           <span class="icon">📎</span> 资源文件
         </div>
@@ -177,7 +180,7 @@ async function loadPage(page) {
   const title = document.getElementById('pageTitle');
   const titles = {
     dashboard: '仪表盘', notes: '笔记管理', folders: '文件夹', todos: '待办事项',
-    bookmarks: '书签管理', vault: '保险库', resources: '资源文件',
+    bookmarks: '书签管理', vault: '保险库', ai: 'AI 助手', resources: '资源文件',
     users: '用户管理', settings: '系统设置', logs: '变更日志'
   };
   title.textContent = titles[page] || page;
@@ -191,6 +194,7 @@ async function loadPage(page) {
       case 'todos': await loadItems(content, 'todo', '待办'); break;
       case 'bookmarks': await loadItems(content, 'bookmark', '书签'); break;
       case 'vault': await loadItems(content, 'vault_entry', '保险库条目'); break;
+      case 'ai': await loadAI(content); break;
       case 'resources': await loadItems(content, 'resource', '资源'); break;
       case 'users': await loadUsers(content); break;
       case 'settings': await loadSettings(content); break;
@@ -211,6 +215,7 @@ async function loadDashboard(el) {
       <div class="stat-card"><div class="stat-value">${stats.byType?.todo || 0}</div><div class="stat-label">待办</div></div>
       <div class="stat-card"><div class="stat-value">${stats.byType?.bookmark || 0}</div><div class="stat-label">书签</div></div>
       <div class="stat-card"><div class="stat-value">${stats.byType?.vault_entry || 0}</div><div class="stat-label">保险库</div></div>
+      <div class="stat-card"><div class="stat-value">${stats.byType?.ai_conversation || 0}</div><div class="stat-label">AI 对话</div></div>
       <div class="stat-card"><div class="stat-value">${stats.byType?.resource || 0}</div><div class="stat-label">资源</div></div>
       <div class="stat-card"><div class="stat-value">${stats.itemCount || 0}</div><div class="stat-label">总计</div></div>
     </div>
@@ -220,6 +225,103 @@ async function loadDashboard(el) {
         <p><strong>状态:</strong> 运行中 ✅</p>
         <p><strong>当前用户:</strong> ${user?.username} (${user?.role})</p>
         <p><strong>时间:</strong> ${new Date().toLocaleString('zh-CN')}</p>
+      </div>
+    </div>
+  `;
+}
+
+
+// AI 助手数据
+async function loadAI(el) {
+  // 加载 AI 配置、对话和消息
+  const [configData, convData, msgData] = await Promise.all([
+    api('/items/list?type=ai_config&limit=10'),
+    api('/items/list?type=ai_conversation&limit=50'),
+    api('/items/list?type=ai_message&limit=100')
+  ]);
+  
+  const configs = configData.items || [];
+  const conversations = convData.items || [];
+  const messages = msgData.items || [];
+  
+  el.innerHTML = `
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-value">${configs.length}</div><div class="stat-label">AI 配置</div></div>
+      <div class="stat-card"><div class="stat-value">${conversations.length}</div><div class="stat-label">对话</div></div>
+      <div class="stat-card"><div class="stat-value">${messages.length}</div><div class="stat-label">消息</div></div>
+    </div>
+    
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">AI 对话列表 (${conversations.length})</div>
+      <div class="card-body" style="padding:0;">
+        ${conversations.length === 0 ? '<p style="padding:20px;color:#666;">暂无对话</p>' : `
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:#f8f9fa;">
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">ID</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">标题</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">模型</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">更新时间</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${conversations.map(item => {
+                const payload = parsePayload(item.payload);
+                return `
+                  <tr>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${item.id.substring(0, 8)}...</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${escapeHtml(payload.title || '未命名对话')}</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${escapeHtml(payload.model || '-')}</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(item.updated_time)}</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
+                      <button class="btn btn-sm btn-secondary" onclick="viewItem('${item.id}')">查看</button>
+                      <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id}')">删除</button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `}
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-header">最近消息 (${messages.length})</div>
+      <div class="card-body" style="padding:0;">
+        ${messages.length === 0 ? '<p style="padding:20px;color:#666;">暂无消息</p>' : `
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:#f8f9fa;">
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">ID</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">角色</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">内容预览</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">时间</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${messages.slice(0, 20).map(item => {
+                const payload = parsePayload(item.payload);
+                const roleIcon = payload.role === 'user' ? '👤' : '🤖';
+                const content = (payload.content || '').substring(0, 50);
+                return `
+                  <tr>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${item.id.substring(0, 8)}...</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${roleIcon} ${payload.role || '-'}</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(content)}${content.length >= 50 ? '...' : ''}</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(item.updated_time)}</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
+                      <button class="btn btn-sm btn-secondary" onclick="viewItem('${item.id}')">查看</button>
+                      <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id}')">删除</button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `}
       </div>
     </div>
   `;

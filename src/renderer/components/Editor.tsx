@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Empty, Tabs, Space, Button, Tooltip, message, Modal, Tag as AntTag, Input, Select, Dropdown } from 'antd';
+import { Empty, Tabs, Space, Button, Tooltip, message, Modal, Tag as AntTag, Input, Select, Dropdown, Upload } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   EditOutlined,
@@ -19,9 +19,15 @@ import {
   MenuUnfoldOutlined,
   LockOutlined,
   UnlockOutlined,
+  PictureOutlined,
+  PaperClipOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Tag } from '../hooks/useTags';
+import MarkdownToolbar from './MarkdownToolbar';
 
 // 计算密码哈希（使用 Web Crypto API，与 Android 端保持一致，使用 SHA-256）
 const computePasswordHash = async (password: string): Promise<string> => {
@@ -182,6 +188,8 @@ interface EditorProps {
   onDuplicate?: (id: string) => Promise<void>;
   onLockNote?: (id: string, passwordHash: string) => Promise<void>;
   onUnlockNote?: (id: string) => Promise<void>;
+  onUploadImage?: (file: File) => Promise<string | null>;
+  onUploadAttachment?: (file: File) => Promise<{ url: string; name: string } | null>;
   allTags?: Tag[];
   onCreateTag?: (name: string, color?: string | null) => Promise<Tag | null>;
   isTrashView?: boolean;
@@ -197,6 +205,8 @@ const Editor: React.FC<EditorProps> = ({
   onDuplicate,
   onLockNote,
   onUnlockNote,
+  onUploadImage,
+  onUploadAttachment,
   allTags = [],
   onCreateTag,
   isTrashView = false,
@@ -210,8 +220,11 @@ const Editor: React.FC<EditorProps> = ({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newTagName, setNewTagName] = useState('');
   const [tocCollapsed, setTocCollapsed] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   
   // 笔记加密相关状态
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -330,17 +343,211 @@ const Editor: React.FC<EditorProps> = ({
     setIsDirty(true);
   };
 
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTitle(e.target.value);
-    setIsDirty(true);
-  };
+  // 处理粘贴事件（支持图片粘贴）
+  const handlePaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items || !onUploadImage) return;
 
-  const handleManualSave = async () => {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          setUploading(true);
+          message.loading({ content: '正在上传图片...', key: 'upload' });
+          try {
+            const url = await onUploadImage(file);
+            if (url) {
+              const textarea = textareaRef.current;
+              if (textarea) {
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const imageMarkdown = `![图片](${url})`;
+                const newContent = content.substring(0, start) + imageMarkdown + content.substring(end);
+                setContent(newContent);
+                setIsDirty(true);
+                message.success({ content: '图片上传成功', key: 'upload' });
+                // 设置光标位置
+                setTimeout(() => {
+                  textarea.focus();
+                  const newPos = start + imageMarkdown.length;
+                  textarea.setSelectionRange(newPos, newPos);
+                }, 0);
+              }
+            } else {
+              message.error({ content: '图片上传失败', key: 'upload' });
+            }
+          } catch (err) {
+            message.error({ content: '图片上传失败', key: 'upload' });
+          } finally {
+            setUploading(false);
+          }
+        }
+        return;
+      }
+    }
+  }, [content, onUploadImage]);
+
+  // 手动保存函数（需要在 handleKeyDown 之前定义）
+  const handleManualSave = useCallback(async () => {
     if (noteId && onSave) {
       await onSave(noteId, content, title);
       setIsDirty(false);
       message.success('保存成功');
     }
+  }, [noteId, onSave, content, title]);
+
+  // 处理键盘快捷键
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const { ctrlKey, metaKey, key, shiftKey } = e;
+    const isModKey = ctrlKey || metaKey;
+
+    if (isModKey) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selectedText = content.substring(start, end);
+
+      const wrapText = (before: string, after: string) => {
+        e.preventDefault();
+        const newContent = content.substring(0, start) + before + selectedText + after + content.substring(end);
+        setContent(newContent);
+        setIsDirty(true);
+        setTimeout(() => {
+          textarea.focus();
+          if (selectedText) {
+            textarea.setSelectionRange(start + before.length, start + before.length + selectedText.length);
+          } else {
+            textarea.setSelectionRange(start + before.length, start + before.length);
+          }
+        }, 0);
+      };
+
+      switch (key.toLowerCase()) {
+        case 'b': // 粗体
+          wrapText('**', '**');
+          break;
+        case 'i': // 斜体
+          wrapText('*', '*');
+          break;
+        case 'k': // 链接
+          e.preventDefault();
+          const linkText = selectedText || '链接文本';
+          const newContent = content.substring(0, start) + `[${linkText}](url)` + content.substring(end);
+          setContent(newContent);
+          setIsDirty(true);
+          setTimeout(() => {
+            textarea.focus();
+            // 选中 url 部分
+            const urlStart = start + linkText.length + 3;
+            textarea.setSelectionRange(urlStart, urlStart + 3);
+          }, 0);
+          break;
+        case 's': // 保存
+          if (!shiftKey) {
+            e.preventDefault();
+            handleManualSave();
+          }
+          break;
+      }
+    }
+
+    // Tab 键插入空格
+    if (key === 'Tab') {
+      e.preventDefault();
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const spaces = '  '; // 2 空格
+      const newContent = content.substring(0, start) + spaces + content.substring(end);
+      setContent(newContent);
+      setIsDirty(true);
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + spaces.length, start + spaces.length);
+      }, 0);
+    }
+  }, [content, handleManualSave]);
+
+  // 处理图片上传按钮点击
+  const handleInsertImage = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file && onUploadImage) {
+        setUploading(true);
+        message.loading({ content: '正在上传图片...', key: 'upload' });
+        try {
+          const url = await onUploadImage(file);
+          if (url) {
+            const textarea = textareaRef.current;
+            if (textarea) {
+              const start = textarea.selectionStart;
+              const imageMarkdown = `![${file.name}](${url})`;
+              const newContent = content.substring(0, start) + imageMarkdown + content.substring(start);
+              setContent(newContent);
+              setIsDirty(true);
+              message.success({ content: '图片上传成功', key: 'upload' });
+            }
+          } else {
+            message.error({ content: '图片上传失败', key: 'upload' });
+          }
+        } catch (err) {
+          message.error({ content: '图片上传失败', key: 'upload' });
+        } finally {
+          setUploading(false);
+        }
+      }
+    };
+    input.click();
+  }, [content, onUploadImage]);
+
+  // 处理附件上传按钮点击
+  const handleInsertAttachment = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file && onUploadAttachment) {
+        setUploading(true);
+        message.loading({ content: '正在上传附件...', key: 'upload' });
+        try {
+          const result = await onUploadAttachment(file);
+          if (result) {
+            const textarea = textareaRef.current;
+            if (textarea) {
+              const start = textarea.selectionStart;
+              const attachmentMarkdown = `[📎 ${result.name}](${result.url})`;
+              const newContent = content.substring(0, start) + attachmentMarkdown + content.substring(start);
+              setContent(newContent);
+              setIsDirty(true);
+              message.success({ content: '附件上传成功', key: 'upload' });
+            }
+          } else {
+            message.error({ content: '附件上传失败', key: 'upload' });
+          }
+        } catch (err) {
+          message.error({ content: '附件上传失败', key: 'upload' });
+        } finally {
+          setUploading(false);
+        }
+      }
+    };
+    input.click();
+  }, [content, onUploadAttachment]);
+
+  // 切换全屏
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen(!isFullscreen);
+  }, [isFullscreen]);
+
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setTitle(e.target.value);
+    setIsDirty(true);
   };
 
   const handleToggleStar = async () => {
@@ -635,28 +842,51 @@ const Editor: React.FC<EditorProps> = ({
       />
 
       {/* 编辑区域 */}
-      <div style={{ flex: 1, padding: '16px', overflow: 'hidden', display: 'flex' }}>
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {activeTab === 'edit' && (
-          <textarea
-            value={content}
-            onChange={handleContentChange}
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              outline: 'none',
-              resize: 'none',
-              fontFamily: 'Monaco, Consolas, "Courier New", monospace',
-              fontSize: 14,
-              lineHeight: 1.6,
-            }}
-            placeholder="开始编写 Markdown..."
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* Markdown 工具栏 */}
+            <MarkdownToolbar
+              textareaRef={textareaRef}
+              content={content}
+              onContentChange={(newContent) => {
+                setContent(newContent);
+                setIsDirty(true);
+              }}
+              onInsertImage={onUploadImage ? handleInsertImage : undefined}
+              onInsertAttachment={onUploadAttachment ? handleInsertAttachment : undefined}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={toggleFullscreen}
+              disabled={uploading}
+            />
+            {/* 编辑器 */}
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={handleContentChange}
+              onPaste={handlePaste}
+              onKeyDown={handleKeyDown}
+              style={{
+                flex: 1,
+                width: '100%',
+                border: 'none',
+                outline: 'none',
+                resize: 'none',
+                fontFamily: 'Monaco, Consolas, "Courier New", monospace',
+                fontSize: 14,
+                lineHeight: 1.6,
+                padding: 16,
+                background: 'var(--bg-primary, #fff)',
+              }}
+              placeholder="开始编写 Markdown...&#10;&#10;提示：&#10;• Ctrl+B 粗体&#10;• Ctrl+I 斜体&#10;• Ctrl+K 链接&#10;• Ctrl+S 保存&#10;• 直接粘贴图片自动上传"
+            />
+          </div>
         )}
         {activeTab === 'preview' && (
-          <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+          <div style={{ width: '100%', height: '100%', position: 'relative', padding: 16 }}>
             <div 
               ref={previewRef}
+              className="markdown-preview"
               style={{ 
                 width: headings.length > 0 ? 'calc(100% - 200px)' : '100%', 
                 height: '100%', 
@@ -667,6 +897,7 @@ const Editor: React.FC<EditorProps> = ({
               }}
             >
               <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
                 components={{
                   h1: ({ children }) => {
                     const text = String(children);
@@ -697,6 +928,30 @@ const Editor: React.FC<EditorProps> = ({
                     const text = String(children);
                     const id = headings.find(h => h.text === text && h.level === 6)?.id || '';
                     return <h6 data-heading-id={id}>{children}</h6>;
+                  },
+                  code: ({ node, inline, className, children, ...props }: any) => {
+                    const match = /language-(\w+)/.exec(className || '');
+                    return !inline && match ? (
+                      <SyntaxHighlighter
+                        style={oneDark}
+                        language={match[1]}
+                        PreTag="div"
+                        {...props}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
+                    ) : (
+                      <code className={className} {...props}>
+                        {children}
+                      </code>
+                    );
+                  },
+                  // 任务列表支持
+                  input: ({ type, checked, ...props }: any) => {
+                    if (type === 'checkbox') {
+                      return <input type="checkbox" checked={checked} disabled style={{ marginRight: 8 }} />;
+                    }
+                    return <input type={type} {...props} />;
                   },
                 }}
               >
@@ -714,66 +969,111 @@ const Editor: React.FC<EditorProps> = ({
           </div>
         )}
         {activeTab === 'split' && (
-          <>
-            <textarea
-              value={content}
-              onChange={handleContentChange}
-              style={{
-                width: '50%',
-                height: '100%',
-                border: 'none',
-                borderRight: '1px solid #f0f0f0',
-                outline: 'none',
-                resize: 'none',
-                fontFamily: 'Monaco, Consolas, "Courier New", monospace',
-                fontSize: 14,
-                lineHeight: 1.6,
-                paddingRight: 16,
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* 分屏模式工具栏 */}
+            <MarkdownToolbar
+              textareaRef={textareaRef}
+              content={content}
+              onContentChange={(newContent) => {
+                setContent(newContent);
+                setIsDirty(true);
               }}
-              placeholder="开始编写 Markdown..."
+              onInsertImage={onUploadImage ? handleInsertImage : undefined}
+              onInsertAttachment={onUploadAttachment ? handleInsertAttachment : undefined}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={toggleFullscreen}
+              disabled={uploading}
             />
-            <div 
-              ref={previewRef}
-              style={{ width: '50%', height: '100%', overflow: 'auto', paddingLeft: 16, lineHeight: 1.8, position: 'relative' }}
-            >
-              <ReactMarkdown
-                components={{
-                  h1: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 1)?.id || '';
-                    return <h1 data-heading-id={id}>{children}</h1>;
-                  },
-                  h2: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 2)?.id || '';
-                    return <h2 data-heading-id={id}>{children}</h2>;
-                  },
-                  h3: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 3)?.id || '';
-                    return <h3 data-heading-id={id}>{children}</h3>;
-                  },
-                  h4: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 4)?.id || '';
-                    return <h4 data-heading-id={id}>{children}</h4>;
-                  },
-                  h5: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 5)?.id || '';
-                    return <h5 data-heading-id={id}>{children}</h5>;
-                  },
-                  h6: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 6)?.id || '';
-                    return <h6 data-heading-id={id}>{children}</h6>;
-                  },
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={handleContentChange}
+                onPaste={handlePaste}
+                onKeyDown={handleKeyDown}
+                style={{
+                  width: '50%',
+                  height: '100%',
+                  border: 'none',
+                  borderRight: '1px solid var(--border-color, #f0f0f0)',
+                  outline: 'none',
+                  resize: 'none',
+                  fontFamily: 'Monaco, Consolas, "Courier New", monospace',
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  padding: 16,
+                  background: 'var(--bg-primary, #fff)',
                 }}
+                placeholder="开始编写 Markdown..."
+              />
+              <div 
+                ref={previewRef}
+                className="markdown-preview"
+                style={{ width: '50%', height: '100%', overflow: 'auto', padding: 16, lineHeight: 1.8, position: 'relative' }}
               >
-                {content}
-              </ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h1: ({ children }) => {
+                      const text = String(children);
+                      const id = headings.find(h => h.text === text && h.level === 1)?.id || '';
+                      return <h1 data-heading-id={id}>{children}</h1>;
+                    },
+                    h2: ({ children }) => {
+                      const text = String(children);
+                      const id = headings.find(h => h.text === text && h.level === 2)?.id || '';
+                      return <h2 data-heading-id={id}>{children}</h2>;
+                    },
+                    h3: ({ children }) => {
+                      const text = String(children);
+                      const id = headings.find(h => h.text === text && h.level === 3)?.id || '';
+                      return <h3 data-heading-id={id}>{children}</h3>;
+                    },
+                    h4: ({ children }) => {
+                      const text = String(children);
+                      const id = headings.find(h => h.text === text && h.level === 4)?.id || '';
+                      return <h4 data-heading-id={id}>{children}</h4>;
+                    },
+                    h5: ({ children }) => {
+                      const text = String(children);
+                      const id = headings.find(h => h.text === text && h.level === 5)?.id || '';
+                      return <h5 data-heading-id={id}>{children}</h5>;
+                    },
+                    h6: ({ children }) => {
+                      const text = String(children);
+                      const id = headings.find(h => h.text === text && h.level === 6)?.id || '';
+                      return <h6 data-heading-id={id}>{children}</h6>;
+                    },
+                    code: ({ node, inline, className, children, ...props }: any) => {
+                      const match = /language-(\w+)/.exec(className || '');
+                      return !inline && match ? (
+                        <SyntaxHighlighter
+                          style={oneDark}
+                          language={match[1]}
+                          PreTag="div"
+                          {...props}
+                        >
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                    input: ({ type, checked, ...props }: any) => {
+                      if (type === 'checkbox') {
+                        return <input type="checkbox" checked={checked} disabled style={{ marginRight: 8 }} />;
+                      }
+                      return <input type={type} {...props} />;
+                    },
+                  }}
+                >
+                  {content}
+                </ReactMarkdown>
+              </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 

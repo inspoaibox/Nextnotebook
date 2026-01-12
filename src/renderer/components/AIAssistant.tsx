@@ -1,14 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Modal, Input, Button, List, Avatar, Dropdown, Select, Slider, 
-  Empty, Spin, message, Tooltip, Popconfirm 
+  Empty, Spin, message, Tooltip 
 } from 'antd';
 import {
   SendOutlined, PlusOutlined, DeleteOutlined, EditOutlined,
   RobotOutlined, UserOutlined, SettingOutlined, MenuOutlined,
 } from '@ant-design/icons';
-import { useAISettings, useAIConversations, useAIMessages, AIConversation } from '../hooks/useAI';
-import { AIChannel, AIModel } from '@shared/types';
+import { useAISettings, useAIConversations, useAIMessages } from '../hooks/useAI';
 
 const { TextArea } = Input;
 
@@ -33,7 +32,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
   const [currentMaxTokens, setCurrentMaxTokens] = useState(4096);
   const [currentSystemPrompt, setCurrentSystemPrompt] = useState('');
   
-  const { messages, loading, streaming, streamingContent, sendMessage } = useAIMessages(selectedConversationId);
+  const { messages, streaming, streamingContent, sendMessage } = useAIMessages(selectedConversationId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<any>(null);
 
@@ -60,6 +59,14 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
       setCurrentSystemPrompt(currentConversation.systemPrompt);
     }
   }, [currentConversation, settings.default_model]);
+
+  // 切换模型时自动保存到对话
+  const handleModelChange = useCallback(async (newModel: string) => {
+    setCurrentModel(newModel);
+    if (selectedConversationId) {
+      await updateConversation(selectedConversationId, { model: newModel });
+    }
+  }, [selectedConversationId, updateConversation]);
 
   // 滚动到底部
   useEffect(() => {
@@ -265,7 +272,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
             <div style={{ flex: 1 }} />
             <Select
               value={currentModel}
-              onChange={setCurrentModel}
+              onChange={handleModelChange}
               style={{ width: 180 }}
               size="small"
               placeholder="选择模型"

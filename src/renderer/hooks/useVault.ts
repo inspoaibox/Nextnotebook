@@ -125,6 +125,17 @@ export function useVaultFolders() {
 
   useEffect(() => { loadFolders(); }, [loadFolders]);
 
+  // 监听同步完成事件，刷新文件夹列表
+  useEffect(() => {
+    const handleSyncCompleted = () => {
+      loadFolders();
+    };
+    window.addEventListener('sync-completed', handleSyncCompleted);
+    return () => {
+      window.removeEventListener('sync-completed', handleSyncCompleted);
+    };
+  }, [loadFolders]);
+
   const createFolder = useCallback(async (name: string, parentId: string | null = null) => {
     const item = await vaultFoldersApi.create({ name, parent_id: parentId });
     if (item) {
@@ -175,6 +186,17 @@ export function useVaultEntries(folderId?: string | null) {
   }, [folderId]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  // 监听同步完成事件，刷新条目列表
+  useEffect(() => {
+    const handleSyncCompleted = () => {
+      loadEntries();
+    };
+    window.addEventListener('sync-completed', handleSyncCompleted);
+    return () => {
+      window.removeEventListener('sync-completed', handleSyncCompleted);
+    };
+  }, [loadEntries]);
 
   const createEntry = useCallback(async (data: Partial<VaultEntryPayload>) => {
     const payload: VaultEntryPayload = {

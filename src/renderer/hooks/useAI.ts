@@ -32,12 +32,12 @@ function itemToConversation(item: ItemBase): AIConversation {
   const payload = parsePayload<AIConversationPayload>(item);
   return {
     id: item.id,
-    title: payload.title,
-    model: payload.model,
-    systemPrompt: payload.system_prompt,
-    temperature: payload.temperature,
-    maxTokens: payload.max_tokens,
-    createdAt: payload.created_at,
+    title: payload.title || '新对话',
+    model: payload.model || '',
+    systemPrompt: payload.system_prompt || '',
+    temperature: payload.temperature ?? 0.7,
+    maxTokens: payload.max_tokens ?? 2048,
+    createdAt: payload.created_at || item.created_time,
     updatedAt: item.updated_time,
   };
 }
@@ -46,12 +46,12 @@ function itemToMessage(item: ItemBase): AIMessage {
   const payload = parsePayload<AIMessagePayload>(item);
   return {
     id: item.id,
-    conversationId: payload.conversation_id,
-    role: payload.role,
-    content: payload.content,
-    model: payload.model,
-    tokensUsed: payload.tokens_used,
-    createdAt: payload.created_at,
+    conversationId: payload.conversation_id || '',
+    role: payload.role || 'user',
+    content: payload.content || '',
+    model: payload.model || '',
+    tokensUsed: payload.tokens_used ?? 0,
+    createdAt: payload.created_at || item.created_time,
   };
 }
 
@@ -195,6 +195,17 @@ export function useAIConversations() {
     loadConversations();
   }, [loadConversations]);
 
+  // 监听同步完成事件，刷新对话列表
+  useEffect(() => {
+    const handleSyncCompleted = () => {
+      loadConversations();
+    };
+    window.addEventListener('sync-completed', handleSyncCompleted);
+    return () => {
+      window.removeEventListener('sync-completed', handleSyncCompleted);
+    };
+  }, [loadConversations]);
+
   const createConversation = useCallback(async (
     title: string,
     model: string,
@@ -219,7 +230,18 @@ export function useAIConversations() {
   }, [loadConversations]);
 
   const updateConversation = useCallback(async (id: string, updates: Partial<AIConversationPayload>) => {
-    const item = await aiConversationsApi.update(id, updates);
+    // 先获取现有数据，然后合并更新（避免部分更新导致数据丢失）
+    const existingItems = await aiConversationsApi.getAll();
+    const existingItem = existingItems.find(item => item.id === id);
+    if (!existingItem) return null;
+
+    const existingPayload = JSON.parse(existingItem.payload) as AIConversationPayload;
+    const mergedPayload: AIConversationPayload = {
+      ...existingPayload,
+      ...updates,
+    };
+
+    const item = await aiConversationsApi.update(id, mergedPayload);
     if (item) {
       await loadConversations();
       return itemToConversation(item);
@@ -296,15 +318,21 @@ export function useAIMessages(conversationId: string | null) {
     };
     await aiMessagesApi.create(userPayload);
 
+    // 重新从数据库加载当前对话的消息历史（避免闭包导致使用旧对话的消息）
+    const currentMessages = await aiMessagesApi.getByConversation(conversationId);
+    const sortedMessages = currentMessages
+      .map(itemToMessage)
+      .sort((a, b) => a.createdAt - b.createdAt);
+
     // 构建消息历史
     const chatMessages: ChatMessage[] = [];
     if (systemPrompt) {
       chatMessages.push({ role: 'system', content: systemPrompt });
     }
-    messages.forEach(m => {
+    // 使用刚从数据库加载的消息，排除刚刚添加的用户消息（它已经在最后添加）
+    sortedMessages.forEach(m => {
       chatMessages.push({ role: m.role, content: m.content });
     });
-    chatMessages.push({ role: 'user', content });
 
     // 开始流式响应
     setStreaming(true);
@@ -340,7 +368,7 @@ export function useAIMessages(conversationId: string | null) {
       setStreaming(false);
       setStreamingContent('');
     }
-  }, [conversationId, messages, loadMessages]);
+  }, [conversationId, loadMessages]);
 
   return {
     messages,

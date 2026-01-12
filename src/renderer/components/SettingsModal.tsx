@@ -1307,7 +1307,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                         密码库
                       </Checkbox>
                       <Checkbox
-                        checked={syncConfig.sync_modules?.diagrams ?? false}
+                        checked={syncConfig.sync_modules?.diagrams ?? true}
                         onChange={e => setSyncModule('diagrams', e.target.checked)}
                       >
                         脑图 / 流程图 / 白板
@@ -1319,7 +1319,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                         待办事项
                       </Checkbox>
                       <Checkbox
-                        checked={syncConfig.sync_modules?.ai ?? false}
+                        checked={syncConfig.sync_modules?.ai ?? true}
                         onChange={e => setSyncModule('ai', e.target.checked)}
                       >
                         AI 助手（配置与对话）

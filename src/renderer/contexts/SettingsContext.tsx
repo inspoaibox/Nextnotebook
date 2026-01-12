@@ -150,7 +150,16 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
         }
 
         if (savedConfig) {
-          const mergedConfig = { ...DEFAULT_SYNC_CONFIG, ...savedConfig };
+          // 深度合并 sync_modules，确保新增的模块字段有默认值
+          const mergedSyncModules = {
+            ...DEFAULT_SYNC_MODULES,
+            ...(savedConfig.sync_modules || {}),
+          };
+          const mergedConfig = { 
+            ...DEFAULT_SYNC_CONFIG, 
+            ...savedConfig,
+            sync_modules: mergedSyncModules,
+          };
           setSyncConfigState(mergedConfig);
           syncConfigRef.current = mergedConfig;
         }

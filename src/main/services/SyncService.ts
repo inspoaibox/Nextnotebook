@@ -1,5 +1,5 @@
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron';
-import { SyncEngine, SyncResult, SyncOptions } from '@core/sync/SyncEngine';
+import { SyncEngine, SyncResult, SyncOptions, ServerIdentifier } from '@core/sync/SyncEngine';
 import { SyncScheduler, SyncState } from '@core/sync/SyncScheduler';
 import { WebDAVAdapter } from '@core/sync/WebDAVAdapter';
 import { ServerAdapter } from '@core/sync/ServerAdapter';
@@ -10,6 +10,7 @@ import { getItemsManager } from './DatabaseService';
 let syncEngine: SyncEngine | null = null;
 let syncScheduler: SyncScheduler | null = null;
 let currentAdapter: StorageAdapter | null = null;
+let currentServerIdentifier: ServerIdentifier | null = null;
 
 export interface SyncServiceConfig {
   enabled: boolean;
@@ -47,8 +48,15 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
     if (!config.enabled || !config.url) {
       syncEngine = null;
       currentAdapter = null;
+      currentServerIdentifier = null;
       return true;
     }
+
+    // 创建服务器标识（用于独立存储游标）
+    currentServerIdentifier = {
+      type: config.type,
+      url: config.url,
+    };
 
     // 创建适配器
     if (config.type === 'webdav') {
@@ -113,6 +121,7 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
     const syncOptions: Partial<SyncOptions> = {
       conflictStrategy: 'create-copy',
       syncModules: config.syncModules || DEFAULT_SYNC_MODULES,
+      serverIdentifier: currentServerIdentifier,  // 传递服务器标识
     };
     syncEngine = new SyncEngine(currentAdapter, itemsManager, syncOptions);
 
@@ -362,6 +371,28 @@ export function registerSyncIpcHandlers(): void {
     } catch (error) {
       return { success: false, count: 0, error: (error as Error).message };
     }
+  });
+
+  // 获取本地同步游标（调试用）
+  ipcMain.handle('sync:getLocalCursor', async (_event: IpcMainInvokeEvent, serverType?: string, serverUrl?: string) => {
+    const itemsManager = getItemsManager();
+    // 如果没有提供服务器信息，使用当前配置的服务器
+    const type = serverType || currentServerIdentifier?.type;
+    const url = serverUrl || currentServerIdentifier?.url;
+    const cursor = itemsManager.getLocalSyncCursor(type, url);
+    console.log('[SyncService] Local sync cursor for', type, url, ':', cursor);
+    return cursor;
+  });
+
+  // 清除本地同步游标（强制重新拉取所有变更）
+  ipcMain.handle('sync:clearLocalCursor', async (_event: IpcMainInvokeEvent, serverType?: string, serverUrl?: string) => {
+    const itemsManager = getItemsManager();
+    // 如果没有提供服务器信息，使用当前配置的服务器
+    const type = serverType || currentServerIdentifier?.type;
+    const url = serverUrl || currentServerIdentifier?.url;
+    const success = itemsManager.clearLocalSyncCursor(type, url);
+    console.log('[SyncService] Cleared local sync cursor for', type, url, ', success:', success);
+    return { success };
   });
 
   // 检查首次同步状态

@@ -16,10 +16,10 @@ function itemToFolder(item: ItemBase): Folder {
   const payload = parsePayload<FolderPayload>(item);
   return {
     id: item.id,
-    name: payload.name,
-    parentId: payload.parent_id,
-    icon: payload.icon,
-    color: payload.color,
+    name: payload.name || '未命名文件夹',
+    parentId: payload.parent_id ?? null,
+    icon: payload.icon ?? null,
+    color: payload.color ?? null,
     createdAt: item.created_time,
     updatedAt: item.updated_time,
   };

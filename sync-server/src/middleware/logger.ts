@@ -35,7 +35,7 @@ export function loggerMiddleware(req: Request, res: Response, next: NextFunction
     const duration = Date.now() - start;
     log('info', 'Request', {
       method: req.method,
-      path: req.path,
+      path: req.originalUrl,  // 使用 originalUrl 显示完整路径
       status: res.statusCode,
       duration: `${duration}ms`,
       ip: req.ip,

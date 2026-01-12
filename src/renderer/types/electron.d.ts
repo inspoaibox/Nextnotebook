@@ -48,6 +48,11 @@ export interface ImageAPI {
   saveFile: (buffer: string, defaultName: string) => Promise<boolean>;
 }
 
+export interface SyncCursor {
+  cursor: string;
+  timestamp: number;
+}
+
 export interface SyncAPI {
   initialize: (config: object) => Promise<any>;
   start: () => Promise<any>;
@@ -59,6 +64,10 @@ export interface SyncAPI {
   forceResync: () => Promise<{ success: boolean; count: number; error?: string }>;
   resetStatus: () => Promise<{ success: boolean; count: number; error?: string }>;
   checkFirstSync: () => Promise<{ isFirstSync: boolean; remoteHasData: boolean; localItemCount: number }>;
+  getLocalCursor: (serverType?: string, serverUrl?: string) => Promise<SyncCursor | null>;
+  clearLocalCursor: (serverType?: string, serverUrl?: string) => Promise<{ success: boolean }>;
+  onLastSyncTimeUpdated: (callback: (lastSyncTime: number) => void) => void;
+  onTokenRefreshed: (callback: (data: { token: string; refreshToken: string; expiresIn: number }) => void) => void;
 }
 
 export interface PDFAPI {
@@ -124,6 +133,24 @@ export interface DataAPI {
   previewImport: () => Promise<DataPreviewResult>;
 }
 
+export interface ResourceInfo {
+  id: string;
+  filename: string;
+  mime_type: string;
+  size: number;
+  note_id: string;
+  file_hash: string;
+}
+
+export interface ResourceAPI {
+  uploadImage: (noteId: string, data: string, filename: string, mimeType: string) => Promise<string>;
+  uploadAttachment: (noteId: string, data: string, filename: string, mimeType: string) => Promise<{ url: string; name: string }>;
+  getPath: (resourceId: string, ext: string) => Promise<string | null>;
+  read: (resourceId: string, ext: string) => Promise<string | null>;
+  delete: (resourceId: string, ext: string) => Promise<boolean>;
+  getNoteResources: (noteId: string) => Promise<ResourceInfo[]>;
+}
+
 export interface ElectronAPI {
   getAppPath: () => Promise<string>;
   getAppPaths: () => Promise<{
@@ -153,6 +180,7 @@ export interface ElectronAPI {
   image: ImageAPI;
   pdf: PDFAPI;
   data: DataAPI;
+  resource: ResourceAPI;
 }
 
 declare global {

@@ -8,9 +8,16 @@ export interface Diagram extends Omit<ItemBase, 'payload'> {
 
 // 解析 ItemBase 为 Diagram
 function parseDiagram(item: ItemBase): Diagram {
+  const payload = JSON.parse(item.payload) as DiagramPayload;
   return {
     ...item,
-    payload: JSON.parse(item.payload) as DiagramPayload,
+    payload: {
+      name: payload.name || '未命名图表',
+      diagram_type: payload.diagram_type || 'mindmap',
+      data: payload.data || '{}',
+      thumbnail: payload.thumbnail ?? null,
+      folder_id: payload.folder_id ?? null,
+    },
   };
 }
 

@@ -93,6 +93,17 @@ export function useBookmarkFolders() {
 
   useEffect(() => { loadFolders(); }, [loadFolders]);
 
+  // 监听同步完成事件，刷新文件夹列表
+  useEffect(() => {
+    const handleSyncCompleted = () => {
+      loadFolders();
+    };
+    window.addEventListener('sync-completed', handleSyncCompleted);
+    return () => {
+      window.removeEventListener('sync-completed', handleSyncCompleted);
+    };
+  }, [loadFolders]);
+
   const createFolder = useCallback(async (name: string, parentId: string | null = null) => {
     const item = await bookmarkFoldersApi.create({ name, parent_id: parentId });
     if (item) {
@@ -159,6 +170,17 @@ export function useBookmarks(folderId?: string | null, folders?: BookmarkFolder[
   }, [folderId, folders, getAllDescendantFolderIds]);
 
   useEffect(() => { loadBookmarks(); }, [loadBookmarks]);
+
+  // 监听同步完成事件，刷新书签列表
+  useEffect(() => {
+    const handleSyncCompleted = () => {
+      loadBookmarks();
+    };
+    window.addEventListener('sync-completed', handleSyncCompleted);
+    return () => {
+      window.removeEventListener('sync-completed', handleSyncCompleted);
+    };
+  }, [loadBookmarks]);
 
   const createBookmark = useCallback(async (data: Partial<BookmarkPayload>) => {
     const payload: BookmarkPayload = {
