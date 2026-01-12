@@ -12,6 +12,20 @@ router.get('/', (req, res, next) => {
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
 
     const result = changeService.listChanges(cursor, limit, req.userId);
+    
+    // 记录变更查询详情
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      message: 'Changes GET',
+      userId: req.userId,
+      cursor: cursor || 'null',
+      limit,
+      changesCount: result.changes.length,
+      hasMore: result.hasMore,
+      nextCursor: result.nextCursor,
+    }));
+    
     res.json(result);
   } catch (error) {
     next(error);

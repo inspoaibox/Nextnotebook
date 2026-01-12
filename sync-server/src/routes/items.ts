@@ -114,6 +114,18 @@ router.put('/:id', (req, res, next) => {
       throw createError('Missing required fields: type, payload, content_hash', 400);
     }
 
+    // 记录同步上传详情
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      message: 'Item PUT',
+      itemId: item.id,
+      type: item.type,
+      userId: req.userId,
+      contentHash: item.content_hash,
+      payloadLength: item.payload?.length || 0,
+    }));
+
     const result = itemService.putItem(item);
     res.json({ success: true, remoteRev: result.remoteRev });
   } catch (error) {

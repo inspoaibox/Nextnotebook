@@ -33,13 +33,31 @@ export function loggerMiddleware(req: Request, res: Response, next: NextFunction
 
   res.on('finish', () => {
     const duration = Date.now() - start;
-    log('info', 'Request', {
+    
+    // 对同步相关的请求记录更详细的信息
+    const isSyncRequest = req.originalUrl.startsWith('/api/items') || 
+                          req.originalUrl.startsWith('/api/changes') ||
+                          req.originalUrl.startsWith('/api/sync');
+    
+    const logData: Record<string, unknown> = {
       method: req.method,
-      path: req.originalUrl,  // 使用 originalUrl 显示完整路径
+      path: req.originalUrl,
       status: res.statusCode,
       duration: `${duration}ms`,
       ip: req.ip,
-    });
+    };
+    
+    // 添加用户标识（如果有）
+    if ((req as any).userId) {
+      logData.userId = (req as any).userId;
+    }
+    
+    // 对 PUT/POST 请求记录请求体大小
+    if (isSyncRequest && (req.method === 'PUT' || req.method === 'POST')) {
+      logData.bodySize = req.headers['content-length'] || 0;
+    }
+    
+    log('info', 'Request', logData);
   });
 
   next();
