@@ -125,8 +125,8 @@ class CryptoCompatibilityTest : StringSpec({
         
         val hash = cryptoEngine.computeHash(content)
         
-        // 哈希应为 16 字符十六进制
-        hash.length shouldBe 16
+        // 哈希应为完整的 64 字符十六进制（SHA-256）
+        hash.length shouldBe 64
         hash.all { it.isDigit() || it in 'a'..'f' } shouldBe true
         
         // 相同内容应产生相同哈希

@@ -118,9 +118,19 @@ export class ItemsManager {
   // 创建新 Item
   create<T extends object>(type: ItemType, payload: T): ItemBase {
     const now = Date.now();
-    const payloadStr = JSON.stringify(payload);
+    
+    // 检查 payload 中是否有 _id 字段（用于创建带固定 ID 的记录）
+    const payloadWithId = payload as T & { _id?: string };
+    const customId = payloadWithId._id;
+    
+    // 如果有自定义 ID，从 payload 中移除 _id 字段
+    if (customId) {
+      delete payloadWithId._id;
+    }
+    
+    const payloadStr = JSON.stringify(payloadWithId);
     const item: ItemBase = {
-      id: uuidv4(),
+      id: customId || uuidv4(),
       type,
       created_time: now,
       updated_time: now,
@@ -210,11 +220,11 @@ export class ItemsManager {
     const existing = this.getById(item.id);
     if (!existing) return undefined;
 
-    // 直接使用远端的数据覆盖本地
+    // 直接使用远端的数据覆盖本地，包括 deleted_time
     this.db.run(
       `UPDATE items SET payload = ?, content_hash = ?, updated_time = ?, 
-       remote_rev = ?, sync_status = 'clean' WHERE id = ?`,
-      [item.payload, item.content_hash, item.updated_time, item.remote_rev, item.id]
+       remote_rev = ?, sync_status = 'clean', deleted_time = ? WHERE id = ?`,
+      [item.payload, item.content_hash, item.updated_time, item.remote_rev, item.deleted_time ?? null, item.id]
     );
 
     return this.getById(item.id);
@@ -314,7 +324,22 @@ export class ItemsManager {
     );
   }
 
-  // 按文件夹获取笔记
+  // 递归获取所有子文件夹 ID
+  private getAllChildFolderIds(folderId: string): string[] {
+    const childIds: string[] = [];
+    const directChildren = this.db.query<ItemBase>(
+      `SELECT id FROM items WHERE type = 'folder' AND deleted_time IS NULL 
+       AND json_extract(payload, '$.parent_id') = ?`,
+      [folderId]
+    );
+    for (const child of directChildren) {
+      childIds.push(child.id);
+      childIds.push(...this.getAllChildFolderIds(child.id));
+    }
+    return childIds;
+  }
+
+  // 按文件夹获取笔记（包括子文件夹中的笔记）
   // folderId === null 时返回所有笔记（用于"所有笔记"视图）
   getNotesByFolder(folderId: string | null): ItemBase[] {
     if (folderId === null) {
@@ -324,10 +349,17 @@ export class ItemsManager {
          ORDER BY updated_time DESC`
       );
     }
+    
+    // 获取当前文件夹及所有子文件夹的 ID
+    const allFolderIds = [folderId, ...this.getAllChildFolderIds(folderId)];
+    
+    // 构建 IN 查询的占位符
+    const placeholders = allFolderIds.map(() => '?').join(',');
+    
     return this.db.query<ItemBase>(
       `SELECT * FROM items WHERE type = 'note' AND deleted_time IS NULL 
-       AND json_extract(payload, '$.folder_id') = ? ORDER BY updated_time DESC`,
-      [folderId]
+       AND json_extract(payload, '$.folder_id') IN (${placeholders}) ORDER BY updated_time DESC`,
+      allFolderIds
     );
   }
 

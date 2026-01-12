@@ -32,8 +32,8 @@ class CryptoEnginePropertyTest : StringSpec({
     
     /**
      * Property 1: Content Hash Consistency
-     * 对于任意 payload 字符串，使用 SHA-256 计算内容哈希并取前 16 字符
-     * 应该产生一致的 16 字符十六进制字符串，相同 payload 应该总是产生相同哈希
+     * 对于任意 payload 字符串，使用 SHA-256 计算内容哈希
+     * 应该产生一致的 64 字符十六进制字符串，相同 payload 应该总是产生相同哈希
      */
     "Property 1: Content Hash Consistency - same content produces same hash" {
         checkAll(Arb.string(0, 1000)) { content ->
@@ -41,8 +41,8 @@ class CryptoEnginePropertyTest : StringSpec({
             val hash2 = cryptoEngine.computeHash(content)
             
             hash1 shouldBe hash2
-            hash1 shouldHaveLength 16
-            hash1 shouldMatch Regex("^[0-9a-f]{16}$")
+            hash1 shouldHaveLength 64
+            hash1 shouldMatch Regex("^[0-9a-f]{64}$")
         }
     }
     

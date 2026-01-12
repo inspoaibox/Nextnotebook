@@ -480,15 +480,8 @@ export class WebDAVAdapter implements StorageAdapter {
 
   async putResource(id: string, data: Buffer, mimeType: string): Promise<boolean> {
     try {
-      // 根据 MIME 类型确定扩展名
-      const extMap: Record<string, string> = {
-        'image/png': '.png',
-        'image/jpeg': '.jpg',
-        'image/gif': '.gif',
-        'application/pdf': '.pdf',
-      };
-      const ext = extMap[mimeType] || '';
-      const resourcePath = this.getPath(`${PATHS.RESOURCES}/${id}${ext}`);
+      // id 已经包含扩展名（如 uuid.png），直接使用
+      const resourcePath = this.getPath(`${PATHS.RESOURCES}/${id}`);
 
       await this.withTimeout(
         this.client.putFileContents(resourcePath, data),

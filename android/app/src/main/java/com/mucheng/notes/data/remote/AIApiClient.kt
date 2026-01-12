@@ -105,8 +105,8 @@ class AIApiClient @Inject constructor() {
         if (normalized.endsWith("/")) {
             normalized = normalized.dropLast(1)
         }
-        // 如果 URL 不以 /chat/completions 结尾，自动补全
-        if (!normalized.endsWith("/chat/completions")) {
+        // 如果 URL 不包含 /chat/completions，自动补全（修复：使用 contains 而非 endsWith）
+        if (!normalized.contains("/chat/completions")) {
             normalized = "$normalized/chat/completions"
         }
         return normalized

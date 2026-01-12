@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 使用系统默认浏览器打开链接
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   
+  // 使用系统默认程序打开本地文件
+  openPath: (filePath: string) => ipcRenderer.invoke('open-path', filePath),
+  
   // 开机启动设置
   setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('set-auto-launch', enabled),
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),

@@ -73,12 +73,24 @@ export function useAISettings() {
       setSettings(aiSettingsApi.get());
     };
 
+    // 同步完成后从数据库重新加载 AI 配置
+    const handleSyncCompleted = async () => {
+      const dbSettings = await aiSettingsApi.loadFromDb();
+      if (dbSettings) {
+        // 更新 localStorage 和状态
+        aiSettingsApi.save(dbSettings);
+        setSettings(dbSettings);
+      }
+    };
+
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('ai-settings-updated', handleCustomEvent);
+    window.addEventListener('sync-completed', handleSyncCompleted);
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('ai-settings-updated', handleCustomEvent);
+      window.removeEventListener('sync-completed', handleSyncCompleted);
     };
   }, []);
 
@@ -250,6 +262,12 @@ export function useAIConversations() {
   }, [loadConversations]);
 
   const deleteConversation = useCallback(async (id: string) => {
+    // 1. 先删除所有关联的消息（级联删除）
+    const messages = await aiMessagesApi.getByConversation(id);
+    for (const msg of messages) {
+      await aiMessagesApi.delete(msg.id);
+    }
+    // 2. 再删除对话本身
     const success = await aiConversationsApi.delete(id);
     if (success) {
       await loadConversations();

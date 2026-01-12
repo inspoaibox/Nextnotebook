@@ -3,7 +3,9 @@ package com.mucheng.notes.data.sync
 import android.content.Context
 import android.content.SharedPreferences
 import com.mucheng.notes.data.local.dao.ItemDao
+import com.mucheng.notes.data.local.dao.ResourceCacheDao
 import com.mucheng.notes.data.local.entity.ItemEntity
+import com.mucheng.notes.data.local.entity.ResourceCacheEntity
 import com.mucheng.notes.data.remote.SyncCursor
 import com.mucheng.notes.data.remote.WebDAVAdapter
 import com.mucheng.notes.data.remote.ServerAdapterImpl
@@ -11,6 +13,7 @@ import com.mucheng.notes.domain.model.ItemType
 import com.mucheng.notes.domain.model.SyncConfig
 import com.mucheng.notes.domain.model.SyncModuleTypes
 import com.mucheng.notes.domain.model.SyncResult
+import com.mucheng.notes.domain.model.payload.ResourcePayload
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,6 +23,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,6 +36,7 @@ import javax.inject.Singleton
 class SyncEngine @Inject constructor(
     private val webDAVAdapter: WebDAVAdapter,
     private val itemDao: ItemDao,
+    private val resourceCacheDao: ResourceCacheDao,
     @ApplicationContext private val context: Context
 ) {
     private val json = Json {
@@ -39,6 +44,13 @@ class SyncEngine @Inject constructor(
         encodeDefaults = true
         isLenient = true  // 允许更宽松的 JSON 解析
         coerceInputValues = true  // 将缺失的字段填充为默认值
+    }
+    
+    // 资源缓存目录
+    private val resourceCacheDir: File by lazy {
+        File(context.cacheDir, "resources").also { 
+            if (!it.exists()) it.mkdirs() 
+        }
     }
 
     // SharedPreferences for local sync cursor storage
@@ -201,6 +213,16 @@ class SyncEngine @Inject constructor(
             if (item.syncStatus == "deleted") {
                 // 删除远端项目
                 if (adapter.deleteItem(item.id)) {
+                    // 如果是资源类型，同时删除远端资源文件
+                    if (item.type == "resource") {
+                        try {
+                            val payload = json.decodeFromString<ResourcePayload>(item.payload)
+                            val ext = getExtensionFromFilename(payload.filename)
+                            adapter.deleteResource("${item.id}$ext")
+                        } catch (e: Exception) {
+                            android.util.Log.w("SyncEngine", "Failed to delete remote resource file: ${e.message}")
+                        }
+                    }
                     itemDao.hardDelete(item.id)
                     count++
                 }
@@ -208,6 +230,32 @@ class SyncEngine @Inject constructor(
                 // 上传项目
                 val result = adapter.putItem(itemToUpload)
                 if (result.isSuccess) {
+                    // 如果是资源类型，同时上传资源文件
+                    if (item.type == "resource") {
+                        try {
+                            val payload = json.decodeFromString<ResourcePayload>(item.payload)
+                            val ext = getExtensionFromFilename(payload.filename)
+                            val resourceId = "${item.id}$ext"
+                            
+                            // 从本地缓存获取文件
+                            val cache = resourceCacheDao.getByResourceId(item.id)
+                            if (cache != null) {
+                                val localFile = File(cache.localPath)
+                                if (localFile.exists()) {
+                                    val data = localFile.readBytes()
+                                    val uploadResult = adapter.uploadResource(resourceId, data)
+                                    if (uploadResult.isSuccess) {
+                                        android.util.Log.d("SyncEngine", "Uploaded resource file: $resourceId")
+                                    } else {
+                                        android.util.Log.w("SyncEngine", "Failed to upload resource file: $resourceId")
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("SyncEngine", "Failed to upload resource file: ${e.message}")
+                        }
+                    }
+                    
                     itemDao.markSynced(item.id, result.getOrThrow())
                     count++
                 }
@@ -215,6 +263,14 @@ class SyncEngine @Inject constructor(
         }
         
         return PushResult(count)
+    }
+    
+    /**
+     * 从文件名获取扩展名
+     */
+    private fun getExtensionFromFilename(filename: String): String {
+        val lastDot = filename.lastIndexOf('.')
+        return if (lastDot > 0) filename.substring(lastDot) else ""
     }
     
     /**
@@ -274,12 +330,22 @@ class SyncEngine @Inject constructor(
 
                 // 检查是否是自己刚上传的 (与桌面端逻辑一致)
                 if (localItem != null && localItem.syncStatus == "clean") {
-                    // 检查内容哈希是否一致，一致则跳过
-                    if (localItem.contentHash == change.contentHash) {
-                        android.util.Log.d("SyncEngine", "Skipping own upload: ${remoteItem.id}")
+                    // 检查内容哈希是否一致，且删除状态也一致，才跳过
+                    val hashMatches = localItem.contentHash == change.contentHash
+                    val deletedStatusMatches = (localItem.deletedTime == null) == (remoteItem.deletedTime == null)
+                    
+                    if (hashMatches && deletedStatusMatches) {
+                        android.util.Log.d("SyncEngine", "Skipping - hash and deleted status match: ${remoteItem.id}")
                         continue
                     }
-                    // 哈希不同但本地是 clean 状态，说明远端有更新，继续处理
+                    
+                    // 哈希不同或删除状态不同，说明远端有更新，继续处理
+                    if (!hashMatches) {
+                        android.util.Log.d("SyncEngine", "Remote update detected for ${remoteItem.id}, local_hash=${localItem.contentHash}, remote_hash=${change.contentHash}")
+                    }
+                    if (!deletedStatusMatches) {
+                        android.util.Log.d("SyncEngine", "Remote deletion status changed for ${remoteItem.id}, local_deleted=${localItem.deletedTime}, remote_deleted=${remoteItem.deletedTime}")
+                    }
                 }
 
                 // 检查是否有冲突
@@ -295,6 +361,40 @@ class SyncEngine @Inject constructor(
                 }
 
                 // 直接使用远端数据（明文同步，不需要解密）
+                // 如果是资源类型，下载资源文件
+                if (remoteItem.type == "resource") {
+                    try {
+                        val payload = json.decodeFromString<ResourcePayload>(remoteItem.payload)
+                        val ext = getExtensionFromFilename(payload.filename)
+                        val resourceId = "${remoteItem.id}$ext"
+                        
+                        // 下载资源文件
+                        val downloadResult = adapter.downloadResource(resourceId)
+                        if (downloadResult.isSuccess) {
+                            val data = downloadResult.getOrThrow()
+                            // 保存到本地缓存
+                            val cacheFile = File(resourceCacheDir, resourceId)
+                            cacheFile.writeBytes(data)
+                            
+                            // 更新缓存记录
+                            val now = System.currentTimeMillis()
+                            resourceCacheDao.upsert(
+                                ResourceCacheEntity(
+                                    resourceId = remoteItem.id,
+                                    localPath = cacheFile.absolutePath,
+                                    downloadedAt = now,
+                                    lastAccessedAt = now
+                                )
+                            )
+                            android.util.Log.d("SyncEngine", "Downloaded resource file: $resourceId")
+                        } else {
+                            android.util.Log.w("SyncEngine", "Failed to download resource file: $resourceId")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("SyncEngine", "Failed to download resource file: ${e.message}")
+                    }
+                }
+                
                 // 写入本地
                 itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
                 android.util.Log.d("SyncEngine", if (localItem == null) "Inserted new item: ${remoteItem.id}" else "Updated existing item: ${remoteItem.id}")

@@ -75,4 +75,14 @@ interface ItemRepository {
      * 批量插入或更新（用于同步）
      */
     suspend fun upsertAll(items: List<ItemEntity>)
+    
+    /**
+     * 使用指定 ID 创建项目（用于 AI 配置等单例数据）
+     */
+    suspend fun createWithId(id: String, type: ItemType, payload: String): ItemEntity
+    
+    /**
+     * 按类型获取所有项目（一次性查询，非 Flow）
+     */
+    suspend fun getByTypeOnce(type: ItemType): List<ItemEntity>
 }

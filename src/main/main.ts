@@ -386,6 +386,7 @@ app.on('activate', () => {
 // IPC handlers
 ipcMain.handle('get-app-path', () => app.getPath('userData'));
 ipcMain.handle('open-external', (_event, url: string) => shell.openExternal(url));
+ipcMain.handle('open-path', (_event, filePath: string) => shell.openPath(filePath));
 
 // 获取应用路径信息
 ipcMain.handle('get-app-paths', () => {

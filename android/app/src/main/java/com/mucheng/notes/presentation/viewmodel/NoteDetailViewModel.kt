@@ -334,4 +334,28 @@ class NoteDetailViewModel @Inject constructor(
     fun clearError() {
         _uiState.update { it.copy(error = null) }
     }
+    
+    /**
+     * 插入 Markdown 包围标记
+     * 例如：insertMarkdown("**", "**") 会在光标位置插入 **|**
+     */
+    fun insertMarkdown(prefix: String, suffix: String) {
+        val currentContent = _uiState.value.content
+        val newContent = "$currentContent$prefix$suffix"
+        updateContent(newContent)
+    }
+    
+    /**
+     * 插入 Markdown 前缀
+     * 例如：insertPrefix("# ") 会在新行插入 # 
+     */
+    fun insertPrefix(prefix: String) {
+        val currentContent = _uiState.value.content
+        val newContent = if (currentContent.isEmpty() || currentContent.endsWith("\n")) {
+            "$currentContent$prefix"
+        } else {
+            "$currentContent\n$prefix"
+        }
+        updateContent(newContent)
+    }
 }

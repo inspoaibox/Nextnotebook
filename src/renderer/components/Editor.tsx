@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Empty, Tabs, Space, Button, Tooltip, message, Modal, Tag as AntTag, Input, Select, Dropdown, Upload } from 'antd';
+import { Empty, Tabs, Space, Button, Tooltip, message, Modal, Tag as AntTag, Input, Select, Dropdown } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   EditOutlined,
@@ -19,15 +19,166 @@ import {
   MenuUnfoldOutlined,
   LockOutlined,
   UnlockOutlined,
-  PictureOutlined,
-  PaperClipOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Tag } from '../hooks/useTags';
 import MarkdownToolbar from './MarkdownToolbar';
+
+// 资源图片组件 - 处理 resource:// 协议的图片
+const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = ({ src, alt, title }) => {
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!src) {
+      setLoading(false);
+      setError(true);
+      return;
+    }
+
+    // 检查是否是 resource:// 协议
+    if (src.startsWith('resource://')) {
+      const resourcePath = src.replace('resource://', '');
+      // 解析资源 ID 和扩展名
+      const lastDotIndex = resourcePath.lastIndexOf('.');
+      const resourceId = lastDotIndex > 0 ? resourcePath.substring(0, lastDotIndex) : resourcePath;
+      const ext = lastDotIndex > 0 ? resourcePath.substring(lastDotIndex) : '.png';
+
+      // 通过 IPC 读取资源文件
+      (window as any).electron.resource.read(resourceId, ext)
+        .then((base64Data: string | null) => {
+          if (base64Data) {
+            // 根据扩展名确定 MIME 类型
+            const mimeType = ext === '.png' ? 'image/png' 
+              : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+              : ext === '.gif' ? 'image/gif'
+              : ext === '.webp' ? 'image/webp'
+              : ext === '.svg' ? 'image/svg+xml'
+              : 'image/png';
+            setImageSrc(`data:${mimeType};base64,${base64Data}`);
+            setError(false);
+          } else {
+            setError(true);
+          }
+          setLoading(false);
+        })
+        .catch(() => {
+          setError(true);
+          setLoading(false);
+        });
+    } else {
+      // 普通 URL，直接使用
+      setImageSrc(src);
+      setLoading(false);
+    }
+  }, [src]);
+
+  if (loading) {
+    return <span style={{ color: '#999', fontSize: 12 }}>加载图片中...</span>;
+  }
+
+  if (error || !imageSrc) {
+    return (
+      <span style={{ 
+        display: 'inline-block', 
+        padding: '8px 12px', 
+        background: '#fff2f0', 
+        border: '1px solid #ffccc7',
+        borderRadius: 4,
+        color: '#ff4d4f',
+        fontSize: 12 
+      }}>
+        ❌ 图片加载失败: {alt || src}
+      </span>
+    );
+  }
+
+  return (
+    <img 
+      src={imageSrc} 
+      alt={alt || ''} 
+      title={title || ''} 
+      style={{ maxWidth: '100%', height: 'auto' }}
+    />
+  );
+};
+
+// 资源链接组件 - 处理 resource:// 协议的附件链接
+const ResourceLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({ href, children }) => {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleClick = useCallback(async (e: React.MouseEvent) => {
+    if (!href || !href.startsWith('resource://')) {
+      return; // 普通链接，使用默认行为
+    }
+    
+    e.preventDefault();
+    
+    const resourcePath = href.replace('resource://', '');
+    const lastDotIndex = resourcePath.lastIndexOf('.');
+    const resourceId = lastDotIndex > 0 ? resourcePath.substring(0, lastDotIndex) : resourcePath;
+    const ext = lastDotIndex > 0 ? resourcePath.substring(lastDotIndex) : '';
+    
+    setDownloading(true);
+    
+    try {
+      // 获取资源文件路径
+      const filePath = await (window as any).electron.resource.getPath(resourceId, ext);
+      
+      if (filePath) {
+        // 使用系统默认程序打开文件
+        const result = await (window as any).electronAPI.openPath(filePath);
+        if (result) {
+          // openPath 返回错误信息字符串，空字符串表示成功
+          message.error(`打开附件失败: ${result}`);
+        }
+      } else {
+        message.error('附件文件不存在');
+      }
+    } catch (error) {
+      console.error('Failed to open attachment:', error);
+      message.error('打开附件失败');
+    } finally {
+      setDownloading(false);
+    }
+  }, [href]);
+
+  // 如果不是 resource:// 协议，返回普通链接
+  if (!href || !href.startsWith('resource://')) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  }
+
+  return (
+    <a 
+      href={href}
+      onClick={handleClick}
+      style={{ 
+        cursor: downloading ? 'wait' : 'pointer',
+        color: '#1890ff',
+        textDecoration: 'none',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '2px 8px',
+        background: '#f5f5f5',
+        borderRadius: 4,
+        border: '1px solid #d9d9d9',
+      }}
+      title="点击打开附件"
+    >
+      {children}
+      {downloading && <span style={{ fontSize: 12, color: '#999' }}> (打开中...)</span>}
+    </a>
+  );
+};
 
 // 计算密码哈希（使用 Web Crypto API，与 Android 端保持一致，使用 SHA-256）
 const computePasswordHash = async (password: string): Promise<string> => {
@@ -953,6 +1104,14 @@ const Editor: React.FC<EditorProps> = ({
                     }
                     return <input type={type} {...props} />;
                   },
+                  // 图片处理 - 支持 resource:// 协议
+                  img: ({ src, alt, title, ...props }: any) => {
+                    return <ResourceImage src={src} alt={alt} title={title} />;
+                  },
+                  // 链接处理 - 支持 resource:// 协议的附件
+                  a: ({ href, children, ...props }: any) => {
+                    return <ResourceLink href={href}>{children}</ResourceLink>;
+                  },
                 }}
               >
                 {content}
@@ -1066,6 +1225,14 @@ const Editor: React.FC<EditorProps> = ({
                         return <input type="checkbox" checked={checked} disabled style={{ marginRight: 8 }} />;
                       }
                       return <input type={type} {...props} />;
+                    },
+                    // 图片处理 - 支持 resource:// 协议
+                    img: ({ src, alt, title, ...props }: any) => {
+                      return <ResourceImage src={src} alt={alt} title={title} />;
+                    },
+                    // 链接处理 - 支持 resource:// 协议的附件
+                    a: ({ href, children, ...props }: any) => {
+                      return <ResourceLink href={href}>{children}</ResourceLink>;
                     },
                   }}
                 >

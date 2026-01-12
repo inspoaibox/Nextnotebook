@@ -121,7 +121,8 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val appLockManager: AppLockManager,
     private val biometricManager: BiometricManager,
-    private val syncEngine: SyncEngine
+    private val syncEngine: SyncEngine,
+    private val itemRepository: com.mucheng.notes.domain.repository.ItemRepository
 ) : ViewModel() {
     
     companion object {
@@ -723,6 +724,9 @@ class SettingsViewModel @Inject constructor(
                     val now = System.currentTimeMillis()
                     prefs.edit().putLong(KEY_LAST_SYNC_TIME, now).apply()
                     
+                    // 同步成功后重新加载 AI 配置
+                    loadAiConfigFromDb()
+                    
                     val message = buildString {
                         append("同步成功")
                         if (result.pushed > 0 || result.pulled > 0) {
@@ -819,10 +823,101 @@ class SettingsViewModel @Inject constructor(
     
     /**
      * 设置 AI 渠道配置 JSON
+     * 同时保存到 SharedPreferences 和数据库（用于同步）
      */
     fun setAiChannels(json: String) {
         prefs.edit().putString(KEY_AI_CHANNELS_JSON, json).apply()
         _uiState.update { it.copy(aiChannelsJson = json) }
+        
+        // 同时保存到数据库以支持同步
+        viewModelScope.launch {
+            saveAiConfigToDb()
+        }
+    }
+    
+    /**
+     * 保存 AI 配置到数据库（用于同步）
+     */
+    private suspend fun saveAiConfigToDb() {
+        try {
+            val aiConfigJson = kotlinx.serialization.json.Json { 
+                ignoreUnknownKeys = true 
+                encodeDefaults = true
+            }
+            
+            val payload = com.mucheng.notes.domain.model.payload.AIConfigPayload(
+                enabled = _uiState.value.aiEnabled,
+                defaultChannel = _uiState.value.aiDefaultChannel,
+                defaultModel = _uiState.value.aiDefaultModel,
+                channels = if (_uiState.value.aiChannelsJson.isNotBlank()) {
+                    try {
+                        aiConfigJson.decodeFromString<List<com.mucheng.notes.domain.model.payload.AIChannel>>(_uiState.value.aiChannelsJson)
+                    } catch (e: Exception) {
+                        android.util.Log.e("SettingsViewModel", "Failed to parse AI channels: ${e.message}")
+                        emptyList()
+                    }
+                } else {
+                    emptyList()
+                }
+            )
+            
+            val payloadString = aiConfigJson.encodeToString(com.mucheng.notes.domain.model.payload.AIConfigPayload.serializer(), payload)
+            
+            // 使用固定 ID 确保只有一条配置记录
+            val configId = "ai-config-singleton"
+            val existing = itemRepository.getById(configId)
+            
+            if (existing != null) {
+                itemRepository.update(configId, payloadString)
+            } else {
+                itemRepository.createWithId(configId, com.mucheng.notes.domain.model.ItemType.AI_CONFIG, payloadString)
+            }
+            
+            android.util.Log.d("SettingsViewModel", "AI config saved to database for sync")
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsViewModel", "Failed to save AI config to database: ${e.message}")
+        }
+    }
+    
+    /**
+     * 从数据库加载 AI 配置（同步后调用）
+     */
+    suspend fun loadAiConfigFromDb() {
+        try {
+            val aiConfigJson = kotlinx.serialization.json.Json { 
+                ignoreUnknownKeys = true 
+                encodeDefaults = true
+            }
+            
+            val items = itemRepository.getByTypeOnce(com.mucheng.notes.domain.model.ItemType.AI_CONFIG)
+            if (items.isNotEmpty()) {
+                val payload = aiConfigJson.decodeFromString<com.mucheng.notes.domain.model.payload.AIConfigPayload>(items[0].payload)
+                
+                // 更新 SharedPreferences
+                val channelsJsonStr = aiConfigJson.encodeToString(
+                    kotlinx.serialization.builtins.ListSerializer(com.mucheng.notes.domain.model.payload.AIChannel.serializer()),
+                    payload.channels
+                )
+                prefs.edit()
+                    .putBoolean(KEY_AI_ENABLED, payload.enabled)
+                    .putString(KEY_AI_DEFAULT_CHANNEL, payload.defaultChannel)
+                    .putString(KEY_AI_DEFAULT_MODEL, payload.defaultModel)
+                    .putString(KEY_AI_CHANNELS_JSON, channelsJsonStr)
+                    .apply()
+                
+                // 更新 UI 状态
+                _uiState.update { it.copy(
+                    aiEnabled = payload.enabled,
+                    aiDefaultChannel = payload.defaultChannel,
+                    aiDefaultModel = payload.defaultModel,
+                    aiChannelsJson = channelsJsonStr
+                )}
+                
+                android.util.Log.d("SettingsViewModel", "AI config loaded from database: ${payload.channels.size} channels")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsViewModel", "Failed to load AI config from database: ${e.message}")
+        }
     }
     
     fun clearMessage() {

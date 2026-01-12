@@ -300,8 +300,11 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
         val requestBuilder = Request.Builder().url(url)
         
         // 添加认证头
-        accessToken?.let {
-            requestBuilder.addHeader("Authorization", "Bearer $it")
+        val token = accessToken
+        if (token != null) {
+            requestBuilder.addHeader("Authorization", "Bearer $token")
+        } else {
+            android.util.Log.w("ServerAdapter", "No access token available for request: $method $path")
         }
         
         // 设置请求方法和 body
@@ -313,25 +316,29 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
         }
         
         try {
+            android.util.Log.d("ServerAdapter", "Request: $method $url, hasToken=${token != null}")
             val response = client.newCall(requestBuilder.build()).execute()
             
             // 处理 401 错误，尝试刷新 token
             if (response.code == 401 && retry && refreshToken != null) {
+                android.util.Log.w("ServerAdapter", "Got 401, attempting token refresh")
                 val refreshed = refreshAccessToken()
                 if (refreshed) {
                     return@withContext request(method, path, body, false, parser)
                 }
+                android.util.Log.e("ServerAdapter", "Token refresh failed")
             }
             
             if (response.isSuccessful) {
                 val responseBody = response.body?.string() ?: "{}"
                 parser(responseBody)
             } else {
-                android.util.Log.e("ServerAdapter", "Request failed: ${response.code} - ${response.message}")
+                val errorBody = response.body?.string() ?: ""
+                android.util.Log.e("ServerAdapter", "Request failed: $method $path -> ${response.code} ${response.message}, body: $errorBody")
                 null
             }
         } catch (e: Exception) {
-            android.util.Log.e("ServerAdapter", "Request error: ${e.message}")
+            android.util.Log.e("ServerAdapter", "Request error: $method $path -> ${e.javaClass.simpleName}: ${e.message}")
             null
         }
     }
@@ -372,11 +379,11 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             if (result != null) {
                 Result.success(result.remoteRev)
             } else {
-                Result.failure(Exception("Failed to put item"))
+                Result.failure(Exception("Failed to upload item ${item.id} - server returned no response"))
             }
         } catch (e: Exception) {
             android.util.Log.e("ServerAdapter", "Failed to put item ${item.id}: ${e.message}")
-            Result.failure(e)
+            Result.failure(Exception("Failed to upload item ${item.id}: ${e.message}"))
         }
     }
     
@@ -390,9 +397,15 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             if (cursor != null) append("&cursor=$cursor")
         }
         
-        return request("GET", "/api/changes$params") { responseBody ->
+        val result = request("GET", "/api/changes$params") { responseBody ->
             json.decodeFromString<ChangeListResult>(responseBody)
-        } ?: ChangeListResult(emptyList(), null, false)
+        }
+        
+        if (result == null) {
+            throw Exception("Failed to fetch changes from server - check network connection and authentication")
+        }
+        
+        return result
     }
     
     override suspend fun getSyncCursor(): SyncCursor? {

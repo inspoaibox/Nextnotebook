@@ -56,23 +56,30 @@ data class AIChannel(
 
 /**
  * AI 模型数据
+ * 注意: 字段需要与 AIPayload.kt 中的 AIModel 保持一致以支持同步
  */
 @Serializable
 data class AIModel(
     val id: String,
     val name: String,
+    @SerialName("channel_id") val channelId: String = "",
+    @SerialName("max_tokens") val maxTokens: Int = 4096,
     @SerialName("is_custom") val isCustom: Boolean = false
 )
 
 /**
  * 预设渠道模板
  */
+/**
+ * 预设渠道模板
+ * 注意：URL 不包含 /chat/completions，由 AIApiClient.normalizeApiUrl 自动补全
+ */
 val CHANNEL_TEMPLATES = listOf(
     AIChannel(
         id = "openai",
         name = "OpenAI",
         type = AIChannelType.OPENAI.name,
-        apiUrl = "https://api.openai.com/v1/chat/completions",
+        apiUrl = "https://api.openai.com/v1",
         apiKey = "",
         models = listOf(
             AIModel("gpt-4o", "GPT-4o"),
@@ -87,7 +94,7 @@ val CHANNEL_TEMPLATES = listOf(
         id = "gemini",
         name = "Google Gemini",
         type = AIChannelType.GEMINI.name,
-        apiUrl = "https://generativelanguage.googleapis.com/v1beta/models",
+        apiUrl = "https://generativelanguage.googleapis.com/v1beta",
         apiKey = "",
         models = listOf(
             AIModel("gemini-1.5-pro", "Gemini 1.5 Pro"),
@@ -111,7 +118,7 @@ val CHANNEL_TEMPLATES = listOf(
         id = "deepseek",
         name = "DeepSeek",
         type = AIChannelType.OPENAI_COMPATIBLE.name,
-        apiUrl = "https://api.deepseek.com/v1/chat/completions",
+        apiUrl = "https://api.deepseek.com/v1",
         apiKey = "",
         models = listOf(
             AIModel("deepseek-chat", "DeepSeek Chat"),
@@ -123,7 +130,7 @@ val CHANNEL_TEMPLATES = listOf(
         id = "moonshot",
         name = "Moonshot (月之暗面)",
         type = AIChannelType.OPENAI_COMPATIBLE.name,
-        apiUrl = "https://api.moonshot.cn/v1/chat/completions",
+        apiUrl = "https://api.moonshot.cn/v1",
         apiKey = "",
         models = listOf(
             AIModel("moonshot-v1-8k", "Moonshot V1 8K"),
@@ -135,7 +142,7 @@ val CHANNEL_TEMPLATES = listOf(
         id = "zhipu",
         name = "智谱 AI",
         type = AIChannelType.OPENAI_COMPATIBLE.name,
-        apiUrl = "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        apiUrl = "https://open.bigmodel.cn/api/paas/v4",
         apiKey = "",
         models = listOf(
             AIModel("glm-4", "GLM-4"),
@@ -147,7 +154,7 @@ val CHANNEL_TEMPLATES = listOf(
         id = "qwen",
         name = "通义千问",
         type = AIChannelType.OPENAI_COMPATIBLE.name,
-        apiUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        apiUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
         apiKey = "",
         models = listOf(
             AIModel("qwen-turbo", "Qwen Turbo"),

@@ -70,9 +70,14 @@ class NotesViewModel @Inject constructor(
         
         // 检查同步配置状态
         val syncEnabled = prefs.getBoolean("sync_enabled", false)
+        val syncType = prefs.getString("sync_type", "webdav") ?: "webdav"
         val webdavUrl = prefs.getString("webdav_url", "") ?: ""
-        val syncConfigured = syncEnabled && webdavUrl.isNotBlank() && 
-            (webdavUrl.startsWith("http://") || webdavUrl.startsWith("https://"))
+        val serverUrl = prefs.getString("server_url", "") ?: ""
+        
+        // 根据同步类型检查对应的 URL
+        val syncUrl = if (syncType == "server") serverUrl else webdavUrl
+        val syncConfigured = syncEnabled && syncUrl.isNotBlank() && 
+            (syncUrl.startsWith("http://") || syncUrl.startsWith("https://"))
         
         _uiState.value = _uiState.value.copy(
             lastSyncTime = lastSync,
@@ -179,7 +184,12 @@ class NotesViewModel @Inject constructor(
         viewModelScope.launch {
             // 检查同步配置
             val syncEnabled = prefs.getBoolean("sync_enabled", false)
+            val syncType = prefs.getString("sync_type", "webdav") ?: "webdav"
             val webdavUrl = prefs.getString("webdav_url", "") ?: ""
+            val serverUrl = prefs.getString("server_url", "") ?: ""
+            
+            // 根据同步类型检查对应的 URL
+            val syncUrl = if (syncType == "server") serverUrl else webdavUrl
             
             if (!syncEnabled) {
                 _uiState.value = _uiState.value.copy(
@@ -189,7 +199,7 @@ class NotesViewModel @Inject constructor(
                 return@launch
             }
             
-            if (webdavUrl.isBlank() || (!webdavUrl.startsWith("http://") && !webdavUrl.startsWith("https://"))) {
+            if (syncUrl.isBlank() || (!syncUrl.startsWith("http://") && !syncUrl.startsWith("https://"))) {
                 _uiState.value = _uiState.value.copy(
                     error = "请先在设置中配置同步服务器",
                     syncStatus = SyncStatus.OFFLINE
@@ -202,6 +212,8 @@ class NotesViewModel @Inject constructor(
             val now = System.currentTimeMillis()
             if (result.success) {
                 prefs.edit().putLong("last_sync_time", now).apply()
+                // 同步成功后重新加载 AI 配置到 SharedPreferences
+                loadAiConfigFromDb()
             }
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
@@ -209,6 +221,39 @@ class NotesViewModel @Inject constructor(
                 syncStatus = if (result.success) SyncStatus.SUCCESS else SyncStatus.FAILED,
                 lastSyncTime = if (result.success) now else _uiState.value.lastSyncTime
             )
+        }
+    }
+    
+    /**
+     * 从数据库加载 AI 配置到 SharedPreferences（同步后调用）
+     */
+    private suspend fun loadAiConfigFromDb() {
+        try {
+            val aiConfigJson = Json { 
+                ignoreUnknownKeys = true 
+                encodeDefaults = true
+            }
+            
+            val items = itemRepository.getByTypeOnce(ItemType.AI_CONFIG)
+            if (items.isNotEmpty()) {
+                val payload = aiConfigJson.decodeFromString<com.mucheng.notes.domain.model.payload.AIConfigPayload>(items[0].payload)
+                
+                // 更新 SharedPreferences
+                val channelsJsonStr = aiConfigJson.encodeToString(
+                    kotlinx.serialization.builtins.ListSerializer(com.mucheng.notes.domain.model.payload.AIChannel.serializer()),
+                    payload.channels
+                )
+                prefs.edit()
+                    .putBoolean("ai_enabled", payload.enabled)
+                    .putString("ai_default_channel", payload.defaultChannel)
+                    .putString("ai_default_model", payload.defaultModel)
+                    .putString("ai_channels_json", channelsJsonStr)
+                    .apply()
+                
+                android.util.Log.d("NotesViewModel", "AI config loaded from database after sync: ${payload.channels.size} channels")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("NotesViewModel", "Failed to load AI config from database: ${e.message}")
         }
     }
     
@@ -310,9 +355,14 @@ class NotesViewModel @Inject constructor(
      */
     fun refreshSyncStatus() {
         val syncEnabled = prefs.getBoolean("sync_enabled", false)
+        val syncType = prefs.getString("sync_type", "webdav") ?: "webdav"
         val webdavUrl = prefs.getString("webdav_url", "") ?: ""
-        val syncConfigured = syncEnabled && webdavUrl.isNotBlank() && 
-            (webdavUrl.startsWith("http://") || webdavUrl.startsWith("https://"))
+        val serverUrl = prefs.getString("server_url", "") ?: ""
+        
+        // 根据同步类型检查对应的 URL
+        val syncUrl = if (syncType == "server") serverUrl else webdavUrl
+        val syncConfigured = syncEnabled && syncUrl.isNotBlank() && 
+            (syncUrl.startsWith("http://") || syncUrl.startsWith("https://"))
         
         val lastSync = prefs.getLong("last_sync_time", 0).takeIf { it > 0 }
         
@@ -358,6 +408,48 @@ class NotesViewModel @Inject constructor(
             return null
         }
         return payload.lockPasswordHash
+    }
+    
+    /**
+     * 锁定笔记
+     * @param noteId 笔记 ID
+     * @param password 加密密码
+     */
+    fun lockNote(noteId: String, password: String) {
+        viewModelScope.launch {
+            try {
+                val existing = itemRepository.getById(noteId) ?: return@launch
+                val oldPayload = json.decodeFromString<NotePayload>(existing.payload)
+                val passwordHash = cryptoEngine.computeHash(password)
+                val newPayload = oldPayload.copy(
+                    isLocked = true,
+                    lockPasswordHash = passwordHash
+                )
+                itemRepository.update(noteId, json.encodeToString(newPayload))
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "锁定失败: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * 解锁笔记
+     * @param noteId 笔记 ID
+     */
+    fun unlockNote(noteId: String) {
+        viewModelScope.launch {
+            try {
+                val existing = itemRepository.getById(noteId) ?: return@launch
+                val oldPayload = json.decodeFromString<NotePayload>(existing.payload)
+                val newPayload = oldPayload.copy(
+                    isLocked = false,
+                    lockPasswordHash = null
+                )
+                itemRepository.update(noteId, json.encodeToString(newPayload))
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "解锁失败: ${e.message}")
+            }
+        }
     }
     
     private fun ItemEntity.toNoteItem(): NoteItem {

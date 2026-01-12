@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,38 +29,29 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -69,28 +59,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.mucheng.notes.R
 import com.mucheng.notes.presentation.screens.settings.AIChannel
 import com.mucheng.notes.presentation.screens.settings.AIModel
 import com.mucheng.notes.presentation.viewmodel.AIViewModel
 import com.mucheng.notes.presentation.viewmodel.ConversationItem
 import com.mucheng.notes.presentation.viewmodel.MessageItem
 import com.mucheng.notes.presentation.viewmodel.SettingsViewModel
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -98,7 +81,7 @@ import java.util.Locale
 
 /**
  * AI 助手页面 - 重构版
- * 采用侧边栏抽屉模式管理历史记录，界面更符合移动端习惯
+ * 移除侧边栏，对话列表作为主视图
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,8 +91,6 @@ fun AIScreen(
     viewModel: AIViewModel = hiltViewModel(),
     settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
     val conversations by viewModel.conversations.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val settingsState by settingsViewModel.uiState.collectAsState()
@@ -128,146 +109,33 @@ fun AIScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var conversationToDelete by remember { mutableStateOf<ConversationItem?>(null) }
-    var showMenu by remember { mutableStateOf(false) }
 
     // 当前选中的对话
     val currentConversation = conversations.find { it.id == uiState.selectedConversationId }
     
-    // 判断是否应该显示输入框：有选中的对话ID即可（即使conversation列表还没加载完）
-    val shouldShowInput = uiState.selectedConversationId != null
-    
-    // 调试日志
-    androidx.compose.runtime.LaunchedEffect(uiState.selectedConversationId) {
-        android.util.Log.d("AIScreen", "selectedConversationId changed: ${uiState.selectedConversationId}, shouldShowInput: $shouldShowInput")
-    }
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "历史对话",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(vertical = 12.dp)
-                    )
-                    Button(
-                        onClick = {
-                            showCreateDialog = true
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("开启新对话")
-                    }
-                }
-                HorizontalDivider()
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(conversations) { conversation ->
-                        NavigationDrawerItem(
-                            label = { Text(conversation.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            selected = conversation.id == uiState.selectedConversationId,
-                            onClick = {
-                                viewModel.selectConversation(conversation.id)
-                                scope.launch { drawerState.close() }
-                            },
-                            icon = { Icon(Icons.Default.ChatBubbleOutline, contentDescription = null) },
-                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-                            badge = {
-                                IconButton(
-                                    onClick = {
-                                        conversationToDelete = conversation
-                                        showDeleteDialog = true
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.outline)
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    ) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = currentConversation?.title ?: "AI 助手",
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (currentConversation != null) {
-                                Text(
-                                    text = currentConversation.model,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "菜单")
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { showCreateDialog = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "新对话")
-                        }
-                        Box {
-                            IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "更多")
-                            }
-                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text("AI 设置") },
-                                    onClick = {
-                                        showMenu = false
-                                        navController.navigate("settings/ai")
-                                    }
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
+    // 根据是否选中对话显示不同视图
+    if (uiState.selectedConversationId == null) {
+        // 主视图：对话列表
+        ConversationListScreen(
+            conversations = conversations,
+            bottomPadding = bottomPadding,
+            onConversationClick = { viewModel.selectConversation(it.id) },
+            onCreateClick = { showCreateDialog = true },
+            onDeleteClick = { 
+                conversationToDelete = it
+                showDeleteDialog = true
             },
-            bottomBar = {
-                // 当有选中的对话ID时显示输入框（即使conversation数据还在加载）
-                if (shouldShowInput) {
-                    ChatInputArea(
-                        isThinking = uiState.isThinking,
-                        onSend = { viewModel.sendMessage(it) }
-                    )
-                }
-            }
-        ) { paddingValues ->
-            if (!shouldShowInput) {
-                EmptyStateView(
-                    paddingValues = paddingValues,
-                    onCreateClick = { showCreateDialog = true }
-                )
-            } else {
-                // 有选中的对话ID，显示消息列表
-                ChatMessagesList(
-                    viewModel = viewModel,
-                    conversationId = uiState.selectedConversationId!!,
-                    paddingValues = paddingValues,
-                    error = uiState.error,
-                    onErrorDismiss = { viewModel.clearError() }
-                )
-            }
-        }
+            onSettingsClick = { navController.navigate("settings/ai") }
+        )
+    } else {
+        // 聊天视图
+        ChatScreen(
+            conversation = currentConversation,
+            viewModel = viewModel,
+            bottomPadding = bottomPadding,
+            onBack = { viewModel.selectConversation(null) },
+            onSettingsClick = { navController.navigate("settings/ai") }
+        )
     }
 
     // 对话框逻辑
@@ -308,12 +176,260 @@ fun AIScreen(
     }
 }
 
+
+/**
+ * 对话列表主视图
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EmptyStateView(paddingValues: PaddingValues, onCreateClick: () -> Unit) {
-    Box(
+fun ConversationListScreen(
+    conversations: List<ConversationItem>,
+    bottomPadding: PaddingValues,
+    onConversationClick: (ConversationItem) -> Unit,
+    onCreateClick: () -> Unit,
+    onDeleteClick: (ConversationItem) -> Unit,
+    onSettingsClick: () -> Unit
+) {
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(paddingValues),
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // 顶部栏
+        TopAppBar(
+            title = { Text("AI 助手") },
+            actions = {
+                IconButton(onClick = onSettingsClick) {
+                    Icon(Icons.Default.Settings, contentDescription = "设置")
+                }
+                IconButton(onClick = onCreateClick) {
+                    Icon(Icons.Default.Add, contentDescription = "新建对话")
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        )
+
+        // 内容区域
+        if (conversations.isEmpty()) {
+            EmptyStateView(
+                modifier = Modifier.weight(1f),
+                onCreateClick = onCreateClick
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(conversations.sortedByDescending { it.updatedAt }) { conversation ->
+                    ConversationListItem(
+                        conversation = conversation,
+                        onClick = { onConversationClick(conversation) },
+                        onDelete = { onDeleteClick(conversation) }
+                    )
+                }
+            }
+        }
+        
+        // 底部导航栏间距
+        Spacer(modifier = Modifier.padding(bottomPadding))
+    }
+}
+
+/**
+ * 对话列表项
+ */
+@Composable
+fun ConversationListItem(
+    conversation: ConversationItem,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 图标
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.ChatBubbleOutline,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            // 内容
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = conversation.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = conversation.model,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                        .format(Date(conversation.updatedAt)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+            
+            // 更多菜单
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "更多",
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+/**
+ * 聊天视图
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatScreen(
+    conversation: ConversationItem?,
+    viewModel: AIViewModel,
+    bottomPadding: PaddingValues,
+    onBack: () -> Unit,
+    onSettingsClick: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    var showMenu by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // 顶部栏
+        TopAppBar(
+            title = {
+                Column {
+                    Text(
+                        text = conversation?.title ?: "对话",
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (conversation != null) {
+                        Text(
+                            text = conversation.model,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+            },
+            actions = {
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("AI 设置") },
+                            onClick = {
+                                showMenu = false
+                                onSettingsClick()
+                            }
+                        )
+                    }
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        )
+
+        // 消息列表
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            ChatMessagesList(
+                viewModel = viewModel,
+                conversationId = uiState.selectedConversationId!!,
+                error = uiState.error,
+                onErrorDismiss = { viewModel.clearError() }
+            )
+        }
+
+        // 输入框
+        ChatInputArea(
+            isThinking = uiState.isThinking,
+            onSend = { viewModel.sendMessage(it) },
+            bottomPadding = bottomPadding
+        )
+    }
+}
+
+@Composable
+fun EmptyStateView(
+    modifier: Modifier = Modifier,
+    onCreateClick: () -> Unit
+) {
+    Box(
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -349,7 +465,6 @@ fun EmptyStateView(paddingValues: PaddingValues, onCreateClick: () -> Unit) {
 fun ChatMessagesList(
     viewModel: AIViewModel,
     conversationId: String,
-    paddingValues: PaddingValues,
     error: String?,
     onErrorDismiss: () -> Unit
 ) {
@@ -386,7 +501,6 @@ fun ChatMessagesList(
         state = listState,
         modifier = Modifier
             .fillMaxSize()
-            .padding(paddingValues)
             .padding(horizontal = 12.dp),
         contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -395,9 +509,62 @@ fun ChatMessagesList(
             val isStreaming = message.id == uiState.streamingMessageId
             val content = if (isStreaming) uiState.streamingContent else message.content
             
-            // Only show if content is not empty (or is streaming)
             if (content.isNotEmpty() || isStreaming) {
                 MessageBubble(message, content)
+            }
+        }
+        
+        // 如果正在思考但还没有消息，显示加载指示器
+        if (uiState.isThinking && messages.none { it.role == "assistant" && it.content.isEmpty() }) {
+            item {
+                ThinkingIndicator()
+            }
+        }
+    }
+}
+
+
+@Composable
+fun ThinkingIndicator() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.SmartToy,
+                null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Card(
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "思考中...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -438,7 +605,6 @@ fun MessageBubble(message: MessageItem, displayContent: String) {
             }
 
             Column(modifier = Modifier.weight(1f, fill = false)) {
-                
                 Card(
                     shape = RoundedCornerShape(
                         topStart = 18.dp,
@@ -491,60 +657,73 @@ fun MessageBubble(message: MessageItem, displayContent: String) {
     }
 }
 
+
 @Composable
-fun ChatInputArea(isThinking: Boolean, onSend: (String) -> Unit) {
+fun ChatInputArea(
+    isThinking: Boolean,
+    onSend: (String) -> Unit,
+    bottomPadding: PaddingValues
+) {
     var text by remember { mutableStateOf("") }
+    
+    // 获取底部导航栏的高度
+    val bottomPaddingDp = bottomPadding.calculateBottomPadding()
 
     Surface(
         modifier = Modifier.imePadding(),
         shadowElevation = 8.dp,
-        tonalElevation = 2.dp
+        tonalElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surface
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(12.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
+        Column {
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(end = 8.dp),
-                placeholder = { Text("输入消息...") },
-                maxLines = 5,
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                ),
-                enabled = !isThinking
-            )
-
-            Button(
-                onClick = {
-                    if (text.isNotBlank()) {
-                        onSend(text)
-                        text = ""
-                    }
-                },
-                enabled = text.isNotBlank() && !isThinking,
-                shape = CircleShape,
-                contentPadding = PaddingValues(0.dp),
-                modifier = Modifier.size(50.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.Bottom
             ) {
-                if (isThinking) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                    placeholder = { Text("输入消息...") },
+                    maxLines = 5,
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    ),
+                    enabled = !isThinking
+                )
+
+                Button(
+                    onClick = {
+                        if (text.isNotBlank()) {
+                            onSend(text)
+                            text = ""
+                        }
+                    },
+                    enabled = text.isNotBlank() && !isThinking,
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.size(50.dp)
+                ) {
+                    if (isThinking) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
+                    }
                 }
             }
+            
+            // 底部导航栏的间距
+            Spacer(modifier = Modifier.height(bottomPaddingDp))
         }
     }
 }
@@ -572,6 +751,7 @@ fun DeleteConfirmDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> U
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -620,13 +800,12 @@ fun CreateConversationDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { channelExpanded = true },
-                        enabled = false, // Disable typing, handled by box click or icon
+                        enabled = false,
                         colors = OutlinedTextFieldDefaults.colors(
                             disabledTextColor = MaterialTheme.colorScheme.onSurface,
                             disabledBorderColor = MaterialTheme.colorScheme.outline
                         )
                     )
-                    // Box covering for click
                     Box(modifier = Modifier
                         .matchParentSize()
                         .clickable { channelExpanded = true })
@@ -659,7 +838,7 @@ fun CreateConversationDialog(
                             disabledBorderColor = MaterialTheme.colorScheme.outline
                         )
                     )
-                     Box(modifier = Modifier
+                    Box(modifier = Modifier
                         .matchParentSize()
                         .clickable(enabled = selectedChannel != null) { modelExpanded = true })
 

@@ -1,6 +1,8 @@
-import { ItemBase, ItemType, SyncModules, SYNC_MODULE_TYPES } from '@shared/types';
+import { ItemBase, ItemType, SyncModules, SYNC_MODULE_TYPES, ResourcePayload } from '@shared/types';
 import { StorageAdapter, RemoteChange, CHANGE_LOG_RETENTION } from './StorageAdapter';
 import { ItemsManager } from '../database/ItemsManager';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface SyncResult {
   success: boolean;
@@ -34,6 +36,7 @@ export interface SyncOptions {
   syncModules: SyncModules;
   onProgress?: SyncProgressCallback;
   serverIdentifier?: ServerIdentifier;  // 服务器标识，用于独立存储游标
+  resourcesDir?: string;  // 资源文件目录路径
 }
 
 export class SyncEngine {
@@ -43,6 +46,7 @@ export class SyncEngine {
   private allowedTypes: Set<ItemType>;
   private progressCallback: SyncProgressCallback | null = null;
   private serverIdentifier: ServerIdentifier | null = null;
+  private resourcesDir: string | null = null;
 
   constructor(
     adapter: StorageAdapter,
@@ -66,6 +70,13 @@ export class SyncEngine {
     this.allowedTypes = this.buildAllowedTypes();
     this.progressCallback = options.onProgress || null;
     this.serverIdentifier = options.serverIdentifier || null;
+    this.resourcesDir = options.resourcesDir || null;
+  }
+
+  // 设置资源目录
+  setResourcesDir(dir: string): void {
+    this.resourcesDir = dir;
+    console.log('[SyncEngine] Resources directory set:', dir);
   }
 
   // 设置服务器标识（用于独立存储游标）
@@ -226,10 +237,35 @@ export class SyncEngine {
           encryption_applied: 0 as const,
         };
 
-        // 上传
+        // 上传 item 元数据
         const result = await this.adapter.putItem(itemToUpload);
 
         if (result.success) {
+          // 如果是资源类型，同时上传资源文件
+          if (item.type === 'resource' && this.resourcesDir) {
+            try {
+              const payload = JSON.parse(item.payload) as ResourcePayload;
+              // 从 item.id 和 payload.filename 获取文件扩展名
+              const ext = path.extname(payload.filename).toLowerCase() || '.bin';
+              const resourceFilePath = path.join(this.resourcesDir, `${item.id}${ext}`);
+              
+              if (fs.existsSync(resourceFilePath)) {
+                const fileData = fs.readFileSync(resourceFilePath);
+                const resourceId = `${item.id}${ext}`;
+                const uploadSuccess = await this.adapter.putResource(resourceId, fileData, payload.mime_type);
+                if (!uploadSuccess) {
+                  console.warn(`[SyncEngine] Failed to upload resource file: ${resourceId}`);
+                } else {
+                  console.log(`[SyncEngine] Uploaded resource file: ${resourceId}`);
+                }
+              } else {
+                console.warn(`[SyncEngine] Resource file not found: ${resourceFilePath}`);
+              }
+            } catch (resourceError) {
+              console.error(`[SyncEngine] Error uploading resource file for ${item.id}:`, resourceError);
+            }
+          }
+
           this.itemsManager.markSynced(item.id, result.remoteRev);
           count++;
           this.reportProgress({ 
@@ -384,22 +420,31 @@ export class SyncEngine {
   }> {
     const localItem = this.itemsManager.getById(change.item_id);
 
-    console.log(`[SyncEngine] Processing remote change: item_id=${change.item_id}, type=${change.type}, remote_hash=${change.content_hash}`);
+    console.log(`[SyncEngine] Processing remote change: item_id=${change.item_id}, type=${change.type}, remote_hash=${change.content_hash}, deleted_time=${change.deleted_time}`);
     if (localItem) {
-      console.log(`[SyncEngine] Local item exists: sync_status=${localItem.sync_status}, local_hash=${localItem.content_hash}`);
+      console.log(`[SyncEngine] Local item exists: sync_status=${localItem.sync_status}, local_hash=${localItem.content_hash}, local_deleted_time=${localItem.deleted_time}`);
     } else {
       console.log(`[SyncEngine] No local item found`);
     }
 
     // 如果本地已有该数据且状态为 clean，检查是否需要更新
     if (localItem && localItem.sync_status === 'clean') {
-      // 检查内容哈希是否一致，一致则跳过
-      if (localItem.content_hash === change.content_hash) {
-        console.log(`[SyncEngine] Skipping - hash matches (no update needed)`);
-        return { success: true, conflict: false, skipped: true };  // 添加 skipped 标记
+      // 检查内容哈希是否一致，且删除状态也一致，才跳过
+      const hashMatches = localItem.content_hash === change.content_hash;
+      const deletedStatusMatches = (localItem.deleted_time === null) === (change.deleted_time === null);
+      
+      if (hashMatches && deletedStatusMatches) {
+        console.log(`[SyncEngine] Skipping - hash matches and deleted status matches (no update needed)`);
+        return { success: true, conflict: false, skipped: true };
       }
-      // 哈希不同但本地是 clean 状态，说明远端有更新，继续处理
-      console.log(`[SyncEngine] Remote update detected for ${change.item_id}, local_hash=${localItem.content_hash}, remote_hash=${change.content_hash}`);
+      
+      // 哈希不同或删除状态不同，说明远端有更新，继续处理
+      if (!hashMatches) {
+        console.log(`[SyncEngine] Remote update detected for ${change.item_id}, local_hash=${localItem.content_hash}, remote_hash=${change.content_hash}`);
+      }
+      if (!deletedStatusMatches) {
+        console.log(`[SyncEngine] Remote deletion status changed for ${change.item_id}, local_deleted=${localItem.deleted_time}, remote_deleted=${change.deleted_time}`);
+      }
     }
 
     // 检查是否有冲突
@@ -432,6 +477,32 @@ export class SyncEngine {
 
     // 直接使用远端数据（不再需要解密）
     const itemToSave = remoteItem;
+
+    // 如果是资源类型，下载资源文件
+    if (change.type === 'resource' && this.resourcesDir) {
+      try {
+        const payload = JSON.parse(remoteItem.payload) as ResourcePayload;
+        const ext = path.extname(payload.filename).toLowerCase() || '.bin';
+        const resourceId = `${remoteItem.id}${ext}`;
+        const resourceFilePath = path.join(this.resourcesDir, resourceId);
+        
+        // 确保资源目录存在
+        if (!fs.existsSync(this.resourcesDir)) {
+          fs.mkdirSync(this.resourcesDir, { recursive: true });
+        }
+        
+        // 下载资源文件
+        const fileData = await this.adapter.getResource(resourceId);
+        if (fileData) {
+          fs.writeFileSync(resourceFilePath, fileData);
+          console.log(`[SyncEngine] Downloaded resource file: ${resourceId}`);
+        } else {
+          console.warn(`[SyncEngine] Resource file not found on remote: ${resourceId}`);
+        }
+      } catch (resourceError) {
+        console.error(`[SyncEngine] Error downloading resource file for ${change.item_id}:`, resourceError);
+      }
+    }
 
     // 写入本地
     if (localItem) {

@@ -94,6 +94,30 @@ class ItemRepositoryImpl @Inject constructor(
         itemDao.upsertAll(items)
     }
     
+    override suspend fun createWithId(id: String, type: ItemType, payload: String): ItemEntity {
+        val now = System.currentTimeMillis()
+        val item = ItemEntity(
+            id = id,
+            type = type.value,
+            createdTime = now,
+            updatedTime = now,
+            deletedTime = null,
+            payload = payload,
+            contentHash = computeContentHash(payload),
+            syncStatus = "modified",
+            localRev = 1,
+            remoteRev = null,
+            encryptionApplied = 0,
+            schemaVersion = 1
+        )
+        itemDao.upsert(item)
+        return item
+    }
+    
+    override suspend fun getByTypeOnce(type: ItemType): List<ItemEntity> {
+        return itemDao.getByTypeOnce(type.value)
+    }
+    
     /**
      * 计算内容哈希（SHA-256 前 16 字符）
      * 与桌面端保持一致

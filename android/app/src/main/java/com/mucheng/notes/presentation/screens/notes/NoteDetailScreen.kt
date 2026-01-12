@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mucheng.notes.R
+import com.mucheng.notes.presentation.components.NoteToolbar
 import com.mucheng.notes.presentation.viewmodel.NoteDetailViewModel
 
 /**
@@ -225,15 +226,37 @@ fun NoteDetailScreen(
                     .weight(1f)
             ) {
                 if (uiState.isEditing) {
-                    // 编辑模式：简单文本编辑器
-                    OutlinedTextField(
-                        value = uiState.content,
-                        onValueChange = { viewModel.updateContent(it) },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        placeholder = { Text(stringResource(R.string.note_content_hint)) }
-                    )
+                    // 编辑模式：带工具栏的文本编辑器
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // 编辑器工具栏
+                        NoteToolbar(
+                            onBoldClick = { viewModel.insertMarkdown("**", "**") },
+                            onItalicClick = { viewModel.insertMarkdown("*", "*") },
+                            onUnderlineClick = { viewModel.insertMarkdown("<u>", "</u>") },
+                            onStrikethroughClick = { viewModel.insertMarkdown("~~", "~~") },
+                            onH1Click = { viewModel.insertPrefix("# ") },
+                            onH2Click = { viewModel.insertPrefix("## ") },
+                            onH3Click = { viewModel.insertPrefix("### ") },
+                            onBulletListClick = { viewModel.insertPrefix("- ") },
+                            onNumberListClick = { viewModel.insertPrefix("1. ") },
+                            onCheckboxClick = { viewModel.insertPrefix("- [ ] ") },
+                            onQuoteClick = { viewModel.insertPrefix("> ") },
+                            onCodeClick = { viewModel.insertMarkdown("`", "`") },
+                            onLinkClick = { viewModel.insertMarkdown("[", "](url)") },
+                            onImageClick = { /* TODO: 打开图片选择器 */ },
+                            onAttachmentClick = { /* TODO: 打开文件选择器 */ }
+                        )
+                        
+                        // 文本编辑器
+                        OutlinedTextField(
+                            value = uiState.content,
+                            onValueChange = { viewModel.updateContent(it) },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            placeholder = { Text(stringResource(R.string.note_content_hint)) }
+                        )
+                    }
                 } else {
                     // 查看模式：WebView 显示 HTML
                     NoteContentWebView(

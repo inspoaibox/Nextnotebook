@@ -78,7 +78,8 @@ interface CryptoEngine {
     fun decryptPayload(encryptedPayload: String): String
     
     /**
-     * 计算内容哈希（SHA-256 前 16 字符）
+     * 计算内容哈希（完整 SHA-256，64 字符十六进制）
+     * 用于笔记密码验证，与桌面端保持一致
      */
     fun computeHash(content: String): String
     

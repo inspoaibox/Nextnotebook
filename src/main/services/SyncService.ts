@@ -1,4 +1,4 @@
-import { ipcMain, IpcMainInvokeEvent, BrowserWindow } from 'electron';
+import { ipcMain, IpcMainInvokeEvent, BrowserWindow, app } from 'electron';
 import { SyncEngine, SyncResult, SyncOptions, ServerIdentifier } from '@core/sync/SyncEngine';
 import { SyncScheduler, SyncState } from '@core/sync/SyncScheduler';
 import { WebDAVAdapter } from '@core/sync/WebDAVAdapter';
@@ -6,6 +6,7 @@ import { ServerAdapter } from '@core/sync/ServerAdapter';
 import { StorageAdapter, WebDAVConfig, ServerConfig } from '@core/sync/StorageAdapter';
 import { SyncModules, DEFAULT_SYNC_MODULES } from '@shared/types';
 import { getItemsManager } from './DatabaseService';
+import * as path from 'path';
 
 let syncEngine: SyncEngine | null = null;
 let syncScheduler: SyncScheduler | null = null;
@@ -118,10 +119,12 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
 
     // 创建同步引擎（明文同步，不再需要加密）
     const itemsManager = getItemsManager();
+    const resourcesDir = path.join(app.getPath('userData'), 'resources');
     const syncOptions: Partial<SyncOptions> = {
       conflictStrategy: 'create-copy',
       syncModules: config.syncModules || DEFAULT_SYNC_MODULES,
       serverIdentifier: currentServerIdentifier,  // 传递服务器标识
+      resourcesDir,  // 传递资源目录路径
     };
     syncEngine = new SyncEngine(currentAdapter, itemsManager, syncOptions);
 

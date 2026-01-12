@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
@@ -120,6 +121,25 @@ fun NotesScreen(
     var noteToUnlock by remember { mutableStateOf<NoteItem?>(null) }
     var unlockPassword by remember { mutableStateOf("") }
     var unlockError by remember { mutableStateOf<String?>(null) }
+    
+    // 删除加密笔记的密码验证状态
+    var showDeletePasswordDialog by remember { mutableStateOf(false) }
+    var noteToDelete by remember { mutableStateOf<NoteItem?>(null) }
+    var deletePassword by remember { mutableStateOf("") }
+    var deletePasswordError by remember { mutableStateOf<String?>(null) }
+    
+    // 锁定笔记对话框状态
+    var showLockDialog by remember { mutableStateOf(false) }
+    var noteToLock by remember { mutableStateOf<NoteItem?>(null) }
+    var lockPassword by remember { mutableStateOf("") }
+    var lockConfirmPassword by remember { mutableStateOf("") }
+    var lockPasswordError by remember { mutableStateOf<String?>(null) }
+    
+    // 从菜单解锁笔记对话框状态
+    var showUnlockFromMenuDialog by remember { mutableStateOf(false) }
+    var noteToUnlockFromMenu by remember { mutableStateOf<NoteItem?>(null) }
+    var unlockFromMenuPassword by remember { mutableStateOf("") }
+    var unlockFromMenuError by remember { mutableStateOf<String?>(null) }
     
     // 页面显示时刷新同步配置状态
     LaunchedEffect(Unit) {
@@ -385,12 +405,36 @@ fun NotesScreen(
                                 contextMenuNote = null
                             },
                             onDelete = {
-                                viewModel.deleteNote(note.id)
                                 contextMenuNote = null
+                                if (note.isLocked) {
+                                    // 加密笔记需要验证密码才能删除
+                                    noteToDelete = note
+                                    deletePassword = ""
+                                    deletePasswordError = null
+                                    showDeletePasswordDialog = true
+                                } else {
+                                    // 未加密笔记直接删除
+                                    viewModel.deleteNote(note.id)
+                                }
                             },
                             onMoveToFolder = {
                                 noteToMove = note
                                 showMoveToFolderDialog = true
+                                contextMenuNote = null
+                            },
+                            onLock = {
+                                noteToLock = note
+                                lockPassword = ""
+                                lockConfirmPassword = ""
+                                lockPasswordError = null
+                                showLockDialog = true
+                                contextMenuNote = null
+                            },
+                            onUnlock = {
+                                noteToUnlockFromMenu = note
+                                unlockFromMenuPassword = ""
+                                unlockFromMenuError = null
+                                showUnlockFromMenuDialog = true
                                 contextMenuNote = null
                             },
                             isPinned = note.isPinned
@@ -519,6 +563,318 @@ fun NotesScreen(
             }
         )
     }
+    
+    // 删除加密笔记的密码验证对话框
+    if (showDeletePasswordDialog && noteToDelete != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeletePasswordDialog = false
+                noteToDelete = null
+                deletePassword = ""
+                deletePasswordError = null
+            },
+            icon = {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("删除加密笔记") },
+            text = {
+                Column {
+                    Text(
+                        text = "请输入密码以删除「${noteToDelete?.title?.ifEmpty { "无标题" }}」",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedTextField(
+                        value = deletePassword,
+                        onValueChange = { 
+                            deletePassword = it
+                            deletePasswordError = null
+                        },
+                        label = { Text("密码") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                noteToDelete?.let { note ->
+                                    scope.launch {
+                                        val isValid = viewModel.verifyNotePassword(note.id, deletePassword)
+                                        if (isValid) {
+                                            viewModel.deleteNote(note.id)
+                                            showDeletePasswordDialog = false
+                                            noteToDelete = null
+                                            deletePassword = ""
+                                            deletePasswordError = null
+                                        } else {
+                                            deletePasswordError = "密码错误，请重试"
+                                        }
+                                    }
+                                }
+                            }
+                        ),
+                        isError = deletePasswordError != null,
+                        supportingText = if (deletePasswordError != null) {
+                            { Text(deletePasswordError!!, color = MaterialTheme.colorScheme.error) }
+                        } else null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        noteToDelete?.let { note ->
+                            scope.launch {
+                                val isValid = viewModel.verifyNotePassword(note.id, deletePassword)
+                                if (isValid) {
+                                    viewModel.deleteNote(note.id)
+                                    showDeletePasswordDialog = false
+                                    noteToDelete = null
+                                    deletePassword = ""
+                                    deletePasswordError = null
+                                } else {
+                                    deletePasswordError = "密码错误，请重试"
+                                }
+                            }
+                        }
+                    },
+                    enabled = deletePassword.isNotEmpty()
+                ) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeletePasswordDialog = false
+                        noteToDelete = null
+                        deletePassword = ""
+                        deletePasswordError = null
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+    
+    // 锁定笔记对话框
+    if (showLockDialog && noteToLock != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showLockDialog = false
+                noteToLock = null
+                lockPassword = ""
+                lockConfirmPassword = ""
+                lockPasswordError = null
+            },
+            icon = {
+                Icon(
+                    Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text("锁定笔记") },
+            text = {
+                Column {
+                    Text(
+                        text = "为「${noteToLock?.title?.ifEmpty { "无标题" }}」设置密码",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedTextField(
+                        value = lockPassword,
+                        onValueChange = { 
+                            lockPassword = it
+                            lockPasswordError = null
+                        },
+                        label = { Text("密码") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    OutlinedTextField(
+                        value = lockConfirmPassword,
+                        onValueChange = { 
+                            lockConfirmPassword = it
+                            lockPasswordError = null
+                        },
+                        label = { Text("确认密码") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        isError = lockPasswordError != null,
+                        supportingText = if (lockPasswordError != null) {
+                            { Text(lockPasswordError!!, color = MaterialTheme.colorScheme.error) }
+                        } else null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        when {
+                            lockPassword.length < 4 -> {
+                                lockPasswordError = "密码至少 4 位"
+                            }
+                            lockPassword != lockConfirmPassword -> {
+                                lockPasswordError = "两次密码不一致"
+                            }
+                            else -> {
+                                noteToLock?.let { note ->
+                                    viewModel.lockNote(note.id, lockPassword)
+                                }
+                                showLockDialog = false
+                                noteToLock = null
+                                lockPassword = ""
+                                lockConfirmPassword = ""
+                                lockPasswordError = null
+                            }
+                        }
+                    },
+                    enabled = lockPassword.isNotEmpty() && lockConfirmPassword.isNotEmpty()
+                ) {
+                    Text("锁定")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showLockDialog = false
+                        noteToLock = null
+                        lockPassword = ""
+                        lockConfirmPassword = ""
+                        lockPasswordError = null
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+    
+    // 从菜单解锁笔记对话框
+    if (showUnlockFromMenuDialog && noteToUnlockFromMenu != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showUnlockFromMenuDialog = false
+                noteToUnlockFromMenu = null
+                unlockFromMenuPassword = ""
+                unlockFromMenuError = null
+            },
+            icon = {
+                Icon(
+                    Icons.Default.LockOpen,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text("解锁笔记") },
+            text = {
+                Column {
+                    Text(
+                        text = "请输入密码以解锁「${noteToUnlockFromMenu?.title?.ifEmpty { "无标题" }}」",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedTextField(
+                        value = unlockFromMenuPassword,
+                        onValueChange = { 
+                            unlockFromMenuPassword = it
+                            unlockFromMenuError = null
+                        },
+                        label = { Text("密码") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                noteToUnlockFromMenu?.let { note ->
+                                    scope.launch {
+                                        val isValid = viewModel.verifyNotePassword(note.id, unlockFromMenuPassword)
+                                        if (isValid) {
+                                            viewModel.unlockNote(note.id)
+                                            showUnlockFromMenuDialog = false
+                                            noteToUnlockFromMenu = null
+                                            unlockFromMenuPassword = ""
+                                            unlockFromMenuError = null
+                                        } else {
+                                            unlockFromMenuError = "密码错误，请重试"
+                                        }
+                                    }
+                                }
+                            }
+                        ),
+                        isError = unlockFromMenuError != null,
+                        supportingText = if (unlockFromMenuError != null) {
+                            { Text(unlockFromMenuError!!, color = MaterialTheme.colorScheme.error) }
+                        } else null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        noteToUnlockFromMenu?.let { note ->
+                            scope.launch {
+                                val isValid = viewModel.verifyNotePassword(note.id, unlockFromMenuPassword)
+                                if (isValid) {
+                                    viewModel.unlockNote(note.id)
+                                    showUnlockFromMenuDialog = false
+                                    noteToUnlockFromMenu = null
+                                    unlockFromMenuPassword = ""
+                                    unlockFromMenuError = null
+                                } else {
+                                    unlockFromMenuError = "密码错误，请重试"
+                                }
+                            }
+                        }
+                    },
+                    enabled = unlockFromMenuPassword.isNotEmpty()
+                ) {
+                    Text("解锁")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showUnlockFromMenuDialog = false
+                        noteToUnlockFromMenu = null
+                        unlockFromMenuPassword = ""
+                        unlockFromMenuError = null
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -532,6 +888,8 @@ private fun NoteCard(
     onTogglePin: () -> Unit,
     onDelete: () -> Unit,
     onMoveToFolder: () -> Unit,
+    onLock: () -> Unit,
+    onUnlock: () -> Unit,
     isPinned: Boolean
 ) {
     Box {
@@ -601,6 +959,68 @@ private fun NoteCard(
                         text = preview,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = formatTime(note.updatedTime),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
+        
+        // 长按上下文菜单
+        DropdownMenu(
+            expanded = showContextMenu,
+            onDismissRequest = onDismissMenu
+        ) {
+            DropdownMenuItem(
+                text = { Text(if (isPinned) "取消置顶" else "置顶") },
+                onClick = onTogglePin,
+                leadingIcon = {
+                    Icon(
+                        if (isPinned) Icons.Default.StarBorder else Icons.Default.Star,
+                        contentDescription = null
+                    )
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("移动到文件夹") },
+                onClick = onMoveToFolder,
+                leadingIcon = {
+                    Icon(Icons.Default.Folder, contentDescription = null)
+                }
+            )
+            // 锁定/解锁选项
+            DropdownMenuItem(
+                text = { Text(if (note.isLocked) "解锁笔记" else "锁定笔记") },
+                onClick = if (note.isLocked) onUnlock else onLock,
+                leadingIcon = {
+                    Icon(
+                        if (note.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
+                        contentDescription = null
+                    )
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("删除") },
+                onClick = onDelete,
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            )
+        }
+    }
+}
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
