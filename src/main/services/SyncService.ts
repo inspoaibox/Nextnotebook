@@ -7,6 +7,7 @@ import { StorageAdapter, WebDAVConfig, ServerConfig } from '@core/sync/StorageAd
 import { SyncModules, DEFAULT_SYNC_MODULES } from '@shared/types';
 import { getItemsManager } from './DatabaseService';
 import * as path from 'path';
+import * as fs from 'fs';
 
 let syncEngine: SyncEngine | null = null;
 let syncScheduler: SyncScheduler | null = null;
@@ -94,12 +95,47 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       
       // 设置 token 刷新回调
       serverAdapter.setTokenRefreshCallback((token, refreshToken, expiresIn) => {
+        // 保存新 token 到配置文件（确保持久化）
+        const syncConfigPath = path.join(app.getPath('userData'), 'sync-config.json');
+        try {
+          let existingConfig = {};
+          if (fs.existsSync(syncConfigPath)) {
+            existingConfig = JSON.parse(fs.readFileSync(syncConfigPath, 'utf8'));
+          }
+          const updatedConfig = {
+            ...existingConfig,
+            server_token: token,
+            server_refresh_token: refreshToken,
+            server_token_expires: Date.now() + expiresIn * 1000,
+          };
+          fs.writeFileSync(syncConfigPath, JSON.stringify(updatedConfig, null, 2), 'utf8');
+          console.log('[SyncService] Token refreshed and saved to config file');
+        } catch (e) {
+          console.error('[SyncService] Failed to save refreshed token to config:', e);
+        }
+        
         // 通知渲染进程更新 token
         const windows = BrowserWindow.getAllWindows();
         windows.forEach(win => {
           win.webContents.send('sync:tokenRefreshed', { token, refreshToken, expiresIn });
         });
       });
+      
+      // 检查 token 是否已过期或即将过期，主动刷新
+      if (config.serverRefreshToken) {
+        const tokenExpired = config.serverTokenExpires && config.serverTokenExpires < Date.now();
+        const tokenExpiringSoon = config.serverTokenExpires && (config.serverTokenExpires - Date.now() < 5 * 60 * 1000);
+        
+        if (tokenExpired || tokenExpiringSoon) {
+          console.log('[SyncService] Token expired or expiring soon, refreshing...');
+          const refreshed = await serverAdapter.refreshAccessToken();
+          if (!refreshed) {
+            console.warn('[SyncService] Failed to refresh token, sync may fail');
+          } else {
+            console.log('[SyncService] Token refreshed successfully');
+          }
+        }
+      }
       
       currentAdapter = serverAdapter;
     }

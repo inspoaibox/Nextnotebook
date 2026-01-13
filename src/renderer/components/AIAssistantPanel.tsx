@@ -158,6 +158,8 @@ const AIAssistantPanel: React.FC = () => {
   };
 
   const handleSelectConversation = (id: string) => {
+    // 切换对话时重置所有状态
+    setSending(false);
     setCurrentConversationId(id);
     setLocalMessages([]);
   };

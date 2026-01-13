@@ -96,8 +96,6 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
 
   // 保存同步配置到主进程和 localStorage
   const persistSyncConfig = useCallback(async (newConfig: SyncConfig) => {
-    console.log('[SettingsContext] Persisting sync config:', newConfig);
-
     // 更新 ref
     syncConfigRef.current = newConfig;
 
@@ -106,10 +104,9 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
       const api = (window as any).electronAPI;
       if (api?.saveSyncConfig) {
         await api.saveSyncConfig(newConfig);
-        console.log('[SettingsContext] Saved sync config to main process');
       }
     } catch (e) {
-      console.error('Failed to save sync config to main process:', e);
+      console.error('Failed to save sync config to main process');
     }
 
     // 同时保存到 localStorage 作为备份
@@ -126,7 +123,6 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
         const api = (window as any).electronAPI;
         if (api?.loadSyncConfig) {
           savedConfig = await api.loadSyncConfig();
-          console.log('[SettingsContext] Loaded sync config from main process:', savedConfig);
         }
 
         // 如果主进程配置为空或不完整，尝试从 localStorage 恢复

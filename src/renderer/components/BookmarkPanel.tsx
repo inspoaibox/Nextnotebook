@@ -536,19 +536,36 @@ const BookmarkPanel: React.FC = () => {
     const shouldGroup = selectedFolderId === 'all' || subFolders.length > 0;
     if (!shouldGroup) return null;
 
-    const groups: Record<string, Bookmark[]> = {};
-
     if (selectedFolderId === 'all') {
-      groups['未分类'] = [];
-      folders.forEach(f => { groups[f.name] = []; });
-      filteredBookmarks.forEach(b => {
-        const folder = folders.find(f => f.id === b.folderId);
-        const groupName = folder ? folder.name : '未分类';
-        if (!groups[groupName]) groups[groupName] = [];
-        groups[groupName].push(b);
-      });
+      // "全部书签" 视图：按层级结构分组
+      // 返回一个树形结构，包含文件夹信息和书签
+      type FolderGroup = {
+        folder: { id: string; name: string; parentId: string | null } | null;
+        bookmarks: Bookmark[];
+        children: FolderGroup[];
+      };
+
+      // 构建文件夹树
+      const buildFolderGroups = (parentId: string | null): FolderGroup[] => {
+        const childFolders = folders.filter(f => f.parentId === parentId);
+        return childFolders.map(folder => ({
+          folder,
+          bookmarks: filteredBookmarks.filter(b => b.folderId === folder.id),
+          children: buildFolderGroups(folder.id),
+        }));
+      };
+
+      // 未分类书签
+      const uncategorizedBookmarks = filteredBookmarks.filter(b => !b.folderId);
+      
+      return {
+        type: 'tree' as const,
+        uncategorized: uncategorizedBookmarks,
+        tree: buildFolderGroups(null),
+      };
     } else {
       // 特定文件夹的聚合视图
+      const groups: Record<string, Bookmark[]> = {};
       groups['root'] = []; // 直接属于该文件夹的书签
       subFolders.forEach(sf => groups[sf.id] = []);
 
@@ -578,8 +595,8 @@ const BookmarkPanel: React.FC = () => {
           }
         }
       });
+      return { type: 'flat' as const, groups };
     }
-    return groups;
   }, [selectedFolderId, filteredBookmarks, folders, subFolders]);
 
   const handleCreateBookmark = () => {
@@ -740,15 +757,24 @@ const BookmarkPanel: React.FC = () => {
               <Popconfirm
                 title="确定删除此文件夹？"
                 description="文件夹内的书签也会被删除"
-                onConfirm={() => deleteFolder(contextMenu.folderId!)}
+                onConfirm={async () => {
+                  const folderIdToDelete = contextMenu.folderId;
+                  setContextMenu({ ...contextMenu, visible: false });
+                  if (folderIdToDelete) {
+                    await deleteFolder(folderIdToDelete);
+                    message.success('文件夹已删除');
+                  }
+                }}
                 placement="rightTop"
                 okType="danger"
+                getPopupContainer={(trigger) => trigger.parentElement || document.body}
               >
                 <div
                   className="context-menu-item"
                   style={{ padding: '6px 12px', cursor: 'pointer', fontSize: 13, color: '#ff4d4f' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#fff1f0'}
                   onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <DeleteOutlined style={{ marginRight: 8 }} />删除文件夹
                 </div>
@@ -926,11 +952,12 @@ const BookmarkPanel: React.FC = () => {
           ) : groupedBookmarks ? (
             // 分组显示
             <div>
-              {selectedFolderId === 'all' ? (
-                // "所有书签" 视图：按文件夹名分组
-                Object.entries(groupedBookmarks).map(([groupName, items]) =>
-                  items.length > 0 && (
-                    <div key={groupName} style={{ marginBottom: 32 }}>
+              {groupedBookmarks.type === 'tree' ? (
+                // "所有书签" 视图：按层级结构显示
+                <>
+                  {/* 未分类书签 */}
+                  {groupedBookmarks.uncategorized.length > 0 && (
+                    <div style={{ marginBottom: 32 }}>
                       <div style={{
                         fontSize: 18,
                         fontWeight: 600,
@@ -940,7 +967,7 @@ const BookmarkPanel: React.FC = () => {
                         alignItems: 'center',
                         gap: 8,
                       }} className="nav-section-title">
-                        {groupName}
+                        未分类
                         <span style={{
                           fontSize: 13,
                           color: '#bbb',
@@ -948,17 +975,80 @@ const BookmarkPanel: React.FC = () => {
                           padding: '1px 8px',
                           borderRadius: 10,
                           fontWeight: 400
-                        }}>{items.length}</span>
+                        }}>{groupedBookmarks.uncategorized.length}</span>
                       </div>
-                      {renderBookmarkGrid(items)}
+                      {renderBookmarkGrid(groupedBookmarks.uncategorized)}
                     </div>
-                  )
-                )
+                  )}
+                  
+                  {/* 递归渲染文件夹树 */}
+                  {(() => {
+                    type FolderGroup = {
+                      folder: { id: string; name: string; parentId: string | null } | null;
+                      bookmarks: Bookmark[];
+                      children: FolderGroup[];
+                    };
+                    
+                    const renderFolderTree = (groups: FolderGroup[], level: number = 0): React.ReactNode => {
+                      return groups.map(group => {
+                        if (!group.folder) return null;
+                        const totalBookmarks = group.bookmarks.length + 
+                          group.children.reduce((sum, child) => {
+                            const countAll = (g: FolderGroup): number => 
+                              g.bookmarks.length + g.children.reduce((s, c) => s + countAll(c), 0);
+                            return sum + countAll(child);
+                          }, 0);
+                        
+                        if (totalBookmarks === 0) return null;
+                        
+                        return (
+                          <div key={group.folder.id} style={{ marginBottom: level === 0 ? 32 : 24 }}>
+                            <div style={{
+                              fontSize: level === 0 ? 18 : 16,
+                              fontWeight: 600,
+                              color: level === 0 ? '#333' : '#555',
+                              marginBottom: 16,
+                              paddingLeft: level * 24,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              borderBottom: level === 0 ? '1px solid #f0f0f0' : 'none',
+                              paddingBottom: level === 0 ? 8 : 0,
+                            }} className="nav-section-title">
+                              <FolderOutlined style={{ color: '#ffc66d', fontSize: level === 0 ? 18 : 16 }} />
+                              {group.folder.name}
+                              <span style={{
+                                fontSize: 12,
+                                color: '#bbb',
+                                background: '#f5f5f5',
+                                padding: '1px 8px',
+                                borderRadius: 10,
+                                fontWeight: 400
+                              }}>{totalBookmarks}</span>
+                            </div>
+                            
+                            {/* 该文件夹直接的书签 */}
+                            {group.bookmarks.length > 0 && (
+                              <div style={{ paddingLeft: level * 24, marginBottom: group.children.length > 0 ? 16 : 0 }}>
+                                {renderBookmarkGrid(group.bookmarks)}
+                              </div>
+                            )}
+                            
+                            {/* 子文件夹 */}
+                            {group.children.length > 0 && renderFolderTree(group.children, level + 1)}
+                          </div>
+                        );
+                      });
+                    };
+                    
+                    return renderFolderTree(groupedBookmarks.tree);
+                  })()}
+                </>
               ) : (
                 // 一级目录聚合视图：显示本级书签 + 按二级目录分组
                 <>
                   {/* 本级书签（直接属于该文件夹的） */}
-                  {groupedBookmarks['root'] && groupedBookmarks['root'].length > 0 && (
+                  {groupedBookmarks.groups['root'] && groupedBookmarks.groups['root'].length > 0 && (
                     <div style={{ marginBottom: 32 }}>
                       <div style={{
                         fontSize: 18,
@@ -975,15 +1065,15 @@ const BookmarkPanel: React.FC = () => {
                         <span style={{
                           fontSize: 12, color: '#bbb', background: '#f5f5f5',
                           padding: '2px 8px', borderRadius: 10, fontWeight: 400
-                        }}>{groupedBookmarks['root'].length}</span>
+                        }}>{groupedBookmarks.groups['root'].length}</span>
                       </div>
-                      {renderBookmarkGrid(groupedBookmarks['root'])}
+                      {renderBookmarkGrid(groupedBookmarks.groups['root'])}
                     </div>
                   )}
 
                   {/* 二级目录书签 - 按子文件夹分组显示 */}
                   {subFolders.map(sf => {
-                    const items = groupedBookmarks[sf.id] || [];
+                    const items = groupedBookmarks.groups[sf.id] || [];
                     if (items.length === 0) return null;
                     return (
                       <div

@@ -963,11 +963,12 @@ ipcMain.handle('resource:uploadImage', async (_event, noteId: string, data: stri
     // 写入文件
     fs.writeFileSync(resourcePath, buffer);
     
-    // 创建资源记录
+    // 创建资源记录（使用 _id 确保数据库 ID 与文件名一致）
     const { getItemsManager } = require('./services/DatabaseService');
     const itemsManager = getItemsManager();
     
     const payload = {
+      _id: resourceId,  // 使用 resourceId 作为数据库记录 ID
       filename,
       mime_type: mimeType,
       size: buffer.length,
@@ -1011,11 +1012,12 @@ ipcMain.handle('resource:uploadAttachment', async (_event, noteId: string, data:
     // 写入文件
     fs.writeFileSync(resourcePath, buffer);
     
-    // 创建资源记录
+    // 创建资源记录（使用 _id 确保数据库 ID 与文件名一致）
     const { getItemsManager } = require('./services/DatabaseService');
     const itemsManager = getItemsManager();
     
     const payload = {
+      _id: resourceId,  // 使用 resourceId 作为数据库记录 ID
       filename,
       mime_type: mimeType,
       size: buffer.length,
@@ -1053,14 +1055,17 @@ ipcMain.handle('resource:getPath', async (_event, resourceId: string, ext: strin
 // 读取资源文件（返回 base64）
 ipcMain.handle('resource:read', async (_event, resourceId: string, ext: string) => {
   try {
-    const resourcePath = path.join(getResourcesDir(), `${resourceId}${ext}`);
+    const resourcesDir = getResourcesDir();
+    const resourcePath = path.join(resourcesDir, `${resourceId}${ext}`);
+    
     if (fs.existsSync(resourcePath)) {
       const buffer = fs.readFileSync(resourcePath);
       return buffer.toString('base64');
     }
+    
     return null;
   } catch (error) {
-    console.error('resource:read error:', error);
+    console.error('resource:read error');
     throw error;
   }
 });

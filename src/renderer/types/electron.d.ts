@@ -163,6 +163,7 @@ export interface ElectronAPI {
     isDev: boolean;
   }>;
   openExternal: (url: string) => Promise<void>;
+  openPath: (path: string) => Promise<string>;
   setAutoLaunch: (enabled: boolean) => Promise<boolean>;
   getAutoLaunch: () => Promise<boolean>;
   saveThemeSettings: (settings: { theme: string }) => Promise<boolean>;

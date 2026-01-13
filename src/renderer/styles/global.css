@@ -1376,6 +1376,26 @@ body.dark-mode hr {
   margin-bottom: 16px;
 }
 
+/* 修复 SyntaxHighlighter 代码块选择问题 */
+.markdown-preview pre > div,
+.markdown-preview pre > code {
+  display: block !important;
+}
+
+/* 确保代码行内的 span 不影响选择 */
+.markdown-preview pre span {
+  display: inline !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+/* 修复代码块行号导致的选择问题 */
+.markdown-preview pre code span.linenumber,
+.markdown-preview pre .react-syntax-highlighter-line-number {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 .markdown-preview pre code {
   padding: 0;
   margin: 0;
@@ -1494,4 +1514,30 @@ body.dark-mode .markdown-preview table tr:nth-child(2n) {
 
 body.dark-mode .markdown-preview hr {
   background-color: #434343;
+}
+
+/* ========== KaTeX 数学公式样式 ========== */
+.markdown-preview .katex {
+  font-size: 1.1em;
+}
+
+.markdown-preview .katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.markdown-preview .katex-display > .katex {
+  max-width: 100%;
+}
+
+/* 深色模式 KaTeX */
+body.dark-mode .markdown-preview .katex {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+body.dark-mode .markdown-preview .katex-display {
+  background-color: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  padding: 8px;
 }

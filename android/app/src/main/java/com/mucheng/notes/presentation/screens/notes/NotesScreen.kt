@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -910,7 +911,7 @@ private fun NoteCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -925,13 +926,18 @@ private fun NoteCard(
                         modifier = Modifier.weight(1f)
                     )
                     
-                    Row {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = formatTime(note.updatedTime),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
                         if (note.isPinned) {
                             Icon(
                                 Icons.Default.PushPin,
                                 contentDescription = stringResource(R.string.note_pinned),
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 4.dp)
+                                modifier = Modifier.padding(start = 4.dp).size(16.dp)
                             )
                         }
                         if (note.isLocked) {
@@ -939,38 +945,11 @@ private fun NoteCard(
                                 Icons.Default.Lock,
                                 contentDescription = stringResource(R.string.note_locked),
                                 tint = MaterialTheme.colorScheme.outline,
-                                modifier = Modifier.padding(start = 4.dp)
+                                modifier = Modifier.padding(start = 4.dp).size(16.dp)
                             )
                         }
                     }
                 }
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                // 内容预览（去除 HTML 标签）
-                val preview = note.content
-                    .replace(Regex("<[^>]*>"), "")
-                    .replace(Regex("\\s+"), " ")
-                    .trim()
-                    .take(100)
-                
-                if (preview.isNotEmpty()) {
-                    Text(
-                        text = preview,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = formatTime(note.updatedTime),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
             }
         }
         
@@ -1005,57 +984,6 @@ private fun NoteCard(
                         if (note.isLocked) Icons.Default.LockOpen else Icons.Default.Lock,
                         contentDescription = null
                     )
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("删除") },
-                onClick = onDelete,
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            )
-        }
-    }
-}
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = formatTime(note.updatedTime),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
-        }
-        
-        // 长按上下文菜单
-        DropdownMenu(
-            expanded = showContextMenu,
-            onDismissRequest = onDismissMenu
-        ) {
-            DropdownMenuItem(
-                text = { Text(if (isPinned) "取消置顶" else "置顶") },
-                onClick = onTogglePin,
-                leadingIcon = {
-                    Icon(
-                        if (isPinned) Icons.Default.StarBorder else Icons.Default.Star,
-                        contentDescription = null
-                    )
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("移动到文件夹") },
-                onClick = onMoveToFolder,
-                leadingIcon = {
-                    Icon(Icons.Default.Folder, contentDescription = null)
                 }
             )
             DropdownMenuItem(

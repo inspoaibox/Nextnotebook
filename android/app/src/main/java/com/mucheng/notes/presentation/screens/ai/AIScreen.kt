@@ -73,11 +73,22 @@ import com.mucheng.notes.presentation.screens.settings.AIModel
 import com.mucheng.notes.presentation.viewmodel.AIViewModel
 import com.mucheng.notes.presentation.viewmodel.ConversationItem
 import com.mucheng.notes.presentation.viewmodel.MessageItem
+import com.mucheng.notes.presentation.viewmodel.SettingsUiState
 import com.mucheng.notes.presentation.viewmodel.SettingsViewModel
 import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/**
+ * 模型与渠道信息（本地定义，避免导入问题）
+ */
+private data class ModelInfo(
+    val channelId: String,
+    val channelName: String,
+    val modelId: String,
+    val modelName: String
+)
 
 /**
  * AI 助手页面 - 重构版
@@ -113,6 +124,11 @@ fun AIScreen(
     // 当前选中的对话
     val currentConversation = conversations.find { it.id == uiState.selectedConversationId }
     
+    // 设置更新回调
+    val handleUpdateSettings: (String, String, String, Float, Int) -> Unit = { convId, model, systemPrompt, temperature, maxTokens ->
+        viewModel.updateSettings(convId, model, systemPrompt, temperature, maxTokens)
+    }
+    
     // 根据是否选中对话显示不同视图
     if (uiState.selectedConversationId == null) {
         // 主视图：对话列表
@@ -132,9 +148,11 @@ fun AIScreen(
         ChatScreen(
             conversation = currentConversation,
             viewModel = viewModel,
+            settingsState = settingsState,
             bottomPadding = bottomPadding,
             onBack = { viewModel.selectConversation(null) },
-            onSettingsClick = { navController.navigate("settings/ai") }
+            onSettingsClick = { navController.navigate("settings/ai") },
+            onUpdateSettings = handleUpdateSettings
         )
     }
 
@@ -223,7 +241,7 @@ fun ConversationListScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(conversations.sortedByDescending { it.updatedAt }) { conversation ->
+                items(conversations.sortedByDescending { it.createdAt }) { conversation ->
                     ConversationListItem(
                         conversation = conversation,
                         onClick = { onConversationClick(conversation) },
@@ -299,7 +317,7 @@ fun ConversationListItem(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                        .format(Date(conversation.updatedAt)),
+                        .format(Date(conversation.createdAt)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -347,12 +365,64 @@ fun ConversationListItem(
 fun ChatScreen(
     conversation: ConversationItem?,
     viewModel: AIViewModel,
+    settingsState: com.mucheng.notes.presentation.viewmodel.SettingsUiState,
     bottomPadding: PaddingValues,
     onBack: () -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onUpdateSettings: (String, String, String, Float, Int) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
+    var showSettingsPanel by remember { mutableStateOf(false) }
+    var showModelSelector by remember { mutableStateOf(false) }
+    
+    // 当前对话设置（可编辑）- 使用 conversation 的值作为初始值
+    var currentModel by remember(conversation?.id) { mutableStateOf(conversation?.model ?: "") }
+    var currentSystemPrompt by remember(conversation?.id) { mutableStateOf(conversation?.systemPrompt ?: "") }
+    var currentTemperature by remember(conversation?.id) { mutableFloatStateOf(conversation?.temperature ?: 0.7f) }
+    var currentMaxTokens by remember(conversation?.id) { mutableStateOf(conversation?.maxTokens ?: 4096) }
+    
+    // 当 conversation 的具体属性变化时（如从数据库重新加载），更新本地状态
+    // 但只在用户没有主动修改的情况下更新
+    LaunchedEffect(conversation?.model) {
+        if (conversation != null && currentModel.isEmpty()) {
+            currentModel = conversation.model
+        }
+    }
+    LaunchedEffect(conversation?.systemPrompt) {
+        if (conversation != null) {
+            // 始终同步 systemPrompt，因为它可能从服务器同步过来
+            currentSystemPrompt = conversation.systemPrompt
+        }
+    }
+    LaunchedEffect(conversation?.temperature) {
+        if (conversation != null) {
+            currentTemperature = conversation.temperature
+        }
+    }
+    LaunchedEffect(conversation?.maxTokens) {
+        if (conversation != null) {
+            currentMaxTokens = conversation.maxTokens
+        }
+    }
+    
+    // 获取所有可用模型（从 SettingsViewModel 获取）
+    val userChannels = remember(settingsState.aiChannelsJson) {
+        if (settingsState.aiChannelsJson.isNotBlank()) {
+            try {
+                Json { ignoreUnknownKeys = true }.decodeFromString<List<AIChannel>>(settingsState.aiChannelsJson)
+                    .filter { it.enabled && it.apiKey.isNotBlank() }
+            } catch (e: Exception) { emptyList() }
+        } else emptyList()
+    }
+    
+    val allModels: List<ModelInfo> = remember(userChannels) { 
+        userChannels.flatMap { channel ->
+            channel.models.map { model ->
+                ModelInfo(channel.id, channel.name, model.id, model.name)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -369,13 +439,6 @@ fun ChatScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (conversation != null) {
-                        Text(
-                            text = conversation.model,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
             },
             navigationIcon = {
@@ -384,6 +447,96 @@ fun ChatScreen(
                 }
             },
             actions = {
+                // 模型选择器按钮
+                Box {
+                    Surface(
+                        onClick = { showModelSelector = true },
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = allModels.find { it.modelId == currentModel }?.modelName 
+                                    ?: currentModel.take(15),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1
+                            )
+                            Icon(
+                                Icons.Default.MoreVert,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                    
+                    // 模型选择下拉菜单
+                    DropdownMenu(
+                        expanded = showModelSelector,
+                        onDismissRequest = { showModelSelector = false }
+                    ) {
+                        if (allModels.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("未配置模型", color = MaterialTheme.colorScheme.outline) },
+                                onClick = { showModelSelector = false }
+                            )
+                        } else {
+                            allModels.forEach { modelInfo ->
+                                DropdownMenuItem(
+                                    text = { 
+                                        Column {
+                                            Text(modelInfo.modelName)
+                                            Text(
+                                                modelInfo.channelName,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        currentModel = modelInfo.modelId
+                                        val convId = conversation?.id
+                                        if (convId != null) {
+                                            onUpdateSettings(
+                                                convId,
+                                                modelInfo.modelId,
+                                                currentSystemPrompt,
+                                                currentTemperature,
+                                                currentMaxTokens
+                                            )
+                                        }
+                                        showModelSelector = false
+                                    },
+                                    leadingIcon = {
+                                        if (modelInfo.modelId == currentModel) {
+                                            Icon(
+                                                Icons.Default.SmartToy,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                // 设置按钮
+                IconButton(onClick = { showSettingsPanel = !showSettingsPanel }) {
+                    Icon(
+                        Icons.Default.Settings, 
+                        contentDescription = "对话设置",
+                        tint = if (showSettingsPanel) MaterialTheme.colorScheme.primary 
+                               else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "更多")
@@ -403,6 +556,32 @@ fun ChatScreen(
                 containerColor = MaterialTheme.colorScheme.surface
             )
         )
+        
+        // 设置面板
+        if (showSettingsPanel) {
+            ConversationSettingsPanel(
+                systemPrompt = currentSystemPrompt,
+                temperature = currentTemperature,
+                maxTokens = currentMaxTokens,
+                onSystemPromptChange = { currentSystemPrompt = it },
+                onTemperatureChange = { currentTemperature = it },
+                onMaxTokensChange = { currentMaxTokens = it },
+                onSave = {
+                    val convId = conversation?.id
+                    if (convId != null) {
+                        onUpdateSettings(
+                            convId,
+                            currentModel,
+                            currentSystemPrompt,
+                            currentTemperature,
+                            currentMaxTokens
+                        )
+                    }
+                    showSettingsPanel = false
+                },
+                onCancel = { showSettingsPanel = false }
+            )
+        }
 
         // 消息列表
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -414,12 +593,116 @@ fun ChatScreen(
             )
         }
 
-        // 输入框
+        // 输入框 - 使用当前 UI 上的设置，而不是从数据库读取
         ChatInputArea(
             isThinking = uiState.isThinking,
-            onSend = { viewModel.sendMessage(it) },
+            onSend = { message ->
+                viewModel.sendMessageWithSettings(
+                    content = message,
+                    modelId = currentModel,
+                    systemPrompt = currentSystemPrompt,
+                    temperature = currentTemperature,
+                    maxTokens = currentMaxTokens
+                )
+            },
             bottomPadding = bottomPadding
         )
+    }
+}
+
+/**
+ * 对话设置面板
+ */
+@Composable
+fun ConversationSettingsPanel(
+    systemPrompt: String,
+    temperature: Float,
+    maxTokens: Int,
+    onSystemPromptChange: (String) -> Unit,
+    onTemperatureChange: (Float) -> Unit,
+    onMaxTokensChange: (Int) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 2.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 系统提示词
+            Text(
+                "系统提示词",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.outline
+            )
+            OutlinedTextField(
+                value = systemPrompt,
+                onValueChange = onSystemPromptChange,
+                placeholder = { Text("设置 AI 的角色和行为...") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4
+            )
+            
+            // 温度
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "温度: ${"%.1f".format(temperature)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.width(80.dp)
+                )
+                Slider(
+                    value = temperature,
+                    onValueChange = onTemperatureChange,
+                    valueRange = 0f..2f,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            
+            // 最大输出
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "最大输出: $maxTokens",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.width(120.dp)
+                )
+                Slider(
+                    value = maxTokens.toFloat(),
+                    onValueChange = { onMaxTokensChange(it.toInt()) },
+                    valueRange = 256f..32000f,
+                    steps = 124,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            
+            // 按钮
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onCancel) {
+                    Text("取消")
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = onSave) {
+                    Text("保存设置")
+                }
+            }
+        }
     }
 }
 
@@ -491,9 +774,16 @@ fun ChatMessagesList(
     }
 
     // 自动滚动到底部
-    LaunchedEffect(messages.size, uiState.streamingContent.length) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(messages.size, uiState.streamingContent.length, uiState.isThinking) {
+        if (messages.isNotEmpty() || uiState.isThinking) {
+            val targetIndex = if (uiState.isThinking && uiState.streamingContent.isEmpty()) {
+                messages.size // 滚动到思考指示器
+            } else {
+                (messages.size - 1).coerceAtLeast(0)
+            }
+            if (targetIndex >= 0) {
+                listState.animateScrollToItem(targetIndex)
+            }
         }
     }
 
@@ -506,18 +796,23 @@ fun ChatMessagesList(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         items(messages) { message ->
-            val isStreaming = message.id == uiState.streamingMessageId
-            val content = if (isStreaming) uiState.streamingContent else message.content
-            
-            if (content.isNotEmpty() || isStreaming) {
-                MessageBubble(message, content)
+            // 只显示有内容的消息
+            if (message.content.isNotEmpty()) {
+                MessageBubble(message, message.content)
             }
         }
         
-        // 如果正在思考但还没有消息，显示加载指示器
-        if (uiState.isThinking && messages.none { it.role == "assistant" && it.content.isEmpty() }) {
+        // 正在思考时显示加载指示器（流式内容为空时）
+        if (uiState.isThinking && uiState.streamingContent.isEmpty()) {
             item {
                 ThinkingIndicator()
+            }
+        }
+        
+        // 显示流式内容（正在生成的回复）
+        if (uiState.isThinking && uiState.streamingContent.isNotEmpty()) {
+            item {
+                StreamingMessageBubble(content = uiState.streamingContent)
             }
         }
     }
@@ -565,6 +860,62 @@ fun ThinkingIndicator() {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun StreamingMessageBubble(content: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.SmartToy,
+                null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+            Card(
+                shape = RoundedCornerShape(
+                    topStart = 18.dp,
+                    topEnd = 18.dp,
+                    bottomStart = 4.dp,
+                    bottomEnd = 18.dp
+                ),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = content,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp)
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(12.dp),
+                        strokeWidth = 1.5.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }

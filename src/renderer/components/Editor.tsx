@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Empty, Tabs, Space, Button, Tooltip, message, Modal, Tag as AntTag, Input, Select, Dropdown } from 'antd';
+import { Empty, Tabs, Space, Button, Tooltip, message, Modal, Tag as AntTag, Input, Select, Dropdown, Menu } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   EditOutlined,
@@ -19,38 +19,71 @@ import {
   MenuUnfoldOutlined,
   LockOutlined,
   UnlockOutlined,
+  RobotOutlined,
+  DownloadOutlined,
+  ScissorOutlined,
+  SelectOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Tag } from '../hooks/useTags';
 import MarkdownToolbar from './MarkdownToolbar';
+import { useAISettings } from '../hooks/useAI';
+import { callAIApi } from '../services/aiApi';
 
 // 资源图片组件 - 处理 resource:// 协议的图片
 const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = ({ src, alt, title }) => {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    if (!src) {
-      setLoading(false);
-      setError(true);
-      return;
-    }
+    let isMounted = true;
+    
+    // 重置状态
+    setLoading(true);
+    setError(false);
+    setErrorMsg('');
+    setImageSrc(null);
+    
+    const loadImage = async () => {
+      if (!src) {
+        setLoading(false);
+        setError(true);
+        setErrorMsg('图片地址为空');
+        return;
+      }
 
-    // 检查是否是 resource:// 协议
-    if (src.startsWith('resource://')) {
-      const resourcePath = src.replace('resource://', '');
-      // 解析资源 ID 和扩展名
-      const lastDotIndex = resourcePath.lastIndexOf('.');
-      const resourceId = lastDotIndex > 0 ? resourcePath.substring(0, lastDotIndex) : resourcePath;
-      const ext = lastDotIndex > 0 ? resourcePath.substring(lastDotIndex) : '.png';
+      // 检查是否是 resource:// 协议
+      if (src.startsWith('resource://')) {
+        const resourcePath = src.replace('resource://', '');
+        // 解析资源 ID 和扩展名
+        const lastDotIndex = resourcePath.lastIndexOf('.');
+        const resourceId = lastDotIndex > 0 ? resourcePath.substring(0, lastDotIndex) : resourcePath;
+        const ext = lastDotIndex > 0 ? resourcePath.substring(lastDotIndex) : '.png';
 
-      // 通过 IPC 读取资源文件
-      (window as any).electron.resource.read(resourceId, ext)
-        .then((base64Data: string | null) => {
+        // 检查 electronAPI 是否可用
+        if (!window.electronAPI?.resource?.read) {
+          if (isMounted) {
+            setError(true);
+            setErrorMsg('electronAPI 不可用');
+            setLoading(false);
+          }
+          return;
+        }
+
+        try {
+          // 通过 IPC 读取资源文件
+          const base64Data = await window.electronAPI.resource.read(resourceId, ext);
+          
+          if (!isMounted) return;
+          
           if (base64Data) {
             // 根据扩展名确定 MIME 类型
             const mimeType = ext === '.png' ? 'image/png' 
@@ -63,20 +96,119 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
             setError(false);
           } else {
             setError(true);
+            setErrorMsg(`资源文件不存在: ${resourceId}${ext}`);
           }
+        } catch (err: any) {
+          if (isMounted) {
+            setError(true);
+            setErrorMsg(err?.message || '读取资源失败');
+          }
+        } finally {
+          if (isMounted) {
+            setLoading(false);
+          }
+        }
+      } else {
+        // 普通 URL，直接使用
+        if (isMounted) {
+          setImageSrc(src);
           setLoading(false);
-        })
-        .catch(() => {
-          setError(true);
-          setLoading(false);
-        });
-    } else {
-      // 普通 URL，直接使用
-      setImageSrc(src);
-      setLoading(false);
-    }
+        }
+      }
+    };
+    
+    loadImage();
+    
+    return () => {
+      isMounted = false;
+    };
   }, [src]);
 
+  // 图片右键菜单处理 - 必须在所有条件返回之前定义，遵循 React Hooks 规则
+  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLImageElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const imgElement = e.currentTarget;
+    const imgSrcData = imgElement.src;
+    
+    // 使用 Dropdown 显示菜单
+    const menuContainer = document.createElement('div');
+    menuContainer.style.position = 'fixed';
+    menuContainer.style.left = `${e.clientX}px`;
+    menuContainer.style.top = `${e.clientY}px`;
+    menuContainer.style.zIndex = '9999';
+    document.body.appendChild(menuContainer);
+    
+    const closeMenu = () => {
+      if (menuContainer.parentNode) {
+        document.body.removeChild(menuContainer);
+      }
+      document.removeEventListener('click', closeMenu);
+      document.removeEventListener('contextmenu', closeMenu);
+    };
+    
+    // 延迟添加关闭事件，避免立即触发
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu);
+      document.addEventListener('contextmenu', closeMenu);
+    }, 0);
+    
+    // 渲染菜单
+    const menuElement = document.createElement('div');
+    menuElement.className = 'ant-dropdown ant-dropdown-placement-bottomLeft';
+    menuElement.innerHTML = `
+      <ul class="ant-dropdown-menu ant-dropdown-menu-root ant-dropdown-menu-vertical" style="min-width: 120px; box-shadow: 0 3px 6px -4px rgba(0,0,0,.12), 0 6px 16px 0 rgba(0,0,0,.08), 0 9px 28px 8px rgba(0,0,0,.05); border-radius: 8px; padding: 4px;">
+        <li class="ant-dropdown-menu-item" data-action="copy" style="padding: 8px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 14px;">📋</span> 复制图片
+        </li>
+        <li class="ant-dropdown-menu-item" data-action="save" style="padding: 8px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 14px;">💾</span> 另存为...
+        </li>
+      </ul>
+    `;
+    menuContainer.appendChild(menuElement);
+    
+    // 添加菜单项点击事件
+    menuElement.querySelectorAll('.ant-dropdown-menu-item').forEach(item => {
+      item.addEventListener('mouseenter', () => {
+        (item as HTMLElement).style.background = '#f5f5f5';
+      });
+      item.addEventListener('mouseleave', () => {
+        (item as HTMLElement).style.background = 'transparent';
+      });
+      item.addEventListener('click', async () => {
+        const action = item.getAttribute('data-action');
+        if (action === 'copy') {
+          try {
+            const response = await fetch(imgSrcData);
+            const blob = await response.blob();
+            await navigator.clipboard.write([
+              new ClipboardItem({ [blob.type]: blob })
+            ]);
+            message.success('图片已复制到剪贴板');
+          } catch (err) {
+            message.error('复制图片失败');
+          }
+        } else if (action === 'save') {
+          try {
+            const link = document.createElement('a');
+            link.href = imgSrcData;
+            link.download = alt || 'image.png';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            message.success('图片已保存');
+          } catch (err) {
+            message.error('保存图片失败');
+          }
+        }
+        closeMenu();
+      });
+    });
+  }, [alt]);
+
+  // 条件返回必须在所有 hooks 之后
   if (loading) {
     return <span style={{ color: '#999', fontSize: 12 }}>加载图片中...</span>;
   }
@@ -92,7 +224,7 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
         color: '#ff4d4f',
         fontSize: 12 
       }}>
-        ❌ 图片加载失败: {alt || src}
+        ❌ 图片加载失败: {errorMsg || alt || src}
       </span>
     );
   }
@@ -102,7 +234,8 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
       src={imageSrc} 
       alt={alt || ''} 
       title={title || ''} 
-      style={{ maxWidth: '100%', height: 'auto' }}
+      style={{ maxWidth: '100%', height: 'auto', cursor: 'pointer' }}
+      onContextMenu={handleContextMenu}
     />
   );
 };
@@ -127,11 +260,11 @@ const ResourceLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({
     
     try {
       // 获取资源文件路径
-      const filePath = await (window as any).electron.resource.getPath(resourceId, ext);
+      const filePath = await window.electronAPI.resource.getPath(resourceId, ext);
       
       if (filePath) {
         // 使用系统默认程序打开文件
-        const result = await (window as any).electronAPI.openPath(filePath);
+        const result = await window.electronAPI.openPath(filePath);
         if (result) {
           // openPath 返回错误信息字符串，空字符串表示成功
           message.error(`打开附件失败: ${result}`);
@@ -389,6 +522,12 @@ const Editor: React.FC<EditorProps> = ({
   const [showDeletePasswordDialog, setShowDeletePasswordDialog] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deletePasswordError, setDeletePasswordError] = useState('');
+  
+  // AI 撰写相关状态
+  const [showAIWriteDialog, setShowAIWriteDialog] = useState(false);
+  const [aiWritePrompt, setAiWritePrompt] = useState('');
+  const [aiWriteLoading, setAiWriteLoading] = useState(false);
+  const { settings: aiSettings } = useAISettings();
 
   // 提取标题生成目录
   const headings = useMemo(() => extractHeadings(content), [content]);
@@ -782,6 +921,80 @@ const Editor: React.FC<EditorProps> = ({
     }
   }, [note, deletePassword, noteId, onDelete]);
 
+  // AI 撰写功能
+  const handleAIWrite = useCallback(async () => {
+    if (!aiWritePrompt.trim()) {
+      message.warning('请输入撰写需求');
+      return;
+    }
+
+    // 检查是否有可用的 AI 渠道（有 API Key 的启用渠道）
+    const enabledChannels = aiSettings.channels.filter(c => c.enabled && c.api_key);
+    if (enabledChannels.length === 0) {
+      message.error('请先在设置中配置 AI 渠道和 API Key');
+      return;
+    }
+
+    // 获取默认模型和渠道
+    let targetChannel = enabledChannels[0];
+    let targetModel = aiSettings.default_model || '';
+
+    // 查找默认模型所在的渠道
+    if (targetModel) {
+      for (const channel of enabledChannels) {
+        const model = channel.models.find(m => m.id === targetModel);
+        if (model) {
+          targetChannel = channel;
+          break;
+        }
+      }
+    }
+
+    // 如果没有默认模型，使用第一个渠道的第一个模型
+    if (!targetModel && targetChannel.models.length > 0) {
+      targetModel = targetChannel.models[0].id;
+    }
+
+    if (!targetModel) {
+      message.error('请先在设置中配置 AI 模型');
+      return;
+    }
+
+    setAiWriteLoading(true);
+    message.loading({ content: 'AI 正在撰写...', key: 'ai-write' });
+
+    try {
+      const systemPrompt = '你是一个专业的写作助手。请根据用户的需求撰写内容，输出格式为 Markdown。';
+      const response = await callAIApi(targetChannel, {
+        model: targetModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: aiWritePrompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 4096,
+        stream: false,
+      });
+
+      // 将 AI 生成的内容插入到编辑器
+      const textarea = textareaRef.current;
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const newContent = content.substring(0, start) + '\n\n' + response + '\n\n' + content.substring(start);
+        setContent(newContent);
+        setIsDirty(true);
+        message.success({ content: 'AI 撰写完成', key: 'ai-write' });
+      }
+
+      setShowAIWriteDialog(false);
+      setAiWritePrompt('');
+    } catch (err: any) {
+      message.error({ content: `AI 撰写失败: ${err.message || '未知错误'}`, key: 'ai-write' });
+    } finally {
+      setAiWriteLoading(false);
+    }
+  }, [aiWritePrompt, aiSettings, content]);
+
   const handleDuplicate = () => {
     if (noteId && onDuplicate) {
       onDuplicate(noteId);
@@ -931,19 +1144,25 @@ const Editor: React.FC<EditorProps> = ({
           alignItems: 'center',
         }}
       >
-        <input
-          value={title}
-          onChange={handleTitleChange}
-          style={{
-            border: 'none',
-            outline: 'none',
-            fontSize: 18,
-            fontWeight: 600,
-            flex: 1,
-            marginRight: 16,
-          }}
-          placeholder="笔记标题"
-        />
+        <div style={{ display: 'flex', alignItems: 'center', flex: 1, marginRight: 16, gap: 12 }}>
+          <input
+            value={title}
+            onChange={handleTitleChange}
+            style={{
+              border: 'none',
+              outline: 'none',
+              fontSize: 18,
+              fontWeight: 600,
+              flex: 1,
+            }}
+            placeholder="笔记标题"
+          />
+          {note.updatedAt && (
+            <span style={{ fontSize: 11, color: '#999', whiteSpace: 'nowrap', flexShrink: 0 }}>
+              {new Date(note.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
         <Space>
           {!isTrashView && (
             <>
@@ -962,6 +1181,13 @@ const Editor: React.FC<EditorProps> = ({
                 >
                   {note.tags.length > 0 && <span style={{ marginLeft: 4 }}>{note.tags.length}</span>}
                 </Button>
+              </Tooltip>
+              <Tooltip title="AI 撰写">
+                <Button
+                  icon={<RobotOutlined />}
+                  type="text"
+                  onClick={() => setShowAIWriteDialog(true)}
+                />
               </Tooltip>
               <Tooltip title={isDirty ? '保存 (有未保存更改)' : '保存'}>
                 <Button
@@ -1045,10 +1271,93 @@ const Editor: React.FC<EditorProps> = ({
                 lineHeight: 1.8,
                 paddingRight: headings.length > 0 && !tocCollapsed ? 16 : 0,
                 transition: 'width 0.2s ease',
+                userSelect: 'text', // 允许文本选择
+              }}
+              onContextMenu={(e) => {
+                // 如果点击的是图片，让图片自己处理
+                if ((e.target as HTMLElement).tagName === 'IMG') {
+                  return;
+                }
+                
+                e.preventDefault();
+                
+                const selection = window.getSelection();
+                const hasSelection = selection && selection.toString().length > 0;
+                
+                // 创建右键菜单
+                const menuContainer = document.createElement('div');
+                menuContainer.style.position = 'fixed';
+                menuContainer.style.left = `${e.clientX}px`;
+                menuContainer.style.top = `${e.clientY}px`;
+                menuContainer.style.zIndex = '9999';
+                document.body.appendChild(menuContainer);
+                
+                const closeMenu = () => {
+                  if (document.body.contains(menuContainer)) {
+                    document.body.removeChild(menuContainer);
+                  }
+                  document.removeEventListener('click', closeMenu);
+                  document.removeEventListener('contextmenu', closeMenu);
+                };
+                
+                setTimeout(() => {
+                  document.addEventListener('click', closeMenu);
+                  document.addEventListener('contextmenu', closeMenu);
+                }, 0);
+                
+                const menuElement = document.createElement('div');
+                menuElement.className = 'ant-dropdown ant-dropdown-placement-bottomLeft';
+                menuElement.innerHTML = `
+                  <ul class="ant-dropdown-menu ant-dropdown-menu-root ant-dropdown-menu-vertical" style="min-width: 140px; box-shadow: 0 3px 6px -4px rgba(0,0,0,.12), 0 6px 16px 0 rgba(0,0,0,.08), 0 9px 28px 8px rgba(0,0,0,.05); border-radius: 8px; padding: 4px; background: #fff;">
+                    <li class="ant-dropdown-menu-item ${!hasSelection ? 'ant-dropdown-menu-item-disabled' : ''}" data-action="copy" style="padding: 8px 12px; cursor: ${hasSelection ? 'pointer' : 'not-allowed'}; display: flex; align-items: center; gap: 8px; color: ${hasSelection ? 'inherit' : '#999'};">
+                      <span style="font-size: 14px;">📋</span> 复制
+                    </li>
+                    <li class="ant-dropdown-menu-item" data-action="selectAll" style="padding: 8px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                      <span style="font-size: 14px;">📄</span> 全选
+                    </li>
+                  </ul>
+                `;
+                menuContainer.appendChild(menuElement);
+                
+                menuElement.querySelectorAll('.ant-dropdown-menu-item:not(.ant-dropdown-menu-item-disabled)').forEach(item => {
+                  item.addEventListener('mouseenter', () => {
+                    (item as HTMLElement).style.background = '#f5f5f5';
+                  });
+                  item.addEventListener('mouseleave', () => {
+                    (item as HTMLElement).style.background = 'transparent';
+                  });
+                  item.addEventListener('click', async () => {
+                    const action = item.getAttribute('data-action');
+                    if (action === 'copy' && hasSelection) {
+                      try {
+                        await navigator.clipboard.writeText(selection!.toString());
+                        message.success('已复制到剪贴板');
+                      } catch (err) {
+                        message.error('复制失败');
+                      }
+                    } else if (action === 'selectAll') {
+                      const range = document.createRange();
+                      range.selectNodeContents(previewRef.current!);
+                      const sel = window.getSelection();
+                      sel?.removeAllRanges();
+                      sel?.addRange(range);
+                    }
+                    closeMenu();
+                  });
+                });
               }}
             >
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                urlTransform={(url) => {
+                  // 允许 resource:// 协议
+                  if (url.startsWith('resource://')) {
+                    return url;
+                  }
+                  // 其他 URL 使用默认处理
+                  return url;
+                }}
                 components={{
                   h1: ({ children }) => {
                     const text = String(children);
@@ -1087,6 +1396,22 @@ const Editor: React.FC<EditorProps> = ({
                         style={oneDark}
                         language={match[1]}
                         PreTag="div"
+                        wrapLines={false}
+                        wrapLongLines={false}
+                        customStyle={{
+                          margin: 0,
+                          padding: '16px',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          lineHeight: '1.5',
+                        }}
+                        codeTagProps={{
+                          style: {
+                            display: 'block',
+                            whiteSpace: 'pre',
+                            userSelect: 'text',
+                          }
+                        }}
                         {...props}
                       >
                         {String(children).replace(/\n$/, '')}
@@ -1105,8 +1430,12 @@ const Editor: React.FC<EditorProps> = ({
                     return <input type={type} {...props} />;
                   },
                   // 图片处理 - 支持 resource:// 协议
-                  img: ({ src, alt, title, ...props }: any) => {
-                    return <ResourceImage src={src} alt={alt} title={title} />;
+                  img: ({ node, src, alt, title, ...props }: any) => {
+                    // react-markdown v9 中，src 可能在 node.properties 中
+                    const imgSrc = src || node?.properties?.src;
+                    const imgAlt = alt || node?.properties?.alt;
+                    const imgTitle = title || node?.properties?.title;
+                    return <ResourceImage src={imgSrc} alt={imgAlt} title={imgTitle} />;
                   },
                   // 链接处理 - 支持 resource:// 协议的附件
                   a: ({ href, children, ...props }: any) => {
@@ -1168,10 +1497,92 @@ const Editor: React.FC<EditorProps> = ({
               <div 
                 ref={previewRef}
                 className="markdown-preview"
-                style={{ width: '50%', height: '100%', overflow: 'auto', padding: 16, lineHeight: 1.8, position: 'relative' }}
+                style={{ width: '50%', height: '100%', overflow: 'auto', padding: 16, lineHeight: 1.8, position: 'relative', userSelect: 'text' }}
+                onContextMenu={(e) => {
+                  // 如果点击的是图片，让图片自己处理
+                  if ((e.target as HTMLElement).tagName === 'IMG') {
+                    return;
+                  }
+                  
+                  e.preventDefault();
+                  
+                  const selection = window.getSelection();
+                  const hasSelection = selection && selection.toString().length > 0;
+                  
+                  const menuContainer = document.createElement('div');
+                  menuContainer.style.position = 'fixed';
+                  menuContainer.style.left = `${e.clientX}px`;
+                  menuContainer.style.top = `${e.clientY}px`;
+                  menuContainer.style.zIndex = '9999';
+                  document.body.appendChild(menuContainer);
+                  
+                  const closeMenu = () => {
+                    if (document.body.contains(menuContainer)) {
+                      document.body.removeChild(menuContainer);
+                    }
+                    document.removeEventListener('click', closeMenu);
+                    document.removeEventListener('contextmenu', closeMenu);
+                  };
+                  
+                  setTimeout(() => {
+                    document.addEventListener('click', closeMenu);
+                    document.addEventListener('contextmenu', closeMenu);
+                  }, 0);
+                  
+                  const menuElement = document.createElement('div');
+                  menuElement.innerHTML = `
+                    <ul style="min-width: 140px; box-shadow: 0 3px 6px -4px rgba(0,0,0,.12), 0 6px 16px 0 rgba(0,0,0,.08), 0 9px 28px 8px rgba(0,0,0,.05); border-radius: 8px; padding: 4px; background: #fff; list-style: none; margin: 0;">
+                      <li data-action="copy" style="padding: 8px 12px; cursor: ${hasSelection ? 'pointer' : 'not-allowed'}; display: flex; align-items: center; gap: 8px; color: ${hasSelection ? 'inherit' : '#999'};">
+                        <span>📋</span> 复制
+                      </li>
+                      <li data-action="selectAll" style="padding: 8px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                        <span>📄</span> 全选
+                      </li>
+                    </ul>
+                  `;
+                  menuContainer.appendChild(menuElement);
+                  
+                  menuElement.querySelectorAll('li').forEach(item => {
+                    const action = item.getAttribute('data-action');
+                    if (action === 'copy' && !hasSelection) return;
+                    
+                    item.addEventListener('mouseenter', () => {
+                      (item as HTMLElement).style.background = '#f5f5f5';
+                    });
+                    item.addEventListener('mouseleave', () => {
+                      (item as HTMLElement).style.background = 'transparent';
+                    });
+                    item.addEventListener('click', async () => {
+                      if (action === 'copy' && hasSelection) {
+                        try {
+                          await navigator.clipboard.writeText(selection!.toString());
+                          message.success('已复制到剪贴板');
+                        } catch (err) {
+                          message.error('复制失败');
+                        }
+                      } else if (action === 'selectAll') {
+                        const range = document.createRange();
+                        range.selectNodeContents(previewRef.current!);
+                        const sel = window.getSelection();
+                        sel?.removeAllRanges();
+                        sel?.addRange(range);
+                      }
+                      closeMenu();
+                    });
+                  });
+                }}
               >
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  urlTransform={(url) => {
+                    // 允许 resource:// 协议
+                    if (url.startsWith('resource://')) {
+                      return url;
+                    }
+                    // 其他 URL 使用默认处理
+                    return url;
+                  }}
                   components={{
                     h1: ({ children }) => {
                       const text = String(children);
@@ -1227,8 +1638,12 @@ const Editor: React.FC<EditorProps> = ({
                       return <input type={type} {...props} />;
                     },
                     // 图片处理 - 支持 resource:// 协议
-                    img: ({ src, alt, title, ...props }: any) => {
-                      return <ResourceImage src={src} alt={alt} title={title} />;
+                    img: ({ node, src, alt, title, ...props }: any) => {
+                      // react-markdown v9 中，src 可能在 node.properties 中
+                      const imgSrc = src || node?.properties?.src;
+                      const imgAlt = alt || node?.properties?.alt;
+                      const imgTitle = title || node?.properties?.title;
+                      return <ResourceImage src={imgSrc} alt={imgAlt} title={imgTitle} />;
                     },
                     // 链接处理 - 支持 resource:// 协议的附件
                     a: ({ href, children, ...props }: any) => {
@@ -1411,6 +1826,47 @@ const Editor: React.FC<EditorProps> = ({
               {deletePasswordError}
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* AI 撰写 Modal */}
+      <Modal
+        title={
+          <span>
+            <RobotOutlined style={{ marginRight: 8, color: '#1890ff' }} />
+            AI 撰写
+          </span>
+        }
+        open={showAIWriteDialog}
+        onOk={handleAIWrite}
+        onCancel={() => {
+          setShowAIWriteDialog(false);
+          setAiWritePrompt('');
+        }}
+        okText="开始撰写"
+        cancelText="取消"
+        confirmLoading={aiWriteLoading}
+        okButtonProps={{ disabled: !aiWritePrompt.trim() || aiWriteLoading }}
+      >
+        <div>
+          <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 16 }}>
+            描述你想要撰写的内容，AI 将根据你的需求生成 Markdown 格式的文本并插入到当前光标位置。
+          </p>
+          <Input.TextArea
+            placeholder="例如：写一篇关于 React Hooks 的技术博客，包含 useState 和 useEffect 的使用示例"
+            value={aiWritePrompt}
+            onChange={(e) => setAiWritePrompt(e.target.value)}
+            rows={4}
+            disabled={aiWriteLoading}
+            onPressEnter={(e) => {
+              if (e.ctrlKey || e.metaKey) {
+                handleAIWrite();
+              }
+            }}
+          />
+          <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+            提示：按 Ctrl+Enter 快速提交
+          </div>
         </div>
       </Modal>
     </div>

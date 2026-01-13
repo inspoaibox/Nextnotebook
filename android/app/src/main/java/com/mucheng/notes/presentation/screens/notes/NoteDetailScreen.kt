@@ -3,6 +3,7 @@ package com.mucheng.notes.presentation.screens.notes
 import android.annotation.SuppressLint
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,8 +16,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
@@ -26,6 +30,7 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,8 +52,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mucheng.notes.R
@@ -71,6 +82,7 @@ fun NoteDetailScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showLockDialog by remember { mutableStateOf(false) }
+    var showAIWriteDialog by remember { mutableStateOf(false) }
     
     LaunchedEffect(noteId, defaultFolderId) {
         if (noteId != null) {
@@ -81,22 +93,51 @@ fun NoteDetailScreen(
         }
     }
     
+    // 显示 AI 撰写错误
+    LaunchedEffect(uiState.aiWriteError) {
+        if (uiState.aiWriteError != null) {
+            // 错误会在对话框中显示
+        }
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     if (uiState.isEditing) {
-                        OutlinedTextField(
+                        // 优化后的标题输入框 - 简洁无边框样式
+                        BasicTextField(
                             value = uiState.title,
                             onValueChange = { viewModel.updateTitle(it) },
-                            placeholder = { Text(stringResource(R.string.note_title_hint)) },
+                            textStyle = TextStyle(
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth(),
+                            decorationBox = { innerTextField ->
+                                Box {
+                                    if (uiState.title.isEmpty()) {
+                                        Text(
+                                            text = stringResource(R.string.note_title_hint),
+                                            style = TextStyle(
+                                                fontSize = 20.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
                         )
                     } else {
                         Text(
                             text = uiState.title.ifEmpty { stringResource(R.string.untitled_note) },
-                            maxLines = 1
+                            maxLines = 1,
+                            style = MaterialTheme.typography.titleLarge
                         )
                     }
                 },
@@ -114,6 +155,27 @@ fun NoteDetailScreen(
                     }
                 },
                 actions = {
+                    // AI 撰写按钮（仅在编辑模式显示）
+                    if (uiState.isEditing) {
+                        IconButton(
+                            onClick = { showAIWriteDialog = true },
+                            enabled = !uiState.aiWriteLoading
+                        ) {
+                            if (uiState.aiWriteLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.padding(8.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "AI 撰写",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                    
                     if (uiState.isEditing) {
                         IconButton(onClick = { viewModel.saveNote() }) {
                             Icon(
@@ -247,20 +309,37 @@ fun NoteDetailScreen(
                             onAttachmentClick = { /* TODO: 打开文件选择器 */ }
                         )
                         
-                        // 文本编辑器
+                        // 优化后的文本编辑器 - 更简洁的样式
                         OutlinedTextField(
                             value = uiState.content,
                             onValueChange = { viewModel.updateContent(it) },
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(16.dp),
-                            placeholder = { Text(stringResource(R.string.note_content_hint)) }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            placeholder = { 
+                                Text(
+                                    text = stringResource(R.string.note_content_hint),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                ) 
+                            },
+                            textStyle = TextStyle(
+                                fontSize = 16.sp,
+                                lineHeight = 24.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
                         )
                     }
                 } else {
                     // 查看模式：WebView 显示 HTML
                     NoteContentWebView(
-                        content = uiState.content,
+                        content = viewModel.getProcessedContent(),
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -372,6 +451,110 @@ fun NoteDetailScreen(
             }
         )
     }
+    
+    // AI 撰写对话框
+    if (showAIWriteDialog) {
+        var aiPrompt by remember { mutableStateOf("") }
+        
+        AlertDialog(
+            onDismissRequest = { 
+                if (!uiState.aiWriteLoading) {
+                    showAIWriteDialog = false
+                    viewModel.clearAiWriteError()
+                }
+            },
+            title = { 
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("AI 撰写")
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "描述你想要撰写的内容，AI 将为你生成 Markdown 格式的文本",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    
+                    OutlinedTextField(
+                        value = aiPrompt,
+                        onValueChange = { aiPrompt = it },
+                        label = { Text("撰写需求") },
+                        placeholder = { Text("例如：写一篇关于时间管理的文章") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        enabled = !uiState.aiWriteLoading,
+                        maxLines = 5
+                    )
+                    
+                    if (uiState.aiWriteError != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = uiState.aiWriteError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    
+                    if (uiState.aiWriteLoading) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.padding(end = 8.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                text = "AI 正在撰写...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.aiWrite(aiPrompt)
+                        // 成功后关闭对话框（在 ViewModel 中处理）
+                    },
+                    enabled = !uiState.aiWriteLoading && aiPrompt.isNotBlank()
+                ) {
+                    Text("生成")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { 
+                        showAIWriteDialog = false
+                        viewModel.clearAiWriteError()
+                    },
+                    enabled = !uiState.aiWriteLoading
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+        
+        // AI 撰写成功后关闭对话框
+        LaunchedEffect(uiState.aiWriteLoading, uiState.aiWriteError) {
+            if (!uiState.aiWriteLoading && uiState.aiWriteError == null && aiPrompt.isNotBlank()) {
+                // 检查内容是否已更新（表示撰写成功）
+                showAIWriteDialog = false
+            }
+        }
+    }
 }
 
 /**
@@ -430,8 +613,8 @@ private fun wrapContentInHtml(content: String): String {
                         color: #333;
                     }
                     img { max-width: 100%; height: auto; }
-                    pre { background: #f5f5f5; padding: 12px; overflow-x: auto; }
-                    code { background: #f5f5f5; padding: 2px 4px; }
+                    pre { background: #f5f5f5; padding: 12px; overflow-x: auto; border-radius: 4px; }
+                    code { background: #f5f5f5; padding: 2px 4px; border-radius: 2px; }
                     blockquote { border-left: 4px solid #ddd; margin: 0; padding-left: 16px; color: #666; }
                     a { color: #1976d2; }
                     table { border-collapse: collapse; width: 100%; }
@@ -446,12 +629,8 @@ private fun wrapContentInHtml(content: String): String {
         """.trimIndent()
     }
     
-    // 纯文本，转换换行符
-    val escapedContent = content
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\n", "<br>")
+    // Markdown 内容，转换为 HTML
+    val htmlContent = markdownToHtml(content)
     
     return """
         <!DOCTYPE html>
@@ -467,13 +646,180 @@ private fun wrapContentInHtml(content: String): String {
                     padding: 16px;
                     color: #333;
                 }
+                img { max-width: 100%; height: auto; border-radius: 4px; }
+                pre { background: #f5f5f5; padding: 12px; overflow-x: auto; border-radius: 4px; }
+                code { background: #f5f5f5; padding: 2px 4px; border-radius: 2px; font-family: monospace; }
+                blockquote { border-left: 4px solid #ddd; margin: 0; padding-left: 16px; color: #666; }
+                a { color: #1976d2; }
+                table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th { background: #f5f5f5; }
+                h1, h2, h3, h4, h5, h6 { margin-top: 24px; margin-bottom: 16px; }
+                ul, ol { padding-left: 24px; }
+                li { margin: 4px 0; }
+                hr { border: none; border-top: 1px solid #ddd; margin: 24px 0; }
+                .task-list-item { list-style: none; margin-left: -24px; }
+                .task-list-item input { margin-right: 8px; }
+                .image-error { 
+                    display: inline-block; 
+                    padding: 8px 12px; 
+                    background: #fff2f0; 
+                    border: 1px solid #ffccc7;
+                    border-radius: 4px;
+                    color: #ff4d4f;
+                    font-size: 12px;
+                }
             </style>
         </head>
         <body>
-            $escapedContent
+            $htmlContent
         </body>
         </html>
     """.trimIndent()
+}
+
+/**
+ * 简单的 Markdown 到 HTML 转换
+ * 支持基本的 Markdown 语法
+ */
+private fun markdownToHtml(markdown: String): String {
+    var html = markdown
+    
+    // 转义 HTML 特殊字符（但保留 Markdown 语法）
+    // 注意：这里不能直接转义，因为会影响 Markdown 解析
+    
+    // 代码块（需要先处理，避免内部内容被其他规则影响）
+    val codeBlockRegex = Regex("```(\\w*)\\n([\\s\\S]*?)```")
+    html = codeBlockRegex.replace(html) { match ->
+        val language = match.groupValues[1]
+        val code = match.groupValues[2]
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        "<pre><code class=\"language-$language\">$code</code></pre>"
+    }
+    
+    // 行内代码
+    val inlineCodeRegex = Regex("`([^`]+)`")
+    html = inlineCodeRegex.replace(html) { match ->
+        val code = match.groupValues[1]
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        "<code>$code</code>"
+    }
+    
+    // 图片 - 支持 resource:// 协议和普通 URL
+    val imageRegex = Regex("!\\[([^\\]]*)\\]\\(([^)]+)\\)")
+    html = imageRegex.replace(html) { match ->
+        val alt = match.groupValues[1]
+        val src = match.groupValues[2]
+        
+        if (src.startsWith("resource://")) {
+            // resource:// 协议的图片（未能加载）显示占位符
+            "<span class=\"image-error\">📷 图片: $alt (资源未同步)</span>"
+        } else {
+            // 普通 URL 或 data URI
+            "<img src=\"$src\" alt=\"$alt\" />"
+        }
+    }
+    
+    // 链接
+    val linkRegex = Regex("\\[([^\\]]+)\\]\\(([^)]+)\\)")
+    html = linkRegex.replace(html) { match ->
+        val text = match.groupValues[1]
+        val href = match.groupValues[2]
+        "<a href=\"$href\">$text</a>"
+    }
+    
+    // 标题
+    html = Regex("^###### (.+)$", RegexOption.MULTILINE).replace(html) { "<h6>${it.groupValues[1]}</h6>" }
+    html = Regex("^##### (.+)$", RegexOption.MULTILINE).replace(html) { "<h5>${it.groupValues[1]}</h5>" }
+    html = Regex("^#### (.+)$", RegexOption.MULTILINE).replace(html) { "<h4>${it.groupValues[1]}</h4>" }
+    html = Regex("^### (.+)$", RegexOption.MULTILINE).replace(html) { "<h3>${it.groupValues[1]}</h3>" }
+    html = Regex("^## (.+)$", RegexOption.MULTILINE).replace(html) { "<h2>${it.groupValues[1]}</h2>" }
+    html = Regex("^# (.+)$", RegexOption.MULTILINE).replace(html) { "<h1>${it.groupValues[1]}</h1>" }
+    
+    // 粗体和斜体
+    html = Regex("\\*\\*\\*(.+?)\\*\\*\\*").replace(html) { "<strong><em>${it.groupValues[1]}</em></strong>" }
+    html = Regex("\\*\\*(.+?)\\*\\*").replace(html) { "<strong>${it.groupValues[1]}</strong>" }
+    html = Regex("\\*(.+?)\\*").replace(html) { "<em>${it.groupValues[1]}</em>" }
+    
+    // 删除线
+    html = Regex("~~(.+?)~~").replace(html) { "<del>${it.groupValues[1]}</del>" }
+    
+    // 下划线
+    html = Regex("<u>(.+?)</u>").replace(html) { "<u>${it.groupValues[1]}</u>" }
+    
+    // 引用块
+    html = Regex("^> (.+)$", RegexOption.MULTILINE).replace(html) { "<blockquote>${it.groupValues[1]}</blockquote>" }
+    
+    // 水平线
+    html = Regex("^---$", RegexOption.MULTILINE).replace(html) { "<hr />" }
+    html = Regex("^\\*\\*\\*$", RegexOption.MULTILINE).replace(html) { "<hr />" }
+    
+    // 任务列表
+    html = Regex("^- \\[x\\] (.+)$", RegexOption.MULTILINE).replace(html) { 
+        "<li class=\"task-list-item\"><input type=\"checkbox\" checked disabled />${it.groupValues[1]}</li>" 
+    }
+    html = Regex("^- \\[ \\] (.+)$", RegexOption.MULTILINE).replace(html) { 
+        "<li class=\"task-list-item\"><input type=\"checkbox\" disabled />${it.groupValues[1]}</li>" 
+    }
+    
+    // 无序列表
+    html = Regex("^- (.+)$", RegexOption.MULTILINE).replace(html) { "<li>${it.groupValues[1]}</li>" }
+    html = Regex("^\\* (.+)$", RegexOption.MULTILINE).replace(html) { "<li>${it.groupValues[1]}</li>" }
+    
+    // 有序列表
+    html = Regex("^\\d+\\. (.+)$", RegexOption.MULTILINE).replace(html) { "<li>${it.groupValues[1]}</li>" }
+    
+    // 包装连续的 li 标签
+    html = Regex("(<li[^>]*>.*?</li>\\n?)+").replace(html) { "<ul>${it.value}</ul>" }
+    
+    // 段落（将连续的非空行包装为段落）
+    val lines = html.split("\n")
+    val result = StringBuilder()
+    var inParagraph = false
+    
+    for (line in lines) {
+        val trimmedLine = line.trim()
+        
+        // 跳过已经是 HTML 标签的行
+        if (trimmedLine.startsWith("<h") || 
+            trimmedLine.startsWith("<ul") || 
+            trimmedLine.startsWith("<ol") ||
+            trimmedLine.startsWith("<li") ||
+            trimmedLine.startsWith("<pre") ||
+            trimmedLine.startsWith("<blockquote") ||
+            trimmedLine.startsWith("<hr") ||
+            trimmedLine.startsWith("</")) {
+            if (inParagraph) {
+                result.append("</p>\n")
+                inParagraph = false
+            }
+            result.append(line).append("\n")
+        } else if (trimmedLine.isEmpty()) {
+            if (inParagraph) {
+                result.append("</p>\n")
+                inParagraph = false
+            }
+            result.append("\n")
+        } else {
+            if (!inParagraph) {
+                result.append("<p>")
+                inParagraph = true
+            } else {
+                result.append("<br />")
+            }
+            result.append(trimmedLine)
+        }
+    }
+    
+    if (inParagraph) {
+        result.append("</p>")
+    }
+    
+    return result.toString()
 }
 
 /**

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Layout, message, Modal } from 'antd';
+import { Layout, message, Modal, Select, Radio, Space } from 'antd';
 import Sidebar from './components/Sidebar';
 import NoteList from './components/NoteList';
 import Editor from './components/Editor';
@@ -281,12 +281,6 @@ const App: React.FC = () => {
       }
       
       try {
-        console.log('Initializing sync service...', { 
-          enabled: syncConfig.enabled, 
-          url: syncConfig.url,
-          type: syncConfig.type 
-        });
-        
         const success = await syncApi.initialize({
           enabled: syncConfig.enabled,
           type: syncConfig.type,
@@ -311,16 +305,14 @@ const App: React.FC = () => {
           if (syncConfig.last_sync_time) {
             setLastSyncTime(syncConfig.last_sync_time);
           }
-          console.log('Sync service initialized successfully');
         } else {
           setSyncInitialized(false);
           setSyncStatus('error');
-          console.warn('Sync service initialization failed - server may be unreachable');
           // 不显示错误消息，因为这可能只是暂时的网络问题
           // 用户可以稍后手动点击同步按钮重试
         }
       } catch (error) {
-        console.error('Error initializing sync service:', error);
+        console.error('Error initializing sync service');
         setSyncInitialized(false);
         setSyncStatus('error');
       }
@@ -333,7 +325,6 @@ const App: React.FC = () => {
     const api = (window as any).electronAPI;
     if (api?.sync?.onLastSyncTimeUpdated) {
       api.sync.onLastSyncTimeUpdated((lastSyncTime: number) => {
-        console.log('Received lastSyncTime update:', lastSyncTime);
         setLastSyncTime(lastSyncTime);
         // 持久化到 syncConfig
         updateSyncConfig({ last_sync_time: lastSyncTime });
@@ -648,11 +639,54 @@ const App: React.FC = () => {
     }
   }, [filteredNotes, createNote]);
 
+  // 移动/复制笔记到文件夹的状态
+  const [moveNoteModalOpen, setMoveNoteModalOpen] = useState(false);
+  const [moveNoteId, setMoveNoteId] = useState<string | null>(null);
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
+  const [moveMode, setMoveMode] = useState<'move' | 'copy'>('move');
+
   // 移动笔记到文件夹
   const handleMoveToFolder = useCallback(async (noteId: string) => {
-    // 简单实现：显示文件夹选择提示
-    message.info('请在编辑器中修改笔记的文件夹');
+    setMoveNoteId(noteId);
+    setMoveTargetFolderId(null);
+    setMoveMode('move');
+    setMoveNoteModalOpen(true);
   }, []);
+
+  // 执行移动/复制操作
+  const handleConfirmMoveNote = useCallback(async () => {
+    if (!moveNoteId) return;
+    
+    try {
+      if (moveMode === 'move') {
+        // 移动：更新笔记的 folder_id
+        await updateNote(moveNoteId, { folder_id: moveTargetFolderId });
+        message.success('笔记已移动');
+      } else {
+        // 复制：创建新笔记
+        const noteToClone = notes.find(n => n.id === moveNoteId) || currentNote;
+        if (noteToClone) {
+          // 使用 notesApi 直接创建，可以指定 folder_id
+          await notesApi.create({
+            title: noteToClone.title + ' (副本)',
+            content: noteToClone.content,
+            folder_id: moveTargetFolderId,
+            is_pinned: false,
+            is_locked: false,
+            lock_password_hash: null,
+            tags: noteToClone.tags || [],
+          });
+          message.success('笔记已复制');
+        }
+      }
+      await refresh();
+    } catch (err) {
+      message.error('操作失败');
+    }
+    
+    setMoveNoteModalOpen(false);
+    setMoveNoteId(null);
+  }, [moveNoteId, moveTargetFolderId, moveMode, updateNote, notes, currentNote, refresh]);
 
   // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
   const computePasswordHash = async (password: string): Promise<string> => {
@@ -849,9 +883,20 @@ const App: React.FC = () => {
           setSyncProgress(null);  // 清除进度
           // 检查是否是密钥不匹配错误
           const keyMismatchError = result.errors.find(e => e.includes('key mismatch'));
+          // 检查是否是 token 过期错误
+          const tokenExpiredError = result.errors.find(e => 
+            e.includes('登录已过期') || 
+            e.includes('访问令牌无效') || 
+            e.includes('Token refresh failed')
+          );
           if (keyMismatchError) {
             message.error({
               content: '同步密钥不匹配，请导入正确的同步密钥后重试',
+              duration: 5,
+            });
+          } else if (tokenExpiredError) {
+            message.error({
+              content: '登录已过期，请在设置中重新登录同步服务器',
               duration: 5,
             });
           } else {
@@ -1158,6 +1203,58 @@ const App: React.FC = () => {
         onSelect={handleTemplateSelect}
       />
       <WelcomeGuide open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
+      
+      {/* 移动/复制笔记到文件夹 Modal */}
+      <Modal
+        title="移动/复制笔记"
+        open={moveNoteModalOpen}
+        onOk={handleConfirmMoveNote}
+        onCancel={() => setMoveNoteModalOpen(false)}
+        okText={moveMode === 'move' ? '移动' : '复制'}
+        cancelText="取消"
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <div>
+            <div style={{ marginBottom: 8, fontWeight: 500 }}>操作类型</div>
+            <Radio.Group value={moveMode} onChange={(e) => setMoveMode(e.target.value)}>
+              <Radio value="move">移动（原位置删除）</Radio>
+              <Radio value="copy">复制（保留原笔记）</Radio>
+            </Radio.Group>
+          </div>
+          <div>
+            <div style={{ marginBottom: 8, fontWeight: 500 }}>目标文件夹</div>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="选择目标文件夹"
+              value={moveTargetFolderId}
+              onChange={setMoveTargetFolderId}
+              allowClear
+              options={(() => {
+                // 构建带层级的文件夹选项
+                const buildFolderOptions = (parentId: string | null, level: number): { value: string | null; label: string }[] => {
+                  const children = folders.filter(f => f.parentId === parentId);
+                  const result: { value: string | null; label: string }[] = [];
+                  for (const folder of children) {
+                    const indent = '　'.repeat(level); // 使用全角空格缩进
+                    const prefix = level > 0 ? '└ ' : '';
+                    result.push({
+                      value: folder.id,
+                      label: `${indent}${prefix}📁 ${folder.name}`
+                    });
+                    // 递归添加子文件夹
+                    result.push(...buildFolderOptions(folder.id, level + 1));
+                  }
+                  return result;
+                };
+                return [
+                  { value: null, label: '📁 根目录（无文件夹）' },
+                  ...buildFolderOptions(null, 0)
+                ];
+              })()}
+            />
+          </div>
+        </Space>
+      </Modal>
     </Layout>
   );
 };

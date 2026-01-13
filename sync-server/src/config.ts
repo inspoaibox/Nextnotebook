@@ -59,7 +59,7 @@ export const config: Config = {
   jwtSecret: getOrGenerateSecret(process.env.JWT_SECRET, 'mucheng-sync-server-jwt-secret-change-in-production'),
   jwtRefreshSecret: getOrGenerateSecret(process.env.JWT_REFRESH_SECRET, 'mucheng-sync-server-refresh-secret-change-in-production'),
   accessTokenExpiresIn: parseInt(process.env.ACCESS_TOKEN_EXPIRES_IN || '3600', 10), // 1小时
-  refreshTokenExpiresIn: parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN || '604800', 10), // 7天
+  refreshTokenExpiresIn: parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN || '2592000', 10), // 30天（原7天太短）
   // 频率限制配置
   apiRateLimit: parseInt(process.env.API_RATE_LIMIT || '10000', 10),
   loginRateLimit: parseInt(process.env.LOGIN_RATE_LIMIT || '5', 10),

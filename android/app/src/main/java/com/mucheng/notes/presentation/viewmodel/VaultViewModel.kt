@@ -559,10 +559,24 @@ class VaultViewModel @Inject constructor(
                 entryType = payload.entryType,
                 folderId = payload.folderId,
                 favorite = payload.favorite,
+                notes = payload.notes,
                 username = payload.username,
                 password = payload.password,
                 totpSecrets = payload.totpSecrets,
                 uris = payload.uris,
+                cardHolderName = payload.cardHolderName,
+                cardNumber = payload.cardNumber,
+                cardBrand = payload.cardBrand,
+                cardExpMonth = payload.cardExpMonth,
+                cardExpYear = payload.cardExpYear,
+                cardCvv = payload.cardCvv,
+                identityTitle = payload.identityTitle,
+                identityFirstName = payload.identityFirstName,
+                identityLastName = payload.identityLastName,
+                identityEmail = payload.identityEmail,
+                identityPhone = payload.identityPhone,
+                identityAddress = payload.identityAddress,
+                customFields = payload.customFields,
                 updatedTime = this.updatedTime
             )
         } catch (e: Exception) {
@@ -576,10 +590,24 @@ class VaultViewModel @Inject constructor(
                 entryType = VaultEntryType.LOGIN,
                 folderId = null,
                 favorite = false,
+                notes = "",
                 username = "",
                 password = "",
                 totpSecrets = emptyList(),
                 uris = emptyList(),
+                cardHolderName = "",
+                cardNumber = "",
+                cardBrand = "",
+                cardExpMonth = "",
+                cardExpYear = "",
+                cardCvv = "",
+                identityTitle = "",
+                identityFirstName = "",
+                identityLastName = "",
+                identityEmail = "",
+                identityPhone = "",
+                identityAddress = "",
+                customFields = emptyList(),
                 updatedTime = this.updatedTime
             )
         }
@@ -614,10 +642,27 @@ data class VaultEntryItem(
     val entryType: VaultEntryType,
     val folderId: String?,
     val favorite: Boolean,
+    val notes: String,
     val username: String,
     val password: String,
     val totpSecrets: List<com.mucheng.notes.domain.model.payload.VaultTotp>,
     val uris: List<com.mucheng.notes.domain.model.payload.VaultUri>,
+    // 银行卡字段
+    val cardHolderName: String,
+    val cardNumber: String,
+    val cardBrand: String,
+    val cardExpMonth: String,
+    val cardExpYear: String,
+    val cardCvv: String,
+    // 身份字段
+    val identityTitle: String,
+    val identityFirstName: String,
+    val identityLastName: String,
+    val identityEmail: String,
+    val identityPhone: String,
+    val identityAddress: String,
+    // 自定义字段
+    val customFields: List<com.mucheng.notes.domain.model.payload.VaultCustomField>,
     val updatedTime: Long
 )
 

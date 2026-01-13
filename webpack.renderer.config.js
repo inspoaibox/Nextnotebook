@@ -100,6 +100,20 @@ module.exports = {
           from: path.resolve(__dirname, 'src/renderer/assets/tinymce/langs'),
           to: path.resolve(__dirname, 'dist/renderer/tinymce/langs'),
         },
+        // UEditor Plus 静态资源
+        {
+          from: path.resolve(__dirname, 'src/renderer/assets/ueditor-plus'),
+          to: path.resolve(__dirname, 'dist/renderer/ueditor-plus'),
+        },
+        // OpenMoji SVG 资源
+        {
+          from: path.resolve(__dirname, 'node_modules/openmoji/color/svg'),
+          to: path.resolve(__dirname, 'dist/renderer/openmoji/color'),
+        },
+        {
+          from: path.resolve(__dirname, 'node_modules/openmoji/black/svg'),
+          to: path.resolve(__dirname, 'dist/renderer/openmoji/black'),
+        },
       ],
     }),
   ],
@@ -134,6 +148,21 @@ module.exports = {
         // 中文语言包
         directory: path.join(__dirname, 'src/renderer/assets/tinymce/langs'),
         publicPath: '/tinymce/langs',
+      },
+      {
+        // UEditor Plus 静态资源
+        directory: path.join(__dirname, 'src/renderer/assets/ueditor-plus'),
+        publicPath: '/ueditor-plus',
+      },
+      {
+        // OpenMoji 彩色 SVG
+        directory: path.join(__dirname, 'node_modules/openmoji/color/svg'),
+        publicPath: '/openmoji/color',
+      },
+      {
+        // OpenMoji 黑白 SVG
+        directory: path.join(__dirname, 'node_modules/openmoji/black/svg'),
+        publicPath: '/openmoji/black',
       },
     ],
   },

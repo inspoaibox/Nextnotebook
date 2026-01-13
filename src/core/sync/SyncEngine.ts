@@ -418,65 +418,39 @@ export class SyncEngine {
     skipped?: boolean;
     error?: string;
   }> {
-    const localItem = this.itemsManager.getById(change.item_id);
+    // 使用包含已删除项的查询，确保能找到本地已存在的数据
+    const localItem = this.itemsManager.getByIdIncludeDeleted(change.item_id);
 
-    console.log(`[SyncEngine] Processing remote change: item_id=${change.item_id}, type=${change.type}, remote_hash=${change.content_hash}, deleted_time=${change.deleted_time}`);
-    if (localItem) {
-      console.log(`[SyncEngine] Local item exists: sync_status=${localItem.sync_status}, local_hash=${localItem.content_hash}, local_deleted_time=${localItem.deleted_time}`);
-    } else {
-      console.log(`[SyncEngine] No local item found`);
+    // 简化逻辑：远端标记删除，本地直接删除
+    if (change.deleted_time !== null) {
+      if (localItem) {
+        // 本地有数据，直接标记删除
+        this.itemsManager.markDeletedFromRemote(change.item_id, change.deleted_time);
+        console.log(`[SyncEngine] Marked local item ${change.item_id} as deleted from remote`);
+      }
+      // 本地没有数据，不需要处理（已删除的数据不需要创建）
+      return { success: true, conflict: false };
     }
 
-    // 如果本地已有该数据且状态为 clean，检查是否需要更新
-    if (localItem && localItem.sync_status === 'clean') {
-      // 检查内容哈希是否一致，且删除状态也一致，才跳过
-      const hashMatches = localItem.content_hash === change.content_hash;
-      const deletedStatusMatches = (localItem.deleted_time === null) === (change.deleted_time === null);
-      
-      if (hashMatches && deletedStatusMatches) {
-        console.log(`[SyncEngine] Skipping - hash matches and deleted status matches (no update needed)`);
+    // 以下处理非删除的变更
+    if (localItem && localItem.deleted_time === null && localItem.sync_status === 'clean') {
+      // 本地未删除且状态为 clean，检查是否需要更新
+      if (localItem.content_hash === change.content_hash) {
         return { success: true, conflict: false, skipped: true };
-      }
-      
-      // 哈希不同或删除状态不同，说明远端有更新，继续处理
-      if (!hashMatches) {
-        console.log(`[SyncEngine] Remote update detected for ${change.item_id}, local_hash=${localItem.content_hash}, remote_hash=${change.content_hash}`);
-      }
-      if (!deletedStatusMatches) {
-        console.log(`[SyncEngine] Remote deletion status changed for ${change.item_id}, local_deleted=${localItem.deleted_time}, remote_deleted=${change.deleted_time}`);
       }
     }
 
     // 检查是否有冲突
-    if (localItem && localItem.sync_status === 'modified') {
-      // 本地也有修改，产生冲突
+    if (localItem && localItem.deleted_time === null && localItem.sync_status === 'modified') {
       return this.handleConflict(localItem, change);
     }
 
     // 拉取远端完整数据
     const remoteItem = await this.adapter.getItem(change.item_id);
     if (!remoteItem) {
-      // 远端文件不存在的情况处理
-      if (localItem) {
-        // 本地已有数据，可能是：
-        // 1. 刚上传还没完全同步
-        // 2. 远端被删除了
-        if (localItem.sync_status === 'clean') {
-          // 本地是 clean 状态，可能是刚上传的，跳过
-          console.log(`Remote item ${change.item_id} not found, but local is clean, skipping`);
-          return { success: true, conflict: false };
-        }
-        // 其他情况记录警告但不报错
-        console.warn(`Remote item ${change.item_id} not found, local status: ${localItem.sync_status}`);
-        return { success: true, conflict: false };
-      }
-      // 本地没有，远端也没有，可能是已删除的变更记录，跳过
-      console.warn(`Remote item ${change.item_id} not found and no local copy, skipping`);
+      console.warn(`Remote item ${change.item_id} not found, skipping`);
       return { success: true, conflict: false };
     }
-
-    // 直接使用远端数据（不再需要解密）
-    const itemToSave = remoteItem;
 
     // 如果是资源类型，下载资源文件
     if (change.type === 'resource' && this.resourcesDir) {
@@ -486,18 +460,13 @@ export class SyncEngine {
         const resourceId = `${remoteItem.id}${ext}`;
         const resourceFilePath = path.join(this.resourcesDir, resourceId);
         
-        // 确保资源目录存在
         if (!fs.existsSync(this.resourcesDir)) {
           fs.mkdirSync(this.resourcesDir, { recursive: true });
         }
         
-        // 下载资源文件
         const fileData = await this.adapter.getResource(resourceId);
         if (fileData) {
           fs.writeFileSync(resourceFilePath, fileData);
-          console.log(`[SyncEngine] Downloaded resource file: ${resourceId}`);
-        } else {
-          console.warn(`[SyncEngine] Resource file not found on remote: ${resourceId}`);
         }
       } catch (resourceError) {
         console.error(`[SyncEngine] Error downloading resource file for ${change.item_id}:`, resourceError);
@@ -505,14 +474,10 @@ export class SyncEngine {
     }
 
     // 写入本地
-    if (localItem) {
-      // 更新现有记录（使用专门的同步更新方法，不改变 sync_status）
-      this.itemsManager.updateFromRemote(itemToSave);
-      console.log(`[SyncEngine] Updated local item ${change.item_id} from remote`);
+    if (localItem && localItem.deleted_time === null) {
+      this.itemsManager.updateFromRemote(remoteItem);
     } else {
-      // 创建新记录（使用远端的 ID）
-      this.itemsManager.createWithId(itemToSave);
-      console.log(`[SyncEngine] Created new local item ${change.item_id} from remote`);
+      this.itemsManager.createWithId(remoteItem);
     }
 
     return { success: true, conflict: false };

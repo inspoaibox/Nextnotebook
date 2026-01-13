@@ -34,7 +34,10 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
   
   const { messages, streaming, streamingContent, sendMessage } = useAIMessages(selectedConversationId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<any>(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const prevMessagesLengthRef = useRef(0);
 
   // 获取当前选中的对话
   const currentConversation = conversations.find(c => c.id === selectedConversationId);
@@ -68,10 +71,29 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
     }
   }, [selectedConversationId, updateConversation]);
 
-  // 滚动到底部
+  // 滚动到底部 - 只在发送新消息或流式输出时自动滚动
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingContent]);
+    // 检测是否有新消息（用户发送或 AI 回复完成）
+    const hasNewMessage = messages.length > prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = messages.length;
+    
+    // 只在以下情况自动滚动：
+    // 1. 有新消息且 shouldAutoScroll 为 true
+    // 2. 正在流式输出且 shouldAutoScroll 为 true
+    if (shouldAutoScroll && (hasNewMessage || streaming)) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, streamingContent, streaming, shouldAutoScroll]);
+
+  // 监听滚动事件，判断用户是否在查看历史记录
+  const handleScroll = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    
+    // 如果用户滚动到接近底部（距离底部 100px 以内），启用自动滚动
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    setShouldAutoScroll(isNearBottom);
+  }, []);
 
   // 创建新对话
   const handleNewConversation = async () => {
@@ -110,6 +132,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
     }
 
     setInputValue('');
+    setShouldAutoScroll(true); // 发送消息时启用自动滚动
     
     try {
       await sendMessage(
@@ -273,9 +296,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
             <Select
               value={currentModel}
               onChange={handleModelChange}
-              style={{ width: 180 }}
+              style={{ width: 200 }}
               size="small"
               placeholder="选择模型"
+              showSearch
+              optionFilterProp="label"
+              listHeight={300}
+              dropdownStyle={{ maxHeight: 400 }}
               options={allModels.map(m => ({
                 value: m.id,
                 label: `${m.name} (${m.channelName})`,
@@ -332,7 +359,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
           )}
 
           {/* 消息列表 */}
-          <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+          <div 
+            ref={messagesContainerRef}
+            onScroll={handleScroll}
+            style={{ flex: 1, overflow: 'auto', padding: 16 }}
+          >
             {!selectedConversationId && messages.length === 0 ? (
               <div style={{ textAlign: 'center', paddingTop: 100, color: '#888' }}>
                 <RobotOutlined style={{ fontSize: 48, marginBottom: 16, color: '#d9d9d9' }} />

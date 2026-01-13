@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Input, List, Typography, Tag, Empty, Dropdown, Button } from 'antd';
+import { Input, List, Typography, Empty, Dropdown, Button } from 'antd';
 import { 
   SearchOutlined, 
   LockOutlined,
@@ -19,7 +19,7 @@ import type { MenuProps } from 'antd';
 import { Note } from '../hooks/useNotes';
 
 const { Search } = Input;
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 interface NoteListProps {
   notes: Note[];
@@ -187,7 +187,7 @@ const NoteList: React.FC<NoteListProps> = ({
                       className={`note-list-item ${selectedNoteId === note.id ? 'selected' : ''}`}
                       onClick={() => onSelectNote(note.id)}
                       style={{
-                        padding: '10px 12px',
+                        padding: '8px 12px',
                         margin: '2px 6px',
                         cursor: 'pointer',
                         borderRadius: 6,
@@ -204,17 +204,6 @@ const NoteList: React.FC<NoteListProps> = ({
                           <Dropdown menu={{ items: getDropdownItems(note) }} trigger={['click']}>
                             <Button type="text" size="small" icon={<MoreOutlined />} onClick={(e: React.MouseEvent) => e.stopPropagation()} style={{ opacity: 0.5 }} />
                           </Dropdown>
-                        </div>
-                        <Paragraph ellipsis={{ rows: 1 }} style={{ margin: '4px 0 6px', color: '#8c8c8c', fontSize: 12, lineHeight: 1.4 }}>
-                          {searchText ? highlightText(note.content.substring(0, 80) || '空笔记', searchText) : (note.content.substring(0, 80) || '空笔记')}
-                        </Paragraph>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Text type="secondary" style={{ fontSize: 11 }}>{formatDate(note.updatedAt)}</Text>
-                          <div>
-                            {note.tags.slice(0, 2).map((tag: string) => (
-                              <Tag key={tag} style={{ fontSize: 10, marginRight: 2, padding: '0 4px', lineHeight: '16px' }}>{tag}</Tag>
-                            ))}
-                          </div>
                         </div>
                       </div>
                     </List.Item>

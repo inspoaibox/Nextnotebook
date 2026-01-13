@@ -312,6 +312,12 @@ export function useAIMessages(conversationId: string | null) {
     }
   }, [conversationId]);
 
+  // 当 conversationId 改变时，重置 streaming 状态
+  useEffect(() => {
+    setStreaming(false);
+    setStreamingContent('');
+  }, [conversationId]);
+
   useEffect(() => {
     loadMessages();
   }, [loadMessages]);

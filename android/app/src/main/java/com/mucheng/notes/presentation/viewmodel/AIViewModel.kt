@@ -79,6 +79,8 @@ class AIViewModel @Inject constructor(
         .map { items -> items.mapNotNull { it.toConversationItem() } }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     
+    private var _pendingConversation: ConversationItem? = null
+
     val messages: StateFlow<List<MessageItem>> = itemRepository.getByType(ItemType.AI_MESSAGE)
         .map { items -> items.mapNotNull { it.toMessageItem() } }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -209,6 +211,33 @@ class AIViewModel @Inject constructor(
         }
     }
     
+
+    fun updateSettings(conversationId: String, model: String, systemPrompt: String, temperature: Float, maxTokens: Int) {
+        viewModelScope.launch {
+            val item = itemRepository.getById(conversationId) ?: return@launch
+            try {
+                val payloadData = json.decodeFromString<AIConversationPayload>(item.payload)
+                val updatedPayload = payloadData.copy(
+                    model = model,
+                    systemPrompt = systemPrompt,
+                    temperature = temperature,
+                    maxTokens = maxTokens
+                )
+                itemRepository.update(conversationId, json.encodeToString(updatedPayload))
+                if (_pendingConversation?.id == conversationId) {
+                    _pendingConversation = _pendingConversation?.copy(
+                        model = model,
+                        systemPrompt = systemPrompt,
+                        temperature = temperature,
+                        maxTokens = maxTokens
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "更新设置失败: ${e.message}")
+            }
+        }
+    }
+
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }

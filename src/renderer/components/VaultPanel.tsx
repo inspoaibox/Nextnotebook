@@ -616,15 +616,84 @@ const VaultPanel: React.FC = () => {
   const [newFolderName, setNewFolderName] = useState('');
   const [viewMode, setViewMode] = useState<'normal' | 'generator'>('normal');
 
-  const { folders, createFolder, deleteFolder } = useVaultFolders();
+  // 文件夹右键菜单状态
+  const [folderContextMenu, setFolderContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    folderId: string | null;
+  }>({ visible: false, x: 0, y: 0, folderId: null });
+  
+  // 文件夹重命名状态
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renamingFolderName, setRenamingFolderName] = useState('');
+
+  const { folders, createFolder, updateFolder, deleteFolder } = useVaultFolders();
   const { entries, createEntry, updateEntry, deleteEntry, toggleFavorite, refresh } = useVaultEntries(
     selectedFolderId === 'all' ? undefined : selectedFolderId
   );
+
+  // 获取所有条目（用于检查文件夹是否为空）
+  const { entries: allEntries } = useVaultEntries(undefined);
 
   // 表单状态
   const [form] = Form.useForm();
 
   const selectedEntry = entries.find(e => e.id === selectedEntryId);
+
+  // 关闭文件夹右键菜单
+  React.useEffect(() => {
+    const handleClick = () => setFolderContextMenu(prev => ({ ...prev, visible: false }));
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
+
+  // 处理文件夹右键点击
+  const handleFolderContextMenu = (e: React.MouseEvent, folderId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setFolderContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      folderId
+    });
+  };
+
+  // 开始重命名文件夹
+  const startRenameFolder = (folder: VaultFolder) => {
+    setRenamingFolderId(folder.id);
+    setRenamingFolderName(folder.name);
+    setFolderContextMenu(prev => ({ ...prev, visible: false }));
+  };
+
+  // 提交重命名
+  const submitRenameFolder = async () => {
+    if (renamingFolderId && renamingFolderName.trim()) {
+      await updateFolder(renamingFolderId, { name: renamingFolderName.trim() });
+      message.success('重命名成功');
+    }
+    setRenamingFolderId(null);
+  };
+
+  // 检查文件夹是否有条目
+  const folderHasEntries = (folderId: string): boolean => {
+    return allEntries.some(entry => entry.folderId === folderId);
+  };
+
+  // 删除文件夹（带验证）
+  const handleDeleteFolder = async (folderId: string) => {
+    if (folderHasEntries(folderId)) {
+      message.error('该文件夹下还有密码凭据，请先移动或删除这些凭据');
+      return;
+    }
+    await deleteFolder(folderId);
+    if (selectedFolderId === folderId) {
+      setSelectedFolderId(null);
+    }
+    message.success('文件夹已删除');
+    setFolderContextMenu(prev => ({ ...prev, visible: false }));
+  };
 
   // 过滤条目
   const filteredEntries = searchQuery
@@ -782,22 +851,84 @@ const VaultPanel: React.FC = () => {
                 <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => setFolderModalOpen(true)} style={{ color: '#6b7280' }} />
               </Tooltip>
             </div>
-            {folders.map(folder => (
-              <div
-                key={folder.id}
-                onClick={() => { setSelectedFolderId(folder.id); setSelectedEntryId(null); setViewMode('normal'); }}
-                className={`vault-nav-item ${selectedFolderId === folder.id && viewMode === 'normal' ? 'selected' : ''}`}
-              >
-                <FolderOutlined style={{ color: selectedFolderId === folder.id ? '#096dd9' : '#d1d5db' }} />
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder.name}</span>
-                <Popconfirm title="删除此文件夹？" onConfirm={() => deleteFolder(folder.id)}>
-                  <Button type="text" size="small" className="delete-btn" icon={<DeleteOutlined />} onClick={e => e.stopPropagation()} style={{ opacity: 0.5 }} />
-                </Popconfirm>
-              </div>
-            ))}
+            {folders.map(folder => {
+              const isRenaming = renamingFolderId === folder.id;
+              return (
+                <div
+                  key={folder.id}
+                  onClick={() => {
+                    if (!isRenaming) {
+                      setSelectedFolderId(folder.id);
+                      setSelectedEntryId(null);
+                      setViewMode('normal');
+                    }
+                  }}
+                  onContextMenu={(e) => handleFolderContextMenu(e, folder.id)}
+                  className={`vault-nav-item ${selectedFolderId === folder.id && viewMode === 'normal' ? 'selected' : ''}`}
+                >
+                  <FolderOutlined style={{ color: selectedFolderId === folder.id ? '#096dd9' : '#d1d5db' }} />
+                  {isRenaming ? (
+                    <Input
+                      value={renamingFolderName}
+                      onChange={e => setRenamingFolderName(e.target.value)}
+                      onBlur={submitRenameFolder}
+                      onPressEnter={submitRenameFolder}
+                      autoFocus
+                      size="small"
+                      onClick={e => e.stopPropagation()}
+                      style={{ flex: 1, height: 24, fontSize: 13 }}
+                    />
+                  ) : (
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder.name}</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </Sider>
+
+      {/* 文件夹右键菜单 */}
+      {folderContextMenu.visible && folderContextMenu.folderId && (
+        <div style={{
+          position: 'fixed',
+          top: folderContextMenu.y,
+          left: folderContextMenu.x,
+          background: '#fff',
+          borderRadius: 8,
+          boxShadow: '0 3px 12px rgba(0,0,0,0.15)',
+          zIndex: 1000,
+          padding: '4px 0',
+          minWidth: 140,
+          border: '1px solid #e5e7eb'
+        }}>
+          <div
+            onClick={() => {
+              const folder = folders.find(f => f.id === folderContextMenu.folderId);
+              if (folder) startRenameFolder(folder);
+            }}
+            style={{ padding: '8px 16px', cursor: 'pointer', fontSize: 13, color: '#333', display: 'flex', alignItems: 'center', gap: 8 }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+          >
+            <EditOutlined /> 重命名
+          </div>
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              const folderId = folderContextMenu.folderId;
+              if (folderId) {
+                handleDeleteFolder(folderId);
+              }
+            }}
+            style={{ padding: '8px 16px', cursor: 'pointer', fontSize: 13, color: '#ff4d4f', display: 'flex', alignItems: 'center', gap: 8 }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#fff1f0')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+          >
+            <DeleteOutlined /> 删除文件夹
+          </div>
+        </div>
+      )}
 
       {/* 生成器视图或普通视图 */}
       {viewMode === 'generator' ? (

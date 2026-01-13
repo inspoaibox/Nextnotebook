@@ -18,6 +18,8 @@ import {
   LinkOutlined,
   SyncOutlined,
   NodeIndexOutlined,
+  RightOutlined,
+  DownOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Folder } from '../hooks/useFolders';
@@ -82,7 +84,21 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [renameFolderModalOpen, setRenameFolderModalOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
   const [renameFolderName, setRenameFolderName] = useState('');
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
+  // 切换文件夹展开/折叠状态
+  const toggleFolderExpand = (folderId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
   // 目录右键菜单
   const getFolderContextMenu = (folder: Folder): MenuProps['items'] => [
     {
@@ -148,34 +164,54 @@ const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   // 递归构建子目录
-  const buildSubFolderItems = (parentId: string): MenuProps['items'] => {
+  const buildSubFolderItems = (parentId: string, level: number = 1): MenuProps['items'] => {
     const childFolders = folders.filter(f => f.parentId === parentId);
     
     if (childFolders.length === 0) {
-      return undefined;
+      return [];
     }
 
-    return childFolders.map(folder => {
-      const subFolders = buildSubFolderItems(folder.id);
+    const items: MenuProps['items'] = [];
+    // 计算缩进：每级增加 16px
+    const indentPadding = level * 16;
+    
+    childFolders.forEach(folder => {
+      const hasChildren = folders.some(f => f.parentId === folder.id);
+      const isExpanded = expandedFolders.has(folder.id);
       const isSelected = selectedFolderId === folder.id;
 
-      const item: any = {
+      items.push({
         key: `folder-${folder.id}`,
-        icon: isSelected ? <FolderOpenOutlined style={{ color: folder.color || '#1890ff' }} /> : <FolderOutlined style={{ color: folder.color || undefined }} />,
         label: (
           <Dropdown menu={{ items: getFolderContextMenu(folder) }} trigger={['contextMenu']}>
-            <span style={{ display: 'block' }}>{folder.name}</span>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingLeft: indentPadding }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, overflow: 'hidden' }}>
+                {isSelected ? <FolderOpenOutlined style={{ color: folder.color || '#1890ff' }} /> : <FolderOutlined style={{ color: folder.color || undefined }} />}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder.name}</span>
+              </span>
+              {hasChildren && (
+                <span 
+                  onClick={(e) => toggleFolderExpand(folder.id, e)}
+                  style={{ padding: '0 4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                >
+                  {isExpanded ? <DownOutlined style={{ fontSize: 10 }} /> : <RightOutlined style={{ fontSize: 10 }} />}
+                </span>
+              )}
+            </span>
           </Dropdown>
         ),
-      };
+      });
 
-      // 只有当有子目录时才添加 children 属性
-      if (subFolders && subFolders.length > 0) {
-        item.children = subFolders;
+      // 如果展开了，添加子目录
+      if (hasChildren && isExpanded) {
+        const subItems = buildSubFolderItems(folder.id, level + 1);
+        if (subItems) {
+          items.push(...subItems);
+        }
       }
-
-      return item;
     });
+
+    return items;
   };
 
   // 获取一级目录
@@ -194,27 +230,43 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // 构建一级目录列表
   const buildRootFolderItems = (): MenuProps['items'] => {
-    return rootFolders.map(folder => {
-      const subFolders = buildSubFolderItems(folder.id);
+    const items: MenuProps['items'] = [];
+    
+    rootFolders.forEach(folder => {
+      const hasChildren = folders.some(f => f.parentId === folder.id);
+      const isExpanded = expandedFolders.has(folder.id);
       const isSelected = selectedFolderId === folder.id;
 
-      const item: any = {
+      items.push({
         key: `folder-${folder.id}`,
         icon: isSelected ? <FolderOpenOutlined style={{ color: folder.color || '#1890ff' }} /> : <FolderOutlined style={{ color: folder.color || undefined }} />,
         label: (
           <Dropdown menu={{ items: getFolderContextMenu(folder) }} trigger={['contextMenu']}>
-            <span style={{ display: 'block' }}>{folder.name}</span>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder.name}</span>
+              {hasChildren && (
+                <span 
+                  onClick={(e) => toggleFolderExpand(folder.id, e)}
+                  style={{ padding: '0 4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                >
+                  {isExpanded ? <DownOutlined style={{ fontSize: 10 }} /> : <RightOutlined style={{ fontSize: 10 }} />}
+                </span>
+              )}
+            </span>
           </Dropdown>
         ),
-      };
+      });
 
-      // 只有当有子目录时才添加 children 属性
-      if (subFolders && subFolders.length > 0) {
-        item.children = subFolders;
+      // 如果展开了，添加子目录
+      if (hasChildren && isExpanded) {
+        const subItems = buildSubFolderItems(folder.id, 1);
+        if (subItems) {
+          items.push(...subItems);
+        }
       }
-
-      return item;
     });
+
+    return items;
   };
 
   // 构建菜单项
@@ -330,17 +382,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     return ['all'];
   };
 
-  // 获取所有需要展开的目录 key（包括有子目录的目录和标签组）
+  // 获取所有需要展开的目录 key（标签组）
   const getDefaultOpenKeys = () => {
     const openKeys: string[] = [];
-    
-    // 展开所有有子目录的目录
-    folders.forEach(folder => {
-      const hasChildren = folders.some(f => f.parentId === folder.id);
-      if (hasChildren) {
-        openKeys.push(`folder-${folder.id}`);
-      }
-    });
     
     // 展开标签组
     if (tags.length > 0) {

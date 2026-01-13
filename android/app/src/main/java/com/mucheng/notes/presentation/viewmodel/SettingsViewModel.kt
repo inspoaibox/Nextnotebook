@@ -356,6 +356,10 @@ class SettingsViewModel @Inject constructor(
                     .putString(KEY_SERVER_TOKEN, result.accessToken)
                     .putString(KEY_SERVER_REFRESH_TOKEN, result.refreshToken)
                     .putLong(KEY_SERVER_TOKEN_EXPIRES, System.currentTimeMillis() + (result.expiresIn ?: 3600) * 1000L)
+                    // 保存凭据用于自动重新登录
+                    .putString("server_username", username)
+                    .putString("server_password", password)
+                    .putString("server_sync_key", syncKey)
                     .apply()
                 
                 _uiState.update { it.copy(
@@ -436,11 +440,14 @@ class SettingsViewModel @Inject constructor(
                 }
             }
             
-            // 清除本地 token
+            // 清除本地 token 和保存的凭据
             prefs.edit()
                 .remove(KEY_SERVER_TOKEN)
                 .remove(KEY_SERVER_REFRESH_TOKEN)
                 .remove(KEY_SERVER_TOKEN_EXPIRES)
+                .remove("server_username")
+                .remove("server_password")
+                .remove("server_sync_key")
                 .apply()
             
             _uiState.update { it.copy(
@@ -881,6 +888,8 @@ class SettingsViewModel @Inject constructor(
     
     /**
      * 从数据库加载 AI 配置（同步后调用）
+     * 注意：只加载 AI 渠道配置，不覆盖功能模块开关（aiEnabled）
+     * 功能模块开关是本地设置，不应该被同步数据覆盖
      */
     suspend fun loadAiConfigFromDb() {
         try {
@@ -893,21 +902,20 @@ class SettingsViewModel @Inject constructor(
             if (items.isNotEmpty()) {
                 val payload = aiConfigJson.decodeFromString<com.mucheng.notes.domain.model.payload.AIConfigPayload>(items[0].payload)
                 
-                // 更新 SharedPreferences
+                // 更新 SharedPreferences（不更新 aiEnabled，保持本地设置）
                 val channelsJsonStr = aiConfigJson.encodeToString(
                     kotlinx.serialization.builtins.ListSerializer(com.mucheng.notes.domain.model.payload.AIChannel.serializer()),
                     payload.channels
                 )
                 prefs.edit()
-                    .putBoolean(KEY_AI_ENABLED, payload.enabled)
+                    // 不覆盖 KEY_AI_ENABLED，保持用户本地设置
                     .putString(KEY_AI_DEFAULT_CHANNEL, payload.defaultChannel)
                     .putString(KEY_AI_DEFAULT_MODEL, payload.defaultModel)
                     .putString(KEY_AI_CHANNELS_JSON, channelsJsonStr)
                     .apply()
                 
-                // 更新 UI 状态
+                // 更新 UI 状态（不更新 aiEnabled）
                 _uiState.update { it.copy(
-                    aiEnabled = payload.enabled,
                     aiDefaultChannel = payload.defaultChannel,
                     aiDefaultModel = payload.defaultModel,
                     aiChannelsJson = channelsJsonStr

@@ -2,7 +2,12 @@ package com.mucheng.notes.data.remote
 
 import com.mucheng.notes.data.local.entity.ItemEntity
 import com.mucheng.notes.domain.model.SyncConfig
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -82,15 +87,56 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
     
     // Token 刷新回调
     var onTokenRefresh: ((String, String, Int) -> Unit)? = null
+    
+    // 重新登录回调（当 refresh token 也过期时触发）
+    var onReloginRequired: (() -> Unit)? = null
+    
+    // 保存的登录凭据（用于自动重新登录）
+    private var savedCredentials: Triple<String, String, String>? = null
+    
+    // 并发刷新保护
+    private var refreshJob: Deferred<Boolean>? = null
+    private val refreshMutex = Mutex()
 
     /**
      * 初始化服务器连接
+     * 会自动检查并刷新即将过期的 token
      */
-    fun initialize(syncConfig: SyncConfig) {
+    suspend fun initialize(syncConfig: SyncConfig) {
         config = syncConfig
         accessToken = syncConfig.serverToken
         refreshToken = syncConfig.serverRefreshToken
         tokenExpires = syncConfig.serverTokenExpires
+        
+        // 主动检查 token 是否过期或即将过期
+        if (accessToken != null && refreshToken != null) {
+            val now = System.currentTimeMillis()
+            val expires = tokenExpires ?: 0L
+            
+            if (expires <= now) {
+                // Token 已过期，立即刷新
+                android.util.Log.i("ServerAdapter", "Token expired, refreshing on init...")
+                safeRefreshToken()
+            } else if (expires - now < 5 * 60 * 1000) {
+                // Token 即将过期（5分钟内），提前刷新
+                android.util.Log.i("ServerAdapter", "Token expiring soon, refreshing on init...")
+                safeRefreshToken()
+            }
+        }
+    }
+    
+    /**
+     * 保存登录凭据（用于自动重新登录）
+     */
+    fun saveCredentials(username: String, password: String, syncKey: String) {
+        savedCredentials = Triple(username, password, syncKey)
+    }
+    
+    /**
+     * 清除保存的凭据
+     */
+    fun clearCredentials() {
+        savedCredentials = null
     }
     
     private fun getConfig(): SyncConfig {
@@ -183,10 +229,14 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
     }
     
     /**
-     * 刷新 Token
+     * 刷新 Token（内部实现）
      */
-    suspend fun refreshAccessToken(): Boolean = withContext(Dispatchers.IO) {
-        val currentRefreshToken = refreshToken ?: return@withContext false
+    private suspend fun doRefreshAccessToken(): Boolean = withContext(Dispatchers.IO) {
+        val currentRefreshToken = refreshToken
+        if (currentRefreshToken == null) {
+            // 没有 refresh token，尝试自动重新登录
+            return@withContext tryAutoRelogin()
+        }
         
         try {
             val url = "${getBaseUrl()}/api/auth/refresh"
@@ -214,9 +264,81 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
                     return@withContext true
                 }
             }
-            false
+            
+            // refresh token 无效或过期，尝试自动重新登录
+            android.util.Log.w("ServerAdapter", "Refresh token invalid, trying auto relogin...")
+            return@withContext tryAutoRelogin()
         } catch (e: Exception) {
             android.util.Log.e("ServerAdapter", "Token refresh failed: ${e.message}")
+            // 尝试自动重新登录
+            return@withContext tryAutoRelogin()
+        }
+    }
+    
+    /**
+     * 安全的 token 刷新方法，防止并发刷新
+     */
+    suspend fun safeRefreshToken(): Boolean {
+        return refreshMutex.withLock {
+            // 如果已经有刷新请求在进行中，等待它完成
+            refreshJob?.let { job ->
+                if (job.isActive) {
+                    return@withLock job.await()
+                }
+            }
+            
+            // 创建新的刷新请求
+            val newJob = kotlinx.coroutines.coroutineScope {
+                async(Dispatchers.IO) {
+                    doRefreshAccessToken()
+                }
+            }
+            refreshJob = newJob
+            
+            try {
+                newJob.await()
+            } finally {
+                if (refreshJob == newJob) {
+                    refreshJob = null
+                }
+            }
+        }
+    }
+    
+    /**
+     * 刷新 Token（公开方法，使用并发保护）
+     */
+    suspend fun refreshAccessToken(): Boolean = safeRefreshToken()
+    
+    /**
+     * 尝试自动重新登录
+     */
+    private suspend fun tryAutoRelogin(): Boolean {
+        val credentials = savedCredentials
+        if (credentials == null) {
+            // 没有保存的凭据，通知需要重新登录
+            android.util.Log.w("ServerAdapter", "No saved credentials, relogin required")
+            onReloginRequired?.invoke()
+            return false
+        }
+        
+        return try {
+            android.util.Log.i("ServerAdapter", "Attempting auto relogin...")
+            val (username, password, syncKey) = credentials
+            val result = login(username, password, syncKey)
+            
+            if (result.success) {
+                android.util.Log.i("ServerAdapter", "Auto relogin successful")
+                true
+            } else {
+                android.util.Log.e("ServerAdapter", "Auto relogin failed: ${result.message}")
+                // 登录失败，通知需要重新登录
+                onReloginRequired?.invoke()
+                false
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ServerAdapter", "Auto relogin error: ${e.message}")
+            onReloginRequired?.invoke()
             false
         }
     }
@@ -291,9 +413,9 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
         retry: Boolean = true,
         parser: (String) -> T
     ): T? = withContext(Dispatchers.IO) {
-        // 检查 token 是否即将过期，提前刷新
+        // 检查 token 是否即将过期，提前刷新（使用并发保护）
         if (isTokenExpiringSoon() && refreshToken != null) {
-            refreshAccessToken()
+            safeRefreshToken()
         }
         
         val url = "${getBaseUrl()}$path"
@@ -319,14 +441,14 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             android.util.Log.d("ServerAdapter", "Request: $method $url, hasToken=${token != null}")
             val response = client.newCall(requestBuilder.build()).execute()
             
-            // 处理 401 错误，尝试刷新 token
+            // 处理 401 错误，尝试刷新 token（使用并发保护）
             if (response.code == 401 && retry && refreshToken != null) {
                 android.util.Log.w("ServerAdapter", "Got 401, attempting token refresh")
-                val refreshed = refreshAccessToken()
+                val refreshed = safeRefreshToken()
                 if (refreshed) {
                     return@withContext request(method, path, body, false, parser)
                 }
-                android.util.Log.e("ServerAdapter", "Token refresh failed")
+                android.util.Log.e("ServerAdapter", "Token refresh failed, relogin may be required")
             }
             
             if (response.isSuccessful) {

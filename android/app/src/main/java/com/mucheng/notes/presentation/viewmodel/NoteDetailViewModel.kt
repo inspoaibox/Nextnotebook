@@ -1,12 +1,19 @@
 package com.mucheng.notes.presentation.viewmodel
 
+import android.content.Context
+import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mucheng.notes.data.remote.AIApiClient
+import com.mucheng.notes.data.remote.ChatMessage
+import com.mucheng.notes.data.sync.ResourceSyncManager
 import com.mucheng.notes.domain.model.ItemType
+import com.mucheng.notes.domain.model.payload.AIChannel
 import com.mucheng.notes.domain.model.payload.NotePayload
 import com.mucheng.notes.domain.repository.ItemRepository
 import com.mucheng.notes.security.CryptoEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +21,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.File
 import javax.inject.Inject
 
 /**
@@ -32,7 +40,12 @@ data class NoteDetailUiState(
     val isEditing: Boolean = false,
     val hasChanges: Boolean = false,
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    // AI 撰写状态
+    val aiWriteLoading: Boolean = false,
+    val aiWriteError: String? = null,
+    // 资源图片缓存 (resourceId -> base64 data URI)
+    val resourceImages: Map<String, String> = emptyMap()
 )
 
 /**
@@ -40,8 +53,11 @@ data class NoteDetailUiState(
  */
 @HiltViewModel
 class NoteDetailViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val itemRepository: ItemRepository,
-    private val cryptoEngine: CryptoEngine
+    private val cryptoEngine: CryptoEngine,
+    private val aiApiClient: AIApiClient,
+    private val resourceSyncManager: ResourceSyncManager
 ) : ViewModel() {
     
     private val json = Json { 
@@ -49,6 +65,8 @@ class NoteDetailViewModel @Inject constructor(
         isLenient = true
         coerceInputValues = true
     }
+    
+    private val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
     
     private val _uiState = MutableStateFlow(NoteDetailUiState())
     val uiState: StateFlow<NoteDetailUiState> = _uiState.asStateFlow()
@@ -87,6 +105,9 @@ class NoteDetailViewModel @Inject constructor(
                             isLoading = false
                         )
                     }
+                    
+                    // 加载内容中的资源图片
+                    loadResourceImages(payload.content)
                 } else {
                     _uiState.update {
                         it.copy(
@@ -105,7 +126,6 @@ class NoteDetailViewModel @Inject constructor(
             }
         }
     }
-    
     /**
      * 创建新笔记
      */
@@ -357,5 +377,200 @@ class NoteDetailViewModel @Inject constructor(
             "$currentContent\n$prefix"
         }
         updateContent(newContent)
+    }
+    
+    /**
+     * AI 撰写功能
+     * 使用设置中配置的默认模型生成内容
+     */
+    fun aiWrite(prompt: String) {
+        if (prompt.isBlank()) {
+            _uiState.update { it.copy(aiWriteError = "请输入撰写需求") }
+            return
+        }
+        
+        viewModelScope.launch {
+            _uiState.update { it.copy(aiWriteLoading = true, aiWriteError = null) }
+            
+            try {
+                // 从设置中获取 AI 配置
+                val channelsJson = prefs.getString("ai_channels_json", "") ?: ""
+                val defaultModel = prefs.getString("ai_default_model", "") ?: ""
+                
+                if (channelsJson.isBlank()) {
+                    _uiState.update { it.copy(
+                        aiWriteLoading = false,
+                        aiWriteError = "请先在设置中配置 AI 渠道"
+                    ) }
+                    return@launch
+                }
+                
+                // 解析渠道配置
+                val channels = try {
+                    json.decodeFromString<List<AIChannel>>(channelsJson)
+                } catch (e: Exception) {
+                    _uiState.update { it.copy(
+                        aiWriteLoading = false,
+                        aiWriteError = "AI 配置解析失败"
+                    ) }
+                    return@launch
+                }
+                
+                // 找到启用的渠道
+                val enabledChannels = channels.filter { it.enabled && it.apiKey.isNotBlank() }
+                if (enabledChannels.isEmpty()) {
+                    _uiState.update { it.copy(
+                        aiWriteLoading = false,
+                        aiWriteError = "请先在设置中配置 AI 渠道和 API Key"
+                    ) }
+                    return@launch
+                }
+                
+                // 找到默认模型所在的渠道
+                var targetChannel = enabledChannels.first()
+                var targetModel = defaultModel
+                
+                if (targetModel.isNotBlank()) {
+                    for (channel in enabledChannels) {
+                        val model = channel.models.find { it.id == targetModel }
+                        if (model != null) {
+                            targetChannel = channel
+                            break
+                        }
+                    }
+                }
+                
+                // 如果没有默认模型，使用第一个渠道的第一个模型
+                if (targetModel.isBlank() && targetChannel.models.isNotEmpty()) {
+                    targetModel = targetChannel.models.first().id
+                }
+                
+                if (targetModel.isBlank()) {
+                    _uiState.update { it.copy(
+                        aiWriteLoading = false,
+                        aiWriteError = "请先在设置中配置 AI 模型"
+                    ) }
+                    return@launch
+                }
+                
+                // 调用 AI API
+                val messages = listOf(
+                    ChatMessage("system", "你是一个专业的写作助手。请根据用户的需求撰写内容，输出格式为 Markdown。"),
+                    ChatMessage("user", prompt)
+                )
+                
+                val responseBuilder = StringBuilder()
+                aiApiClient.streamChat(
+                    channel = targetChannel,
+                    model = targetModel,
+                    messages = messages,
+                    temperature = 0.7f,
+                    maxTokens = 4096
+                ).collect { chunk ->
+                    responseBuilder.append(chunk)
+                }
+                
+                val response = responseBuilder.toString()
+                if (response.isNotBlank()) {
+                    // 将 AI 生成的内容插入到编辑器
+                    val currentContent = _uiState.value.content
+                    val newContent = if (currentContent.isEmpty()) {
+                        response
+                    } else {
+                        "$currentContent\n\n$response"
+                    }
+                    updateContent(newContent)
+                }
+                
+                _uiState.update { it.copy(aiWriteLoading = false) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(
+                    aiWriteLoading = false,
+                    aiWriteError = "AI 撰写失败: ${e.message ?: "未知错误"}"
+                ) }
+            }
+        }
+    }
+    
+    /**
+     * 清除 AI 撰写错误
+     */
+    fun clearAiWriteError() {
+        _uiState.update { it.copy(aiWriteError = null) }
+    }
+    
+    /**
+     * 从内容中提取并加载 resource:// 协议的图片
+     */
+    private fun loadResourceImages(content: String) {
+        viewModelScope.launch {
+            // 使用正则表达式提取所有 resource:// 图片
+            val imageRegex = Regex("!\\[[^\\]]*\\]\\(resource://([^)]+)\\)")
+            val matches = imageRegex.findAll(content)
+            
+            val resourceImages = mutableMapOf<String, String>()
+            
+            for (match in matches) {
+                val resourcePath = match.groupValues[1]
+                // 解析资源 ID（去掉扩展名）
+                val lastDotIndex = resourcePath.lastIndexOf('.')
+                val resourceId = if (lastDotIndex > 0) {
+                    resourcePath.substring(0, lastDotIndex)
+                } else {
+                    resourcePath
+                }
+                val ext = if (lastDotIndex > 0) {
+                    resourcePath.substring(lastDotIndex)
+                } else {
+                    ".png"
+                }
+                
+                // 尝试加载资源
+                try {
+                    val result = resourceSyncManager.getResource(resourceId)
+                    result.onSuccess { file ->
+                        val bytes = file.readBytes()
+                        val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                        val mimeType = when (ext.lowercase()) {
+                            ".png" -> "image/png"
+                            ".jpg", ".jpeg" -> "image/jpeg"
+                            ".gif" -> "image/gif"
+                            ".webp" -> "image/webp"
+                            ".svg" -> "image/svg+xml"
+                            else -> "image/png"
+                        }
+                        resourceImages[resourcePath] = "data:$mimeType;base64,$base64"
+                    }
+                } catch (e: Exception) {
+                    // 加载失败，跳过
+                }
+            }
+            
+            if (resourceImages.isNotEmpty()) {
+                _uiState.update { it.copy(resourceImages = resourceImages) }
+            }
+        }
+    }
+    
+    /**
+     * 获取处理后的内容（将 resource:// 图片替换为 base64）
+     */
+    fun getProcessedContent(): String {
+        val content = _uiState.value.content
+        val resourceImages = _uiState.value.resourceImages
+        
+        if (resourceImages.isEmpty()) {
+            return content
+        }
+        
+        var processedContent = content
+        for ((resourcePath, dataUri) in resourceImages) {
+            processedContent = processedContent.replace(
+                "resource://$resourcePath",
+                dataUri
+            )
+        }
+        
+        return processedContent
     }
 }

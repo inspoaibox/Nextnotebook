@@ -28,6 +28,10 @@ export class ServerAdapter implements StorageAdapter {
   private refreshToken?: string;
   private tokenExpires?: number;
   private onTokenRefresh?: (token: string, refreshToken: string, expiresIn: number) => void;
+  private refreshPromise: Promise<boolean> | null = null;
+  // 保存登录凭据用于自动重新登录
+  private savedCredentials?: { username: string; password: string; syncKey: string };
+  private onReloginRequired?: () => void;
 
   constructor(config: ServerConfig) {
     this.baseUrl = config.url.replace(/\/+$/, '');
@@ -38,6 +42,21 @@ export class ServerAdapter implements StorageAdapter {
   // 设置 token 刷新回调
   setTokenRefreshCallback(callback: (token: string, refreshToken: string, expiresIn: number) => void) {
     this.onTokenRefresh = callback;
+  }
+
+  // 设置重新登录回调（当 refresh token 也过期时触发）
+  setReloginRequiredCallback(callback: () => void) {
+    this.onReloginRequired = callback;
+  }
+
+  // 保存登录凭据（用于自动重新登录）
+  saveCredentials(username: string, password: string, syncKey: string) {
+    this.savedCredentials = { username, password, syncKey };
+  }
+
+  // 清除保存的凭据
+  clearCredentials() {
+    this.savedCredentials = undefined;
   }
 
   // 设置认证信息
@@ -127,7 +146,8 @@ export class ServerAdapter implements StorageAdapter {
   // 刷新 token
   async refreshAccessToken(): Promise<boolean> {
     if (!this.refreshToken) {
-      return false;
+      // 没有 refresh token，尝试自动重新登录
+      return this.tryAutoRelogin();
     }
 
     try {
@@ -152,9 +172,48 @@ export class ServerAdapter implements StorageAdapter {
         
         return true;
       }
-      return false;
+      
+      // refresh token 无效或过期，尝试自动重新登录
+      console.log('[ServerAdapter] Refresh token invalid, trying auto relogin...');
+      return this.tryAutoRelogin();
     } catch (error) {
       console.error('Token refresh failed:', error);
+      // 尝试自动重新登录
+      return this.tryAutoRelogin();
+    }
+  }
+
+  // 尝试自动重新登录
+  private async tryAutoRelogin(): Promise<boolean> {
+    if (!this.savedCredentials) {
+      // 没有保存的凭据，通知需要重新登录
+      if (this.onReloginRequired) {
+        this.onReloginRequired();
+      }
+      return false;
+    }
+
+    try {
+      console.log('[ServerAdapter] Attempting auto relogin...');
+      const { username, password, syncKey } = this.savedCredentials;
+      const result = await this.login(username, password, syncKey);
+      
+      if (result.success) {
+        console.log('[ServerAdapter] Auto relogin successful');
+        return true;
+      }
+      
+      console.error('[ServerAdapter] Auto relogin failed:', result.error);
+      // 登录失败，通知需要重新登录
+      if (this.onReloginRequired) {
+        this.onReloginRequired();
+      }
+      return false;
+    } catch (error) {
+      console.error('[ServerAdapter] Auto relogin error:', error);
+      if (this.onReloginRequired) {
+        this.onReloginRequired();
+      }
       return false;
     }
   }
@@ -233,15 +292,30 @@ export class ServerAdapter implements StorageAdapter {
     return await fetch(url, options);
   }
 
+  // 安全的 token 刷新方法，防止并发刷新
+  private async safeRefreshToken(): Promise<boolean> {
+    // 如果已经有刷新请求在进行中，等待它完成
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    // 创建新的刷新请求
+    this.refreshPromise = this.refreshAccessToken().finally(() => {
+      this.refreshPromise = null;
+    });
+
+    return this.refreshPromise;
+  }
+
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
     retry = true
   ): Promise<T> {
-    // 检查 token 是否即将过期，提前刷新
+    // 检查 token 是否即将过期，提前刷新（使用锁防止并发刷新）
     if (this.isTokenExpiringSoon() && this.refreshToken) {
-      await this.refreshAccessToken();
+      await this.safeRefreshToken();
     }
 
     const url = `${this.baseUrl}${path}`;
@@ -253,10 +327,12 @@ export class ServerAdapter implements StorageAdapter {
 
     // 处理 401 错误，尝试刷新 token
     if (response.status === 401 && retry && this.refreshToken) {
-      const refreshed = await this.refreshAccessToken();
+      const refreshed = await this.safeRefreshToken();
       if (refreshed) {
         return this.request<T>(method, path, body, false);
       }
+      // 刷新失败，抛出更明确的错误
+      throw new Error('Token refresh failed: 登录已过期，请重新登录');
     }
 
     if (!response.ok) {

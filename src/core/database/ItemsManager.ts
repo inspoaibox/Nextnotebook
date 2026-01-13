@@ -192,13 +192,24 @@ export class ItemsManager {
     );
   }
 
-  // 更新 Item
+  // 更新 Item（合并更新，保留未修改的字段）
   update<T extends object>(id: string, payload: T): ItemBase | undefined {
     const existing = this.getById(id);
     if (!existing) return undefined;
 
+    // 解析现有的 payload 并合并新的更新
+    let existingPayload: object = {};
+    try {
+      existingPayload = JSON.parse(existing.payload);
+    } catch (e) {
+      console.error('Failed to parse existing payload:', e);
+    }
+
+    // 合并：新的 payload 覆盖旧的字段，保留未修改的字段
+    const mergedPayload = { ...existingPayload, ...payload };
+
     const now = Date.now();
-    const payloadStr = JSON.stringify(payload);
+    const payloadStr = JSON.stringify(mergedPayload);
     const newHash = this.computeHash(payloadStr);
 
     // 只有内容变化时才更新
@@ -228,6 +239,15 @@ export class ItemsManager {
     );
 
     return this.getById(item.id);
+  }
+
+  // 从远端同步标记删除（直接设置 deleted_time，不改变 local_rev）
+  markDeletedFromRemote(id: string, deletedTime: number): boolean {
+    const result = this.db.run(
+      `UPDATE items SET deleted_time = ?, sync_status = 'clean' WHERE id = ?`,
+      [deletedTime, id]
+    );
+    return result.changes > 0;
   }
 
   // 软删除 Item

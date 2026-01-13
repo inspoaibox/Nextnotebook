@@ -71,13 +71,17 @@ class NotesViewModel @Inject constructor(
         // 检查同步配置状态
         val syncEnabled = prefs.getBoolean("sync_enabled", false)
         val syncType = prefs.getString("sync_type", "webdav") ?: "webdav"
-        val webdavUrl = prefs.getString("webdav_url", "") ?: ""
-        val serverUrl = prefs.getString("server_url", "") ?: ""
+        // 服务器地址统一存储在 webdav_url 中（WebDAV 和自建服务器共用）
+        val syncUrl = prefs.getString("webdav_url", "") ?: ""
         
-        // 根据同步类型检查对应的 URL
-        val syncUrl = if (syncType == "server") serverUrl else webdavUrl
+        // 自建服务器还需要检查是否已登录
+        val serverLoggedIn = if (syncType == "server") {
+            prefs.getString("server_token", null) != null
+        } else true
+        
         val syncConfigured = syncEnabled && syncUrl.isNotBlank() && 
-            (syncUrl.startsWith("http://") || syncUrl.startsWith("https://"))
+            (syncUrl.startsWith("http://") || syncUrl.startsWith("https://")) &&
+            serverLoggedIn
         
         _uiState.value = _uiState.value.copy(
             lastSyncTime = lastSync,
@@ -185,11 +189,8 @@ class NotesViewModel @Inject constructor(
             // 检查同步配置
             val syncEnabled = prefs.getBoolean("sync_enabled", false)
             val syncType = prefs.getString("sync_type", "webdav") ?: "webdav"
-            val webdavUrl = prefs.getString("webdav_url", "") ?: ""
-            val serverUrl = prefs.getString("server_url", "") ?: ""
-            
-            // 根据同步类型检查对应的 URL
-            val syncUrl = if (syncType == "server") serverUrl else webdavUrl
+            // 服务器地址统一存储在 webdav_url 中
+            val syncUrl = prefs.getString("webdav_url", "") ?: ""
             
             if (!syncEnabled) {
                 _uiState.value = _uiState.value.copy(
@@ -202,6 +203,15 @@ class NotesViewModel @Inject constructor(
             if (syncUrl.isBlank() || (!syncUrl.startsWith("http://") && !syncUrl.startsWith("https://"))) {
                 _uiState.value = _uiState.value.copy(
                     error = "请先在设置中配置同步服务器",
+                    syncStatus = SyncStatus.OFFLINE
+                )
+                return@launch
+            }
+            
+            // 自建服务器需要先登录
+            if (syncType == "server" && prefs.getString("server_token", null) == null) {
+                _uiState.value = _uiState.value.copy(
+                    error = "请先在设置中登录服务器",
                     syncStatus = SyncStatus.OFFLINE
                 )
                 return@launch
@@ -226,6 +236,7 @@ class NotesViewModel @Inject constructor(
     
     /**
      * 从数据库加载 AI 配置到 SharedPreferences（同步后调用）
+     * 注意：只加载 AI 渠道配置，不覆盖功能模块开关（ai_enabled）
      */
     private suspend fun loadAiConfigFromDb() {
         try {
@@ -238,13 +249,13 @@ class NotesViewModel @Inject constructor(
             if (items.isNotEmpty()) {
                 val payload = aiConfigJson.decodeFromString<com.mucheng.notes.domain.model.payload.AIConfigPayload>(items[0].payload)
                 
-                // 更新 SharedPreferences
+                // 更新 SharedPreferences（不更新 ai_enabled，保持本地设置）
                 val channelsJsonStr = aiConfigJson.encodeToString(
                     kotlinx.serialization.builtins.ListSerializer(com.mucheng.notes.domain.model.payload.AIChannel.serializer()),
                     payload.channels
                 )
                 prefs.edit()
-                    .putBoolean("ai_enabled", payload.enabled)
+                    // 不覆盖 ai_enabled，保持用户本地设置
                     .putString("ai_default_channel", payload.defaultChannel)
                     .putString("ai_default_model", payload.defaultModel)
                     .putString("ai_channels_json", channelsJsonStr)
@@ -356,13 +367,17 @@ class NotesViewModel @Inject constructor(
     fun refreshSyncStatus() {
         val syncEnabled = prefs.getBoolean("sync_enabled", false)
         val syncType = prefs.getString("sync_type", "webdav") ?: "webdav"
-        val webdavUrl = prefs.getString("webdav_url", "") ?: ""
-        val serverUrl = prefs.getString("server_url", "") ?: ""
+        // 服务器地址统一存储在 webdav_url 中
+        val syncUrl = prefs.getString("webdav_url", "") ?: ""
         
-        // 根据同步类型检查对应的 URL
-        val syncUrl = if (syncType == "server") serverUrl else webdavUrl
+        // 自建服务器还需要检查是否已登录
+        val serverLoggedIn = if (syncType == "server") {
+            prefs.getString("server_token", null) != null
+        } else true
+        
         val syncConfigured = syncEnabled && syncUrl.isNotBlank() && 
-            (syncUrl.startsWith("http://") || syncUrl.startsWith("https://"))
+            (syncUrl.startsWith("http://") || syncUrl.startsWith("https://")) &&
+            serverLoggedIn
         
         val lastSync = prefs.getLong("last_sync_time", 0).takeIf { it > 0 }
         

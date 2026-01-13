@@ -111,19 +111,47 @@ class SyncEngine @Inject constructor(
     /**
      * 设置同步配置
      */
-    fun setConfig(syncConfig: SyncConfig) {
+    suspend fun setConfig(syncConfig: SyncConfig) {
         config = syncConfig
         
         if (syncConfig.type == "server") {
             // 初始化自建服务器适配器
             serverAdapter = ServerAdapterImpl().apply {
-                initialize(syncConfig)
                 // 设置 token 刷新回调，用于持久化新 token
                 onTokenRefresh = { newToken, newRefreshToken, expiresIn ->
                     android.util.Log.d("SyncEngine", "Token refreshed, saving to preferences")
-                    // 通过广播或回调通知 ViewModel 保存新 token
-                    // 这里暂时只记录日志，实际保存由 ViewModel 处理
+                    // 保存新 token 到 SharedPreferences
+                    val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
+                    syncPrefs.edit()
+                        .putString("server_token", newToken)
+                        .putString("server_refresh_token", newRefreshToken)
+                        .putLong("server_token_expires", System.currentTimeMillis() + expiresIn * 1000L)
+                        .apply()
                 }
+                
+                // 设置重新登录回调
+                onReloginRequired = {
+                    android.util.Log.w("SyncEngine", "Relogin required - token refresh failed")
+                    // 清除保存的 token，下次同步时会提示用户重新登录
+                    val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
+                    syncPrefs.edit()
+                        .remove("server_token")
+                        .remove("server_refresh_token")
+                        .remove("server_token_expires")
+                        .apply()
+                }
+                
+                // 如果有保存的凭据，设置自动重新登录
+                val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
+                val savedUsername = syncPrefs.getString("server_username", null)
+                val savedPassword = syncPrefs.getString("server_password", null)
+                val savedSyncKey = syncPrefs.getString("server_sync_key", null)
+                if (savedUsername != null && savedPassword != null && savedSyncKey != null) {
+                    saveCredentials(savedUsername, savedPassword, savedSyncKey)
+                }
+                
+                // 初始化（会自动检查并刷新过期的 token）
+                initialize(syncConfig)
             }
             android.util.Log.d("SyncEngine", "Initialized server adapter for self-hosted server sync")
         } else {

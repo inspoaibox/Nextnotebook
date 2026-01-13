@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.mucheng.notes.R
@@ -75,6 +76,7 @@ fun VaultScreen(
     // 对话框状态
     var showAddEntryDialog by remember { mutableStateOf(false) }
     var showEditEntryDialog by remember { mutableStateOf(false) }
+    var showPreviewDialog by remember { mutableStateOf(false) }
     var showDeleteEntryDialog by remember { mutableStateOf(false) }
     var selectedEntry by remember { mutableStateOf<VaultEntryItem?>(null) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
@@ -203,7 +205,7 @@ fun VaultScreen(
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(pv).padding(horizontal = 16.dp),
                     contentPadding = PaddingValues(bottom = bottomPadding.calculateBottomPadding()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     items(filteredEntries) { entry ->
                         // 只有当 TOTP 密钥非空时才观察
                         val totpSecret = entry.totpSecrets.firstOrNull()?.secret?.takeIf { it.isNotBlank() }
@@ -217,7 +219,7 @@ fun VaultScreen(
                             entry = entry,
                             onClick = {
                                 selectedEntry = entry
-                                showEditEntryDialog = true
+                                showPreviewDialog = true
                             },
                             onCopyUsername = { viewModel.copyToClipboard(entry.username, "用户名", false) },
                             onCopyPassword = { viewModel.copyToClipboard(entry.password, "密码") },
@@ -322,6 +324,33 @@ fun VaultScreen(
         )
     }
     
+    // 预览条目对话框
+    if (showPreviewDialog && selectedEntry != null) {
+        val entry = selectedEntry!!
+        val totpSecret = entry.totpSecrets.firstOrNull()?.secret?.takeIf { it.isNotBlank() }
+        val totpCode by if (totpSecret != null) {
+            viewModel.observeTotpCode(totpSecret).collectAsState(initial = null)
+        } else {
+            remember { mutableStateOf<TOTPCode?>(null) }
+        }
+        
+        VaultEntryPreviewDialog(
+            entry = entry,
+            totpCode = totpCode,
+            onDismiss = { 
+                showPreviewDialog = false
+                selectedEntry = null
+            },
+            onEdit = {
+                showPreviewDialog = false
+                showEditEntryDialog = true
+            },
+            onCopyUsername = { viewModel.copyToClipboard(entry.username, "用户名", false) },
+            onCopyPassword = { viewModel.copyToClipboard(entry.password, "密码") },
+            onCopyTotp = totpCode?.let { code -> { viewModel.copyToClipboard(code.code, "验证码", false) } }
+        )
+    }
+    
     // 删除确认对话框
     if (showDeleteEntryDialog && selectedEntry != null) {
         AlertDialog(
@@ -393,6 +422,191 @@ fun VaultScreen(
 
 
 /**
+ * 条目预览对话框
+ */
+@Composable
+private fun VaultEntryPreviewDialog(
+    entry: VaultEntryItem,
+    totpCode: TOTPCode?,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onCopyUsername: () -> Unit,
+    onCopyPassword: () -> Unit,
+    onCopyTotp: (() -> Unit)?
+) {
+    var showPassword by remember { mutableStateOf(false) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(getEntryTypeIcon(entry.entryType), null, Modifier.size(24.dp), MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (entry.favorite) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Default.Star, null, Modifier.size(16.dp), MaterialTheme.colorScheme.primary)
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 450.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                when (entry.entryType) {
+                    VaultEntryType.LOGIN -> {
+                        // 用户名
+                        if (entry.username.isNotEmpty()) {
+                            PreviewField(
+                                label = "用户名",
+                                value = entry.username,
+                                onCopy = onCopyUsername
+                            )
+                        }
+                        
+                        // 密码
+                        if (entry.password.isNotEmpty()) {
+                            PreviewField(
+                                label = "密码",
+                                value = if (showPassword) entry.password else "••••••••",
+                                onCopy = onCopyPassword,
+                                trailingIcon = {
+                                    IconButton(onClick = { showPassword = !showPassword }, Modifier.size(24.dp)) {
+                                        Icon(
+                                            if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            null, Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                        
+                        // 网址
+                        if (entry.uris.isNotEmpty()) {
+                            Text("关联网站", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            entry.uris.forEach { uri ->
+                                Text(
+                                    text = if (uri.name.isNotEmpty()) "${uri.name}: ${uri.uri}" else uri.uri,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        
+                        // TOTP
+                        if (totpCode != null && onCopyTotp != null) {
+                            HorizontalDivider()
+                            Text("TOTP 验证码", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            TOTPDisplay(totpCode = totpCode, onCopy = onCopyTotp)
+                        }
+                    }
+                    
+                    VaultEntryType.CARD -> {
+                        if (entry.cardHolderName.isNotEmpty()) {
+                            PreviewField(label = "持卡人", value = entry.cardHolderName)
+                        }
+                        if (entry.cardNumber.isNotEmpty()) {
+                            PreviewField(label = "卡号", value = entry.cardNumber)
+                        }
+                        if (entry.cardExpMonth.isNotEmpty() || entry.cardExpYear.isNotEmpty()) {
+                            PreviewField(label = "有效期", value = "${entry.cardExpMonth}/${entry.cardExpYear}")
+                        }
+                        if (entry.cardCvv.isNotEmpty()) {
+                            PreviewField(label = "CVV", value = if (showPassword) entry.cardCvv else "•••",
+                                trailingIcon = {
+                                    IconButton(onClick = { showPassword = !showPassword }, Modifier.size(24.dp)) {
+                                        Icon(if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility, null, Modifier.size(18.dp))
+                                    }
+                                })
+                        }
+                    }
+                    
+                    VaultEntryType.IDENTITY -> {
+                        if (entry.identityFirstName.isNotEmpty() || entry.identityLastName.isNotEmpty()) {
+                            PreviewField(label = "姓名", value = "${entry.identityFirstName} ${entry.identityLastName}".trim())
+                        }
+                        if (entry.identityEmail.isNotEmpty()) {
+                            PreviewField(label = "邮箱", value = entry.identityEmail)
+                        }
+                        if (entry.identityPhone.isNotEmpty()) {
+                            PreviewField(label = "电话", value = entry.identityPhone)
+                        }
+                        if (entry.identityAddress.isNotEmpty()) {
+                            PreviewField(label = "地址", value = entry.identityAddress)
+                        }
+                    }
+                    
+                    VaultEntryType.SECURE_NOTE -> {
+                        if (entry.notes.isNotEmpty()) {
+                            Text(entry.notes, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+                
+                // 备注（非安全笔记）
+                if (entry.entryType != VaultEntryType.SECURE_NOTE && entry.notes.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text("备注", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    Text(entry.notes, style = MaterialTheme.typography.bodyMedium)
+                }
+                
+                // 自定义字段
+                if (entry.customFields.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text("自定义字段", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    entry.customFields.forEach { field ->
+                        PreviewField(
+                            label = field.name,
+                            value = if (field.type == "hidden" && !showPassword) "••••••••" else field.value
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("编辑")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+/**
+ * 预览字段组件
+ */
+@Composable
+private fun PreviewField(
+    label: String,
+    value: String,
+    onCopy: (() -> Unit)? = null,
+    trailingIcon: @Composable (() -> Unit)? = null
+) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            trailingIcon?.invoke()
+            if (onCopy != null) {
+                IconButton(onClick = onCopy, Modifier.size(24.dp)) {
+                    Icon(Icons.Default.ContentCopy, "复制", Modifier.size(18.dp), MaterialTheme.colorScheme.outline)
+                }
+            }
+        }
+    }
+}
+
+/**
  * 条目数据类（用于对话框）
  */
 data class EntryFormData(
@@ -442,10 +656,24 @@ private fun AddEditEntryDialog(
                     entryType = entry.entryType,
                     folderId = entry.folderId,
                     favorite = entry.favorite,
+                    notes = entry.notes,
                     username = entry.username,
                     password = entry.password,
                     totpSecrets = entry.totpSecrets,
-                    uris = entry.uris
+                    uris = entry.uris,
+                    cardHolderName = entry.cardHolderName,
+                    cardNumber = entry.cardNumber,
+                    cardBrand = entry.cardBrand,
+                    cardExpMonth = entry.cardExpMonth,
+                    cardExpYear = entry.cardExpYear,
+                    cardCvv = entry.cardCvv,
+                    identityTitle = entry.identityTitle,
+                    identityFirstName = entry.identityFirstName,
+                    identityLastName = entry.identityLastName,
+                    identityEmail = entry.identityEmail,
+                    identityPhone = entry.identityPhone,
+                    identityAddress = entry.identityAddress,
+                    customFields = entry.customFields
                 )
             } else {
                 EntryFormData(folderId = currentFolderId)
@@ -468,76 +696,86 @@ private fun AddEditEntryDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // 条目类型选择
-                ExposedDropdownMenuBox(
-                    expanded = showEntryTypeMenu,
-                    onExpandedChange = { showEntryTypeMenu = it }
-                ) {
-                    OutlinedTextField(
-                        value = getEntryTypeName(formData.entryType),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("类型") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showEntryTypeMenu) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(
+                Column {
+                    Text("类型", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.height(4.dp))
+                    ExposedDropdownMenuBox(
                         expanded = showEntryTypeMenu,
-                        onDismissRequest = { showEntryTypeMenu = false }
+                        onExpandedChange = { showEntryTypeMenu = it }
                     ) {
-                        VaultEntryType.entries.forEach { type ->
-                            DropdownMenuItem(
-                                text = { Text(getEntryTypeName(type)) },
-                                onClick = {
-                                    formData = formData.copy(entryType = type)
-                                    showEntryTypeMenu = false
-                                },
-                                leadingIcon = { Icon(getEntryTypeIcon(type), null) }
-                            )
+                        OutlinedTextField(
+                            value = getEntryTypeName(formData.entryType),
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showEntryTypeMenu) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = showEntryTypeMenu,
+                            onDismissRequest = { showEntryTypeMenu = false }
+                        ) {
+                            VaultEntryType.entries.forEach { type ->
+                                DropdownMenuItem(
+                                    text = { Text(getEntryTypeName(type)) },
+                                    onClick = {
+                                        formData = formData.copy(entryType = type)
+                                        showEntryTypeMenu = false
+                                    },
+                                    leadingIcon = { Icon(getEntryTypeIcon(type), null) }
+                                )
+                            }
                         }
                     }
                 }
                 
                 // 名称
-                OutlinedTextField(
-                    value = formData.name,
-                    onValueChange = { formData = formData.copy(name = it) },
-                    label = { Text("名称 *") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column {
+                    Text("名称 *", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = formData.name,
+                        onValueChange = { formData = formData.copy(name = it) },
+                        placeholder = { Text("输入名称") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 
                 // 文件夹选择
-                ExposedDropdownMenuBox(
-                    expanded = showFolderMenu,
-                    onExpandedChange = { showFolderMenu = it }
-                ) {
-                    OutlinedTextField(
-                        value = folders.find { it.first == formData.folderId }?.second ?: "未分类",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("文件夹") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showFolderMenu) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(
+                Column {
+                    Text("文件夹", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.height(4.dp))
+                    ExposedDropdownMenuBox(
                         expanded = showFolderMenu,
-                        onDismissRequest = { showFolderMenu = false }
+                        onExpandedChange = { showFolderMenu = it }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("未分类") },
-                            onClick = {
-                                formData = formData.copy(folderId = null)
-                                showFolderMenu = false
-                            }
+                        OutlinedTextField(
+                            value = folders.find { it.first == formData.folderId }?.second ?: "未分类",
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showFolderMenu) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor()
                         )
-                        folders.forEach { (id, name) ->
+                        ExposedDropdownMenu(
+                            expanded = showFolderMenu,
+                            onDismissRequest = { showFolderMenu = false }
+                        ) {
                             DropdownMenuItem(
-                                text = { Text(name) },
+                                text = { Text("未分类") },
                                 onClick = {
-                                    formData = formData.copy(folderId = id)
+                                    formData = formData.copy(folderId = null)
                                     showFolderMenu = false
                                 }
                             )
+                            folders.forEach { (id, name) ->
+                                DropdownMenuItem(
+                                    text = { Text(name) },
+                                    onClick = {
+                                        formData = formData.copy(folderId = id)
+                                        showFolderMenu = false
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -546,36 +784,44 @@ private fun AddEditEntryDialog(
                 when (formData.entryType) {
                     VaultEntryType.LOGIN -> {
                         // 用户名
-                        OutlinedTextField(
-                            value = formData.username,
-                            onValueChange = { formData = formData.copy(username = it) },
-                            label = { Text("用户名") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Column {
+                            Text("用户名", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.username,
+                                onValueChange = { formData = formData.copy(username = it) },
+                                placeholder = { Text("输入用户名") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                         
                         // 密码
-                        OutlinedTextField(
-                            value = formData.password,
-                            onValueChange = { formData = formData.copy(password = it) },
-                            label = { Text("密码") },
-                            singleLine = true,
-                            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                Row {
-                                    IconButton(onClick = { showPassword = !showPassword }) {
-                                        Icon(
-                                            if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = if (showPassword) "隐藏密码" else "显示密码"
-                                        )
+                        Column {
+                            Text("密码", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.password,
+                                onValueChange = { formData = formData.copy(password = it) },
+                                placeholder = { Text("输入密码") },
+                                singleLine = true,
+                                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    Row {
+                                        IconButton(onClick = { showPassword = !showPassword }) {
+                                            Icon(
+                                                if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = if (showPassword) "隐藏密码" else "显示密码"
+                                            )
+                                        }
+                                        IconButton(onClick = { formData = formData.copy(password = onGeneratePassword()) }) {
+                                            Icon(Icons.Default.Refresh, contentDescription = "生成密码")
+                                        }
                                     }
-                                    IconButton(onClick = { formData = formData.copy(password = onGeneratePassword()) }) {
-                                        Icon(Icons.Default.Refresh, contentDescription = "生成密码")
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                         
                         // 多网址编辑器
                         UriListEditor(
@@ -591,26 +837,35 @@ private fun AddEditEntryDialog(
                     }
                     
                     VaultEntryType.CARD -> {
-                        OutlinedTextField(
-                            value = formData.cardHolderName,
-                            onValueChange = { formData = formData.copy(cardHolderName = it) },
-                            label = { Text("持卡人姓名") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = formData.cardNumber,
-                            onValueChange = { formData = formData.copy(cardNumber = it) },
-                            label = { Text("卡号") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Column {
+                            Text("持卡人姓名", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.cardHolderName,
+                                onValueChange = { formData = formData.copy(cardHolderName = it) },
+                                placeholder = { Text("输入持卡人姓名") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Column {
+                            Text("卡号", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.cardNumber,
+                                onValueChange = { formData = formData.copy(cardNumber = it) },
+                                placeholder = { Text("输入卡号") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Text("有效期", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
                                 value = formData.cardExpMonth,
                                 onValueChange = { formData = formData.copy(cardExpMonth = it) },
-                                label = { Text("月") },
+                                placeholder = { Text("月") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.weight(1f)
@@ -618,7 +873,7 @@ private fun AddEditEntryDialog(
                             OutlinedTextField(
                                 value = formData.cardExpYear,
                                 onValueChange = { formData = formData.copy(cardExpYear = it) },
-                                label = { Text("年") },
+                                placeholder = { Text("年") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.weight(1f)
@@ -626,7 +881,7 @@ private fun AddEditEntryDialog(
                             OutlinedTextField(
                                 value = formData.cardCvv,
                                 onValueChange = { formData = formData.copy(cardCvv = it) },
-                                label = { Text("CVV") },
+                                placeholder = { Text("CVV") },
                                 singleLine = true,
                                 visualTransformation = PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -636,66 +891,100 @@ private fun AddEditEntryDialog(
                     }
                     
                     VaultEntryType.IDENTITY -> {
-                        OutlinedTextField(
-                            value = formData.identityFirstName,
-                            onValueChange = { formData = formData.copy(identityFirstName = it) },
-                            label = { Text("名") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = formData.identityLastName,
-                            onValueChange = { formData = formData.copy(identityLastName = it) },
-                            label = { Text("姓") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = formData.identityEmail,
-                            onValueChange = { formData = formData.copy(identityEmail = it) },
-                            label = { Text("邮箱") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = formData.identityPhone,
-                            onValueChange = { formData = formData.copy(identityPhone = it) },
-                            label = { Text("电话") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = formData.identityAddress,
-                            onValueChange = { formData = formData.copy(identityAddress = it) },
-                            label = { Text("地址") },
-                            maxLines = 3,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Column {
+                            Text("名", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.identityFirstName,
+                                onValueChange = { formData = formData.copy(identityFirstName = it) },
+                                placeholder = { Text("输入名") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Column {
+                            Text("姓", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.identityLastName,
+                                onValueChange = { formData = formData.copy(identityLastName = it) },
+                                placeholder = { Text("输入姓") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Column {
+                            Text("邮箱", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.identityEmail,
+                                onValueChange = { formData = formData.copy(identityEmail = it) },
+                                placeholder = { Text("输入邮箱") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Column {
+                            Text("电话", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.identityPhone,
+                                onValueChange = { formData = formData.copy(identityPhone = it) },
+                                placeholder = { Text("输入电话") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Column {
+                            Text("地址", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.identityAddress,
+                                onValueChange = { formData = formData.copy(identityAddress = it) },
+                                placeholder = { Text("输入地址") },
+                                maxLines = 3,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                     
                     VaultEntryType.SECURE_NOTE -> {
-                        OutlinedTextField(
-                            value = formData.notes,
-                            onValueChange = { formData = formData.copy(notes = it) },
-                            label = { Text("安全笔记内容") },
-                            maxLines = 10,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp)
-                        )
+                        Column {
+                            Text("安全笔记内容", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = formData.notes,
+                                onValueChange = { formData = formData.copy(notes = it) },
+                                placeholder = { Text("输入安全笔记内容") },
+                                maxLines = 10,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp)
+                            )
+                        }
                     }
                 }
                 
                 // 备注（非安全笔记类型）
                 if (formData.entryType != VaultEntryType.SECURE_NOTE) {
-                    OutlinedTextField(
-                        value = formData.notes,
-                        onValueChange = { formData = formData.copy(notes = it) },
-                        label = { Text("备注") },
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Column {
+                        Text("备注", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = formData.notes,
+                            onValueChange = { formData = formData.copy(notes = it) },
+                            placeholder = { Text("输入备注") },
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
+                
+                // 自定义字段
+                CustomFieldsEditor(
+                    fields = formData.customFields,
+                    onFieldsChange = { formData = formData.copy(customFields = it) }
+                )
             }
         },
         confirmButton = {
@@ -728,7 +1017,6 @@ private fun VaultEntryCard(
     onDelete: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
-    var showPassword by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     
     Box {
@@ -741,43 +1029,51 @@ private fun VaultEntryCard(
                 ),
             colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surface)
         ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(getEntryTypeIcon(entry.entryType), null, Modifier.size(40.dp), MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(entry.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                            if (entry.favorite) {
-                                Spacer(Modifier.width(4.dp))
-                                Icon(Icons.Default.Star, null, Modifier.size(16.dp), MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                        if (entry.username.isNotEmpty()) Text(entry.username, style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (entry.password.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (showPassword) entry.password else "••••••••",
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                            IconButton({ showPassword = !showPassword }, Modifier.size(24.dp)) {
-                                Icon(if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    null, Modifier.size(16.dp))
-                            }
+            Row(
+                Modifier.fillMaxWidth().padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 左侧图标
+                Icon(getEntryTypeIcon(entry.entryType), null, Modifier.size(32.dp), MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                
+                // 中间：名称 + 账号（左侧区块）
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            entry.name, 
+                            style = MaterialTheme.typography.titleSmall, 
+                            maxLines = 1, 
+                            overflow = TextOverflow.Ellipsis, 
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (entry.favorite) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Default.Star, null, Modifier.size(14.dp), MaterialTheme.colorScheme.primary)
                         }
                     }
-                    Column {
-                        if (entry.username.isNotEmpty()) IconButton(onCopyUsername) {
-                            Icon(Icons.Default.Person, "复制用户名", tint = MaterialTheme.colorScheme.outline) }
-                        if (entry.password.isNotEmpty()) IconButton(onCopyPassword) {
-                            Icon(Icons.Default.ContentCopy, "复制密码", tint = MaterialTheme.colorScheme.outline) }
+                    if (entry.username.isNotEmpty()) {
+                        Text(
+                            entry.username, 
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, 
+                            maxLines = 1, 
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
                 
-                // TOTP 显示
+                // 右侧：TOTP 显示（如果有）
                 if (totpCode != null && onCopyTotp != null) {
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(12.dp))
-                    TOTPDisplay(totpCode = totpCode, onCopy = onCopyTotp)
+                    Spacer(Modifier.width(8.dp))
+                    CompactTOTPDisplay(totpCode = totpCode, onCopy = onCopyTotp)
+                }
+                
+                // 最右侧：复制按钮
+                if (entry.password.isNotEmpty()) {
+                    IconButton(onClick = onCopyPassword, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.ContentCopy, "复制密码", Modifier.size(18.dp), MaterialTheme.colorScheme.outline)
+                    }
                 }
             }
         }
@@ -790,32 +1086,22 @@ private fun VaultEntryCard(
         ) {
             DropdownMenuItem(
                 text = { Text("编辑") },
-                onClick = {
-                    showMenu = false
-                    onEdit()
-                },
+                onClick = { showMenu = false; onEdit() },
                 leadingIcon = { Icon(Icons.Default.Edit, null) }
             )
             DropdownMenuItem(
                 text = { Text(if (entry.favorite) "取消收藏" else "收藏") },
-                onClick = {
-                    showMenu = false
-                    onToggleFavorite()
-                },
+                onClick = { showMenu = false; onToggleFavorite() },
                 leadingIcon = { 
                     Icon(
                         if (entry.favorite) Icons.Default.StarOutline else Icons.Default.Star, 
-                        null,
-                        tint = MaterialTheme.colorScheme.primary
+                        null, tint = MaterialTheme.colorScheme.primary
                     ) 
                 }
             )
             DropdownMenuItem(
                 text = { Text("删除", color = MaterialTheme.colorScheme.error) },
-                onClick = {
-                    showMenu = false
-                    onDelete()
-                },
+                onClick = { showMenu = false; onDelete() },
                 leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }
             )
         }
@@ -823,7 +1109,57 @@ private fun VaultEntryCard(
 }
 
 /**
- * TOTP 验证码显示组件
+ * 紧凑型 TOTP 显示组件（用于列表项右侧）
+ */
+@Composable
+private fun CompactTOTPDisplay(totpCode: TOTPCode, onCopy: () -> Unit) {
+    val color = if (totpCode.remainingSeconds <= 5) MaterialTheme.colorScheme.error 
+                else MaterialTheme.colorScheme.primary
+    
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clickable(onClick = onCopy)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+    ) {
+        // 倒计时圆环
+        Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            val progress = totpCode.remainingSeconds / 30f
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawArc(
+                    color = color.copy(alpha = 0.2f),
+                    startAngle = -90f, sweepAngle = 360f, useCenter = false,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                    size = Size(size.width, size.height)
+                )
+                drawArc(
+                    color = color,
+                    startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                    size = Size(size.width, size.height)
+                )
+            }
+            Text(
+                text = "${totpCode.remainingSeconds}",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                color = color
+            )
+        }
+        
+        Spacer(Modifier.width(4.dp))
+        
+        // 验证码
+        Text(
+            text = formatTOTPCode(totpCode.code),
+            style = MaterialTheme.typography.labelMedium,
+            fontFamily = FontFamily.Monospace,
+            color = color
+        )
+    }
+}
+
+/**
+ * TOTP 验证码显示组件 - 紧凑版
  */
 @Composable
 private fun TOTPDisplay(totpCode: TOTPCode, onCopy: () -> Unit) {
@@ -831,8 +1167,8 @@ private fun TOTPDisplay(totpCode: TOTPCode, onCopy: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 倒计时圆环
-        Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+        // 紧凑倒计时圆环
+        Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
             val progress = totpCode.remainingSeconds / 30f
             val color = if (totpCode.remainingSeconds <= 5) MaterialTheme.colorScheme.error 
                         else MaterialTheme.colorScheme.primary
@@ -841,41 +1177,38 @@ private fun TOTPDisplay(totpCode: TOTPCode, onCopy: () -> Unit) {
                 drawArc(
                     color = color.copy(alpha = 0.2f),
                     startAngle = -90f, sweepAngle = 360f, useCenter = false,
-                    style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round),
+                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
                     size = Size(size.width, size.height)
                 )
                 drawArc(
                     color = color,
                     startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
-                    style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round),
+                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
                     size = Size(size.width, size.height)
                 )
             }
             Text(
                 text = "${totpCode.remainingSeconds}",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = color
             )
         }
         
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
         
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.totp_code),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-            Text(
-                text = formatTOTPCode(totpCode.code),
-                style = MaterialTheme.typography.headlineSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
+        // 验证码
+        Text(
+            text = formatTOTPCode(totpCode.code),
+            style = MaterialTheme.typography.titleMedium,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f)
+        )
         
-        IconButton(onClick = onCopy) {
-            Icon(Icons.Default.ContentCopy, "复制验证码", tint = MaterialTheme.colorScheme.primary)
+        IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.ContentCopy, "复制验证码", 
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -928,26 +1261,33 @@ private fun UriListEditor(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = uri.name,
-                    onValueChange = { newName ->
-                        onUrisChange(uris.mapIndexed { i, u -> if (i == index) u.copy(name = newName) else u })
-                    },
-                    label = { Text("名称") },
-                    singleLine = true,
-                    modifier = Modifier.width(80.dp)
-                )
-                OutlinedTextField(
-                    value = uri.uri,
-                    onValueChange = { newUri ->
-                        onUrisChange(uris.mapIndexed { i, u -> if (i == index) u.copy(uri = newUri) else u })
-                    },
-                    label = { Text("网址") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(Modifier.width(80.dp)) {
+                    Text("名称", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    OutlinedTextField(
+                        value = uri.name,
+                        onValueChange = { newName ->
+                            onUrisChange(uris.mapIndexed { i, u -> if (i == index) u.copy(name = newName) else u })
+                        },
+                        placeholder = { Text("名称") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("网址", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    OutlinedTextField(
+                        value = uri.uri,
+                        onValueChange = { newUri ->
+                            onUrisChange(uris.mapIndexed { i, u -> if (i == index) u.copy(uri = newUri) else u })
+                        },
+                        placeholder = { Text("网址") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 IconButton(
-                    onClick = { onUrisChange(uris.filterIndexed { i, _ -> i != index }) }
+                    onClick = { onUrisChange(uris.filterIndexed { i, _ -> i != index }) },
+                    modifier = Modifier.padding(top = 16.dp)
                 ) {
                     Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error)
                 }
@@ -998,28 +1338,37 @@ private fun TotpListEditor(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.Top
                     ) {
-                        OutlinedTextField(
-                            value = totp.name,
-                            onValueChange = { newName ->
-                                onTotpsChange(totps.mapIndexed { i, t -> if (i == index) t.copy(name = newName) else t })
-                            },
-                            label = { Text("服务名称") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = totp.account,
-                            onValueChange = { newAccount ->
-                                onTotpsChange(totps.mapIndexed { i, t -> if (i == index) t.copy(account = newAccount) else t })
-                            },
-                            label = { Text("账户") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Column(Modifier.weight(1f)) {
+                            Text("服务名称", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = totp.name,
+                                onValueChange = { newName ->
+                                    onTotpsChange(totps.mapIndexed { i, t -> if (i == index) t.copy(name = newName) else t })
+                                },
+                                placeholder = { Text("服务名称") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text("账户", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = totp.account,
+                                onValueChange = { newAccount ->
+                                    onTotpsChange(totps.mapIndexed { i, t -> if (i == index) t.copy(account = newAccount) else t })
+                                },
+                                placeholder = { Text("账户") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                         IconButton(
-                            onClick = { onTotpsChange(totps.filterIndexed { i, _ -> i != index }) }
+                            onClick = { onTotpsChange(totps.filterIndexed { i, _ -> i != index }) },
+                            modifier = Modifier.padding(top = 16.dp)
                         ) {
                             Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error)
                         }
@@ -1027,30 +1376,34 @@ private fun TotpListEditor(
                     
                     Spacer(Modifier.height(8.dp))
                     
-                    OutlinedTextField(
-                        value = totp.secret,
-                        onValueChange = { newSecret ->
-                            // 支持粘贴 otpauth:// 链接自动解析
-                            val trimmed = newSecret.trim()
-                            if (trimmed.startsWith("otpauth://")) {
-                                val parsed = parseOtpAuthUri(trimmed)
-                                if (parsed != null) {
-                                    onTotpsChange(totps.mapIndexed { i, t ->
-                                        if (i == index) t.copy(
-                                            secret = parsed.secret,
-                                            name = parsed.name.ifEmpty { t.name },
-                                            account = parsed.account.ifEmpty { t.account }
-                                        ) else t
-                                    })
-                                    return@OutlinedTextField
+                    Column {
+                        Text("密钥", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = totp.secret,
+                            onValueChange = { newSecret ->
+                                // 支持粘贴 otpauth:// 链接自动解析
+                                val trimmed = newSecret.trim()
+                                if (trimmed.startsWith("otpauth://")) {
+                                    val parsed = parseOtpAuthUri(trimmed)
+                                    if (parsed != null) {
+                                        onTotpsChange(totps.mapIndexed { i, t ->
+                                            if (i == index) t.copy(
+                                                secret = parsed.secret,
+                                                name = parsed.name.ifEmpty { t.name },
+                                                account = parsed.account.ifEmpty { t.account }
+                                            ) else t
+                                        })
+                                        return@OutlinedTextField
+                                    }
                                 }
-                            }
-                            onTotpsChange(totps.mapIndexed { i, t -> if (i == index) t.copy(secret = newSecret) else t })
-                        },
-                        label = { Text("密钥或 otpauth:// 链接") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                                onTotpsChange(totps.mapIndexed { i, t -> if (i == index) t.copy(secret = newSecret) else t })
+                            },
+                            placeholder = { Text("密钥或 otpauth:// 链接") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
@@ -1107,6 +1460,206 @@ private fun parseOtpAuthUri(uri: String): ParsedOtpAuth? {
         ParsedOtpAuth(secret, issuer, account)
     } catch (e: Exception) {
         null
+    }
+}
+
+/**
+ * 自定义字段编辑器
+ */
+@Composable
+private fun CustomFieldsEditor(
+    fields: List<VaultCustomField>,
+    onFieldsChange: (List<VaultCustomField>) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("自定义字段", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+            TextButton(onClick = {
+                onFieldsChange(fields + VaultCustomField(
+                    id = UUID.randomUUID().toString(),
+                    name = "",
+                    value = "",
+                    type = "text"
+                ))
+            }) {
+                Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("添加")
+            }
+        }
+        
+        fields.forEachIndexed { index, field ->
+            var showTypeMenu by remember { mutableStateOf(false) }
+            var showValue by remember { mutableStateOf(field.type != "hidden") }
+            
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        // 字段名称
+                        Column(Modifier.weight(1f)) {
+                            Text("名称", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = field.name,
+                                onValueChange = { newName ->
+                                    onFieldsChange(fields.mapIndexed { i, f -> 
+                                        if (i == index) f.copy(name = newName) else f 
+                                    })
+                                },
+                                placeholder = { Text("名称") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        
+                        // 字段类型选择
+                        Box(Modifier.padding(top = 16.dp)) {
+                            IconButton(onClick = { showTypeMenu = true }) {
+                                Icon(
+                                    when (field.type) {
+                                        "hidden" -> Icons.Default.VisibilityOff
+                                        "boolean" -> Icons.Default.CheckBox
+                                        else -> Icons.Default.TextFields
+                                    },
+                                    contentDescription = "字段类型"
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showTypeMenu,
+                                onDismissRequest = { showTypeMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("文本") },
+                                    onClick = {
+                                        onFieldsChange(fields.mapIndexed { i, f -> 
+                                            if (i == index) f.copy(type = "text") else f 
+                                        })
+                                        showTypeMenu = false
+                                        showValue = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.TextFields, null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("隐藏") },
+                                    onClick = {
+                                        onFieldsChange(fields.mapIndexed { i, f -> 
+                                            if (i == index) f.copy(type = "hidden") else f 
+                                        })
+                                        showTypeMenu = false
+                                        showValue = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.VisibilityOff, null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("布尔值") },
+                                    onClick = {
+                                        onFieldsChange(fields.mapIndexed { i, f -> 
+                                            if (i == index) f.copy(type = "boolean", value = "false") else f 
+                                        })
+                                        showTypeMenu = false
+                                        showValue = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.CheckBox, null) }
+                                )
+                            }
+                        }
+                        
+                        // 删除按钮
+                        IconButton(
+                            onClick = { onFieldsChange(fields.filterIndexed { i, _ -> i != index }) },
+                            modifier = Modifier.padding(top = 16.dp)
+                        ) {
+                            Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(8.dp))
+                    
+                    // 字段值
+                    when (field.type) {
+                        "boolean" -> {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = field.value == "true",
+                                    onCheckedChange = { checked ->
+                                        onFieldsChange(fields.mapIndexed { i, f -> 
+                                            if (i == index) f.copy(value = checked.toString()) else f 
+                                        })
+                                    }
+                                )
+                                Text("启用", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        "hidden" -> {
+                            Column {
+                                Text("值", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = field.value,
+                                    onValueChange = { newValue ->
+                                        onFieldsChange(fields.mapIndexed { i, f -> 
+                                            if (i == index) f.copy(value = newValue) else f 
+                                        })
+                                    },
+                                    placeholder = { Text("值") },
+                                    singleLine = true,
+                                    visualTransformation = if (showValue) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { showValue = !showValue }) {
+                                            Icon(
+                                                if (showValue) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = if (showValue) "隐藏" else "显示"
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                        else -> {
+                            Column {
+                                Text("值", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = field.value,
+                                    onValueChange = { newValue ->
+                                        onFieldsChange(fields.mapIndexed { i, f -> 
+                                            if (i == index) f.copy(value = newValue) else f 
+                                        })
+                                    },
+                                    placeholder = { Text("值") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (fields.isEmpty()) {
+            Text(
+                "点击添加按钮添加自定义字段",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+        }
     }
 }
 
