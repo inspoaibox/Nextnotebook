@@ -33,6 +33,7 @@ import {
   CopyOutlined,
   ExportOutlined,
   ImportOutlined,
+  GithubOutlined,
   FileOutlined,
 } from '@ant-design/icons';
 import { useSettings } from '../contexts/SettingsContext';
@@ -2340,7 +2341,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>📝</div>
               <h2 style={{ margin: '0 0 8px', fontSize: 20 }}>暮城笔记</h2>
-              <p style={{ color: '#888', margin: '0 0 24px' }}>版本 1.0.0</p>
+              <p style={{ color: '#888', margin: '0 0 12px' }}>版本 1.0.0</p>
+              <Button
+                type="link"
+                icon={<GithubOutlined />}
+                onClick={() => {
+                  const api = (window as any).electronAPI;
+                  if (api?.openExternal) {
+                    api.openExternal('https://github.com/inspoaibox/Nextnotebook');
+                  }
+                }}
+                style={{ fontSize: 14, padding: 0 }}
+              >
+                开源地址
+              </Button>
             </div>
             <Divider />
             <div style={{ color: '#666', lineHeight: 2 }}>

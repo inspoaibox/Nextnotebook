@@ -15,6 +15,7 @@ import {
   ExportOutlined,
   InfoCircleOutlined,
   UnorderedListOutlined,
+  OrderedListOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   LockOutlined,
@@ -23,6 +24,7 @@ import {
   DownloadOutlined,
   ScissorOutlined,
   SelectOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -245,45 +247,69 @@ const ResourceLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({
   const [downloading, setDownloading] = useState(false);
 
   const handleClick = useCallback(async (e: React.MouseEvent) => {
-    if (!href || !href.startsWith('resource://')) {
-      return; // 普通链接，使用默认行为
-    }
-    
     e.preventDefault();
     
-    const resourcePath = href.replace('resource://', '');
-    const lastDotIndex = resourcePath.lastIndexOf('.');
-    const resourceId = lastDotIndex > 0 ? resourcePath.substring(0, lastDotIndex) : resourcePath;
-    const ext = lastDotIndex > 0 ? resourcePath.substring(lastDotIndex) : '';
+    if (!href) return;
     
-    setDownloading(true);
-    
-    try {
-      // 获取资源文件路径
-      const filePath = await window.electronAPI.resource.getPath(resourceId, ext);
+    // 处理 resource:// 协议的附件链接
+    if (href.startsWith('resource://')) {
+      const resourcePath = href.replace('resource://', '');
+      const lastDotIndex = resourcePath.lastIndexOf('.');
+      const resourceId = lastDotIndex > 0 ? resourcePath.substring(0, lastDotIndex) : resourcePath;
+      const ext = lastDotIndex > 0 ? resourcePath.substring(lastDotIndex) : '';
       
-      if (filePath) {
-        // 使用系统默认程序打开文件
-        const result = await window.electronAPI.openPath(filePath);
-        if (result) {
-          // openPath 返回错误信息字符串，空字符串表示成功
-          message.error(`打开附件失败: ${result}`);
+      setDownloading(true);
+      
+      try {
+        // 获取资源文件路径
+        const filePath = await window.electronAPI.resource.getPath(resourceId, ext);
+        
+        if (filePath) {
+          // 使用系统默认程序打开文件
+          const result = await window.electronAPI.openPath(filePath);
+          if (result) {
+            // openPath 返回错误信息字符串，空字符串表示成功
+            message.error(`打开附件失败: ${result}`);
+          }
+        } else {
+          message.error('附件文件不存在');
         }
-      } else {
-        message.error('附件文件不存在');
+      } catch (error) {
+        console.error('Failed to open attachment:', error);
+        message.error('打开附件失败');
+      } finally {
+        setDownloading(false);
       }
+      return;
+    }
+    
+    // 处理普通外部链接 - 使用系统默认浏览器打开
+    if (href.startsWith('http://') || href.startsWith('https://')) {
+      try {
+        await window.electronAPI.openExternal(href);
+      } catch (error) {
+        console.error('Failed to open external link:', error);
+        message.error('打开链接失败');
+      }
+      return;
+    }
+    
+    // 其他协议（如 mailto:, tel: 等）也使用系统默认程序打开
+    try {
+      await window.electronAPI.openExternal(href);
     } catch (error) {
-      console.error('Failed to open attachment:', error);
-      message.error('打开附件失败');
-    } finally {
-      setDownloading(false);
+      console.error('Failed to open link:', error);
     }
   }, [href]);
 
-  // 如果不是 resource:// 协议，返回普通链接
+  // 如果不是 resource:// 协议，返回普通链接样式
   if (!href || !href.startsWith('resource://')) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer">
+      <a 
+        href={href} 
+        onClick={handleClick}
+        style={{ color: '#1890ff', textDecoration: 'underline', cursor: 'pointer' }}
+      >
         {children}
       </a>
     );
@@ -477,6 +503,7 @@ interface EditorProps {
   allTags?: Tag[];
   onCreateTag?: (name: string, color?: string | null) => Promise<Tag | null>;
   isTrashView?: boolean;
+  defaultMode?: 'edit' | 'preview';
 }
 
 const Editor: React.FC<EditorProps> = ({ 
@@ -494,6 +521,7 @@ const Editor: React.FC<EditorProps> = ({
   allTags = [],
   onCreateTag,
   isTrashView = false,
+  defaultMode = 'edit',
 }) => {
   const [content, setContent] = useState('');
   const [title, setTitle] = useState('');
@@ -527,6 +555,17 @@ const Editor: React.FC<EditorProps> = ({
   const [showAIWriteDialog, setShowAIWriteDialog] = useState(false);
   const [aiWritePrompt, setAiWritePrompt] = useState('');
   const [aiWriteLoading, setAiWriteLoading] = useState(false);
+  
+  // AI 整理相关状态
+  const [showAIOrganizeDialog, setShowAIOrganizeDialog] = useState(false);
+  const [aiOrganizeLoading, setAiOrganizeLoading] = useState(false);
+  const [aiOrganizeResult, setAiOrganizeResult] = useState('');
+  
+  // AI 分析相关状态
+  const [showAIAnalyzeDialog, setShowAIAnalyzeDialog] = useState(false);
+  const [aiAnalyzeLoading, setAiAnalyzeLoading] = useState(false);
+  const [aiAnalyzeResult, setAiAnalyzeResult] = useState('');
+  
   const { settings: aiSettings } = useAISettings();
 
   // 提取标题生成目录
@@ -548,6 +587,8 @@ const Editor: React.FC<EditorProps> = ({
       setTitle(note.title);
       setSelectedTags(note.tags || []);
       setIsDirty(false);
+      // 根据 defaultMode 设置初始显示模式
+      setActiveTab(defaultMode);
       // 如果笔记已加密，重置解锁状态
       if (note.isLocked) {
         setIsUnlocked(false);
@@ -557,7 +598,7 @@ const Editor: React.FC<EditorProps> = ({
         setIsUnlocked(true);
       }
     }
-  }, [note]);
+  }, [note, defaultMode]);
 
   // 验证密码并解锁笔记
   const handleUnlock = useCallback(async () => {
@@ -995,6 +1036,171 @@ const Editor: React.FC<EditorProps> = ({
     }
   }, [aiWritePrompt, aiSettings, content]);
 
+  // AI 整理功能 - 基于现有笔记内容进行整理和优化
+  const handleAIOrganize = useCallback(async () => {
+    if (!content.trim()) {
+      message.warning('笔记内容为空，无法整理');
+      return;
+    }
+
+    // 检查是否有可用的 AI 渠道
+    const enabledChannels = aiSettings.channels.filter(c => c.enabled && c.api_key);
+    if (enabledChannels.length === 0) {
+      message.error('请先在设置中配置 AI 渠道和 API Key');
+      return;
+    }
+
+    // 获取默认模型和渠道
+    let targetChannel = enabledChannels[0];
+    let targetModel = aiSettings.default_model || '';
+
+    if (targetModel) {
+      for (const channel of enabledChannels) {
+        const model = channel.models.find(m => m.id === targetModel);
+        if (model) {
+          targetChannel = channel;
+          break;
+        }
+      }
+    }
+
+    if (!targetModel && targetChannel.models.length > 0) {
+      targetModel = targetChannel.models[0].id;
+    }
+
+    if (!targetModel) {
+      message.error('请先在设置中配置 AI 模型');
+      return;
+    }
+
+    setAiOrganizeLoading(true);
+    setAiOrganizeResult('');
+    message.loading({ content: 'AI 正在整理笔记...', key: 'ai-organize' });
+
+    try {
+      const systemPrompt = `你是一个专业的文档整理助手。请对用户提供的笔记内容进行整理和优化，包括：
+1. 优化文章结构，添加合适的标题层级
+2. 修正语法和拼写错误
+3. 改善段落组织和逻辑流程
+4. 保持原有内容的核心意思不变
+5. 输出格式为 Markdown
+
+请直接输出整理后的内容，不要添加额外的说明。`;
+
+      const response = await callAIApi(targetChannel, {
+        model: targetModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `请整理以下笔记内容：\n\n${content}` },
+        ],
+        temperature: 0.3,
+        max_tokens: 8192,
+        stream: false,
+      });
+
+      setAiOrganizeResult(response);
+      message.success({ content: 'AI 整理完成', key: 'ai-organize' });
+    } catch (err: any) {
+      message.error({ content: `AI 整理失败: ${err.message || '未知错误'}`, key: 'ai-organize' });
+    } finally {
+      setAiOrganizeLoading(false);
+    }
+  }, [aiSettings, content]);
+
+  // 应用 AI 整理结果
+  const handleApplyOrganize = useCallback(() => {
+    if (aiOrganizeResult) {
+      setContent(aiOrganizeResult);
+      setIsDirty(true);
+      setShowAIOrganizeDialog(false);
+      setAiOrganizeResult('');
+      message.success('已应用整理结果');
+    }
+  }, [aiOrganizeResult]);
+
+  // AI 分析功能 - 针对现有笔记进行分析总结
+  const handleAIAnalyze = useCallback(async () => {
+    if (!content.trim()) {
+      message.warning('笔记内容为空，无法分析');
+      return;
+    }
+
+    // 检查是否有可用的 AI 渠道
+    const enabledChannels = aiSettings.channels.filter(c => c.enabled && c.api_key);
+    if (enabledChannels.length === 0) {
+      message.error('请先在设置中配置 AI 渠道和 API Key');
+      return;
+    }
+
+    // 获取默认模型和渠道
+    let targetChannel = enabledChannels[0];
+    let targetModel = aiSettings.default_model || '';
+
+    if (targetModel) {
+      for (const channel of enabledChannels) {
+        const model = channel.models.find(m => m.id === targetModel);
+        if (model) {
+          targetChannel = channel;
+          break;
+        }
+      }
+    }
+
+    if (!targetModel && targetChannel.models.length > 0) {
+      targetModel = targetChannel.models[0].id;
+    }
+
+    if (!targetModel) {
+      message.error('请先在设置中配置 AI 模型');
+      return;
+    }
+
+    setAiAnalyzeLoading(true);
+    setAiAnalyzeResult('');
+    message.loading({ content: 'AI 正在分析笔记...', key: 'ai-analyze' });
+
+    try {
+      const systemPrompt = `你是一个专业的内容分析助手。请对用户提供的笔记内容进行深入分析，包括：
+1. 内容摘要：用 2-3 句话概括主要内容
+2. 关键要点：列出 3-5 个核心观点或要点
+3. 主题标签：建议 3-5 个相关标签
+4. 内容评估：评估内容的完整性、逻辑性
+5. 改进建议：提出 2-3 条具体的改进建议
+
+请使用 Markdown 格式输出分析结果。`;
+
+      const response = await callAIApi(targetChannel, {
+        model: targetModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `请分析以下笔记内容：\n\n标题：${title}\n\n${content}` },
+        ],
+        temperature: 0.5,
+        max_tokens: 4096,
+        stream: false,
+      });
+
+      setAiAnalyzeResult(response);
+      message.success({ content: 'AI 分析完成', key: 'ai-analyze' });
+    } catch (err: any) {
+      message.error({ content: `AI 分析失败: ${err.message || '未知错误'}`, key: 'ai-analyze' });
+    } finally {
+      setAiAnalyzeLoading(false);
+    }
+  }, [aiSettings, content, title]);
+
+  // 将分析结果插入到笔记末尾
+  const handleInsertAnalysis = useCallback(() => {
+    if (aiAnalyzeResult) {
+      const newContent = content + '\n\n---\n\n## AI 分析\n\n' + aiAnalyzeResult;
+      setContent(newContent);
+      setIsDirty(true);
+      setShowAIAnalyzeDialog(false);
+      setAiAnalyzeResult('');
+      message.success('已将分析结果插入笔记');
+    }
+  }, [aiAnalyzeResult, content]);
+
   const handleDuplicate = () => {
     if (noteId && onDuplicate) {
       onDuplicate(noteId);
@@ -1182,13 +1388,20 @@ const Editor: React.FC<EditorProps> = ({
                   {note.tags.length > 0 && <span style={{ marginLeft: 4 }}>{note.tags.length}</span>}
                 </Button>
               </Tooltip>
-              <Tooltip title="AI 撰写">
-                <Button
-                  icon={<RobotOutlined />}
-                  type="text"
-                  onClick={() => setShowAIWriteDialog(true)}
-                />
-              </Tooltip>
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'write', icon: <EditOutlined />, label: 'AI 撰写', onClick: () => setShowAIWriteDialog(true) },
+                    { key: 'organize', icon: <OrderedListOutlined />, label: 'AI 整理', onClick: () => { setShowAIOrganizeDialog(true); handleAIOrganize(); } },
+                    { key: 'analyze', icon: <FileSearchOutlined />, label: 'AI 分析', onClick: () => { setShowAIAnalyzeDialog(true); handleAIAnalyze(); } },
+                  ],
+                }}
+                trigger={['click']}
+              >
+                <Tooltip title="AI 功能">
+                  <Button icon={<RobotOutlined />} type="text" />
+                </Tooltip>
+              </Dropdown>
               <Tooltip title={isDirty ? '保存 (有未保存更改)' : '保存'}>
                 <Button
                   icon={<SaveOutlined />}
@@ -1396,8 +1609,11 @@ const Editor: React.FC<EditorProps> = ({
                         style={oneDark}
                         language={match[1]}
                         PreTag="div"
-                        wrapLines={false}
+                        wrapLines={true}
                         wrapLongLines={false}
+                        lineProps={{
+                          style: { display: 'block', userSelect: 'text' }
+                        }}
                         customStyle={{
                           margin: 0,
                           padding: '16px',
@@ -1621,6 +1837,18 @@ const Editor: React.FC<EditorProps> = ({
                           style={oneDark}
                           language={match[1]}
                           PreTag="div"
+                          wrapLines={true}
+                          wrapLongLines={false}
+                          lineProps={{
+                            style: { display: 'block', userSelect: 'text' }
+                          }}
+                          customStyle={{
+                            margin: 0,
+                            padding: '16px',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            lineHeight: '1.5',
+                          }}
                           {...props}
                         >
                           {String(children).replace(/\n$/, '')}
@@ -1867,6 +2095,118 @@ const Editor: React.FC<EditorProps> = ({
           <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
             提示：按 Ctrl+Enter 快速提交
           </div>
+        </div>
+      </Modal>
+
+      {/* AI 整理 Modal */}
+      <Modal
+        title={
+          <span>
+            <OrderedListOutlined style={{ marginRight: 8, color: '#52c41a' }} />
+            AI 整理
+          </span>
+        }
+        open={showAIOrganizeDialog}
+        onOk={handleApplyOrganize}
+        onCancel={() => {
+          setShowAIOrganizeDialog(false);
+          setAiOrganizeResult('');
+        }}
+        okText="应用整理结果"
+        cancelText="取消"
+        confirmLoading={aiOrganizeLoading}
+        okButtonProps={{ disabled: !aiOrganizeResult || aiOrganizeLoading }}
+        width={800}
+      >
+        <div>
+          <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 16 }}>
+            AI 将对当前笔记内容进行整理和优化，包括优化结构、修正错误、改善逻辑等。
+          </p>
+          {aiOrganizeLoading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <RobotOutlined style={{ fontSize: 32, color: '#52c41a', marginBottom: 16 }} />
+              <p>AI 正在整理笔记内容...</p>
+            </div>
+          ) : aiOrganizeResult ? (
+            <div>
+              <div style={{ marginBottom: 8, fontWeight: 500 }}>整理结果预览：</div>
+              <div style={{ 
+                maxHeight: 400, 
+                overflow: 'auto', 
+                border: '1px solid #d9d9d9', 
+                borderRadius: 6, 
+                padding: 16,
+                background: '#fafafa'
+              }}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {aiOrganizeResult}
+                </ReactMarkdown>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+                点击"应用整理结果"将替换当前笔记内容
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>
+              整理结果将显示在这里
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* AI 分析 Modal */}
+      <Modal
+        title={
+          <span>
+            <FileSearchOutlined style={{ marginRight: 8, color: '#722ed1' }} />
+            AI 分析
+          </span>
+        }
+        open={showAIAnalyzeDialog}
+        onOk={handleInsertAnalysis}
+        onCancel={() => {
+          setShowAIAnalyzeDialog(false);
+          setAiAnalyzeResult('');
+        }}
+        okText="插入到笔记"
+        cancelText="关闭"
+        confirmLoading={aiAnalyzeLoading}
+        okButtonProps={{ disabled: !aiAnalyzeResult || aiAnalyzeLoading }}
+        width={700}
+      >
+        <div>
+          <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 16 }}>
+            AI 将对当前笔记进行深入分析，包括内容摘要、关键要点、主题标签和改进建议。
+          </p>
+          {aiAnalyzeLoading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <RobotOutlined style={{ fontSize: 32, color: '#722ed1', marginBottom: 16 }} />
+              <p>AI 正在分析笔记内容...</p>
+            </div>
+          ) : aiAnalyzeResult ? (
+            <div>
+              <div style={{ marginBottom: 8, fontWeight: 500 }}>分析结果：</div>
+              <div style={{ 
+                maxHeight: 400, 
+                overflow: 'auto', 
+                border: '1px solid #d9d9d9', 
+                borderRadius: 6, 
+                padding: 16,
+                background: '#fafafa'
+              }}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {aiAnalyzeResult}
+                </ReactMarkdown>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+                点击"插入到笔记"将分析结果添加到笔记末尾
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>
+              分析结果将显示在这里
+            </div>
+          )}
         </div>
       </Modal>
     </div>

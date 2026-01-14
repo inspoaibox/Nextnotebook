@@ -120,9 +120,16 @@ class SyncEngine @Inject constructor(
                 // 设置 token 刷新回调，用于持久化新 token
                 onTokenRefresh = { newToken, newRefreshToken, expiresIn ->
                     android.util.Log.d("SyncEngine", "Token refreshed, saving to preferences")
-                    // 保存新 token 到 SharedPreferences
+                    // 保存新 token 到 SharedPreferences（同时保存到两个位置）
                     val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
                     syncPrefs.edit()
+                        .putString("server_token", newToken)
+                        .putString("server_refresh_token", newRefreshToken)
+                        .putLong("server_token_expires", System.currentTimeMillis() + expiresIn * 1000L)
+                        .apply()
+                    
+                    val appPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                    appPrefs.edit()
                         .putString("server_token", newToken)
                         .putString("server_refresh_token", newRefreshToken)
                         .putLong("server_token_expires", System.currentTimeMillis() + expiresIn * 1000L)
@@ -139,15 +146,48 @@ class SyncEngine @Inject constructor(
                         .remove("server_refresh_token")
                         .remove("server_token_expires")
                         .apply()
+                    
+                    val appPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                    appPrefs.edit()
+                        .remove("server_token")
+                        .remove("server_refresh_token")
+                        .remove("server_token_expires")
+                        .apply()
                 }
                 
-                // 如果有保存的凭据，设置自动重新登录
-                val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
-                val savedUsername = syncPrefs.getString("server_username", null)
-                val savedPassword = syncPrefs.getString("server_password", null)
-                val savedSyncKey = syncPrefs.getString("server_sync_key", null)
-                if (savedUsername != null && savedPassword != null && savedSyncKey != null) {
-                    saveCredentials(savedUsername, savedPassword, savedSyncKey)
+                // 优先从 SyncConfig 获取凭据（由 SettingsViewModel 传入）
+                // 如果 SyncConfig 中有凭据，使用它们
+                val username = syncConfig.serverUsername
+                val password = syncConfig.serverPassword
+                val syncKey = syncConfig.serverSyncKey
+                
+                if (!username.isNullOrBlank() && !password.isNullOrBlank() && !syncKey.isNullOrBlank()) {
+                    android.util.Log.d("SyncEngine", "Using credentials from SyncConfig")
+                    saveCredentials(username, password, syncKey)
+                } else {
+                    // 否则尝试从 SharedPreferences 读取
+                    val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
+                    val savedUsername = syncPrefs.getString("server_username", null)
+                    val savedPassword = syncPrefs.getString("server_password", null)
+                    val savedSyncKey = syncPrefs.getString("server_sync_key", null)
+                    
+                    if (savedUsername != null && savedPassword != null && savedSyncKey != null) {
+                        android.util.Log.d("SyncEngine", "Using credentials from sync_config prefs")
+                        saveCredentials(savedUsername, savedPassword, savedSyncKey)
+                    } else {
+                        // 最后尝试从 app_settings 读取
+                        val appPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                        val appUsername = appPrefs.getString("server_username", null)
+                        val appPassword = appPrefs.getString("server_password", null)
+                        val appSyncKey = appPrefs.getString("server_sync_key", null)
+                        
+                        if (appUsername != null && appPassword != null && appSyncKey != null) {
+                            android.util.Log.d("SyncEngine", "Using credentials from app_settings prefs")
+                            saveCredentials(appUsername, appPassword, appSyncKey)
+                        } else {
+                            android.util.Log.w("SyncEngine", "No credentials found for auto-relogin")
+                        }
+                    }
                 }
                 
                 // 初始化（会自动检查并刷新过期的 token）

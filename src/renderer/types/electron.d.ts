@@ -151,6 +151,35 @@ export interface ResourceAPI {
   getNoteResources: (noteId: string) => Promise<ResourceInfo[]>;
 }
 
+export interface ClipImage {
+  src: string;
+  alt: string;
+}
+
+export interface ClipperConfirmData {
+  title: string;
+  content: string;
+  folderId?: string;
+  tags?: string[];
+  downloadImages?: boolean;
+  images?: ClipImage[];
+}
+
+export interface ClipperReceivedData {
+  title: string;
+  content: string;
+  url: string;
+  tags?: string[];
+  images?: ClipImage[];
+}
+
+export interface ClipperAPI {
+  confirm: (data: ClipperConfirmData) => Promise<{ success: boolean; noteId?: string; error?: string }>;
+  cancel: () => Promise<{ success: boolean }>;
+  getPending: () => Promise<ClipperReceivedData | null>;
+  onNoteCreated: (callback: (data: { noteId: string }) => void) => void;
+}
+
 export interface ElectronAPI {
   getAppPath: () => Promise<string>;
   getAppPaths: () => Promise<{
@@ -182,6 +211,7 @@ export interface ElectronAPI {
   pdf: PDFAPI;
   data: DataAPI;
   resource: ResourceAPI;
+  clipper: ClipperAPI;
 }
 
 declare global {

@@ -351,12 +351,23 @@ class SettingsViewModel @Inject constructor(
             }
             
             if (result.success && result.accessToken != null) {
-                // 保存 token
+                // 保存 token 到 app_settings（与 loadSettings 一致）
                 prefs.edit()
                     .putString(KEY_SERVER_TOKEN, result.accessToken)
                     .putString(KEY_SERVER_REFRESH_TOKEN, result.refreshToken)
                     .putLong(KEY_SERVER_TOKEN_EXPIRES, System.currentTimeMillis() + (result.expiresIn ?: 3600) * 1000L)
                     // 保存凭据用于自动重新登录
+                    .putString(KEY_SERVER_USERNAME, username)
+                    .putString(KEY_SERVER_PASSWORD, password)
+                    .putString(KEY_SERVER_SYNC_KEY, syncKey)
+                    .apply()
+                
+                // 同时保存到 sync_config（供 SyncEngine 读取）
+                val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
+                syncPrefs.edit()
+                    .putString("server_token", result.accessToken)
+                    .putString("server_refresh_token", result.refreshToken)
+                    .putLong("server_token_expires", System.currentTimeMillis() + (result.expiresIn ?: 3600) * 1000L)
                     .putString("server_username", username)
                     .putString("server_password", password)
                     .putString("server_sync_key", syncKey)
@@ -440,11 +451,22 @@ class SettingsViewModel @Inject constructor(
                 }
             }
             
-            // 清除本地 token 和保存的凭据
+            // 清除本地 token 和保存的凭据（app_settings）
             prefs.edit()
                 .remove(KEY_SERVER_TOKEN)
                 .remove(KEY_SERVER_REFRESH_TOKEN)
                 .remove(KEY_SERVER_TOKEN_EXPIRES)
+                .remove(KEY_SERVER_USERNAME)
+                .remove(KEY_SERVER_PASSWORD)
+                .remove(KEY_SERVER_SYNC_KEY)
+                .apply()
+            
+            // 同时清除 sync_config 中的凭据
+            val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
+            syncPrefs.edit()
+                .remove("server_token")
+                .remove("server_refresh_token")
+                .remove("server_token_expires")
                 .remove("server_username")
                 .remove("server_password")
                 .remove("server_sync_key")

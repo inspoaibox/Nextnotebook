@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ItemBase, AIConversationPayload, AIMessagePayload, AIChannel, AIModel, AISettings } from '@shared/types';
 import { aiConversationsApi, aiMessagesApi, aiSettingsApi, callAIApi, ChatMessage } from '../services/aiApi';
 
@@ -21,6 +21,7 @@ export interface AIMessage {
   model: string;
   tokensUsed?: number;
   createdAt: number;
+  isOptimistic?: boolean; // 乐观更新标记
 }
 
 // 解析 payload
@@ -186,14 +187,34 @@ export function useAISettings() {
 export function useAIConversations() {
   const [conversations, setConversations] = useState<AIConversation[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // 对话列表缓存
+  const conversationsCache = useRef<AIConversation[] | null>(null);
 
   const loadConversations = useCallback(async () => {
+    // 先使用缓存快速显示
+    if (conversationsCache.current && conversationsCache.current.length > 0) {
+      setConversations(conversationsCache.current);
+      setLoading(false);
+      // 后台静默刷新
+      aiConversationsApi.getAll().then(items => {
+        if (items && Array.isArray(items)) {
+          const list = items.map(itemToConversation);
+          list.sort((a, b) => b.updatedAt - a.updatedAt);
+          conversationsCache.current = list;
+          setConversations(list);
+        }
+      }).catch(console.error);
+      return;
+    }
+    
     try {
       setLoading(true);
       const items = await aiConversationsApi.getAll();
       if (items && Array.isArray(items)) {
         const list = items.map(itemToConversation);
         list.sort((a, b) => b.updatedAt - a.updatedAt);
+        conversationsCache.current = list;
         setConversations(list);
       }
     } catch (err) {
@@ -210,6 +231,7 @@ export function useAIConversations() {
   // 监听同步完成事件，刷新对话列表
   useEffect(() => {
     const handleSyncCompleted = () => {
+      conversationsCache.current = null; // 清除缓存
       loadConversations();
     };
     window.addEventListener('sync-completed', handleSyncCompleted);
@@ -225,54 +247,130 @@ export function useAIConversations() {
     temperature: number = 0.7,
     maxTokens: number = 4096
   ) => {
+    const now = Date.now();
+    const tempId = `temp-conv-${now}`;
+    
+    // 乐观更新：立即在 UI 显示新对话
+    const optimisticConv: AIConversation = {
+      id: tempId,
+      title,
+      model,
+      systemPrompt,
+      temperature,
+      maxTokens,
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    setConversations(prev => {
+      const updated = [optimisticConv, ...prev];
+      conversationsCache.current = updated;
+      return updated;
+    });
+    
+    // 后台保存到数据库
     const payload: AIConversationPayload = {
       title,
       model,
       system_prompt: systemPrompt,
       temperature,
       max_tokens: maxTokens,
-      created_at: Date.now(),
+      created_at: now,
     };
-    const item = await aiConversationsApi.create(payload);
-    if (item) {
-      await loadConversations();
-      return itemToConversation(item);
+    
+    try {
+      const item = await aiConversationsApi.create(payload);
+      if (item) {
+        const realConv = itemToConversation(item);
+        // 替换乐观对话为真实对话
+        setConversations(prev => {
+          const updated = prev.map(c => c.id === tempId ? realConv : c);
+          conversationsCache.current = updated;
+          return updated;
+        });
+        return realConv;
+      }
+    } catch (err) {
+      // 失败时移除乐观对话
+      setConversations(prev => {
+        const updated = prev.filter(c => c.id !== tempId);
+        conversationsCache.current = updated;
+        return updated;
+      });
+      console.error('Failed to create conversation:', err);
     }
     return null;
-  }, [loadConversations]);
+  }, []);
 
   const updateConversation = useCallback(async (id: string, updates: Partial<AIConversationPayload>) => {
-    // 先获取现有数据，然后合并更新（避免部分更新导致数据丢失）
-    const existingItems = await aiConversationsApi.getAll();
-    const existingItem = existingItems.find(item => item.id === id);
-    if (!existingItem) return null;
+    // 乐观更新
+    setConversations(prev => {
+      const updated = prev.map(c => {
+        if (c.id === id) {
+          return {
+            ...c,
+            title: updates.title ?? c.title,
+            model: updates.model ?? c.model,
+            systemPrompt: updates.system_prompt ?? c.systemPrompt,
+            temperature: updates.temperature ?? c.temperature,
+            maxTokens: updates.max_tokens ?? c.maxTokens,
+            updatedAt: Date.now(),
+          };
+        }
+        return c;
+      });
+      conversationsCache.current = updated;
+      return updated;
+    });
+    
+    // 后台保存
+    try {
+      const existingItems = await aiConversationsApi.getAll();
+      const existingItem = existingItems.find(item => item.id === id);
+      if (!existingItem) return null;
 
-    const existingPayload = JSON.parse(existingItem.payload) as AIConversationPayload;
-    const mergedPayload: AIConversationPayload = {
-      ...existingPayload,
-      ...updates,
-    };
+      const existingPayload = JSON.parse(existingItem.payload) as AIConversationPayload;
+      const mergedPayload: AIConversationPayload = {
+        ...existingPayload,
+        ...updates,
+      };
 
-    const item = await aiConversationsApi.update(id, mergedPayload);
-    if (item) {
-      await loadConversations();
-      return itemToConversation(item);
+      const item = await aiConversationsApi.update(id, mergedPayload);
+      if (item) {
+        return itemToConversation(item);
+      }
+    } catch (err) {
+      console.error('Failed to update conversation:', err);
+      // 失败时重新加载
+      loadConversations();
     }
     return null;
   }, [loadConversations]);
 
   const deleteConversation = useCallback(async (id: string) => {
-    // 1. 先删除所有关联的消息（级联删除）
-    const messages = await aiMessagesApi.getByConversation(id);
-    for (const msg of messages) {
-      await aiMessagesApi.delete(msg.id);
+    // 乐观更新：立即从 UI 移除
+    setConversations(prev => {
+      const updated = prev.filter(c => c.id !== id);
+      conversationsCache.current = updated;
+      return updated;
+    });
+    
+    // 后台删除
+    try {
+      // 1. 先删除所有关联的消息（级联删除）
+      const messages = await aiMessagesApi.getByConversation(id);
+      for (const msg of messages) {
+        await aiMessagesApi.delete(msg.id);
+      }
+      // 2. 再删除对话本身
+      await aiConversationsApi.delete(id);
+      return true;
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+      // 失败时重新加载
+      loadConversations();
+      return false;
     }
-    // 2. 再删除对话本身
-    const success = await aiConversationsApi.delete(id);
-    if (success) {
-      await loadConversations();
-    }
-    return success;
   }, [loadConversations]);
 
   return {
@@ -290,19 +388,42 @@ export function useAIMessages(conversationId: string | null) {
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  
+  // 消息缓存，避免频繁从数据库加载
+  const messagesCache = useRef<Map<string, AIMessage[]>>(new Map());
+  // 流式响应防抖
+  const streamBufferRef = useRef('');
+  const streamUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadMessages = useCallback(async () => {
     if (!conversationId) {
       setMessages([]);
       return;
     }
+    
+    // 先检查缓存
+    const cached = messagesCache.current.get(conversationId);
+    if (cached && cached.length > 0) {
+      setMessages(cached);
+      // 后台静默刷新
+      aiMessagesApi.getByConversation(conversationId).then(items => {
+        if (items) {
+          const msgs = items.map(itemToMessage);
+          msgs.sort((a, b) => a.createdAt - b.createdAt);
+          messagesCache.current.set(conversationId, msgs);
+          setMessages(msgs);
+        }
+      }).catch(console.error);
+      return;
+    }
+    
     try {
       setLoading(true);
       const items = await aiMessagesApi.getByConversation(conversationId);
       if (items) {
         const msgs = items.map(itemToMessage);
-        // 按创建时间排序
         msgs.sort((a, b) => a.createdAt - b.createdAt);
+        messagesCache.current.set(conversationId, msgs);
         setMessages(msgs);
       }
     } catch (err) {
@@ -316,11 +437,28 @@ export function useAIMessages(conversationId: string | null) {
   useEffect(() => {
     setStreaming(false);
     setStreamingContent('');
+    streamBufferRef.current = '';
+    if (streamUpdateTimerRef.current) {
+      clearTimeout(streamUpdateTimerRef.current);
+      streamUpdateTimerRef.current = null;
+    }
   }, [conversationId]);
 
   useEffect(() => {
     loadMessages();
   }, [loadMessages]);
+
+  // 防抖更新流式内容（每 50ms 更新一次 UI，减少重渲染）
+  const updateStreamingContent = useCallback((chunk: string) => {
+    streamBufferRef.current += chunk;
+    
+    if (!streamUpdateTimerRef.current) {
+      streamUpdateTimerRef.current = setTimeout(() => {
+        setStreamingContent(streamBufferRef.current);
+        streamUpdateTimerRef.current = null;
+      }, 50);
+    }
+  }, []);
 
   const sendMessage = useCallback(async (
     content: string,
@@ -332,35 +470,57 @@ export function useAIMessages(conversationId: string | null) {
   ) => {
     if (!conversationId) return null;
 
-    // 保存用户消息
+    const now = Date.now();
+    const tempUserId = `temp-user-${now}`;
+    
+    // 1. 乐观更新：立即在 UI 显示用户消息
+    const optimisticUserMsg: AIMessage = {
+      id: tempUserId,
+      conversationId,
+      role: 'user',
+      content,
+      model,
+      createdAt: now,
+      isOptimistic: true,
+    };
+    
+    setMessages(prev => {
+      const updated = [...prev, optimisticUserMsg];
+      messagesCache.current.set(conversationId, updated);
+      return updated;
+    });
+
+    // 2. 并行：保存用户消息到数据库（不阻塞 API 请求）
     const userPayload: AIMessagePayload = {
       conversation_id: conversationId,
       role: 'user',
       content,
       model,
-      created_at: Date.now(),
+      created_at: now,
     };
-    await aiMessagesApi.create(userPayload);
+    const saveUserMsgPromise = aiMessagesApi.create(userPayload);
 
-    // 重新从数据库加载当前对话的消息历史（避免闭包导致使用旧对话的消息）
-    const currentMessages = await aiMessagesApi.getByConversation(conversationId);
-    const sortedMessages = currentMessages
-      .map(itemToMessage)
-      .sort((a, b) => a.createdAt - b.createdAt);
-
-    // 构建消息历史
+    // 3. 构建消息历史（使用当前内存中的消息，不重新从数据库加载）
     const chatMessages: ChatMessage[] = [];
     if (systemPrompt) {
       chatMessages.push({ role: 'system', content: systemPrompt });
     }
-    // 使用刚从数据库加载的消息，排除刚刚添加的用户消息（它已经在最后添加）
-    sortedMessages.forEach(m => {
+    // 使用当前消息列表（不包括刚添加的乐观消息，因为它已经在 content 中）
+    // 过滤掉空内容的消息（某些 API 如月之暗面不允许空的 assistant 消息）
+    messages.forEach(m => {
+      // 跳过空内容的消息
+      if (!m.content || m.content.trim() === '') {
+        return;
+      }
       chatMessages.push({ role: m.role, content: m.content });
     });
+    // 添加当前用户消息
+    chatMessages.push({ role: 'user', content });
 
-    // 开始流式响应
+    // 4. 开始流式响应
     setStreaming(true);
     setStreamingContent('');
+    streamBufferRef.current = '';
 
     try {
       const response = await callAIApi(channel, {
@@ -369,30 +529,76 @@ export function useAIMessages(conversationId: string | null) {
         temperature,
         max_tokens: maxTokens,
         stream: true,
-      }, (chunk) => {
-        setStreamingContent(prev => prev + chunk);
+      }, updateStreamingContent);
+
+      // 确保最后一次更新
+      if (streamUpdateTimerRef.current) {
+        clearTimeout(streamUpdateTimerRef.current);
+        streamUpdateTimerRef.current = null;
+      }
+      setStreamingContent(streamBufferRef.current);
+
+      // 5. 等待用户消息保存完成
+      const savedUserMsg = await saveUserMsgPromise;
+
+      // 6. 保存助手消息（只有非空内容才保存）
+      let savedAssistantMsg = null;
+      if (response && response.trim()) {
+        const assistantPayload: AIMessagePayload = {
+          conversation_id: conversationId,
+          role: 'assistant',
+          content: response,
+          model,
+          created_at: Date.now(),
+        };
+        savedAssistantMsg = await aiMessagesApi.create(assistantPayload);
+      }
+
+      // 7. 更新消息列表（替换乐观消息为真实消息）
+      setMessages(prev => {
+        const filtered = prev.filter(m => m.id !== tempUserId);
+        const newMsgs = [
+          ...filtered,
+          savedUserMsg ? itemToMessage(savedUserMsg) : optimisticUserMsg,
+        ];
+        // 只有非空响应才添加助手消息
+        if (response && response.trim()) {
+          newMsgs.push(
+            savedAssistantMsg ? itemToMessage(savedAssistantMsg) : {
+              id: `temp-assistant-${Date.now()}`,
+              conversationId,
+              role: 'assistant' as const,
+              content: response,
+              model,
+              createdAt: Date.now(),
+            }
+          );
+        }
+        messagesCache.current.set(conversationId, newMsgs);
+        return newMsgs;
       });
 
-      // 保存助手消息
-      const assistantPayload: AIMessagePayload = {
-        conversation_id: conversationId,
-        role: 'assistant',
-        content: response,
-        model,
-        created_at: Date.now(),
-      };
-      await aiMessagesApi.create(assistantPayload);
-
-      await loadMessages();
       return response;
     } catch (err) {
+      // 发生错误时，移除乐观消息
+      setMessages(prev => {
+        const filtered = prev.filter(m => m.id !== tempUserId);
+        messagesCache.current.set(conversationId, filtered);
+        return filtered;
+      });
       console.error('AI API error:', err);
       throw err;
     } finally {
       setStreaming(false);
       setStreamingContent('');
+      streamBufferRef.current = '';
     }
-  }, [conversationId, loadMessages]);
+  }, [conversationId, messages, updateStreamingContent]);
+
+  // 清除缓存（用于同步后刷新）
+  const clearCache = useCallback(() => {
+    messagesCache.current.clear();
+  }, []);
 
   return {
     messages,
@@ -401,5 +607,6 @@ export function useAIMessages(conversationId: string | null) {
     streamingContent,
     sendMessage,
     refresh: loadMessages,
+    clearCache,
   };
 }

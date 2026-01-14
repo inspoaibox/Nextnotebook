@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Layout, message, Modal, Select, Radio, Space } from 'antd';
+import { Layout, message, Modal, Select, Radio, Space, Input, Tag } from 'antd';
+import { LinkOutlined } from '@ant-design/icons';
 import Sidebar from './components/Sidebar';
 import NoteList from './components/NoteList';
 import Editor from './components/Editor';
@@ -50,6 +51,7 @@ const App: React.FC = () => {
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   const [selectedView, setSelectedView] = useState<ViewType>('all');
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [isNewNote, setIsNewNote] = useState(false); // 标记是否是新建的笔记
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string>('general');
   const [templateSelectorOpen, setTemplateSelectorOpen] = useState(false);
@@ -443,6 +445,7 @@ const App: React.FC = () => {
   const handleTemplateSelect = useCallback(async (title: string, content: string) => {
     const newNote = await createNote(title, content);
     if (newNote) {
+      setIsNewNote(true); // 标记为新建笔记，使用编辑模式
       setSelectedNoteId(newNote.id);
       message.success('笔记已创建');
     }
@@ -451,10 +454,17 @@ const App: React.FC = () => {
   const handleQuickCreateNote = useCallback(async () => {
     const newNote = await createNote('新建笔记', '');
     if (newNote) {
+      setIsNewNote(true); // 标记为新建笔记，使用编辑模式
       setSelectedNoteId(newNote.id);
       message.success('笔记已创建');
     }
   }, [createNote]);
+
+  // 选择笔记（从列表点击）- 历史笔记默认预览模式
+  const handleSelectNote = useCallback((noteId: string) => {
+    setIsNewNote(false); // 打开历史笔记，使用预览模式
+    setSelectedNoteId(noteId);
+  }, []);
 
   const handleSaveNote = useCallback(async (id: string, content: string, title: string) => {
     await updateNote(id, { content, title });
@@ -1056,6 +1066,23 @@ const App: React.FC = () => {
     };
   }, [currentTool, selectedNoteId, selectedView, currentNote, filteredNotes]);
 
+  // 监听 Web Clipper 笔记创建事件
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (api?.clipper?.onNoteCreated) {
+      api.clipper.onNoteCreated(async (data: { noteId: string }) => {
+        message.success('网页已保存到笔记');
+        await refresh();
+        // 选中新创建的笔记
+        if (data.noteId) {
+          setSelectedNoteId(data.noteId);
+          setCurrentTool(null);
+          setSelectedView('all');
+        }
+      });
+    }
+  }, [refresh]);
+
   // 如果应用被锁定，显示锁定界面
   if (isAppLocked) {
     return (
@@ -1139,7 +1166,7 @@ const App: React.FC = () => {
               <NoteList
                 notes={filteredNotes}
                 selectedNoteId={selectedNoteId}
-                onSelectNote={setSelectedNoteId}
+                onSelectNote={handleSelectNote}
                 onSearch={searchNotes}
                 onDeleteNote={selectedView === 'trash' ? handlePermanentDeleteNote : handleDeleteNote}
                 onRestoreNote={selectedView === 'trash' ? handleRestoreNote : undefined}
@@ -1170,6 +1197,7 @@ const App: React.FC = () => {
                   allTags={tags}
                   onCreateTag={createTag}
                   isTrashView={selectedView === 'trash'}
+                  defaultMode={isNewNote ? 'edit' : 'preview'}
                 />
               </Content>
               <Footer style={{ 
@@ -1255,6 +1283,7 @@ const App: React.FC = () => {
           </div>
         </Space>
       </Modal>
+
     </Layout>
   );
 };

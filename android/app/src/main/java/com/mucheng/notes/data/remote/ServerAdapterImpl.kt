@@ -501,11 +501,11 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             if (result != null) {
                 Result.success(result.remoteRev)
             } else {
-                Result.failure(Exception("Failed to upload item ${item.id} - server returned no response"))
+                Result.failure(Exception("上传项目失败: ${item.id} - 服务器无响应"))
             }
         } catch (e: Exception) {
             android.util.Log.e("ServerAdapter", "Failed to put item ${item.id}: ${e.message}")
-            Result.failure(Exception("Failed to upload item ${item.id}: ${e.message}"))
+            Result.failure(Exception("上传项目失败: ${item.id}: ${e.message}"))
         }
     }
     
@@ -524,7 +524,7 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
         }
         
         if (result == null) {
-            throw Exception("Failed to fetch changes from server - check network connection and authentication")
+            throw Exception("获取变更列表失败 - 请检查网络连接和认证状态")
         }
         
         return result
@@ -556,7 +556,7 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             if (response.isSuccessful) {
                 Result.success(System.currentTimeMillis().toString())
             } else {
-                Result.failure(Exception("Upload failed: ${response.code}"))
+                Result.failure(Exception("上传失败: ${response.code}"))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -577,7 +577,7 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
                 val data = response.body?.bytes() ?: ByteArray(0)
                 Result.success(data)
             } else {
-                Result.failure(Exception("Download failed: ${response.code}"))
+                Result.failure(Exception("下载失败: ${response.code}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

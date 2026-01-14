@@ -1,11 +1,12 @@
 import { app, BrowserWindow, Menu, ipcMain, shell, Tray, nativeImage, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { initializeDatabase, closeDatabase } from './services/DatabaseService';
+import { initializeDatabase, closeDatabase, getItemsManager } from './services/DatabaseService';
 import { registerSyncIpcHandlers } from './services/SyncService';
 import { imageService, ProcessOptions } from './services/ImageService';
 import { pdfService, WatermarkOptions as PDFWatermarkOptions, SecurityOptions as PDFSecurityOptions, ImageToPdfOptions as PDFImageToPdfOptions } from './services/PDFService';
 import { ghostscriptService, ToImageOptions as GSToImageOptions, CompressLevel } from './services/GhostscriptService';
+import { clipperService } from './services/ClipperService';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -362,12 +363,25 @@ function createTray(): void {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initLogFile();
   console.log('App starting...');
   initializeDatabase();
   registerSyncIpcHandlers();
   createWindow();
+  
+  // 启动 Web Clipper 服务
+  try {
+    const itemsManager = getItemsManager();
+    clipperService.setItemsManager(itemsManager);
+    if (mainWindow) {
+      clipperService.setMainWindow(mainWindow);
+    }
+    await clipperService.start();
+    console.log('Web Clipper service started');
+  } catch (err) {
+    console.error('Failed to start Web Clipper service:', err);
+  }
 });
 
 app.on('window-all-closed', () => {

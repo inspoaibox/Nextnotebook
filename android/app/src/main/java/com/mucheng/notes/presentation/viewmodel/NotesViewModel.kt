@@ -31,6 +31,7 @@ import javax.inject.Inject
 data class NotesUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
+    val message: String? = null, // 同步成功消息
     val selectedFolderId: String? = null,
     val searchQuery: String = "",
     val syncStatus: SyncStatus = SyncStatus.IDLE,
@@ -217,21 +218,50 @@ class NotesViewModel @Inject constructor(
                 return@launch
             }
             
-            _uiState.value = _uiState.value.copy(isLoading = true, syncStatus = SyncStatus.SYNCING, error = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, syncStatus = SyncStatus.SYNCING, error = null, message = null)
             val result = syncRepository.sync()
             val now = System.currentTimeMillis()
             if (result.success) {
                 prefs.edit().putLong("last_sync_time", now).apply()
                 // 同步成功后重新加载 AI 配置到 SharedPreferences
                 loadAiConfigFromDb()
+                
+                // 构建同步结果消息（与设置页面一致）
+                val message = buildString {
+                    append("同步成功")
+                    if (result.pushed > 0 || result.pulled > 0) {
+                        append(" (上传 ${result.pushed}, 下载 ${result.pulled}")
+                        if (result.conflicts > 0) {
+                            append(", ${result.conflicts} 个冲突")
+                        }
+                        append(")")
+                    }
+                }
+                
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = null,
+                    message = message,
+                    syncStatus = SyncStatus.SUCCESS,
+                    lastSyncTime = now
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = result.error,
+                    message = null,
+                    syncStatus = SyncStatus.FAILED,
+                    lastSyncTime = _uiState.value.lastSyncTime
+                )
             }
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                error = result.error,
-                syncStatus = if (result.success) SyncStatus.SUCCESS else SyncStatus.FAILED,
-                lastSyncTime = if (result.success) now else _uiState.value.lastSyncTime
-            )
         }
+    }
+    
+    /**
+     * 清除消息
+     */
+    fun clearMessage() {
+        _uiState.value = _uiState.value.copy(message = null)
     }
     
     /**

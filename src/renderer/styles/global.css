@@ -1389,6 +1389,14 @@ body.dark-mode hr {
   -webkit-user-select: text !important;
 }
 
+/* 确保每行代码块可以独立选择 */
+.markdown-preview pre span[style*="display: block"],
+.markdown-preview pre > div > span {
+  display: block !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
 /* 修复代码块行号导致的选择问题 */
 .markdown-preview pre code span.linenumber,
 .markdown-preview pre .react-syntax-highlighter-line-number {

@@ -193,6 +193,14 @@ fun NotesScreen(
         }
     }
     
+    // 显示同步成功消息
+    LaunchedEffect(uiState.message) {
+        uiState.message?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearMessage()
+        }
+    }
+    
     // 处理编辑文件夹
     LaunchedEffect(uiState.editingFolderId) {
         uiState.editingFolderId?.let { folderId ->

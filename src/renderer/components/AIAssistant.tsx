@@ -27,6 +27,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
   const [newTitle, setNewTitle] = useState('');
   
   // 当前对话设置
+  const [currentChannelId, setCurrentChannelId] = useState('');
   const [currentModel, setCurrentModel] = useState('');
   const [currentTemperature, setCurrentTemperature] = useState(0.7);
   const [currentMaxTokens, setCurrentMaxTokens] = useState(4096);
@@ -46,22 +47,58 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
   const enabledChannels = settings.channels.filter(c => c.enabled);
   const allModels = enabledChannels.flatMap(c => c.models.map(m => ({ ...m, channelName: c.name, channel: c })));
 
-  // 初始化默认模型
+  // 获取当前选中渠道的模型列表
+  const currentChannel = enabledChannels.find(c => c.id === currentChannelId);
+  const currentChannelModels = currentChannel?.models || [];
+
+  // 初始化默认渠道和模型
   useEffect(() => {
-    if (!currentModel && allModels.length > 0) {
-      setCurrentModel(settings.default_model || allModels[0].id);
+    if (enabledChannels.length > 0) {
+      // 如果没有选中渠道，设置默认渠道
+      if (!currentChannelId) {
+        const defaultModel = settings.default_model || allModels[0]?.id;
+        const modelInfo = allModels.find(m => m.id === defaultModel);
+        if (modelInfo) {
+          setCurrentChannelId(modelInfo.channel.id);
+          setCurrentModel(defaultModel);
+        } else if (enabledChannels[0]) {
+          setCurrentChannelId(enabledChannels[0].id);
+          if (enabledChannels[0].models.length > 0) {
+            setCurrentModel(enabledChannels[0].models[0].id);
+          }
+        }
+      }
     }
-  }, [allModels, currentModel, settings.default_model]);
+  }, [enabledChannels, allModels, currentChannelId, settings.default_model]);
 
   // 加载对话设置
   useEffect(() => {
     if (currentConversation) {
-      setCurrentModel(currentConversation.model || settings.default_model || '');
+      const convModel = currentConversation.model || settings.default_model || '';
+      const modelInfo = allModels.find(m => m.id === convModel);
+      if (modelInfo) {
+        setCurrentChannelId(modelInfo.channel.id);
+      }
+      setCurrentModel(convModel);
       setCurrentTemperature(currentConversation.temperature);
       setCurrentMaxTokens(currentConversation.maxTokens);
       setCurrentSystemPrompt(currentConversation.systemPrompt);
     }
-  }, [currentConversation, settings.default_model]);
+  }, [currentConversation, settings.default_model, allModels]);
+
+  // 切换渠道时自动选择该渠道的第一个模型
+  const handleChannelChange = useCallback((channelId: string) => {
+    setCurrentChannelId(channelId);
+    const channel = enabledChannels.find(c => c.id === channelId);
+    if (channel && channel.models.length > 0) {
+      const newModel = channel.models[0].id;
+      setCurrentModel(newModel);
+      // 保存到对话
+      if (selectedConversationId) {
+        updateConversation(selectedConversationId, { model: newModel });
+      }
+    }
+  }, [enabledChannels, selectedConversationId, updateConversation]);
 
   // 切换模型时自动保存到对话
   const handleModelChange = useCallback(async (newModel: string) => {
@@ -107,47 +144,55 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
   // 发送消息
   const handleSend = async () => {
     if (!inputValue.trim()) return;
+    
+    const content = inputValue.trim();
+    if (!currentChannel) {
+      message.error('请先选择渠道');
+      return;
+    }
+    const modelInfo = currentChannelModels.find(m => m.id === currentModel);
+    if (!modelInfo) {
+      message.error('请先选择模型');
+      return;
+    }
+    
+    // 立即清空输入框，提升响应感
+    setInputValue('');
+    setShouldAutoScroll(true);
+    
     if (!selectedConversationId) {
       // 自动创建新对话
       const defaultModel = currentModel || settings.default_model || (allModels[0]?.id || '');
       const conv = await createConversation('新对话', defaultModel, currentSystemPrompt, currentTemperature, currentMaxTokens);
       if (conv) {
         setSelectedConversationId(conv.id);
-        // 等待状态更新后发送
-        setTimeout(() => handleSendToConversation(conv.id), 100);
+        // 等待状态更新后发送（使用 requestAnimationFrame 确保 UI 更新）
+        requestAnimationFrame(() => {
+          handleSendToConversation(conv.id, content, currentChannel);
+        });
       }
       return;
     }
-    await handleSendToConversation(selectedConversationId);
+    await handleSendToConversation(selectedConversationId, content, currentChannel);
   };
 
-  const handleSendToConversation = async (convId: string) => {
-    const content = inputValue.trim();
+  const handleSendToConversation = async (convId: string, content: string, channel: any) => {
     if (!content) return;
-
-    const modelInfo = allModels.find(m => m.id === currentModel);
-    if (!modelInfo) {
-      message.error('请先选择模型');
-      return;
-    }
-
-    setInputValue('');
-    setShouldAutoScroll(true); // 发送消息时启用自动滚动
     
     try {
       await sendMessage(
         content,
-        modelInfo.channel,
+        channel,
         currentModel,
         currentSystemPrompt,
         currentTemperature,
         currentMaxTokens
       );
       
-      // 更新对话标题（如果是第一条消息）
+      // 更新对话标题（如果是第一条消息）- 后台执行，不阻塞
       if (messages.length === 0) {
         const title = content.slice(0, 20) + (content.length > 20 ? '...' : '');
-        await updateConversation(convId, { title });
+        updateConversation(convId, { title }).catch(console.error);
       }
     } catch (err: any) {
       message.error(err.message || 'AI 请求失败');
@@ -289,23 +334,44 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ open, onClose }) => {
         {/* 右侧聊天区域 */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           {/* 顶部工具栏 */}
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
             <RobotOutlined style={{ fontSize: 20, color: '#1890ff' }} />
             <span style={{ fontWeight: 500 }}>智能助理</span>
             <div style={{ flex: 1 }} />
+            {/* 渠道选择 */}
+            <Select
+              value={currentChannelId}
+              onChange={handleChannelChange}
+              style={{ width: 140 }}
+              size="small"
+              placeholder="选择渠道"
+              popupMatchSelectWidth={false}
+              getPopupContainer={(trigger) => trigger.parentElement || document.body}
+              options={enabledChannels.map(channel => ({
+                value: channel.id,
+                label: channel.name,
+              }))}
+            />
+            {/* 模型选择 */}
             <Select
               value={currentModel}
               onChange={handleModelChange}
-              style={{ width: 200 }}
+              style={{ width: 180 }}
               size="small"
               placeholder="选择模型"
               showSearch
-              optionFilterProp="label"
-              listHeight={300}
-              dropdownStyle={{ maxHeight: 400 }}
-              options={allModels.map(m => ({
+              popupMatchSelectWidth={false}
+              getPopupContainer={(trigger) => trigger.parentElement || document.body}
+              filterOption={(input, option: any) => {
+                if (!option) return false;
+                const searchText = input.toLowerCase();
+                const label = String(option.label || '').toLowerCase();
+                const value = String(option.value || '').toLowerCase();
+                return label.includes(searchText) || value.includes(searchText);
+              }}
+              options={currentChannelModels.map(m => ({
                 value: m.id,
-                label: `${m.name} (${m.channelName})`,
+                label: m.name,
               }))}
             />
             <Tooltip title="对话设置">

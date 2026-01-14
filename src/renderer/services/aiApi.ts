@@ -27,6 +27,25 @@ export const aiMessagesApi = {
     itemsApi.create('ai_message', payload),
 
   getByConversation: async (conversationId: string): Promise<ItemBase[]> => {
+    // 尝试使用优化的查询方法（如果可用）
+    const api = (window as any).electronAPI;
+    if (api?.items?.getByTypeAndFilter) {
+      try {
+        // 使用数据库级别的过滤（更高效）
+        const items = await api.items.getByTypeAndFilter('ai_message', { conversation_id: conversationId });
+        if (items) {
+          return items.sort((a: ItemBase, b: ItemBase) => {
+            const pa = parsePayload<AIMessagePayload>(a);
+            const pb = parsePayload<AIMessagePayload>(b);
+            return pa.created_at - pb.created_at;
+          });
+        }
+      } catch {
+        // 回退到原始方法
+      }
+    }
+    
+    // 原始方法：加载所有消息后过滤
     const allMessages = await itemsApi.getByType('ai_message');
     return allMessages.filter(item => {
       const payload = parsePayload<AIMessagePayload>(item);

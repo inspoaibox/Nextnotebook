@@ -174,4 +174,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getNoteResources: (noteId: string) => 
       ipcRenderer.invoke('resource:getNoteResources', noteId),
   },
+
+  // Web Clipper API - 网页剪藏
+  clipper: {
+    // 确认剪藏
+    confirm: (data: { 
+      title: string; 
+      content: string; 
+      folderId?: string; 
+      tags?: string[];
+      downloadImages?: boolean;
+      images?: { src: string; alt: string }[];
+    }) =>
+      ipcRenderer.invoke('clipper:confirm', data),
+    // 取消剪藏
+    cancel: () => ipcRenderer.invoke('clipper:cancel'),
+    // 获取待处理的剪藏
+    getPending: () => ipcRenderer.invoke('clipper:getPending'),
+    // 监听笔记创建成功事件
+    onNoteCreated: (callback: (data: { noteId: string }) => void) => {
+      ipcRenderer.on('note-created', (_event, data) => callback(data));
+    },
+  },
 });
