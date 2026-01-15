@@ -79,6 +79,7 @@ export enum TransferErrorCode {
   RELAY_SERVER_UNAVAILABLE = 'E403',
   SERVER_ALREADY_RUNNING = 'E404',
   SERVER_NOT_RUNNING = 'E405',
+  INVALID_RELAY_KEY = 'E406',
   
   // 权限错误 (E500-E599)
   PERMISSION_DENIED = 'E501',
@@ -126,6 +127,7 @@ export const ERROR_MESSAGES: Record<TransferErrorCode, string> = {
   [TransferErrorCode.RELAY_SERVER_UNAVAILABLE]: '中继服务器不可用',
   [TransferErrorCode.SERVER_ALREADY_RUNNING]: '服务器已在运行',
   [TransferErrorCode.SERVER_NOT_RUNNING]: '服务器未运行',
+  [TransferErrorCode.INVALID_RELAY_KEY]: '中继密钥无效',
   
   [TransferErrorCode.PERMISSION_DENIED]: '权限被拒绝',
   [TransferErrorCode.FILE_ACCESS_DENIED]: '无法访问文件',

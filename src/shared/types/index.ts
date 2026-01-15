@@ -292,6 +292,13 @@ export interface SyncConfig {
   sync_modules: SyncModules;  // 同步模块选择
 }
 
+// 快传中继服务器配置
+export interface TransferRelayConfig {
+  enabled: boolean;           // 是否启用中继
+  server_url: string;         // 中继服务器地址
+  relay_key: string;          // 中继密钥
+}
+
 // 应用设置
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';

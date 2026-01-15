@@ -65,14 +65,17 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
     const init = async () => {
       try {
         setLoading(true);
+        console.log('[TransferPanel] Initializing...');
         
         // 获取服务器状态
         const status = await transferClient.getServerStatus();
+        console.log('[TransferPanel] Server status:', status);
         setServerStatus(status);
         
         if (status.running) {
           // 获取连接的设备
           const devices = await transferClient.getConnectedDevices();
+          console.log('[TransferPanel] Connected devices:', devices);
           setConnectedDevices(devices);
           
           // 生成二维码
@@ -84,9 +87,10 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
         
         // 获取历史会话
         const allSessions = await transferClient.getAllSessions();
+        console.log('[TransferPanel] Sessions:', allSessions.length);
         setSessions(allSessions);
       } catch (error) {
-        console.error('Failed to initialize transfer panel:', error);
+        console.error('[TransferPanel] Failed to initialize:', error);
       } finally {
         setLoading(false);
       }
@@ -99,17 +103,25 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
   useEffect(() => {
     if (!visible) return;
     
+    console.log('[TransferPanel] Setting up event listeners...');
+    
     const unsubDeviceConnected = transferClient.onDeviceConnected((device) => {
+      console.log('[TransferPanel] Device connected:', device);
       setConnectedDevices(prev => [...prev.filter(d => d.id !== device.id), device]);
+      setServerStatus(prev => ({ ...prev, connectedDevices: prev.connectedDevices + 1 }));
       message.success(`${device.name} 已连接`);
     });
     
     const unsubDeviceDisconnected = transferClient.onDeviceDisconnected((deviceId) => {
+      console.log('[TransferPanel] Device disconnected:', deviceId);
       setConnectedDevices(prev => prev.filter(d => d.id !== deviceId));
+      setServerStatus(prev => ({ ...prev, connectedDevices: Math.max(0, prev.connectedDevices - 1) }));
     });
     
     const unsubDeviceListUpdated = transferClient.onDeviceListUpdated((devices) => {
+      console.log('[TransferPanel] Device list updated:', devices);
       setConnectedDevices(devices);
+      setServerStatus(prev => ({ ...prev, connectedDevices: devices.length }));
     });
     
     // 监听新消息并显示通知
@@ -211,21 +223,7 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
   // 创建新会话
   const handleCreateSession = useCallback(async (device: ConnectedDevice) => {
     try {
-      const sessionId = transferClient.generateSessionId();
-      const session: TransferSession = {
-        id: sessionId,
-        peer_device_id: device.id,
-        peer_device_name: device.name,
-        connection_type: 'lan',
-        started_at: Date.now(),
-        ended_at: null,
-      };
-      
-      await transferClient.createSession(session);
-      setSessions(prev => [session, ...prev]);
-      setSelectedSessionId(sessionId);
-      
-      // 保存设备信息
+      // 先保存设备信息（必须在创建会话之前，因为有外键约束）
       const existingDevice = await transferClient.getDevice(device.id);
       if (!existingDevice) {
         await transferClient.createDevice({
@@ -243,7 +241,23 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
           last_ip: device.ip,
         });
       }
+      
+      // 然后创建会话
+      const sessionId = transferClient.generateSessionId();
+      const session: TransferSession = {
+        id: sessionId,
+        peer_device_id: device.id,
+        peer_device_name: device.name,
+        connection_type: 'lan',
+        started_at: Date.now(),
+        ended_at: null,
+      };
+      
+      await transferClient.createSession(session);
+      setSessions(prev => [session, ...prev]);
+      setSelectedSessionId(sessionId);
     } catch (error) {
+      console.error('创建会话失败:', error);
       message.error('创建会话失败');
     }
   }, []);

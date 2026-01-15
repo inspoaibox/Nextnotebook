@@ -83,7 +83,7 @@ class TransferClient(
     /**
      * 连接到服务器
      */
-    fun connect(serverIp: String, serverPort: Int, mode: ConnectionMode = ConnectionMode.LAN) {
+    fun connect(serverIp: String, serverPort: Int, mode: ConnectionMode = ConnectionMode.LAN, relayKey: String? = null) {
         if (_connectionState.value is ConnectionState.Connected) {
             Log.w(TAG, "Already connected")
             return
@@ -96,10 +96,10 @@ class TransferClient(
                 val url = if (mode == ConnectionMode.LAN) {
                     "http://$serverIp:$serverPort"
                 } else {
-                    "$serverIp/transfer" // 中继服务器
+                    serverIp // 中继服务器 URL
                 }
                 
-                Log.d(TAG, "Connecting to $url")
+                Log.d(TAG, "Connecting to $url (mode: $mode)")
                 
                 val options = IO.Options().apply {
                     forceNew = true
@@ -107,6 +107,11 @@ class TransferClient(
                     reconnectionAttempts = TransferConstants.MAX_RETRY
                     reconnectionDelay = TransferConstants.RETRY_INTERVAL
                     timeout = TransferConstants.SESSION_TIMEOUT
+                    path = if (mode == ConnectionMode.RELAY) "/transfer" else "/socket.io"
+                    // 中继模式需要密钥认证
+                    if (mode == ConnectionMode.RELAY && !relayKey.isNullOrEmpty()) {
+                        auth = mapOf("relayKey" to relayKey)
+                    }
                 }
                 
                 socket = IO.socket(url, options).apply {
@@ -141,7 +146,8 @@ class TransferClient(
     fun connectWithFallback(
         lanIp: String,
         lanPort: Int,
-        relayServerUrl: String? = null
+        relayServerUrl: String? = null,
+        relayKey: String? = null
     ) {
         if (_connectionState.value is ConnectionState.Connected) {
             Log.w(TAG, "Already connected")
@@ -158,7 +164,7 @@ class TransferClient(
             while (retryCount < TransferConstants.MAX_RETRY && !connected) {
                 try {
                     Log.d(TAG, "Attempting LAN connection (attempt ${retryCount + 1})")
-                    connectInternal(lanIp, lanPort, ConnectionMode.LAN)
+                    connectInternal(lanIp, lanPort, ConnectionMode.LAN, null)
                     
                     // 等待连接结果
                     delay(TransferConstants.RETRY_INTERVAL)
@@ -174,14 +180,14 @@ class TransferClient(
             }
             
             // 如果局域网连接失败，尝试中继服务器
-            if (!connected && relayServerUrl != null) {
+            if (!connected && relayServerUrl != null && !relayKey.isNullOrEmpty()) {
                 Log.d(TAG, "Falling back to relay server")
                 retryCount = 0
                 
                 while (retryCount < TransferConstants.MAX_RETRY && !connected) {
                     try {
                         Log.d(TAG, "Attempting relay connection (attempt ${retryCount + 1})")
-                        connectInternal(relayServerUrl, 0, ConnectionMode.RELAY)
+                        connectInternal(relayServerUrl, 0, ConnectionMode.RELAY, relayKey)
                         
                         delay(TransferConstants.RETRY_INTERVAL)
                         
@@ -205,21 +211,45 @@ class TransferClient(
     }
 
     /**
+     * 连接到中继服务器
+     */
+    fun connectToRelay(relayServerUrl: String, relayKey: String) {
+        if (_connectionState.value is ConnectionState.Connected) {
+            Log.w(TAG, "Already connected")
+            return
+        }
+        
+        if (relayKey.isEmpty()) {
+            _connectionState.value = ConnectionState.Error(
+                TransferError(TransferErrorCode.INVALID_RELAY_KEY, details = "中继密钥不能为空")
+            )
+            return
+        }
+        
+        connect(relayServerUrl, 0, ConnectionMode.RELAY, relayKey)
+    }
+
+    /**
      * 内部连接方法
      */
-    private fun connectInternal(serverIp: String, serverPort: Int, mode: ConnectionMode) {
+    private fun connectInternal(serverIp: String, serverPort: Int, mode: ConnectionMode, relayKey: String?) {
         val url = if (mode == ConnectionMode.LAN) {
             "http://$serverIp:$serverPort"
         } else {
-            "$serverIp/transfer"
+            serverIp
         }
         
-        Log.d(TAG, "Connecting to $url")
+        Log.d(TAG, "Connecting to $url (mode: $mode)")
         
         val options = IO.Options().apply {
             forceNew = true
             reconnection = false // 手动处理重连
             timeout = TransferConstants.RETRY_INTERVAL
+            path = if (mode == ConnectionMode.RELAY) "/transfer" else "/socket.io"
+            // 中继模式需要密钥认证
+            if (mode == ConnectionMode.RELAY && !relayKey.isNullOrEmpty()) {
+                auth = mapOf("relayKey" to relayKey)
+            }
         }
         
         socket?.disconnect()

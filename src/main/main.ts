@@ -1170,14 +1170,17 @@ ipcMain.handle('transfer:startServer', async (_event, port?: number) => {
     
     // 设置事件监听
     transferServer.on('device:connected', (device) => {
+      console.log('[Transfer] Device connected event:', device);
       mainWindow?.webContents.send('transfer:device-connected', device);
     });
     
     transferServer.on('device:disconnected', (deviceId) => {
+      console.log('[Transfer] Device disconnected event:', deviceId);
       mainWindow?.webContents.send('transfer:device-disconnected', deviceId);
     });
     
     transferServer.on('device:list-updated', (devices) => {
+      console.log('[Transfer] Device list updated event:', devices.length, 'devices');
       mainWindow?.webContents.send('transfer:device-list-updated', devices);
     });
     

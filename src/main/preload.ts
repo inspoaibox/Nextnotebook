@@ -290,6 +290,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('transfer:file-complete', handler);
       return () => ipcRenderer.removeListener('transfer:file-complete', handler);
     },
+    
+    // 中继服务器客户端
+    relay: {
+      connect: (serverUrl: string, relayKey: string) => 
+        ipcRenderer.invoke('transfer:relay:connect', serverUrl, relayKey),
+      disconnect: () => ipcRenderer.invoke('transfer:relay:disconnect'),
+      getStatus: () => ipcRenderer.invoke('transfer:relay:getStatus'),
+      sendMessage: (targetDeviceId: string, sessionId: string, message: object) => 
+        ipcRenderer.invoke('transfer:relay:sendMessage', targetDeviceId, sessionId, message),
+      sendFile: (targetDeviceId: string, sessionId: string, filePath: string) => 
+        ipcRenderer.invoke('transfer:relay:sendFile', targetDeviceId, sessionId, filePath),
+      // 中继事件监听
+      onConnected: (callback: () => void) => {
+        const handler = () => callback();
+        ipcRenderer.on('transfer:relay:connected', handler);
+        return () => ipcRenderer.removeListener('transfer:relay:connected', handler);
+      },
+      onDisconnected: (callback: (reason: string) => void) => {
+        const handler = (_event: any, reason: string) => callback(reason);
+        ipcRenderer.on('transfer:relay:disconnected', handler);
+        return () => ipcRenderer.removeListener('transfer:relay:disconnected', handler);
+      },
+      onError: (callback: (error: object) => void) => {
+        const handler = (_event: any, error: object) => callback(error);
+        ipcRenderer.on('transfer:relay:error', handler);
+        return () => ipcRenderer.removeListener('transfer:relay:error', handler);
+      },
+      onDeviceList: (callback: (devices: object[]) => void) => {
+        const handler = (_event: any, devices: object[]) => callback(devices);
+        ipcRenderer.on('transfer:relay:device-list', handler);
+        return () => ipcRenderer.removeListener('transfer:relay:device-list', handler);
+      },
+    },
   },
 
   // Notification API - 系统通知

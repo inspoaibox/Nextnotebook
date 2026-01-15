@@ -116,7 +116,7 @@ fun TransferScreen(
                         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     }
                 },
-                onConnectRelay = { viewModel.connectToRelay(it) },
+                onConnectRelay = { url, key -> viewModel.connectToRelay(url, key) },
                 onSelectDevice = { device ->
                     val sessionId = viewModel.createSession(device)
                 },
@@ -189,7 +189,7 @@ private fun ConnectionStatusBadge(state: ConnectionState) {
 private fun DeviceListView(
     uiState: TransferUiState,
     onScanQR: () -> Unit,
-    onConnectRelay: (String) -> Unit,
+    onConnectRelay: (String, String) -> Unit,  // (serverUrl, relayKey)
     onSelectDevice: (OnlineDevice) -> Unit,
     onSelectSession: (TransferSessionEntity) -> Unit,
     onDisconnect: () -> Unit,
@@ -325,9 +325,9 @@ private fun DeviceListView(
     if (showRelayDialog) {
         RelayServerDialog(
             onDismiss = { showRelayDialog = false },
-            onConnect = { url ->
+            onConnect = { url, key ->
                 showRelayDialog = false
-                onConnectRelay(url)
+                onConnectRelay(url, key)
             }
         )
     }
@@ -579,9 +579,11 @@ private fun MessageBubble(message: TransferMessageEntity) {
 @Composable
 private fun RelayServerDialog(
     onDismiss: () -> Unit,
-    onConnect: (String) -> Unit
+    onConnect: (String, String) -> Unit  // (serverUrl, relayKey)
 ) {
     var serverUrl by remember { mutableStateOf("") }
+    var relayKey by remember { mutableStateOf("") }
+    var showKey by remember { mutableStateOf(false) }
     
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -589,7 +591,7 @@ private fun RelayServerDialog(
         text = {
             Column {
                 Text(
-                    text = "输入中继服务器地址以连接",
+                    text = "输入中继服务器地址和密钥以连接",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -602,12 +604,33 @@ private fun RelayServerDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = relayKey,
+                    onValueChange = { relayKey = it },
+                    label = { Text("中继密钥") },
+                    placeholder = { Text("输入服务器配置的密钥") },
+                    singleLine = true,
+                    visualTransformation = if (showKey) 
+                        androidx.compose.ui.text.input.VisualTransformation.None 
+                    else 
+                        androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { showKey = !showKey }) {
+                            Icon(
+                                imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (showKey) "隐藏密钥" else "显示密钥"
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConnect(serverUrl) },
-                enabled = serverUrl.isNotBlank()
+                onClick = { onConnect(serverUrl, relayKey) },
+                enabled = serverUrl.isNotBlank() && relayKey.isNotBlank()
             ) {
                 Text("连接")
             }

@@ -79,6 +79,7 @@ enum class TransferErrorCode(val code: String, val message: String) {
     RELAY_SERVER_UNAVAILABLE("E403", "中继服务器不可用"),
     SERVER_ALREADY_RUNNING("E404", "服务器已在运行"),
     SERVER_NOT_RUNNING("E405", "服务器未运行"),
+    INVALID_RELAY_KEY("E406", "中继密钥无效"),
     
     // 权限错误 (E500-E599)
     PERMISSION_DENIED("E501", "权限被拒绝"),

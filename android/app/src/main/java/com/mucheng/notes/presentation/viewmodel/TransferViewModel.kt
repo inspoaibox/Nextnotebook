@@ -131,8 +131,8 @@ class TransferViewModel @Inject constructor(
     /**
      * 连接到中继服务器
      */
-    fun connectToRelay(serverUrl: String) {
-        transferClient.connect(serverUrl, 0, ConnectionMode.RELAY)
+    fun connectToRelay(serverUrl: String, relayKey: String) {
+        transferClient.connectToRelay(serverUrl, relayKey)
     }
 
     /**

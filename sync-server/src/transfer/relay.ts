@@ -84,12 +84,16 @@ export class TransferRelayServer {
   private readonly sessionTimeout: number;
   private readonly heartbeatInterval_ms: number;
 
+  // 中继密钥
+  private readonly relayKey: string;
+
   constructor() {
     this.maxConnections = config.transfer?.maxConnections || 100;
     this.messageRateLimit = config.transfer?.messageRateLimit || 60; // 每分钟
     this.fileTransferLimit = config.transfer?.fileTransferLimit || 10; // 每分钟
     this.sessionTimeout = config.transfer?.sessionTimeout || 30 * 60 * 1000; // 30分钟
     this.heartbeatInterval_ms = config.transfer?.heartbeatInterval || 30 * 1000; // 30秒
+    this.relayKey = config.transfer?.relayKey || config.transferRelayKey || '';
   }
 
   /**
@@ -157,6 +161,21 @@ export class TransferRelayServer {
 
   private setupSocketHandlers(): void {
     if (!this.io) return;
+
+    // 连接时验证密钥
+    this.io.use((socket, next) => {
+      const relayKey = socket.handshake.auth?.relayKey || socket.handshake.query?.relayKey;
+      
+      // 如果服务器配置了密钥，则必须验证
+      if (this.relayKey) {
+        if (!relayKey || relayKey !== this.relayKey) {
+          console.log(`[TransferRelay] Connection rejected: invalid relay key from ${socket.id}`);
+          return next(new Error('INVALID_RELAY_KEY'));
+        }
+      }
+      
+      next();
+    });
 
     this.io.on('connection', (socket: Socket) => {
       console.log(`[TransferRelay] New connection: ${socket.id}`);

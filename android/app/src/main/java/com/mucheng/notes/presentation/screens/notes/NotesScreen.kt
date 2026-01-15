@@ -188,7 +188,10 @@ fun NotesScreen(
     // 显示错误消息
     LaunchedEffect(uiState.error) {
         uiState.error?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarHostState.showSnackbar(
+                message = it,
+                duration = androidx.compose.material3.SnackbarDuration.Short
+            )
             viewModel.clearError()
         }
     }
@@ -196,7 +199,10 @@ fun NotesScreen(
     // 显示同步成功消息
     LaunchedEffect(uiState.message) {
         uiState.message?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarHostState.showSnackbar(
+                message = it,
+                duration = androidx.compose.material3.SnackbarDuration.Short
+            )
             viewModel.clearMessage()
         }
     }

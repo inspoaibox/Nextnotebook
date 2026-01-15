@@ -28,6 +28,7 @@ export interface Config {
   // Transfer 中继服务器配置
   transferRelayEnabled: boolean;
   transferRelayPath: string;
+  transferRelayKey: string;  // 中继服务器连接密钥
   transferMaxFileSize: number;
   transferMaxConnections: number;
   transferSessionTimeout: number;
@@ -38,6 +39,7 @@ export interface Config {
     fileTransferLimit: number;
     sessionTimeout: number;
     heartbeatInterval: number;
+    relayKey: string;  // 中继密钥
   };
 }
 
@@ -84,6 +86,7 @@ export const config: Config = {
   // Transfer 中继服务器配置
   transferRelayEnabled: process.env.TRANSFER_RELAY_ENABLED !== 'false',  // 默认启用
   transferRelayPath: process.env.TRANSFER_RELAY_PATH || '/transfer',
+  transferRelayKey: process.env.TRANSFER_RELAY_KEY || '',  // 中继密钥（必须设置才能使用中继）
   transferMaxFileSize: parseInt(process.env.TRANSFER_MAX_FILE_SIZE || '104857600', 10),  // 100MB
   transferMaxConnections: parseInt(process.env.TRANSFER_MAX_CONNECTIONS || '100', 10),
   transferSessionTimeout: parseInt(process.env.TRANSFER_SESSION_TIMEOUT || '1800000', 10),  // 30分钟
@@ -94,6 +97,7 @@ export const config: Config = {
     fileTransferLimit: parseInt(process.env.TRANSFER_FILE_RATE_LIMIT || '10', 10),  // 每分钟
     sessionTimeout: parseInt(process.env.TRANSFER_SESSION_TIMEOUT || '1800000', 10),  // 30分钟
     heartbeatInterval: parseInt(process.env.TRANSFER_HEARTBEAT_INTERVAL || '30000', 10),  // 30秒
+    relayKey: process.env.TRANSFER_RELAY_KEY || '',  // 中继密钥
   },
 };
 
@@ -107,6 +111,13 @@ export function checkSecurityConfig(): void {
   }
   if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
     warnings.push('JWT_REFRESH_SECRET 未设置或太短（建议至少32字符）');
+  }
+  
+  // 检查中继密钥
+  if (config.transferRelayEnabled && !config.transferRelayKey) {
+    warnings.push('TRANSFER_RELAY_KEY 未设置，中继服务将拒绝所有连接');
+  } else if (config.transferRelayEnabled && config.transferRelayKey.length < 16) {
+    warnings.push('TRANSFER_RELAY_KEY 太短（建议至少16字符）');
   }
   
   // 检查 CORS 配置

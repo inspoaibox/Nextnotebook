@@ -41,7 +41,10 @@ fun SyncSettingsScreen(
     
     LaunchedEffect(uiState.message) {
         uiState.message?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarHostState.showSnackbar(
+                message = it,
+                duration = androidx.compose.material3.SnackbarDuration.Short
+            )
             viewModel.clearMessage()
         }
     }
