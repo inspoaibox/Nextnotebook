@@ -274,6 +274,11 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(aiEnabled = enabled) }
     }
     
+    fun setTransferEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TRANSFER_ENABLED, enabled).apply()
+        _uiState.update { it.copy(transferEnabled = enabled) }
+    }
+    
     // 同步设置
     fun setSyncEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SYNC_ENABLED, enabled).apply()

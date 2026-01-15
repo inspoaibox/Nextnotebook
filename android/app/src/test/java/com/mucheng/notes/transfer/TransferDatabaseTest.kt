@@ -104,7 +104,7 @@ class TransferDatabaseTest {
     @Test
     fun `should have correct transfer constants`() {
         assertEquals(64 * 1024, TransferConstants.CHUNK_SIZE)
-        assertEquals(100L * 1024 * 1024, TransferConstants.MAX_FILE_SIZE)
+        // 局域网传输不限制文件大小
         assertEquals(5 * 60 * 1000L, TransferConstants.QR_CODE_EXPIRY)
         assertEquals(30 * 60 * 1000L, TransferConstants.SESSION_TIMEOUT)
         assertEquals(3, TransferConstants.MAX_RETRY)

@@ -11,7 +11,7 @@
 export const TRANSFER_CONSTANTS = {
   // 文件传输
   CHUNK_SIZE: 64 * 1024,              // 64KB 分块大小
-  MAX_FILE_SIZE: 100 * 1024 * 1024,   // 100MB 最大文件大小
+  // 局域网传输不限制文件大小，支持大文件传输
   
   // 时间配置
   QR_CODE_EXPIRY: 5 * 60 * 1000,      // 5 分钟二维码过期
@@ -107,7 +107,7 @@ export const ERROR_MESSAGES: Record<TransferErrorCode, string> = {
   [TransferErrorCode.PAIRING_REJECTED]: '配对请求被拒绝',
   [TransferErrorCode.PAIRING_TIMEOUT]: '配对超时',
   
-  [TransferErrorCode.FILE_TOO_LARGE]: '文件超过 100MB 限制',
+  [TransferErrorCode.FILE_TOO_LARGE]: '文件过大',
   [TransferErrorCode.FILE_NOT_FOUND]: '文件不存在',
   [TransferErrorCode.FILE_READ_ERROR]: '文件读取失败',
   [TransferErrorCode.FILE_WRITE_ERROR]: '文件写入失败',

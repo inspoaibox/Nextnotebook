@@ -84,7 +84,7 @@ fun TransferScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("传输助手") },
+                title = { Text("快传") },
                 actions = {
                     // 连接状态指示器
                     ConnectionStatusBadge(state = uiState.connectionState)

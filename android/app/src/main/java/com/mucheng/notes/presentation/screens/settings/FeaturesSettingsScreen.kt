@@ -115,6 +115,16 @@ fun FeaturesSettingsScreen(
                 checked = uiState.aiEnabled,
                 onCheckedChange = { viewModel.setAiEnabled(it) }
             )
+            
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            FeatureSwitch(
+                title = "快传",
+                subtitle = "局域网设备间快速传输文件和消息",
+                icon = Icons.Default.SwapHoriz,
+                checked = uiState.transferEnabled,
+                onCheckedChange = { viewModel.setTransferEnabled(it) }
+            )
         }
     }
 }

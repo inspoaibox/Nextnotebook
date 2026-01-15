@@ -12,7 +12,7 @@ package com.mucheng.notes.data.transfer
 object TransferConstants {
     // 文件传输
     const val CHUNK_SIZE = 64 * 1024              // 64KB 分块大小
-    const val MAX_FILE_SIZE = 100L * 1024 * 1024  // 100MB 最大文件大小
+    // 局域网传输不限制文件大小，支持大文件传输
     
     // 时间配置
     const val QR_CODE_EXPIRY = 5 * 60 * 1000L     // 5 分钟二维码过期
@@ -58,7 +58,7 @@ enum class TransferErrorCode(val code: String, val message: String) {
     PAIRING_TIMEOUT("E105", "配对超时"),
     
     // 传输错误 (E200-E299)
-    FILE_TOO_LARGE("E201", "文件超过 100MB 限制"),
+    FILE_TOO_LARGE("E201", "文件过大"),
     FILE_NOT_FOUND("E202", "文件不存在"),
     FILE_READ_ERROR("E203", "文件读取失败"),
     FILE_WRITE_ERROR("E204", "文件写入失败"),
