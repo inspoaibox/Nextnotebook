@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -35,6 +36,7 @@ import com.mucheng.notes.presentation.screens.notes.NoteDetailScreen
 import com.mucheng.notes.presentation.screens.notes.NotesScreen
 import com.mucheng.notes.presentation.screens.settings.*
 import com.mucheng.notes.presentation.screens.todos.TodosScreen
+import com.mucheng.notes.presentation.screens.transfer.TransferScreen
 import com.mucheng.notes.presentation.screens.vault.VaultScreen
 import com.mucheng.notes.presentation.viewmodel.SettingsViewModel
 
@@ -58,6 +60,7 @@ sealed class Screen(
     object Todos : Screen("todos", R.string.nav_todos, Icons.Default.CheckCircle, "todos")
     object AI : Screen("ai", R.string.nav_ai, Icons.Default.SmartToy, "ai")
     object Vault : Screen("vault", R.string.nav_vault, Icons.Default.Lock, "vault")
+    object Transfer : Screen("transfer", R.string.nav_transfer, Icons.Default.SwapHoriz, "transfer")
     object Settings : Screen("settings", R.string.settings, Icons.Default.Settings)
 }
 
@@ -69,7 +72,8 @@ val featureNavItems = listOf(
     Screen.Bookmarks,
     Screen.Todos,
     Screen.AI,
-    Screen.Vault
+    Screen.Vault,
+    Screen.Transfer
 )
 
 /**
@@ -81,6 +85,7 @@ private val mainScreenRoutes = listOf(
     Screen.Todos.route,
     Screen.AI.route,
     Screen.Vault.route,
+    Screen.Transfer.route,
     Screen.Settings.route
 )
 
@@ -104,6 +109,7 @@ fun MainNavigation(
             "todos" -> uiState.todosEnabled
             "ai" -> uiState.aiEnabled
             "vault" -> uiState.vaultEnabled
+            "transfer" -> uiState.transferEnabled
             else -> true
         }
     }
@@ -198,6 +204,9 @@ fun MainNavigation(
             }
             composable(Screen.Vault.route) {
                 VaultScreen(navController = navController, bottomPadding = paddingValues)
+            }
+            composable(Screen.Transfer.route) {
+                TransferScreen(navController = navController, bottomPadding = paddingValues)
             }
             
             // 设置主页面

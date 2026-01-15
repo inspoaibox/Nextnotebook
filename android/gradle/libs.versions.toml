@@ -25,6 +25,9 @@ turbine = "1.2.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
 espressoCore = "3.6.1"
+socketio = "2.1.0"
+zxing = "3.5.3"
+zxingAndroid = "4.3.0"
 
 [libraries]
 # AndroidX Core
@@ -85,6 +88,13 @@ kotest-property = { group = "io.kotest", name = "kotest-property", version.ref =
 mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
+
+# Socket.IO
+socketio-client = { group = "io.socket", name = "socket.io-client", version.ref = "socketio" }
+
+# QR Code
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+zxing-android = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingAndroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -129,6 +129,7 @@ export interface FeatureSettings {
   bookmark_enabled: boolean;
   toolbox_enabled: boolean;
   diagram_enabled: boolean;
+  transfer_enabled: boolean;
 }
 
 // 书签 payload

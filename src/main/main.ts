@@ -1120,3 +1120,324 @@ ipcMain.handle('resource:getNoteResources', async (_event, noteId: string) => {
     throw error;
   }
 });
+
+// ============ Transfer API IPC Handlers ============
+
+import { TransferServer, ServerStatus, ConnectedDevice } from './services/TransferServer';
+import { TransferDatabase, TransferDevice, TransferSession, TransferMessage, TransferFile } from '../core/transfer/TransferDatabase';
+import { v4 as uuidv4 } from 'uuid';
+
+let transferServer: TransferServer | null = null;
+let transferDatabase: TransferDatabase | null = null;
+
+// 获取或创建设备 ID
+function getOrCreateDeviceId(): string {
+  const deviceIdPath = path.join(app.getPath('userData'), 'transfer-device-id.txt');
+  if (fs.existsSync(deviceIdPath)) {
+    return fs.readFileSync(deviceIdPath, 'utf8').trim();
+  }
+  const newId = uuidv4();
+  fs.writeFileSync(deviceIdPath, newId, 'utf8');
+  return newId;
+}
+
+// 获取设备名称
+function getDeviceName(): string {
+  const os = require('os');
+  return os.hostname() || 'Desktop';
+}
+
+// 初始化传输数据库
+function initTransferDatabase(): TransferDatabase {
+  if (!transferDatabase) {
+    transferDatabase = new TransferDatabase(app.getPath('userData'));
+    transferDatabase.initialize();
+  }
+  return transferDatabase;
+}
+
+// 启动传输服务器
+ipcMain.handle('transfer:startServer', async (_event, port?: number) => {
+  try {
+    if (transferServer) {
+      return transferServer.getStatus();
+    }
+    
+    const deviceId = getOrCreateDeviceId();
+    const deviceName = getDeviceName();
+    
+    transferServer = new TransferServer(deviceId, deviceName);
+    
+    // 设置事件监听
+    transferServer.on('device:connected', (device) => {
+      mainWindow?.webContents.send('transfer:device-connected', device);
+    });
+    
+    transferServer.on('device:disconnected', (deviceId) => {
+      mainWindow?.webContents.send('transfer:device-disconnected', deviceId);
+    });
+    
+    transferServer.on('device:list-updated', (devices) => {
+      mainWindow?.webContents.send('transfer:device-list-updated', devices);
+    });
+    
+    transferServer.on('message:received', (data) => {
+      mainWindow?.webContents.send('transfer:message-received', data);
+    });
+    
+    transferServer.on('file:incoming', (data) => {
+      mainWindow?.webContents.send('transfer:file-incoming', data);
+    });
+    
+    transferServer.on('file:chunk', (data) => {
+      mainWindow?.webContents.send('transfer:file-chunk', data);
+    });
+    
+    transferServer.on('file:complete', (data) => {
+      mainWindow?.webContents.send('transfer:file-complete', data);
+    });
+    
+    const status = await transferServer.start(port);
+    console.log('[Transfer] Server started:', status);
+    return status;
+  } catch (error) {
+    console.error('transfer:startServer error:', error);
+    throw error;
+  }
+});
+
+// 停止传输服务器
+ipcMain.handle('transfer:stopServer', async () => {
+  try {
+    if (transferServer) {
+      await transferServer.stop();
+      transferServer = null;
+    }
+    return true;
+  } catch (error) {
+    console.error('transfer:stopServer error:', error);
+    throw error;
+  }
+});
+
+// 获取服务器状态
+ipcMain.handle('transfer:getServerStatus', () => {
+  if (transferServer) {
+    return transferServer.getStatus();
+  }
+  return {
+    running: false,
+    port: null,
+    ip: null,
+    connectedDevices: 0,
+    startedAt: null,
+  };
+});
+
+// 获取连接的设备列表
+ipcMain.handle('transfer:getConnectedDevices', () => {
+  if (transferServer) {
+    return transferServer.getConnectedDevices();
+  }
+  return [];
+});
+
+// 生成配对二维码数据
+ipcMain.handle('transfer:generateQRData', () => {
+  if (transferServer) {
+    return transferServer.generatePairingQRData();
+  }
+  return null;
+});
+
+// 获取本机设备信息
+ipcMain.handle('transfer:getDeviceInfo', () => {
+  return {
+    deviceId: getOrCreateDeviceId(),
+    deviceName: getDeviceName(),
+    deviceType: 'desktop',
+  };
+});
+
+// 发送消息
+ipcMain.handle('transfer:sendMessage', async (_event, targetDeviceId: string, sessionId: string, message: { id: string; type: string; content: string }) => {
+  if (!transferServer) {
+    throw new Error('Transfer server not running');
+  }
+  return transferServer.sendMessage(targetDeviceId, sessionId, message);
+});
+
+// 发送文件
+ipcMain.handle('transfer:sendFile', async (_event, targetDeviceId: string, sessionId: string, filePath: string) => {
+  if (!transferServer) {
+    throw new Error('Transfer server not running');
+  }
+  return transferServer.sendFile(targetDeviceId, sessionId, filePath);
+});
+
+// 发送消息已读回执
+ipcMain.handle('transfer:sendMessageRead', async (_event, targetDeviceId: string, messageIds: string[]) => {
+  if (!transferServer) {
+    throw new Error('Transfer server not running');
+  }
+  return transferServer.sendMessageRead(targetDeviceId, messageIds);
+});
+
+// ============ Transfer Database IPC Handlers ============
+
+// 设备操作
+ipcMain.handle('transfer:db:createDevice', (_event, device: Omit<TransferDevice, 'created_at'>) => {
+  const db = initTransferDatabase();
+  return db.createDevice(device);
+});
+
+ipcMain.handle('transfer:db:getDevice', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.getDeviceById(id);
+});
+
+ipcMain.handle('transfer:db:getAllDevices', () => {
+  const db = initTransferDatabase();
+  return db.getAllDevices();
+});
+
+ipcMain.handle('transfer:db:updateDevice', (_event, id: string, updates: Partial<TransferDevice>) => {
+  const db = initTransferDatabase();
+  return db.updateDevice(id, updates);
+});
+
+ipcMain.handle('transfer:db:deleteDevice', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.deleteDevice(id);
+});
+
+// 会话操作
+ipcMain.handle('transfer:db:createSession', (_event, session: TransferSession) => {
+  const db = initTransferDatabase();
+  return db.createSession(session);
+});
+
+ipcMain.handle('transfer:db:getSession', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.getSessionById(id);
+});
+
+ipcMain.handle('transfer:db:getAllSessions', () => {
+  const db = initTransferDatabase();
+  return db.getAllSessions();
+});
+
+ipcMain.handle('transfer:db:getSessionsByDevice', (_event, deviceId: string) => {
+  const db = initTransferDatabase();
+  return db.getSessionsByDevice(deviceId);
+});
+
+ipcMain.handle('transfer:db:endSession', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.endSession(id);
+});
+
+ipcMain.handle('transfer:db:deleteSession', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.deleteSession(id);
+});
+
+// 消息操作
+ipcMain.handle('transfer:db:createMessage', (_event, message: TransferMessage) => {
+  const db = initTransferDatabase();
+  return db.createMessage(message);
+});
+
+ipcMain.handle('transfer:db:getMessage', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.getMessageById(id);
+});
+
+ipcMain.handle('transfer:db:getMessagesBySession', (_event, sessionId: string, limit?: number, offset?: number) => {
+  const db = initTransferDatabase();
+  return db.getMessagesBySession(sessionId, limit, offset);
+});
+
+ipcMain.handle('transfer:db:markMessageAsRead', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.markMessageAsRead(id);
+});
+
+ipcMain.handle('transfer:db:markSessionMessagesAsRead', (_event, sessionId: string) => {
+  const db = initTransferDatabase();
+  return db.markSessionMessagesAsRead(sessionId);
+});
+
+ipcMain.handle('transfer:db:deleteMessage', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.deleteMessage(id);
+});
+
+// 文件传输操作
+ipcMain.handle('transfer:db:createFileTransfer', (_event, file: TransferFile) => {
+  const db = initTransferDatabase();
+  return db.createFileTransfer(file);
+});
+
+ipcMain.handle('transfer:db:getFile', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.getFileById(id);
+});
+
+ipcMain.handle('transfer:db:getFilesBySession', (_event, sessionId: string) => {
+  const db = initTransferDatabase();
+  return db.getFilesBySession(sessionId);
+});
+
+ipcMain.handle('transfer:db:updateFileProgress', (_event, id: string, progress: number) => {
+  const db = initTransferDatabase();
+  return db.updateFileProgress(id, progress);
+});
+
+ipcMain.handle('transfer:db:completeFileTransfer', (_event, id: string, localPath: string, fileHash?: string) => {
+  const db = initTransferDatabase();
+  return db.completeFileTransfer(id, localPath, fileHash);
+});
+
+ipcMain.handle('transfer:db:failFileTransfer', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.failFileTransfer(id);
+});
+
+ipcMain.handle('transfer:db:cancelFileTransfer', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.cancelFileTransfer(id);
+});
+
+ipcMain.handle('transfer:db:deleteFile', (_event, id: string) => {
+  const db = initTransferDatabase();
+  return db.deleteFile(id);
+});
+
+// 清理和统计
+ipcMain.handle('transfer:db:cleanupOldSessions', (_event, daysOld: number) => {
+  const db = initTransferDatabase();
+  return db.cleanupOldSessions(daysOld);
+});
+
+ipcMain.handle('transfer:db:cleanupFailedTransfers', () => {
+  const db = initTransferDatabase();
+  return db.cleanupFailedTransfers();
+});
+
+ipcMain.handle('transfer:db:getStats', () => {
+  const db = initTransferDatabase();
+  return db.getStats();
+});
+
+// 关闭传输数据库（在应用退出时调用）
+app.on('will-quit', () => {
+  if (transferDatabase) {
+    transferDatabase.close();
+    transferDatabase = null;
+  }
+  if (transferServer) {
+    transferServer.stop();
+    transferServer = null;
+  }
+});

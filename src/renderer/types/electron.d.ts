@@ -180,6 +180,163 @@ export interface ClipperAPI {
   onNoteCreated: (callback: (data: { noteId: string }) => void) => void;
 }
 
+export interface TransferDevice {
+  id: string;
+  name: string;
+  type: 'desktop' | 'android';
+  last_ip?: string | null;
+  last_port?: number | null;
+  last_seen: number;
+  is_favorite: number;
+  created_at: number;
+}
+
+export interface TransferSession {
+  id: string;
+  peer_device_id: string;
+  peer_device_name: string;
+  connection_type: 'lan' | 'relay';
+  started_at: number;
+  ended_at?: number | null;
+}
+
+export interface TransferMessage {
+  id: string;
+  session_id: string;
+  direction: 'sent' | 'received';
+  type: 'text' | 'file' | 'image';
+  content: string;
+  file_id?: string | null;
+  created_at: number;
+  read_at?: number | null;
+}
+
+export interface TransferFile {
+  id: string;
+  session_id: string;
+  filename: string;
+  file_size: number;
+  mime_type: string;
+  local_path?: string | null;
+  direction: 'sent' | 'received';
+  status: 'pending' | 'transferring' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  file_hash?: string | null;
+  created_at: number;
+  completed_at?: number | null;
+}
+
+export interface TransferServerStatus {
+  running: boolean;
+  port: number | null;
+  ip: string | null;
+  connectedDevices: number;
+  startedAt: number | null;
+}
+
+export interface ConnectedDevice {
+  id: string;
+  name: string;
+  type: 'desktop' | 'android';
+  socketId: string;
+  ip: string;
+  connectedAt: number;
+  lastHeartbeat: number;
+}
+
+export interface PairingQRData {
+  deviceId: string;
+  deviceName: string;
+  serverIp: string;
+  serverPort: number;
+  timestamp: number;
+  expiresAt: number;
+  version: string;
+}
+
+export interface DeviceInfo {
+  deviceId: string;
+  deviceName: string;
+  deviceType: 'desktop' | 'android';
+}
+
+export interface TransferError {
+  code: string;
+  message: string;
+  details?: any;
+  timestamp: number;
+}
+
+export interface TransferDatabaseAPI {
+  // 设备
+  createDevice: (device: Omit<TransferDevice, 'created_at'>) => Promise<TransferDevice>;
+  getDevice: (id: string) => Promise<TransferDevice | undefined>;
+  getAllDevices: () => Promise<TransferDevice[]>;
+  updateDevice: (id: string, updates: Partial<TransferDevice>) => Promise<boolean>;
+  deleteDevice: (id: string) => Promise<boolean>;
+  // 会话
+  createSession: (session: TransferSession) => Promise<TransferSession>;
+  getSession: (id: string) => Promise<TransferSession | undefined>;
+  getAllSessions: () => Promise<TransferSession[]>;
+  getSessionsByDevice: (deviceId: string) => Promise<TransferSession[]>;
+  endSession: (id: string) => Promise<boolean>;
+  deleteSession: (id: string) => Promise<boolean>;
+  // 消息
+  createMessage: (message: TransferMessage) => Promise<TransferMessage>;
+  getMessage: (id: string) => Promise<TransferMessage | undefined>;
+  getMessagesBySession: (sessionId: string, limit?: number, offset?: number) => Promise<TransferMessage[]>;
+  markMessageAsRead: (id: string) => Promise<boolean>;
+  markSessionMessagesAsRead: (sessionId: string) => Promise<number>;
+  deleteMessage: (id: string) => Promise<boolean>;
+  // 文件传输
+  createFileTransfer: (file: TransferFile) => Promise<TransferFile>;
+  getFile: (id: string) => Promise<TransferFile | undefined>;
+  getFilesBySession: (sessionId: string) => Promise<TransferFile[]>;
+  updateFileProgress: (id: string, progress: number) => Promise<boolean>;
+  completeFileTransfer: (id: string, localPath: string, fileHash?: string) => Promise<boolean>;
+  failFileTransfer: (id: string) => Promise<boolean>;
+  cancelFileTransfer: (id: string) => Promise<boolean>;
+  deleteFile: (id: string) => Promise<boolean>;
+  // 清理和统计
+  cleanupOldSessions: (daysOld: number) => Promise<number>;
+  cleanupFailedTransfers: () => Promise<number>;
+  getStats: () => Promise<{ devices: number; sessions: number; messages: number; files: number }>;
+}
+
+export interface TransferAPI {
+  // 服务器管理
+  startServer: (port?: number) => Promise<TransferServerStatus>;
+  stopServer: () => Promise<boolean>;
+  getServerStatus: () => Promise<TransferServerStatus>;
+  getConnectedDevices: () => Promise<ConnectedDevice[]>;
+  generateQRData: () => Promise<PairingQRData | null>;
+  getDeviceInfo: () => Promise<DeviceInfo>;
+  
+  // 数据库操作
+  db: TransferDatabaseAPI;
+  
+  // 事件监听（返回取消订阅函数）
+  onDeviceConnected: (callback: (device: ConnectedDevice) => void) => () => void;
+  onDeviceDisconnected: (callback: (deviceId: string) => void) => () => void;
+  onDeviceListUpdated: (callback: (devices: ConnectedDevice[]) => void) => () => void;
+  onMessageReceived: (callback: (data: any) => void) => () => void;
+  onFileIncoming: (callback: (data: any) => void) => () => void;
+  onFileChunk: (callback: (data: any) => void) => () => void;
+  onFileComplete: (callback: (data: any) => void) => () => void;
+}
+
+export interface NotificationOptions {
+  title: string;
+  body: string;
+  icon?: string;
+  tag?: string;
+}
+
+export interface NotificationAPI {
+  show: (options: NotificationOptions) => Promise<{ success: boolean }>;
+  onClick: (callback: (tag: string) => void) => void;
+}
+
 export interface ElectronAPI {
   getAppPath: () => Promise<string>;
   getAppPaths: () => Promise<{
@@ -212,6 +369,8 @@ export interface ElectronAPI {
   data: DataAPI;
   resource: ResourceAPI;
   clipper: ClipperAPI;
+  transfer: TransferAPI;
+  notification: NotificationAPI;
 }
 
 declare global {

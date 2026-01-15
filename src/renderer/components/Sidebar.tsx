@@ -18,6 +18,7 @@ import {
   LinkOutlined,
   SyncOutlined,
   NodeIndexOutlined,
+  SwapOutlined,
   RightOutlined,
   DownOutlined,
 } from '@ant-design/icons';
@@ -36,6 +37,7 @@ interface SidebarProps {
   bookmarkEnabled?: boolean;
   toolboxEnabled?: boolean;
   diagramEnabled?: boolean;
+  transferEnabled?: boolean;
   currentTool?: string | null;
   onSelectFolder: (folderId: string | null) => void;
   onSelectView: (view: 'all' | 'starred' | 'trash') => void;
@@ -63,6 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   bookmarkEnabled,
   toolboxEnabled,
   diagramEnabled,
+  transferEnabled,
   currentTool,
   onSelectFolder,
   onSelectView,
@@ -271,6 +274,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // 构建菜单项
   const menuItems: MenuProps['items'] = [
+    // 待办事项（固定在顶部）
+    ...(todoEnabled ? [{
+      key: 'todo',
+      icon: <CheckSquareOutlined />,
+      label: '待办事项',
+    }] : []),
     // 所有笔记（带添加目录按钮）
     { 
       key: 'all', 
@@ -321,6 +330,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
+    // 处理待办事项菜单点击
+    if (key === 'todo') {
+      onSelectTool?.('todo');
+      return;
+    }
+    
     // 点击笔记相关菜单时，清除当前工具选择
     if (currentTool) {
       onSelectTool?.(null);
@@ -375,6 +390,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // 计算选中的 key
   const getSelectedKeys = () => {
+    if (currentTool === 'todo') return ['todo'];
     if (selectedView === 'starred') return ['starred'];
     if (selectedView === 'trash') return ['trash'];
     if (selectedFolderId === 'uncategorized') return ['uncategorized'];
@@ -407,16 +423,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 icon={<RobotOutlined />}
                 size="small"
                 onClick={() => onSelectTool?.(currentTool === 'ai' ? null : 'ai')}
-              />
-            </Tooltip>
-          )}
-          {todoEnabled && (
-            <Tooltip title="待办事项">
-              <Button
-                type={currentTool === 'todo' ? 'primary' : 'text'}
-                icon={<CheckSquareOutlined />}
-                size="small"
-                onClick={() => onSelectTool?.(currentTool === 'todo' ? null : 'todo')}
               />
             </Tooltip>
           )}
@@ -457,6 +463,16 @@ const Sidebar: React.FC<SidebarProps> = ({
                 icon={<NodeIndexOutlined />}
                 size="small"
                 onClick={() => onSelectTool?.(currentTool === 'diagram' ? null : 'diagram')}
+              />
+            </Tooltip>
+          )}
+          {transferEnabled && (
+            <Tooltip title="传输助手">
+              <Button
+                type={currentTool === 'transfer' ? 'primary' : 'text'}
+                icon={<SwapOutlined />}
+                size="small"
+                onClick={() => onSelectTool?.(currentTool === 'transfer' ? null : 'transfer')}
               />
             </Tooltip>
           )}

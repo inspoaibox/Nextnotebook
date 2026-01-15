@@ -61,6 +61,7 @@ data class SettingsUiState(
     val todosEnabled: Boolean = true,
     val vaultEnabled: Boolean = true,
     val aiEnabled: Boolean = true,
+    val transferEnabled: Boolean = true,
     
     // 同步设置
     val syncEnabled: Boolean = false,
@@ -131,6 +132,7 @@ class SettingsViewModel @Inject constructor(
         private const val KEY_TODOS_ENABLED = "todos_enabled"
         private const val KEY_VAULT_ENABLED = "vault_enabled"
         private const val KEY_AI_ENABLED = "ai_enabled"
+        private const val KEY_TRANSFER_ENABLED = "transfer_enabled"
         private const val KEY_SYNC_ENABLED = "sync_enabled"
         private const val KEY_SYNC_TYPE = "sync_type"
         private const val KEY_WEBDAV_URL = "webdav_url"
@@ -196,6 +198,7 @@ class SettingsViewModel @Inject constructor(
                 todosEnabled = prefs.getBoolean(KEY_TODOS_ENABLED, true),
                 vaultEnabled = prefs.getBoolean(KEY_VAULT_ENABLED, true),
                 aiEnabled = prefs.getBoolean(KEY_AI_ENABLED, true),
+                transferEnabled = prefs.getBoolean(KEY_TRANSFER_ENABLED, true),
                 
                 // 同步设置
                 syncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false),

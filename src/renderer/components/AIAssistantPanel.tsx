@@ -57,6 +57,18 @@ const AIAssistantPanel: React.FC = () => {
   const currentMaxTokens = currentConversation?.maxTokens ?? 4096;
   const currentSystemPrompt = currentConversation?.systemPrompt || '你是一个有帮助的AI助手。';
 
+  // 当前选中的渠道（用于级联选择）
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
+  
+  // 根据当前模型推断渠道
+  const currentModelInfo = allModels.find(m => m.id === currentModel);
+  const currentChannelId = currentModelInfo?.channel?.id || selectedChannelId;
+  
+  // 当前渠道下的模型列表
+  const currentChannelModels = currentChannelId 
+    ? settings.channels.find(c => c.id === currentChannelId)?.models || []
+    : [];
+
   // 合并本地消息和服务器消息
   const displayMessages = [...messages, ...localMessages].sort((a, b) => a.createdAt - b.createdAt);
 
@@ -74,19 +86,24 @@ const AIAssistantPanel: React.FC = () => {
 
   // 打开新建对话弹窗
   const handleOpenNewConvModal = () => {
-    const defaultModel = allModels.length > 0 ? allModels[0].id : '';
+    const defaultChannel = settings.channels.length > 0 ? settings.channels[0] : null;
+    const defaultModel = defaultChannel && defaultChannel.models.length > 0 ? defaultChannel.models[0].id : '';
+    const defaultChannelId = defaultChannel?.id || '';
+    
     // 先重置表单，确保清除之前的状态
     newConvForm.resetFields();
     // 使用 setTimeout 确保重置完成后再设置新值
     setTimeout(() => {
       newConvForm.setFieldsValue({
         title: '新对话',
+        channelId: defaultChannelId,
         model: defaultModel,
         temperature: 0.7,
         maxTokens: 4096,
         presetPrompt: 'default',
         systemPrompt: PRESET_PROMPTS[0].prompt,
       });
+      setSelectedChannelId(defaultChannelId);
     }, 0);
     setNewConvModalVisible(true);
   };
@@ -207,20 +224,43 @@ const AIAssistantPanel: React.FC = () => {
     return preset ? preset.id : 'custom';
   };
 
-  // 模型选择弹出内容
+  // 模型选择弹出内容（级联选择：先选渠道再选模型）
   const modelPopoverContent = (
     <div style={{ width: 280 }}>
       <div style={{ marginBottom: 8, fontWeight: 500, color: '#666' }}>选择模型</div>
       {!currentConversationId ? (
         <div style={{ color: '#999', fontSize: 12 }}>请先创建或选择对话</div>
       ) : (
-        <Select
-          style={{ width: '100%' }}
-          value={currentModel}
-          onChange={handleModelChange}
-          placeholder="选择模型"
-          options={allModels.map(m => ({ value: m.id, label: `${m.name} (${m.channelName})` }))}
-        />
+        <>
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ marginBottom: 4, fontSize: 12, color: '#999' }}>AI 渠道</div>
+            <Select
+              style={{ width: '100%' }}
+              value={currentChannelId}
+              onChange={(channelId) => {
+                setSelectedChannelId(channelId);
+                // 切换渠道时，自动选择该渠道的第一个模型
+                const channel = settings.channels.find(c => c.id === channelId);
+                if (channel && channel.models.length > 0) {
+                  handleModelChange(channel.models[0].id);
+                }
+              }}
+              placeholder="选择渠道"
+              options={settings.channels.map(c => ({ value: c.id, label: c.name }))}
+            />
+          </div>
+          <div>
+            <div style={{ marginBottom: 4, fontSize: 12, color: '#999' }}>模型</div>
+            <Select
+              style={{ width: '100%' }}
+              value={currentModel}
+              onChange={handleModelChange}
+              placeholder="选择模型"
+              disabled={!currentChannelId}
+              options={currentChannelModels.map(m => ({ value: m.id, label: m.name }))}
+            />
+          </div>
+        </>
       )}
     </div>
   );
@@ -399,7 +439,7 @@ const AIAssistantPanel: React.FC = () => {
           </span>
           {currentConversation && (
             <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>
-              模型: {allModels.find(m => m.id === currentModel)?.name || currentModel}
+              模型: {currentModelInfo?.name || currentModel}
             </span>
           )}
         </div>
@@ -458,7 +498,7 @@ const AIAssistantPanel: React.FC = () => {
             <Popover content={modelPopoverContent} trigger="click" placement="topLeft">
               <Tooltip title="选择模型">
                 <Button type="text" size="small" style={{ color: currentConversationId ? '#666' : '#ccc' }}>
-                  @{allModels.find(m => m.id === currentModel)?.name || '模型'}
+                  @{currentModelInfo?.name || '模型'}
                 </Button>
               </Tooltip>
             </Popover>
@@ -519,14 +559,41 @@ const AIAssistantPanel: React.FC = () => {
           </Form.Item>
 
           <Form.Item
+            name="channelId"
+            label="AI 渠道"
+            rules={[{ required: true, message: '请选择渠道' }]}
+          >
+            <Select
+              placeholder="选择渠道"
+              options={settings.channels.map(c => ({ value: c.id, label: c.name }))}
+              notFoundContent={<span style={{ color: '#999' }}>请先在设置中配置AI渠道</span>}
+              onChange={(channelId) => {
+                setSelectedChannelId(channelId);
+                // 切换渠道时，清空模型选择并自动选择第一个模型
+                const channel = settings.channels.find(c => c.id === channelId);
+                if (channel && channel.models.length > 0) {
+                  newConvForm.setFieldValue('model', channel.models[0].id);
+                } else {
+                  newConvForm.setFieldValue('model', undefined);
+                }
+              }}
+            />
+          </Form.Item>
+
+          <Form.Item
             name="model"
             label="选择模型"
             rules={[{ required: true, message: '请选择模型' }]}
           >
             <Select
               placeholder="选择模型"
-              options={allModels.map(m => ({ value: m.id, label: `${m.name} (${m.channelName})` }))}
-              notFoundContent={<span style={{ color: '#999' }}>请先在设置中配置AI渠道</span>}
+              disabled={!selectedChannelId}
+              options={
+                selectedChannelId
+                  ? settings.channels.find(c => c.id === selectedChannelId)?.models.map(m => ({ value: m.id, label: m.name })) || []
+                  : []
+              }
+              notFoundContent={<span style={{ color: '#999' }}>请先选择渠道</span>}
             />
           </Form.Item>
 

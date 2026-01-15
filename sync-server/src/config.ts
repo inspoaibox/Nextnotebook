@@ -25,6 +25,20 @@ export interface Config {
   // 安全配置
   trustProxy: boolean;
   secureMode: boolean;
+  // Transfer 中继服务器配置
+  transferRelayEnabled: boolean;
+  transferRelayPath: string;
+  transferMaxFileSize: number;
+  transferMaxConnections: number;
+  transferSessionTimeout: number;
+  // Transfer 详细配置（供 relay.ts 使用）
+  transfer?: {
+    maxConnections: number;
+    messageRateLimit: number;
+    fileTransferLimit: number;
+    sessionTimeout: number;
+    heartbeatInterval: number;
+  };
 }
 
 function parseApiKeys(value: string | undefined): string[] {
@@ -67,6 +81,20 @@ export const config: Config = {
   // 安全配置
   trustProxy: process.env.TRUST_PROXY === 'true',  // 是否信任代理（用于获取真实 IP）
   secureMode: process.env.SECURE_MODE === 'true',  // 是否启用安全模式（强制 HTTPS）
+  // Transfer 中继服务器配置
+  transferRelayEnabled: process.env.TRANSFER_RELAY_ENABLED !== 'false',  // 默认启用
+  transferRelayPath: process.env.TRANSFER_RELAY_PATH || '/transfer',
+  transferMaxFileSize: parseInt(process.env.TRANSFER_MAX_FILE_SIZE || '104857600', 10),  // 100MB
+  transferMaxConnections: parseInt(process.env.TRANSFER_MAX_CONNECTIONS || '100', 10),
+  transferSessionTimeout: parseInt(process.env.TRANSFER_SESSION_TIMEOUT || '1800000', 10),  // 30分钟
+  // Transfer 详细配置
+  transfer: {
+    maxConnections: parseInt(process.env.TRANSFER_MAX_CONNECTIONS || '100', 10),
+    messageRateLimit: parseInt(process.env.TRANSFER_MESSAGE_RATE_LIMIT || '60', 10),  // 每分钟
+    fileTransferLimit: parseInt(process.env.TRANSFER_FILE_RATE_LIMIT || '10', 10),  // 每分钟
+    sessionTimeout: parseInt(process.env.TRANSFER_SESSION_TIMEOUT || '1800000', 10),  // 30分钟
+    heartbeatInterval: parseInt(process.env.TRANSFER_HEARTBEAT_INTERVAL || '30000', 10),  // 30秒
+  },
 };
 
 // 安全检查 - 在启动时输出警告

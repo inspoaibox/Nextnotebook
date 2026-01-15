@@ -196,4 +196,109 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('note-created', (_event, data) => callback(data));
     },
   },
+
+  // Transfer API - 局域网传输助手
+  transfer: {
+    // 服务器管理
+    startServer: (port?: number) => ipcRenderer.invoke('transfer:startServer', port),
+    stopServer: () => ipcRenderer.invoke('transfer:stopServer'),
+    getServerStatus: () => ipcRenderer.invoke('transfer:getServerStatus'),
+    getConnectedDevices: () => ipcRenderer.invoke('transfer:getConnectedDevices'),
+    generateQRData: () => ipcRenderer.invoke('transfer:generateQRData'),
+    getDeviceInfo: () => ipcRenderer.invoke('transfer:getDeviceInfo'),
+    
+    // 消息和文件发送
+    sendMessage: (targetDeviceId: string, sessionId: string, message: object) => 
+      ipcRenderer.invoke('transfer:sendMessage', targetDeviceId, sessionId, message),
+    sendFile: (targetDeviceId: string, sessionId: string, filePath: string) => 
+      ipcRenderer.invoke('transfer:sendFile', targetDeviceId, sessionId, filePath),
+    sendMessageRead: (targetDeviceId: string, messageIds: string[]) => 
+      ipcRenderer.invoke('transfer:sendMessageRead', targetDeviceId, messageIds),
+    
+    // 数据库操作
+    db: {
+      // 设备
+      createDevice: (device: object) => ipcRenderer.invoke('transfer:db:createDevice', device),
+      getDevice: (id: string) => ipcRenderer.invoke('transfer:db:getDevice', id),
+      getAllDevices: () => ipcRenderer.invoke('transfer:db:getAllDevices'),
+      updateDevice: (id: string, updates: object) => ipcRenderer.invoke('transfer:db:updateDevice', id, updates),
+      deleteDevice: (id: string) => ipcRenderer.invoke('transfer:db:deleteDevice', id),
+      // 会话
+      createSession: (session: object) => ipcRenderer.invoke('transfer:db:createSession', session),
+      getSession: (id: string) => ipcRenderer.invoke('transfer:db:getSession', id),
+      getAllSessions: () => ipcRenderer.invoke('transfer:db:getAllSessions'),
+      getSessionsByDevice: (deviceId: string) => ipcRenderer.invoke('transfer:db:getSessionsByDevice', deviceId),
+      endSession: (id: string) => ipcRenderer.invoke('transfer:db:endSession', id),
+      deleteSession: (id: string) => ipcRenderer.invoke('transfer:db:deleteSession', id),
+      // 消息
+      createMessage: (message: object) => ipcRenderer.invoke('transfer:db:createMessage', message),
+      getMessage: (id: string) => ipcRenderer.invoke('transfer:db:getMessage', id),
+      getMessagesBySession: (sessionId: string, limit?: number, offset?: number) => 
+        ipcRenderer.invoke('transfer:db:getMessagesBySession', sessionId, limit, offset),
+      markMessageAsRead: (id: string) => ipcRenderer.invoke('transfer:db:markMessageAsRead', id),
+      markSessionMessagesAsRead: (sessionId: string) => ipcRenderer.invoke('transfer:db:markSessionMessagesAsRead', sessionId),
+      deleteMessage: (id: string) => ipcRenderer.invoke('transfer:db:deleteMessage', id),
+      // 文件传输
+      createFileTransfer: (file: object) => ipcRenderer.invoke('transfer:db:createFileTransfer', file),
+      getFile: (id: string) => ipcRenderer.invoke('transfer:db:getFile', id),
+      getFilesBySession: (sessionId: string) => ipcRenderer.invoke('transfer:db:getFilesBySession', sessionId),
+      updateFileProgress: (id: string, progress: number) => ipcRenderer.invoke('transfer:db:updateFileProgress', id, progress),
+      completeFileTransfer: (id: string, localPath: string, fileHash?: string) => 
+        ipcRenderer.invoke('transfer:db:completeFileTransfer', id, localPath, fileHash),
+      failFileTransfer: (id: string) => ipcRenderer.invoke('transfer:db:failFileTransfer', id),
+      cancelFileTransfer: (id: string) => ipcRenderer.invoke('transfer:db:cancelFileTransfer', id),
+      deleteFile: (id: string) => ipcRenderer.invoke('transfer:db:deleteFile', id),
+      // 清理和统计
+      cleanupOldSessions: (daysOld: number) => ipcRenderer.invoke('transfer:db:cleanupOldSessions', daysOld),
+      cleanupFailedTransfers: () => ipcRenderer.invoke('transfer:db:cleanupFailedTransfers'),
+      getStats: () => ipcRenderer.invoke('transfer:db:getStats'),
+    },
+    
+    // 事件监听（返回取消订阅函数）
+    onDeviceConnected: (callback: (device: object) => void) => {
+      const handler = (_event: any, device: object) => callback(device);
+      ipcRenderer.on('transfer:device-connected', handler);
+      return () => ipcRenderer.removeListener('transfer:device-connected', handler);
+    },
+    onDeviceDisconnected: (callback: (deviceId: string) => void) => {
+      const handler = (_event: any, deviceId: string) => callback(deviceId);
+      ipcRenderer.on('transfer:device-disconnected', handler);
+      return () => ipcRenderer.removeListener('transfer:device-disconnected', handler);
+    },
+    onDeviceListUpdated: (callback: (devices: object[]) => void) => {
+      const handler = (_event: any, devices: object[]) => callback(devices);
+      ipcRenderer.on('transfer:device-list-updated', handler);
+      return () => ipcRenderer.removeListener('transfer:device-list-updated', handler);
+    },
+    onMessageReceived: (callback: (data: object) => void) => {
+      const handler = (_event: any, data: object) => callback(data);
+      ipcRenderer.on('transfer:message-received', handler);
+      return () => ipcRenderer.removeListener('transfer:message-received', handler);
+    },
+    onFileIncoming: (callback: (data: object) => void) => {
+      const handler = (_event: any, data: object) => callback(data);
+      ipcRenderer.on('transfer:file-incoming', handler);
+      return () => ipcRenderer.removeListener('transfer:file-incoming', handler);
+    },
+    onFileChunk: (callback: (data: object) => void) => {
+      const handler = (_event: any, data: object) => callback(data);
+      ipcRenderer.on('transfer:file-chunk', handler);
+      return () => ipcRenderer.removeListener('transfer:file-chunk', handler);
+    },
+    onFileComplete: (callback: (data: object) => void) => {
+      const handler = (_event: any, data: object) => callback(data);
+      ipcRenderer.on('transfer:file-complete', handler);
+      return () => ipcRenderer.removeListener('transfer:file-complete', handler);
+    },
+  },
+
+  // Notification API - 系统通知
+  notification: {
+    show: (options: { title: string; body: string; icon?: string; tag?: string }) => 
+      ipcRenderer.invoke('notification:show', options),
+    // 监听通知点击事件
+    onClick: (callback: (tag: string) => void) => {
+      ipcRenderer.on('notification:click', (_event, tag) => callback(tag));
+    },
+  },
 });

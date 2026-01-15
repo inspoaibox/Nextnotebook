@@ -19,6 +19,10 @@
     <!-- 开机启动 (用于恢复提醒) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- 相机权限 (用于二维码扫描) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
         android:name=".MuchengNotesApp"
         android:allowBackup="true"

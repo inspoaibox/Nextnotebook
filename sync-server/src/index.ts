@@ -3,6 +3,8 @@ import { config, ensureDataDirs, checkSecurityConfig } from './config';
 import { getDatabase, closeDatabase } from './database';
 import { CleanupScheduler } from './services/CleanupScheduler';
 import { log } from './middleware/logger';
+import { transferRelayServer } from './transfer/relay';
+import { createServer } from 'http';
 
 // 确保数据目录存在
 ensureDataDirs();
@@ -17,11 +19,23 @@ getDatabase();
 const cleanupScheduler = new CleanupScheduler();
 cleanupScheduler.start();
 
+// 创建 HTTP 服务器
+const server = createServer(app);
+
+// 初始化 Transfer 中继服务器
+if (config.transferRelayEnabled) {
+  transferRelayServer.initialize(server);
+  log('info', `Transfer relay server enabled on path ${config.transferRelayPath}`);
+}
+
 // 启动服务器
-const server = app.listen(config.port, () => {
+server.listen(config.port, () => {
   log('info', `Sync server started on port ${config.port}`);
   log('info', `Database: ${config.databasePath}`);
   log('info', `Resources: ${config.resourcesPath}`);
+  if (config.transferRelayEnabled) {
+    log('info', `Transfer relay: enabled (max ${config.transferMaxConnections} connections)`);
+  }
 });
 
 // 优雅关闭
@@ -30,6 +44,12 @@ function gracefulShutdown(signal: string): void {
 
   // 停止清理调度器
   cleanupScheduler.stop();
+
+  // 关闭 Transfer 中继服务器
+  if (config.transferRelayEnabled) {
+    transferRelayServer.close();
+    log('info', 'Transfer relay server closed');
+  }
 
   // 关闭 HTTP 服务器
   server.close(() => {

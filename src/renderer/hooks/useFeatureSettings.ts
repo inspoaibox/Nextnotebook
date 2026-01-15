@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS: FeatureSettings = {
   bookmark_enabled: true,
   toolbox_enabled: true,
   diagram_enabled: true,
+  transfer_enabled: true,
 };
 
 function getSettings(): FeatureSettings {

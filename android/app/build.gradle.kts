@@ -128,6 +128,13 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.security.crypto)
 
+    // Socket.IO for LAN Transfer
+    implementation(libs.socketio.client)
+
+    // QR Code scanning
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.android)
+
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.kotest.runner.junit5)
