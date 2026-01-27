@@ -1236,6 +1236,92 @@ const Editor: React.FC<EditorProps> = ({
     { key: 'delete', icon: <DeleteOutlined />, label: '删除笔记', danger: true, onClick: handleDelete },
   ];
 
+  // 定义 Markdown 组件 - 使用 useMemo 避免每次渲染都重新创建导致 DOM 重建
+  const markdownComponents = useMemo(() => ({
+    h1: ({ children }: any) => {
+      const text = String(children);
+      const id = headings.find(h => h.text === text && h.level === 1)?.id || '';
+      return <h1 data-heading-id={id}>{children}</h1>;
+    },
+    h2: ({ children }: any) => {
+      const text = String(children);
+      const id = headings.find(h => h.text === text && h.level === 2)?.id || '';
+      return <h2 data-heading-id={id}>{children}</h2>;
+    },
+    h3: ({ children }: any) => {
+      const text = String(children);
+      const id = headings.find(h => h.text === text && h.level === 3)?.id || '';
+      return <h3 data-heading-id={id}>{children}</h3>;
+    },
+    h4: ({ children }: any) => {
+      const text = String(children);
+      const id = headings.find(h => h.text === text && h.level === 4)?.id || '';
+      return <h4 data-heading-id={id}>{children}</h4>;
+    },
+    h5: ({ children }: any) => {
+      const text = String(children);
+      const id = headings.find(h => h.text === text && h.level === 5)?.id || '';
+      return <h5 data-heading-id={id}>{children}</h5>;
+    },
+    h6: ({ children }: any) => {
+      const text = String(children);
+      const id = headings.find(h => h.text === text && h.level === 6)?.id || '';
+      return <h6 data-heading-id={id}>{children}</h6>;
+    },
+    code: ({ node, inline, className, children, ...props }: any) => {
+      const match = /language-(\w+)/.exec(className || '');
+      return !inline && match ? (
+        <SyntaxHighlighter
+          style={oneDark}
+          language={match[1]}
+          PreTag="div"
+          wrapLines={false}
+          wrapLongLines={false}
+          customStyle={{
+            margin: 0,
+            padding: '16px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            lineHeight: '1.5',
+          }}
+          codeTagProps={{
+            style: {
+              display: 'block',
+              whiteSpace: 'pre',
+              userSelect: 'text',
+            }
+          }}
+          {...props}
+        >
+          {String(children).replace(/\n$/, '')}
+        </SyntaxHighlighter>
+      ) : (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
+    // 任务列表支持
+    input: ({ type, checked, ...props }: any) => {
+      if (type === 'checkbox') {
+        return <input type="checkbox" checked={checked} disabled style={{ marginRight: 8 }} />;
+      }
+      return <input type={type} {...props} />;
+    },
+    // 图片处理 - 支持 resource:// 协议
+    img: ({ node, src, alt, title, ...props }: any) => {
+      // react-markdown v9 中，src 可能在 node.properties 中
+      const imgSrc = src || node?.properties?.src;
+      const imgAlt = alt || node?.properties?.alt;
+      const imgTitle = title || node?.properties?.title;
+      return <ResourceImage src={imgSrc} alt={imgAlt} title={imgTitle} />;
+    },
+    // 链接处理 - 支持 resource:// 协议的附件
+    a: ({ href, children, ...props }: any) => {
+      return <ResourceLink href={href}>{children}</ResourceLink>;
+    },
+  }), [headings]);
+
   if (!noteId || !note) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
@@ -1571,90 +1657,7 @@ const Editor: React.FC<EditorProps> = ({
                   // 其他 URL 使用默认处理
                   return url;
                 }}
-                components={{
-                  h1: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 1)?.id || '';
-                    return <h1 data-heading-id={id}>{children}</h1>;
-                  },
-                  h2: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 2)?.id || '';
-                    return <h2 data-heading-id={id}>{children}</h2>;
-                  },
-                  h3: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 3)?.id || '';
-                    return <h3 data-heading-id={id}>{children}</h3>;
-                  },
-                  h4: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 4)?.id || '';
-                    return <h4 data-heading-id={id}>{children}</h4>;
-                  },
-                  h5: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 5)?.id || '';
-                    return <h5 data-heading-id={id}>{children}</h5>;
-                  },
-                  h6: ({ children }) => {
-                    const text = String(children);
-                    const id = headings.find(h => h.text === text && h.level === 6)?.id || '';
-                    return <h6 data-heading-id={id}>{children}</h6>;
-                  },
-                  code: ({ node, inline, className, children, ...props }: any) => {
-                    const match = /language-(\w+)/.exec(className || '');
-                    return !inline && match ? (
-                      <SyntaxHighlighter
-                        style={oneDark}
-                        language={match[1]}
-                        PreTag="div"
-                        wrapLines={false}
-                        wrapLongLines={false}
-                        customStyle={{
-                          margin: 0,
-                          padding: '16px',
-                          borderRadius: '6px',
-                          fontSize: '14px',
-                          lineHeight: '1.5',
-                        }}
-                        codeTagProps={{
-                          style: {
-                            display: 'block',
-                            whiteSpace: 'pre',
-                            userSelect: 'text',
-                          }
-                        }}
-                        {...props}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    ) : (
-                      <code className={className} {...props}>
-                        {children}
-                      </code>
-                    );
-                  },
-                  // 任务列表支持
-                  input: ({ type, checked, ...props }: any) => {
-                    if (type === 'checkbox') {
-                      return <input type="checkbox" checked={checked} disabled style={{ marginRight: 8 }} />;
-                    }
-                    return <input type={type} {...props} />;
-                  },
-                  // 图片处理 - 支持 resource:// 协议
-                  img: ({ node, src, alt, title, ...props }: any) => {
-                    // react-markdown v9 中，src 可能在 node.properties 中
-                    const imgSrc = src || node?.properties?.src;
-                    const imgAlt = alt || node?.properties?.alt;
-                    const imgTitle = title || node?.properties?.title;
-                    return <ResourceImage src={imgSrc} alt={imgAlt} title={imgTitle} />;
-                  },
-                  // 链接处理 - 支持 resource:// 协议的附件
-                  a: ({ href, children, ...props }: any) => {
-                    return <ResourceLink href={href}>{children}</ResourceLink>;
-                  },
-                }}
+                components={markdownComponents}
               >
                 {content}
               </ReactMarkdown>
@@ -1796,82 +1799,7 @@ const Editor: React.FC<EditorProps> = ({
                     // 其他 URL 使用默认处理
                     return url;
                   }}
-                  components={{
-                    h1: ({ children }) => {
-                      const text = String(children);
-                      const id = headings.find(h => h.text === text && h.level === 1)?.id || '';
-                      return <h1 data-heading-id={id}>{children}</h1>;
-                    },
-                    h2: ({ children }) => {
-                      const text = String(children);
-                      const id = headings.find(h => h.text === text && h.level === 2)?.id || '';
-                      return <h2 data-heading-id={id}>{children}</h2>;
-                    },
-                    h3: ({ children }) => {
-                      const text = String(children);
-                      const id = headings.find(h => h.text === text && h.level === 3)?.id || '';
-                      return <h3 data-heading-id={id}>{children}</h3>;
-                    },
-                    h4: ({ children }) => {
-                      const text = String(children);
-                      const id = headings.find(h => h.text === text && h.level === 4)?.id || '';
-                      return <h4 data-heading-id={id}>{children}</h4>;
-                    },
-                    h5: ({ children }) => {
-                      const text = String(children);
-                      const id = headings.find(h => h.text === text && h.level === 5)?.id || '';
-                      return <h5 data-heading-id={id}>{children}</h5>;
-                    },
-                    h6: ({ children }) => {
-                      const text = String(children);
-                      const id = headings.find(h => h.text === text && h.level === 6)?.id || '';
-                      return <h6 data-heading-id={id}>{children}</h6>;
-                    },
-                    code: ({ node, inline, className, children, ...props }: any) => {
-                      const match = /language-(\w+)/.exec(className || '');
-                      return !inline && match ? (
-                        <SyntaxHighlighter
-                          style={oneDark}
-                          language={match[1]}
-                          PreTag="div"
-                          wrapLines={false}
-                          wrapLongLines={false}
-                          customStyle={{
-                            margin: 0,
-                            padding: '16px',
-                            borderRadius: '6px',
-                            fontSize: '14px',
-                            lineHeight: '1.5',
-                          }}
-                          {...props}
-                        >
-                          {String(children).replace(/\n$/, '')}
-                        </SyntaxHighlighter>
-                      ) : (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      );
-                    },
-                    input: ({ type, checked, ...props }: any) => {
-                      if (type === 'checkbox') {
-                        return <input type="checkbox" checked={checked} disabled style={{ marginRight: 8 }} />;
-                      }
-                      return <input type={type} {...props} />;
-                    },
-                    // 图片处理 - 支持 resource:// 协议
-                    img: ({ node, src, alt, title, ...props }: any) => {
-                      // react-markdown v9 中，src 可能在 node.properties 中
-                      const imgSrc = src || node?.properties?.src;
-                      const imgAlt = alt || node?.properties?.alt;
-                      const imgTitle = title || node?.properties?.title;
-                      return <ResourceImage src={imgSrc} alt={imgAlt} title={imgTitle} />;
-                    },
-                    // 链接处理 - 支持 resource:// 协议的附件
-                    a: ({ href, children, ...props }: any) => {
-                      return <ResourceLink href={href}>{children}</ResourceLink>;
-                    },
-                  }}
+                  components={markdownComponents}
                 >
                   {content}
                 </ReactMarkdown>
