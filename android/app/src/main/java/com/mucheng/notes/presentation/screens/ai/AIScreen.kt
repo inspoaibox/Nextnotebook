@@ -28,8 +28,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
@@ -898,18 +902,17 @@ fun StreamingMessageBubble(content: String) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
-                Row(
+                Column(
                     modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalAlignment = Alignment.Start
                 ) {
                     SelectionContainer {
-                        Text(
-                            text = content,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp)
+                        MessageContent(
+                            content = content, 
+                            textColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.height(8.dp))
                     CircularProgressIndicator(
                         modifier = Modifier.size(12.dp),
                         strokeWidth = 1.5.dp,
@@ -967,12 +970,9 @@ fun MessageBubble(message: MessageItem, displayContent: String) {
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     SelectionContainer {
-                        Text(
-                            text = displayContent,
-                            modifier = Modifier.padding(12.dp),
-                            color = textColor,
-                            style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp)
-                        )
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            MessageContent(content = displayContent, textColor = textColor)
+                        }
                     }
                 }
                 
@@ -1004,6 +1004,100 @@ fun MessageBubble(message: MessageItem, displayContent: String) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun MessageContent(content: String, textColor: androidx.compose.ui.graphics.Color) {
+    val parts = remember(content) { content.split("```") }
+    
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        parts.forEachIndexed { index, part ->
+            if (index % 2 == 0) {
+                // Regular Text
+                if (part.isNotEmpty()) {
+                    Text(
+                        text = part,
+                        color = textColor,
+                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp)
+                    )
+                }
+            } else {
+                // Code Block
+                CodeBlock(code = part)
+            }
+        }
+    }
+}
+
+@Composable
+fun CodeBlock(code: String) {
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    
+    // Simple language extraction
+    val (language, cleanedCode) = remember(code) {
+        val trimmed = code.trim()
+        val firstLineEnd = trimmed.indexOf('\n')
+        if (firstLineEnd != -1) {
+            val potentialLang = trimmed.substring(0, firstLineEnd).trim()
+            if (potentialLang.isNotEmpty() && !potentialLang.contains(" ") && potentialLang.length < 20) {
+                potentialLang to trimmed.substring(firstLineEnd + 1)
+            } else {
+                null to trimmed
+            }
+        } else {
+            null to trimmed
+        }
+    }
+
+
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = language ?: "Code",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace
+                )
+                IconButton(
+                    onClick = { clipboardManager.setText(AnnotatedString(cleanedCode)) },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            // Code
+            Text(
+                text = cleanedCode,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }

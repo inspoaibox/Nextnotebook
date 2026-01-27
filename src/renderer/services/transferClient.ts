@@ -162,12 +162,12 @@ export const transferClient = {
   parsePairingQRCode(qrString: string): PairingQRData | null {
     try {
       const data = JSON.parse(qrString) as PairingQRData;
-      
+
       // 验证必要字段
       if (!data.deviceId || !data.serverIp || !data.serverPort || !data.expiresAt) {
         return null;
       }
-      
+
       return data;
     } catch {
       return null;
@@ -181,11 +181,11 @@ export const transferClient = {
     if (isQRCodeExpired(qrData)) {
       return { valid: false, error: TransferErrorCode.QR_CODE_EXPIRED };
     }
-    
+
     if (!qrData.deviceId || !qrData.serverIp || !qrData.serverPort) {
       return { valid: false, error: TransferErrorCode.QR_CODE_INVALID };
     }
-    
+
     return { valid: true };
   },
 
@@ -483,10 +483,10 @@ export const transferClient = {
    */
   async deleteSessionWithData(sessionId: string): Promise<boolean> {
     if (!transferApi) throw new Error('Transfer API not available');
-    
+
     // 获取会话的文件记录
     const files = await transferApi.db.getFilesBySession(sessionId);
-    
+
     // 删除本地文件
     for (const file of files) {
       if (file.local_path) {
@@ -497,7 +497,7 @@ export const transferClient = {
         }
       }
     }
-    
+
     // 删除数据库记录（级联删除消息和文件记录）
     return transferApi.db.deleteSession(sessionId);
   },
@@ -516,16 +516,16 @@ export const transferClient = {
    */
   async clearAllHistory(): Promise<{ sessions: number; messages: number; files: number }> {
     if (!transferApi) throw new Error('Transfer API not available');
-    
+
     const sessions = await transferApi.db.getAllSessions();
     let deletedSessions = 0;
     let deletedMessages = 0;
     let deletedFiles = 0;
-    
+
     for (const session of sessions) {
       const messages = await transferApi.db.getMessagesBySession(session.id, 10000, 0);
       const files = await transferApi.db.getFilesBySession(session.id);
-      
+
       // 删除本地文件
       for (const file of files) {
         if (file.local_path) {
@@ -536,13 +536,13 @@ export const transferClient = {
           }
         }
       }
-      
+
       await transferApi.db.deleteSession(session.id);
       deletedSessions++;
       deletedMessages += messages.length;
       deletedFiles += files.length;
     }
-    
+
     return { sessions: deletedSessions, messages: deletedMessages, files: deletedFiles };
   },
 
@@ -567,7 +567,7 @@ export const transferClient = {
     content: string
   ): Promise<TransferMessage> {
     if (!transferApi) throw new Error('Transfer API not available');
-    
+
     const messageId = uuidv4();
     const message: TransferMessage = {
       id: messageId,
@@ -579,17 +579,17 @@ export const transferClient = {
       created_at: Date.now(),
       read_at: null,
     };
-    
+
     // 保存到本地数据库
     await this.createMessage(message);
-    
+
     // 发送到服务器
     await transferApi.sendMessage(targetDeviceId, sessionId, {
       id: messageId,
       type: 'text',
       content,
     });
-    
+
     return message;
   },
 
@@ -600,7 +600,7 @@ export const transferClient = {
     targetDeviceId: string,
     sessionId: string,
     filePath: string
-  ): Promise<TransferFile> {
+  ): Promise<{ id: string; filename: string; fileSize: number; mimeType: string }> {
     if (!transferApi) throw new Error('Transfer API not available');
     return transferApi.sendFile(targetDeviceId, sessionId, filePath);
   },
@@ -621,7 +621,7 @@ export const transferClient = {
    * 监听设备连接事件
    */
   onDeviceConnected(callback: (device: ConnectedDevice) => void): () => void {
-    if (!transferApi) return () => {};
+    if (!transferApi) return () => { };
     return transferApi.onDeviceConnected(callback);
   },
 
@@ -629,7 +629,7 @@ export const transferClient = {
    * 监听设备断开事件
    */
   onDeviceDisconnected(callback: (deviceId: string) => void): () => void {
-    if (!transferApi) return () => {};
+    if (!transferApi) return () => { };
     return transferApi.onDeviceDisconnected(callback);
   },
 
@@ -637,7 +637,7 @@ export const transferClient = {
    * 监听设备列表更新事件
    */
   onDeviceListUpdated(callback: (devices: ConnectedDevice[]) => void): () => void {
-    if (!transferApi) return () => {};
+    if (!transferApi) return () => { };
     return transferApi.onDeviceListUpdated(callback);
   },
 
@@ -645,7 +645,7 @@ export const transferClient = {
    * 监听消息接收事件
    */
   onMessageReceived(callback: (data: any) => void): () => void {
-    if (!transferApi) return () => {};
+    if (!transferApi) return () => { };
     return transferApi.onMessageReceived(callback);
   },
 
@@ -653,7 +653,7 @@ export const transferClient = {
    * 监听文件传入事件
    */
   onFileIncoming(callback: (data: any) => void): () => void {
-    if (!transferApi) return () => {};
+    if (!transferApi) return () => { };
     return transferApi.onFileIncoming(callback);
   },
 
@@ -661,7 +661,7 @@ export const transferClient = {
    * 监听文件分块事件
    */
   onFileChunk(callback: (data: any) => void): () => void {
-    if (!transferApi) return () => {};
+    if (!transferApi) return () => { };
     return transferApi.onFileChunk(callback);
   },
 
@@ -669,7 +669,7 @@ export const transferClient = {
    * 监听文件完成事件
    */
   onFileComplete(callback: (data: any) => void): () => void {
-    if (!transferApi) return () => {};
+    if (!transferApi) return () => { };
     return transferApi.onFileComplete(callback);
   },
 

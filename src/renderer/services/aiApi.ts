@@ -145,7 +145,7 @@ export const aiSettingsApi = {
 // AI API 调用
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
-  content: string;
+  content: string | Array<{ type: 'text' | 'image_url'; text?: string; image_url?: { url: string } }>;
 }
 
 export interface ChatCompletionOptions {
@@ -190,16 +190,42 @@ export async function callAIApi(
   if (type === 'anthropic') {
     // Anthropic API 格式
     const systemMsg = options.messages.find(m => m.role === 'system');
-    const otherMsgs = options.messages.filter(m => m.role !== 'system');
+    const otherMsgs = options.messages.filter(m => m.role !== 'system').map(msg => {
+      // Anthropic 支持多模态内容
+      if (Array.isArray(msg.content)) {
+        return {
+          role: msg.role,
+          content: msg.content.map(part => {
+            if (part.type === 'text') {
+              return { type: 'text', text: part.text };
+            } else if (part.type === 'image_url') {
+              // Anthropic 使用 image 类型，需要提取 base64 数据
+              const base64Data = part.image_url?.url.split(',')[1] || '';
+              const mediaType = part.image_url?.url.match(/data:(.*?);/)?.[1] || 'image/jpeg';
+              return {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mediaType,
+                  data: base64Data,
+                },
+              };
+            }
+            return part;
+          }),
+        };
+      }
+      return { role: msg.role, content: msg.content };
+    });
     body = {
       model: options.model,
       max_tokens: options.max_tokens || 4096,
       messages: otherMsgs,
-      ...(systemMsg && { system: systemMsg.content }),
+      ...(systemMsg && { system: typeof systemMsg.content === 'string' ? systemMsg.content : '' }),
       ...(options.temperature !== undefined && { temperature: options.temperature }),
     };
   } else {
-    // OpenAI 兼容格式
+    // OpenAI 兼容格式（支持多模态）
     body = {
       model: options.model,
       messages: options.messages,
@@ -299,12 +325,36 @@ async function callGeminiApi(
   
   for (const msg of options.messages) {
     if (msg.role === 'system') {
-      systemInstruction = msg.content;
+      systemInstruction = typeof msg.content === 'string' ? msg.content : '';
     } else {
-      contents.push({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-      });
+      // Gemini 支持多模态内容
+      if (Array.isArray(msg.content)) {
+        const parts: any[] = [];
+        for (const part of msg.content) {
+          if (part.type === 'text') {
+            parts.push({ text: part.text });
+          } else if (part.type === 'image_url') {
+            // Gemini 使用 inline_data 格式
+            const base64Data = part.image_url?.url.split(',')[1] || '';
+            const mimeType = part.image_url?.url.match(/data:(.*?);/)?.[1] || 'image/jpeg';
+            parts.push({
+              inline_data: {
+                mime_type: mimeType,
+                data: base64Data,
+              },
+            });
+          }
+        }
+        contents.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts,
+        });
+      } else {
+        contents.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        });
+      }
     }
   }
   

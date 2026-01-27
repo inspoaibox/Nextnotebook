@@ -176,6 +176,9 @@ interface TransferSessionDao {
     @Query("SELECT * FROM transfer_sessions WHERE peer_device_id = :deviceId ORDER BY started_at DESC")
     fun getSessionsByDevice(deviceId: String): Flow<List<TransferSessionEntity>>
 
+    @Query("SELECT * FROM transfer_sessions WHERE peer_device_id = :deviceId AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1")
+    suspend fun getActiveSessionByDevice(deviceId: String): TransferSessionEntity?
+
     @Query("UPDATE transfer_sessions SET ended_at = :endedAt WHERE id = :id")
     suspend fun endSession(id: String, endedAt: Long)
 

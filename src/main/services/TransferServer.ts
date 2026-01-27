@@ -74,11 +74,11 @@ export class TransferServer {
   private port: number | null = null;
   private localIp: string | null = null;
   private startedAt: number | null = null;
-  
+
   private connectedDevices: Map<string, ConnectedDevice> = new Map();
   private socketToDevice: Map<string, string> = new Map();
   private pendingPairings: Map<string, PendingPairing> = new Map();
-  
+
   private eventListeners: Map<string, Set<EventCallback<any>>> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private sessionTimeoutInterval: NodeJS.Timeout | null = null;
@@ -144,7 +144,7 @@ export class TransferServer {
     }
 
     const port = await this.findAvailablePort(preferredPort);
-    
+
     return new Promise((resolve, reject) => {
       try {
         this.httpServer = createServer();
@@ -161,10 +161,10 @@ export class TransferServer {
         this.httpServer.listen(port, () => {
           this.port = port;
           this.startedAt = Date.now();
-          
+
           const status = this.getStatus();
           console.log(`[TransferServer] Started on ${this.localIp}:${port}`);
-          
+
           this.startHeartbeatCheck();
           this.startSessionTimeoutCheck();
           this.emit('server:started', status);
@@ -199,7 +199,7 @@ export class TransferServer {
     if (this.io) {
       // 通知所有连接的设备
       this.io.emit(SOCKET_EVENTS.DEVICE_OFFLINE, { deviceId: this.deviceId });
-      
+
       await new Promise<void>((resolve) => {
         this.io!.close(() => {
           resolve();
@@ -305,7 +305,7 @@ export class TransferServer {
     const fileId = uuidv4();
     const fileSize = stats.size;
     const totalChunks = Math.ceil(fileSize / TRANSFER_CONSTANTS.CHUNK_SIZE);
-    
+
     // 获取 MIME 类型
     const ext = path.extname(filename).toLowerCase().slice(1);
     const mimeTypes: Record<string, string> = {
@@ -536,6 +536,16 @@ export class TransferServer {
       },
     });
 
+    // 自动为新连接的设备创建配对会话
+    // 这样手机端扫码连接后就能自动看到与桌面端的会话
+    const sessionId = uuidv4();
+    socket.emit(SOCKET_EVENTS.PAIR_SUCCESS, {
+      sessionId,
+      peerId: this.deviceId,
+      peerName: this.deviceName,
+    });
+    console.log(`[TransferServer] Auto-paired with device: ${deviceName}, sessionId: ${sessionId}`);
+
     this.emit('device:connected', device);
     this.emit('device:list-updated', this.getConnectedDevices());
   }
@@ -630,9 +640,21 @@ export class TransferServer {
     if (!senderId) return;
 
     const { targetDeviceId, sessionId, message } = data;
+
+    // 检查目标是否是桌面端自己
+    if (targetDeviceId === this.deviceId) {
+      // 消息发给桌面端自己，直接发出事件
+      console.log(`[TransferServer] Message received for desktop from ${senderId}`);
+      this.updateSessionActivity(sessionId, [senderId, targetDeviceId]);
+      this.emit('message:received', { senderId, sessionId, message });
+      return;
+    }
+
+    // 消息发给其他连接的设备
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (!target) {
+      console.log(`[TransferServer] Target device ${targetDeviceId} not found in connected devices`);
       socket.emit(SOCKET_EVENTS.ERROR, createTransferError(TransferErrorCode.SESSION_NOT_FOUND));
       return;
     }
@@ -675,6 +697,15 @@ export class TransferServer {
     if (!senderId) return;
 
     const { targetDeviceId, fileInfo } = data;
+
+    // 检查目标是否是桌面端自己
+    if (targetDeviceId === this.deviceId) {
+      // 文件发给桌面端自己，直接发出事件
+      console.log(`[TransferServer] File incoming for desktop from ${senderId}: ${fileInfo?.filename}`);
+      this.emit('file:incoming', { senderId, fileInfo });
+      return;
+    }
+
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (!target) {
@@ -698,6 +729,14 @@ export class TransferServer {
     if (!senderId) return;
 
     const { targetDeviceId, fileId, chunkIndex, chunk, totalChunks } = data;
+
+    // 检查目标是否是桌面端自己
+    if (targetDeviceId === this.deviceId) {
+      // 文件块发给桌面端自己，直接发出事件
+      this.emit('file:chunk', { senderId, fileId, chunkIndex, chunk, totalChunks });
+      return;
+    }
+
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (!target) return;
@@ -721,6 +760,15 @@ export class TransferServer {
     if (!senderId) return;
 
     const { targetDeviceId, fileId, fileHash } = data;
+
+    // 检查目标是否是桌面端自己
+    if (targetDeviceId === this.deviceId) {
+      // 文件完成发给桌面端自己，直接发出事件
+      console.log(`[TransferServer] File complete for desktop from ${senderId}`);
+      this.emit('file:complete', { senderId, fileId, fileHash });
+      return;
+    }
+
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (!target) return;
@@ -742,6 +790,13 @@ export class TransferServer {
     if (!senderId) return;
 
     const { targetDeviceId, fileId } = data;
+
+    // 检查目标是否是桌面端自己
+    if (targetDeviceId === this.deviceId) {
+      // 不需要特殊处理，只是取消
+      return;
+    }
+
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (target) {
@@ -772,7 +827,7 @@ export class TransferServer {
     const device = this.connectedDevices.get(deviceId);
     if (device) {
       console.log(`[TransferServer] Device disconnected: ${device.name} (${deviceId})`);
-      
+
       this.connectedDevices.delete(deviceId);
       this.socketToDevice.delete(socket.id);
 
@@ -888,7 +943,7 @@ export class TransferServer {
    */
   private getLocalIP(): string | null {
     const interfaces = os.networkInterfaces();
-    
+
     for (const name of Object.keys(interfaces)) {
       const netInterface = interfaces[name];
       if (!netInterface) continue;
@@ -896,11 +951,11 @@ export class TransferServer {
       for (const info of netInterface) {
         // 跳过内部地址和 IPv6
         if (info.internal || info.family !== 'IPv4') continue;
-        
+
         // 优先返回常见的局域网地址
         if (info.address.startsWith('192.168.') ||
-            info.address.startsWith('10.') ||
-            info.address.startsWith('172.')) {
+          info.address.startsWith('10.') ||
+          info.address.startsWith('172.')) {
           return info.address;
         }
       }

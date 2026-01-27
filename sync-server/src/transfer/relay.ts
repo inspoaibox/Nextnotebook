@@ -18,18 +18,18 @@ const SOCKET_EVENTS = {
   DEVICE_LIST: 'device:list',
   DEVICE_ONLINE: 'device:online',
   DEVICE_OFFLINE: 'device:offline',
-  
+
   // 配对相关
   PAIR_REQUEST: 'pair:request',
   PAIR_ACCEPT: 'pair:accept',
   PAIR_REJECT: 'pair:reject',
   PAIR_SUCCESS: 'pair:success',
-  
+
   // 消息相关
   MESSAGE_SEND: 'message:send',
   MESSAGE_RECEIVE: 'message:receive',
   MESSAGE_READ: 'message:read',
-  
+
   // 文件传输相关
   FILE_START: 'file:start',
   FILE_CHUNK: 'file:chunk',
@@ -38,7 +38,7 @@ const SOCKET_EVENTS = {
   FILE_PROGRESS: 'file:progress',
   FILE_CANCEL: 'file:cancel',
   FILE_ERROR: 'file:error',
-  
+
   // 通用
   ERROR: 'error',
   HEARTBEAT: 'heartbeat',
@@ -73,7 +73,7 @@ export class TransferRelayServer {
   private connectedDevices: Map<string, ConnectedDevice> = new Map();
   private socketToDevice: Map<string, string> = new Map();
   private rateLimits: Map<string, RateLimitInfo> = new Map();
-  
+
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
 
@@ -165,7 +165,7 @@ export class TransferRelayServer {
     // 连接时验证密钥
     this.io.use((socket, next) => {
       const relayKey = socket.handshake.auth?.relayKey || socket.handshake.query?.relayKey;
-      
+
       // 如果服务器配置了密钥，则必须验证
       if (this.relayKey) {
         if (!relayKey || relayKey !== this.relayKey) {
@@ -173,7 +173,7 @@ export class TransferRelayServer {
           return next(new Error('INVALID_RELAY_KEY'));
         }
       }
-      
+
       next();
     });
 
@@ -372,7 +372,13 @@ export class TransferRelayServer {
 
   private handleMessageSend(socket: Socket, data: any): void {
     const senderId = this.socketToDevice.get(socket.id);
-    if (!senderId) return;
+    console.log(`[TransferRelay] MESSAGE_SEND from socket ${socket.id}, senderId: ${senderId}`);
+    console.log(`[TransferRelay] MESSAGE_SEND data:`, JSON.stringify(data));
+
+    if (!senderId) {
+      console.log(`[TransferRelay] Sender not registered, ignoring message`);
+      return;
+    }
 
     // 检查限流
     if (!this.checkRateLimit(senderId, 'message')) {
@@ -384,9 +390,13 @@ export class TransferRelayServer {
     }
 
     const { targetDeviceId, sessionId, message } = data;
+    console.log(`[TransferRelay] Looking for target device: ${targetDeviceId}`);
+    console.log(`[TransferRelay] Connected devices:`, Array.from(this.connectedDevices.keys()));
+
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (!target) {
+      console.log(`[TransferRelay] Target device ${targetDeviceId} NOT FOUND in connected devices`);
       socket.emit(SOCKET_EVENTS.ERROR, {
         code: 'E301',
         message: '目标设备不在线',
@@ -394,14 +404,20 @@ export class TransferRelayServer {
       return;
     }
 
+    console.log(`[TransferRelay] Target found: ${target.name} (socketId: ${target.socketId})`);
+
     // 转发消息
     const targetSocket = this.io?.sockets.sockets.get(target.socketId);
     if (targetSocket) {
+      console.log(`[TransferRelay] Forwarding message to ${target.name}`);
       targetSocket.emit(SOCKET_EVENTS.MESSAGE_RECEIVE, {
         senderId,
         sessionId,
         message,
       });
+      console.log(`[TransferRelay] Message forwarded successfully`);
+    } else {
+      console.log(`[TransferRelay] Target socket not found for socketId: ${target.socketId}`);
     }
   }
 
@@ -533,7 +549,7 @@ export class TransferRelayServer {
     const device = this.connectedDevices.get(deviceId);
     if (device) {
       console.log(`[TransferRelay] Device disconnected: ${device.name} (${deviceId})`);
-      
+
       this.connectedDevices.delete(deviceId);
       this.socketToDevice.delete(socket.id);
       this.rateLimits.delete(deviceId);
@@ -566,7 +582,7 @@ export class TransferRelayServer {
     if (!limit) return false;
 
     const now = Date.now();
-    
+
     // 每分钟重置计数
     if (now - limit.lastReset > 60000) {
       limit.messageCount = 0;

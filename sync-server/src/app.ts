@@ -22,7 +22,7 @@ const app = express();
 // 中间件
 app.use(corsMiddleware);
 app.use(loggerMiddleware);
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '1024mb' }));
 
 // 静态文件服务（管理界面）
 app.use(express.static(path.join(__dirname, 'public')));

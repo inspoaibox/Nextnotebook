@@ -14,10 +14,12 @@ import com.mucheng.notes.domain.repository.ItemRepository
 import com.mucheng.notes.presentation.screens.settings.AIChannel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -77,12 +79,14 @@ class AIViewModel @Inject constructor(
     
     val conversations: StateFlow<List<ConversationItem>> = itemRepository.getByType(ItemType.AI_CONVERSATION)
         .map { items -> items.mapNotNull { it.toConversationItem() } }
+        .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     
     private var _pendingConversation: ConversationItem? = null
 
     val messages: StateFlow<List<MessageItem>> = itemRepository.getByType(ItemType.AI_MESSAGE)
         .map { items -> items.mapNotNull { it.toMessageItem() } }
+        .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     
     private fun getUserChannels(): List<AIChannel> {
@@ -121,7 +125,7 @@ class AIViewModel @Inject constructor(
             try {
                 // 1. Create user message
                 val userPayload = AIMessagePayload(conversationId = conversationId, role = "user", content = content, model = "", tokensUsed = null, createdAt = System.currentTimeMillis())
-                itemRepository.create(ItemType.AI_MESSAGE, json.encodeToString(userPayload))
+                val userItem = itemRepository.create(ItemType.AI_MESSAGE, json.encodeToString(userPayload))
                 
                 _uiState.value = _uiState.value.copy(isThinking = true, error = null)
                 
@@ -134,7 +138,16 @@ class AIViewModel @Inject constructor(
                 }
                 
                 // 2. Prepare history
-                val historyMessages = messages.value.filter { it.conversationId == conversationId }.sortedBy { it.createdAt }.map { ChatMessage(role = it.role, content = it.content) }.toMutableList()
+                // Filter out the just-created message from existing list to avoid duplication if it appeared in the flow
+                val historyMessages = messages.value
+                    .filter { it.conversationId == conversationId && it.id != userItem.id }
+                    .sortedBy { it.createdAt }
+                    .map { ChatMessage(role = it.role, content = it.content) }
+                    .toMutableList()
+                
+                // Add current message (role="user")
+                historyMessages.add(ChatMessage(role = "user", content = content))
+                
                 val allMessages = mutableListOf<ChatMessage>()
                 if (systemPrompt.isNotBlank()) allMessages.add(ChatMessage(role = "system", content = systemPrompt))
                 allMessages.addAll(historyMessages)

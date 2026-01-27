@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Input, Button, Select, Slider, Empty, message, Tooltip, Popover, Modal, Form
+  Input, Button, Select, Slider, Empty, message, Tooltip, Popover, Modal, Form, Upload
 } from 'antd';
 import {
   SendOutlined, PlusOutlined, DeleteOutlined, EditOutlined,
-  RobotOutlined, SettingOutlined, FileTextOutlined
+  RobotOutlined, SettingOutlined, FileTextOutlined, PictureOutlined, CloseCircleOutlined
 } from '@ant-design/icons';
 import { useAISettings, useAIConversations, useAIMessages, AIMessage } from '../hooks/useAI';
+import { validateImage, fileToBase64, compressImage, getImageFromClipboard } from '../utils/imageUtils';
 
 const { TextArea } = Input;
 
@@ -32,6 +33,7 @@ const AIAssistantPanel: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [localMessages, setLocalMessages] = useState<AIMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
 
   // 新建对话弹窗状态
   const [newConvModalVisible, setNewConvModalVisible] = useState(false);
@@ -59,13 +61,13 @@ const AIAssistantPanel: React.FC = () => {
 
   // 当前选中的渠道（用于级联选择）
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
-  
+
   // 根据当前模型推断渠道
   const currentModelInfo = allModels.find(m => m.id === currentModel);
   const currentChannelId = currentModelInfo?.channel?.id || selectedChannelId;
-  
+
   // 当前渠道下的模型列表
-  const currentChannelModels = currentChannelId 
+  const currentChannelModels = currentChannelId
     ? settings.channels.find(c => c.id === currentChannelId)?.models || []
     : [];
 
@@ -89,7 +91,7 @@ const AIAssistantPanel: React.FC = () => {
     const defaultChannel = settings.channels.length > 0 ? settings.channels[0] : null;
     const defaultModel = defaultChannel && defaultChannel.models.length > 0 ? defaultChannel.models[0].id : '';
     const defaultChannelId = defaultChannel?.id || '';
-    
+
     // 先重置表单，确保清除之前的状态
     newConvForm.resetFields();
     // 使用 setTimeout 确保重置完成后再设置新值
@@ -136,8 +138,46 @@ const AIAssistantPanel: React.FC = () => {
     }
   };
 
+  // Handle Image Upload
+  const handleImageUpload = async (file: File) => {
+    const validation = validateImage(file);
+    if (!validation.valid) {
+      message.error(validation.error);
+      return false;
+    }
+
+    try {
+      message.loading({ content: '处理图片中...', key: 'image-upload' });
+      let base64 = await fileToBase64(file);
+      base64 = await compressImage(base64);
+      setSelectedImages(prev => [...prev, base64]);
+      message.success({ content: '图片已添加', key: 'image-upload' });
+    } catch (error) {
+      message.error({ content: '图片处理失败', key: 'image-upload' });
+    }
+    return false;
+  };
+
+  // Handle Paste
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    try {
+      const file = await getImageFromClipboard(e);
+      if (file) {
+        e.preventDefault();
+        await handleImageUpload(file);
+      }
+    } catch (error) {
+      console.error('粘贴图片失败:', error);
+    }
+  };
+
+  // Remove Image
+  const handleRemoveImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSend = async () => {
-    if (!inputValue.trim() || sending) return;
+    if ((!inputValue.trim() && selectedImages.length === 0) || sending) return;
 
     if (!currentConversationId) {
       message.warning('请先创建或选择一个对话');
@@ -158,15 +198,26 @@ const AIAssistantPanel: React.FC = () => {
       content: inputValue,
       model: currentModel,
       createdAt: Date.now(),
+      images: [...selectedImages]
     };
     setLocalMessages(prev => [...prev, userMsg]);
 
     const content = inputValue;
+    const imagesToSend = [...selectedImages];
     setInputValue('');
+    setSelectedImages([]);
     setSending(true);
 
     try {
-      await sendMessage(content, modelInfo.channel, currentModel, currentSystemPrompt, currentTemperature, currentMaxTokens);
+      await sendMessage(
+        content,
+        modelInfo.channel,
+        currentModel,
+        currentSystemPrompt,
+        currentTemperature,
+        currentMaxTokens,
+        imagesToSend
+      );
     } catch (err: any) {
       message.error(err.message || 'AI请求失败');
     } finally {
@@ -179,6 +230,7 @@ const AIAssistantPanel: React.FC = () => {
     setSending(false);
     setCurrentConversationId(id);
     setLocalMessages([]);
+    setSelectedImages([]);
   };
 
   const handleDeleteConversation = async (id: string, e: React.MouseEvent) => {
@@ -187,6 +239,7 @@ const AIAssistantPanel: React.FC = () => {
     if (currentConversationId === id) {
       setCurrentConversationId(null);
       setLocalMessages([]);
+      setSelectedImages([]);
     }
   };
 
@@ -447,8 +500,8 @@ const AIAssistantPanel: React.FC = () => {
         {/* 消息列表 */}
         <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
           {!currentConversationId ? (
-            <Empty 
-              description="请先创建或选择一个对话" 
+            <Empty
+              description="请先创建或选择一个对话"
               style={{ marginTop: 60 }}
             >
               <Button type="primary" onClick={handleOpenNewConvModal}>新建对话</Button>
@@ -493,6 +546,29 @@ const AIAssistantPanel: React.FC = () => {
 
         {/* 输入区域 */}
         <div style={{ background: '#fff', borderTop: '1px solid #e8e8e8', padding: '12px 16px' }}>
+          {/* 图片预览 */}
+          {selectedImages.length > 0 && (
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 8,
+              marginBottom: 8,
+              padding: 8,
+              background: '#fafafa',
+              borderRadius: 4
+            }}>
+              {selectedImages.map((img, idx) => (
+                <div key={idx} style={{ position: 'relative' }}>
+                  <img src={img} style={{ width: 60, height: 60, borderRadius: 4, objectFit: 'cover' }} />
+                  <CloseCircleOutlined
+                    onClick={() => handleRemoveImage(idx)}
+                    style={{ position: 'absolute', top: -6, right: -6, color: '#ff4d4f', cursor: 'pointer', background: '#fff', borderRadius: '50%' }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 工具栏 */}
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 4 }}>
             <Popover content={modelPopoverContent} trigger="click" placement="topLeft">
@@ -515,24 +591,41 @@ const AIAssistantPanel: React.FC = () => {
           </div>
 
           {/* 输入框 */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <TextArea
-              value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
-              onPressEnter={e => {
-                if (!e.shiftKey) { e.preventDefault(); handleSend(); }
-              }}
-              placeholder={currentConversationId ? "输入消息，Enter发送，Shift+Enter换行" : "请先创建或选择对话"}
-              autoSize={{ minRows: 1, maxRows: 4 }}
-              style={{ flex: 1, resize: 'none' }}
-              disabled={sending || streaming || !currentConversationId}
-            />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <Upload
+              accept="image/*"
+              showUploadList={false}
+              beforeUpload={handleImageUpload}
+              multiple
+            >
+              <Tooltip title="上传图片">
+                <Button
+                  icon={<PictureOutlined />}
+                  disabled={sending || streaming || !currentConversationId}
+                  style={{ height: 32 }}
+                />
+              </Tooltip>
+            </Upload>
+            <div style={{ flex: 1 }}>
+              <TextArea
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                onPaste={handlePaste}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                }}
+                placeholder={currentConversationId ? "输入消息，Enter发送，Shift+Enter换行，支持粘贴图片" : "请先创建或选择对话"}
+                autoSize={{ minRows: 1, maxRows: 4 }}
+                disabled={sending || streaming || !currentConversationId}
+              />
+            </div>
             <Button
               type="primary"
               icon={<SendOutlined />}
               onClick={handleSend}
               loading={sending || streaming}
-              disabled={!inputValue.trim() || !currentConversationId}
+              disabled={(!inputValue.trim() && selectedImages.length === 0) || !currentConversationId}
+              style={{ height: 32 }}
             />
           </div>
         </div>
@@ -651,6 +744,22 @@ const MessageBubble: React.FC<{ message: AIMessage }> = ({ message }) => {
           <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
             <RobotOutlined style={{ fontSize: 12, color: '#1890ff' }} />
             <span style={{ fontSize: 11, color: '#999' }}>AI</span>
+          </div>
+        )}
+        {/* 图片显示 */}
+        {message.images && message.images.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            {message.images.map((img, idx) => (
+              <img
+                key={idx}
+                src={img}
+                style={{ maxWidth: 200, maxHeight: 200, borderRadius: 8, cursor: 'pointer' }}
+                onClick={() => {
+                  const win = window.open();
+                  if (win) win.document.write(`<img src="${img}" style="max-width:100%"/>`);
+                }}
+              />
+            ))}
           </div>
         )}
         {message.content}

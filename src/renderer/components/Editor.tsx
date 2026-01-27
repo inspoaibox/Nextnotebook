@@ -47,13 +47,13 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
 
   useEffect(() => {
     let isMounted = true;
-    
+
     // 重置状态
     setLoading(true);
     setError(false);
     setErrorMsg('');
     setImageSrc(null);
-    
+
     const loadImage = async () => {
       if (!src) {
         setLoading(false);
@@ -83,17 +83,17 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
         try {
           // 通过 IPC 读取资源文件
           const base64Data = await window.electronAPI.resource.read(resourceId, ext);
-          
+
           if (!isMounted) return;
-          
+
           if (base64Data) {
             // 根据扩展名确定 MIME 类型
-            const mimeType = ext === '.png' ? 'image/png' 
+            const mimeType = ext === '.png' ? 'image/png'
               : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
-              : ext === '.gif' ? 'image/gif'
-              : ext === '.webp' ? 'image/webp'
-              : ext === '.svg' ? 'image/svg+xml'
-              : 'image/png';
+                : ext === '.gif' ? 'image/gif'
+                  : ext === '.webp' ? 'image/webp'
+                    : ext === '.svg' ? 'image/svg+xml'
+                      : 'image/png';
             setImageSrc(`data:${mimeType};base64,${base64Data}`);
             setError(false);
           } else {
@@ -118,9 +118,9 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
         }
       }
     };
-    
+
     loadImage();
-    
+
     return () => {
       isMounted = false;
     };
@@ -130,10 +130,10 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLImageElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const imgElement = e.currentTarget;
     const imgSrcData = imgElement.src;
-    
+
     // 使用 Dropdown 显示菜单
     const menuContainer = document.createElement('div');
     menuContainer.style.position = 'fixed';
@@ -141,7 +141,7 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
     menuContainer.style.top = `${e.clientY}px`;
     menuContainer.style.zIndex = '9999';
     document.body.appendChild(menuContainer);
-    
+
     const closeMenu = () => {
       if (menuContainer.parentNode) {
         document.body.removeChild(menuContainer);
@@ -149,13 +149,13 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
       document.removeEventListener('click', closeMenu);
       document.removeEventListener('contextmenu', closeMenu);
     };
-    
+
     // 延迟添加关闭事件，避免立即触发
     setTimeout(() => {
       document.addEventListener('click', closeMenu);
       document.addEventListener('contextmenu', closeMenu);
     }, 0);
-    
+
     // 渲染菜单
     const menuElement = document.createElement('div');
     menuElement.className = 'ant-dropdown ant-dropdown-placement-bottomLeft';
@@ -170,7 +170,7 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
       </ul>
     `;
     menuContainer.appendChild(menuElement);
-    
+
     // 添加菜单项点击事件
     menuElement.querySelectorAll('.ant-dropdown-menu-item').forEach(item => {
       item.addEventListener('mouseenter', () => {
@@ -217,14 +217,14 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
 
   if (error || !imageSrc) {
     return (
-      <span style={{ 
-        display: 'inline-block', 
-        padding: '8px 12px', 
-        background: '#fff2f0', 
+      <span style={{
+        display: 'inline-block',
+        padding: '8px 12px',
+        background: '#fff2f0',
         border: '1px solid #ffccc7',
         borderRadius: 4,
         color: '#ff4d4f',
-        fontSize: 12 
+        fontSize: 12
       }}>
         ❌ 图片加载失败: {errorMsg || alt || src}
       </span>
@@ -232,10 +232,10 @@ const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = 
   }
 
   return (
-    <img 
-      src={imageSrc} 
-      alt={alt || ''} 
-      title={title || ''} 
+    <img
+      src={imageSrc}
+      alt={alt || ''}
+      title={title || ''}
       style={{ maxWidth: '100%', height: 'auto', cursor: 'pointer' }}
       onContextMenu={handleContextMenu}
     />
@@ -248,22 +248,22 @@ const ResourceLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({
 
   const handleClick = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
-    
+
     if (!href) return;
-    
+
     // 处理 resource:// 协议的附件链接
     if (href.startsWith('resource://')) {
       const resourcePath = href.replace('resource://', '');
       const lastDotIndex = resourcePath.lastIndexOf('.');
       const resourceId = lastDotIndex > 0 ? resourcePath.substring(0, lastDotIndex) : resourcePath;
       const ext = lastDotIndex > 0 ? resourcePath.substring(lastDotIndex) : '';
-      
+
       setDownloading(true);
-      
+
       try {
         // 获取资源文件路径
         const filePath = await window.electronAPI.resource.getPath(resourceId, ext);
-        
+
         if (filePath) {
           // 使用系统默认程序打开文件
           const result = await window.electronAPI.openPath(filePath);
@@ -282,7 +282,7 @@ const ResourceLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({
       }
       return;
     }
-    
+
     // 处理普通外部链接 - 使用系统默认浏览器打开
     if (href.startsWith('http://') || href.startsWith('https://')) {
       try {
@@ -293,7 +293,7 @@ const ResourceLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({
       }
       return;
     }
-    
+
     // 其他协议（如 mailto:, tel: 等）也使用系统默认程序打开
     try {
       await window.electronAPI.openExternal(href);
@@ -305,8 +305,8 @@ const ResourceLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({
   // 如果不是 resource:// 协议，返回普通链接样式
   if (!href || !href.startsWith('resource://')) {
     return (
-      <a 
-        href={href} 
+      <a
+        href={href}
         onClick={handleClick}
         style={{ color: '#1890ff', textDecoration: 'underline', cursor: 'pointer' }}
       >
@@ -316,10 +316,10 @@ const ResourceLink: React.FC<{ href?: string; children?: React.ReactNode }> = ({
   }
 
   return (
-    <a 
+    <a
       href={href}
       onClick={handleClick}
-      style={{ 
+      style={{
         cursor: downloading ? 'wait' : 'pointer',
         color: '#1890ff',
         textDecoration: 'none',
@@ -359,21 +359,21 @@ interface TocItem {
 const extractHeadings = (content: string): TocItem[] => {
   const headings: TocItem[] = [];
   const lines = content.split('\n');
-  
+
   let inCodeBlock = false;
-  
+
   lines.forEach((line, index) => {
     // 检测代码块的开始和结束（支持 ``` 和 ~~~）
     if (line.trim().startsWith('```') || line.trim().startsWith('~~~')) {
       inCodeBlock = !inCodeBlock;
       return;
     }
-    
+
     // 如果在代码块内，跳过
     if (inCodeBlock) {
       return;
     }
-    
+
     const match = line.match(/^(#{1,6})\s+(.+)$/);
     if (match) {
       const level = match[1].length;
@@ -383,7 +383,7 @@ const extractHeadings = (content: string): TocItem[] => {
       headings.push({ id, level, text });
     }
   });
-  
+
   return headings;
 };
 
@@ -506,11 +506,11 @@ interface EditorProps {
   defaultMode?: 'edit' | 'preview';
 }
 
-const Editor: React.FC<EditorProps> = ({ 
-  noteId, 
-  note, 
-  onSave, 
-  onToggleStar, 
+const Editor: React.FC<EditorProps> = ({
+  noteId,
+  note,
+  onSave,
+  onToggleStar,
   onUpdateTags,
   onDelete,
   onDuplicate,
@@ -537,7 +537,7 @@ const Editor: React.FC<EditorProps> = ({
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  
+
   // 笔记加密相关状态
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState('');
@@ -550,22 +550,22 @@ const Editor: React.FC<EditorProps> = ({
   const [showDeletePasswordDialog, setShowDeletePasswordDialog] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deletePasswordError, setDeletePasswordError] = useState('');
-  
+
   // AI 撰写相关状态
   const [showAIWriteDialog, setShowAIWriteDialog] = useState(false);
   const [aiWritePrompt, setAiWritePrompt] = useState('');
   const [aiWriteLoading, setAiWriteLoading] = useState(false);
-  
+
   // AI 整理相关状态
   const [showAIOrganizeDialog, setShowAIOrganizeDialog] = useState(false);
   const [aiOrganizeLoading, setAiOrganizeLoading] = useState(false);
   const [aiOrganizeResult, setAiOrganizeResult] = useState('');
-  
+
   // AI 分析相关状态
   const [showAIAnalyzeDialog, setShowAIAnalyzeDialog] = useState(false);
   const [aiAnalyzeLoading, setAiAnalyzeLoading] = useState(false);
   const [aiAnalyzeResult, setAiAnalyzeResult] = useState('');
-  
+
   const { settings: aiSettings } = useAISettings();
 
   // 提取标题生成目录
@@ -603,7 +603,7 @@ const Editor: React.FC<EditorProps> = ({
   // 验证密码并解锁笔记
   const handleUnlock = useCallback(async () => {
     if (!note || !note.lockPasswordHash) return;
-    
+
     const inputHash = await computePasswordHash(unlockPassword);
     if (inputHash === note.lockPasswordHash) {
       setIsUnlocked(true);
@@ -617,7 +617,7 @@ const Editor: React.FC<EditorProps> = ({
   // 锁定笔记
   const handleLockNote = useCallback(async () => {
     if (!noteId || !onLockNote) return;
-    
+
     if (lockPassword.length < 4) {
       setLockError('密码至少 4 位');
       return;
@@ -626,7 +626,7 @@ const Editor: React.FC<EditorProps> = ({
       setLockError('两次密码不一致');
       return;
     }
-    
+
     const passwordHash = await computePasswordHash(lockPassword);
     await onLockNote(noteId, passwordHash);
     setShowLockDialog(false);
@@ -901,7 +901,7 @@ const Editor: React.FC<EditorProps> = ({
 
   const handleAddNewTag = async () => {
     if (!newTagName.trim()) return;
-    
+
     if (onCreateTag) {
       const newTag = await onCreateTag(newTagName.trim());
       if (newTag) {
@@ -929,7 +929,7 @@ const Editor: React.FC<EditorProps> = ({
       setDeletePasswordError('');
       return;
     }
-    
+
     Modal.confirm({
       title: '删除笔记',
       content: '确定要删除这篇笔记吗？',
@@ -947,7 +947,7 @@ const Editor: React.FC<EditorProps> = ({
   // 验证密码后删除加密笔记
   const handleDeleteWithPassword = useCallback(async () => {
     if (!note || !note.lockPasswordHash) return;
-    
+
     const inputHash = await computePasswordHash(deletePassword);
     if (inputHash === note.lockPasswordHash) {
       setShowDeletePasswordDialog(false);
@@ -1229,7 +1229,7 @@ const Editor: React.FC<EditorProps> = ({
     { key: 'export', icon: <ExportOutlined />, label: '导出为 Markdown', onClick: handleExport },
     { key: 'info', icon: <InfoCircleOutlined />, label: '笔记信息', onClick: () => setInfoModalOpen(true) },
     { type: 'divider' },
-    note?.isLocked 
+    note?.isLocked
       ? { key: 'unlock', icon: <UnlockOutlined />, label: '解除加密', onClick: handleRemoveLock }
       : { key: 'lock', icon: <LockOutlined />, label: '加密笔记', onClick: () => setShowLockDialog(true) },
     { type: 'divider' },
@@ -1276,7 +1276,7 @@ const Editor: React.FC<EditorProps> = ({
               <span style={{ fontSize: 18, fontWeight: 600 }}>{note.title || '加密笔记'}</span>
             </div>
           </div>
-          
+
           {/* 密码验证区域 */}
           <div
             style={{
@@ -1302,7 +1302,7 @@ const Editor: React.FC<EditorProps> = ({
               <p style={{ margin: '0 0 24px', color: 'var(--text-secondary, #666)', fontSize: 14 }}>
                 请输入密码以查看内容
               </p>
-              
+
               <Input.Password
                 placeholder="输入密码"
                 value={unlockPassword}
@@ -1315,13 +1315,13 @@ const Editor: React.FC<EditorProps> = ({
                 size="large"
                 status={unlockError ? 'error' : undefined}
               />
-              
+
               {unlockError && (
                 <div style={{ color: '#ff4d4f', fontSize: 13, marginBottom: 12 }}>
                   {unlockError}
                 </div>
               )}
-              
+
               <Button
                 type="primary"
                 size="large"
@@ -1380,9 +1380,9 @@ const Editor: React.FC<EditorProps> = ({
                 />
               </Tooltip>
               <Tooltip title="标签">
-                <Button 
-                  icon={<TagOutlined />} 
-                  type="text" 
+                <Button
+                  icon={<TagOutlined />}
+                  type="text"
                   onClick={handleOpenTagModal}
                 >
                   {note.tags.length > 0 && <span style={{ marginLeft: 4 }}>{note.tags.length}</span>}
@@ -1474,13 +1474,13 @@ const Editor: React.FC<EditorProps> = ({
         )}
         {activeTab === 'preview' && (
           <div style={{ width: '100%', height: '100%', position: 'relative', padding: 16 }}>
-            <div 
+            <div
               ref={previewRef}
               className="markdown-preview"
-              style={{ 
-                width: headings.length > 0 ? 'calc(100% - 200px)' : '100%', 
-                height: '100%', 
-                overflow: 'auto', 
+              style={{
+                width: headings.length > 0 ? 'calc(100% - 200px)' : '100%',
+                height: '100%',
+                overflow: 'auto',
                 lineHeight: 1.8,
                 paddingRight: headings.length > 0 && !tocCollapsed ? 16 : 0,
                 transition: 'width 0.2s ease',
@@ -1491,12 +1491,12 @@ const Editor: React.FC<EditorProps> = ({
                 if ((e.target as HTMLElement).tagName === 'IMG') {
                   return;
                 }
-                
+
                 e.preventDefault();
-                
+
                 const selection = window.getSelection();
                 const hasSelection = selection && selection.toString().length > 0;
-                
+
                 // 创建右键菜单
                 const menuContainer = document.createElement('div');
                 menuContainer.style.position = 'fixed';
@@ -1504,7 +1504,7 @@ const Editor: React.FC<EditorProps> = ({
                 menuContainer.style.top = `${e.clientY}px`;
                 menuContainer.style.zIndex = '9999';
                 document.body.appendChild(menuContainer);
-                
+
                 const closeMenu = () => {
                   if (document.body.contains(menuContainer)) {
                     document.body.removeChild(menuContainer);
@@ -1512,12 +1512,12 @@ const Editor: React.FC<EditorProps> = ({
                   document.removeEventListener('click', closeMenu);
                   document.removeEventListener('contextmenu', closeMenu);
                 };
-                
+
                 setTimeout(() => {
                   document.addEventListener('click', closeMenu);
                   document.addEventListener('contextmenu', closeMenu);
                 }, 0);
-                
+
                 const menuElement = document.createElement('div');
                 menuElement.className = 'ant-dropdown ant-dropdown-placement-bottomLeft';
                 menuElement.innerHTML = `
@@ -1531,7 +1531,7 @@ const Editor: React.FC<EditorProps> = ({
                   </ul>
                 `;
                 menuContainer.appendChild(menuElement);
-                
+
                 menuElement.querySelectorAll('.ant-dropdown-menu-item:not(.ant-dropdown-menu-item-disabled)').forEach(item => {
                   item.addEventListener('mouseenter', () => {
                     (item as HTMLElement).style.background = '#f5f5f5';
@@ -1609,11 +1609,8 @@ const Editor: React.FC<EditorProps> = ({
                         style={oneDark}
                         language={match[1]}
                         PreTag="div"
-                        wrapLines={true}
+                        wrapLines={false}
                         wrapLongLines={false}
-                        lineProps={{
-                          style: { display: 'block', userSelect: 'text' }
-                        }}
                         customStyle={{
                           margin: 0,
                           padding: '16px',
@@ -1710,7 +1707,7 @@ const Editor: React.FC<EditorProps> = ({
                 }}
                 placeholder="开始编写 Markdown..."
               />
-              <div 
+              <div
                 ref={previewRef}
                 className="markdown-preview"
                 style={{ width: '50%', height: '100%', overflow: 'auto', padding: 16, lineHeight: 1.8, position: 'relative', userSelect: 'text' }}
@@ -1719,19 +1716,19 @@ const Editor: React.FC<EditorProps> = ({
                   if ((e.target as HTMLElement).tagName === 'IMG') {
                     return;
                   }
-                  
+
                   e.preventDefault();
-                  
+
                   const selection = window.getSelection();
                   const hasSelection = selection && selection.toString().length > 0;
-                  
+
                   const menuContainer = document.createElement('div');
                   menuContainer.style.position = 'fixed';
                   menuContainer.style.left = `${e.clientX}px`;
                   menuContainer.style.top = `${e.clientY}px`;
                   menuContainer.style.zIndex = '9999';
                   document.body.appendChild(menuContainer);
-                  
+
                   const closeMenu = () => {
                     if (document.body.contains(menuContainer)) {
                       document.body.removeChild(menuContainer);
@@ -1739,12 +1736,12 @@ const Editor: React.FC<EditorProps> = ({
                     document.removeEventListener('click', closeMenu);
                     document.removeEventListener('contextmenu', closeMenu);
                   };
-                  
+
                   setTimeout(() => {
                     document.addEventListener('click', closeMenu);
                     document.addEventListener('contextmenu', closeMenu);
                   }, 0);
-                  
+
                   const menuElement = document.createElement('div');
                   menuElement.innerHTML = `
                     <ul style="min-width: 140px; box-shadow: 0 3px 6px -4px rgba(0,0,0,.12), 0 6px 16px 0 rgba(0,0,0,.08), 0 9px 28px 8px rgba(0,0,0,.05); border-radius: 8px; padding: 4px; background: #fff; list-style: none; margin: 0;">
@@ -1757,11 +1754,11 @@ const Editor: React.FC<EditorProps> = ({
                     </ul>
                   `;
                   menuContainer.appendChild(menuElement);
-                  
+
                   menuElement.querySelectorAll('li').forEach(item => {
                     const action = item.getAttribute('data-action');
                     if (action === 'copy' && !hasSelection) return;
-                    
+
                     item.addEventListener('mouseenter', () => {
                       (item as HTMLElement).style.background = '#f5f5f5';
                     });
@@ -1837,11 +1834,8 @@ const Editor: React.FC<EditorProps> = ({
                           style={oneDark}
                           language={match[1]}
                           PreTag="div"
-                          wrapLines={true}
+                          wrapLines={false}
                           wrapLongLines={false}
-                          lineProps={{
-                            style: { display: 'block', userSelect: 'text' }
-                          }}
                           customStyle={{
                             margin: 0,
                             padding: '16px',
@@ -2130,11 +2124,11 @@ const Editor: React.FC<EditorProps> = ({
           ) : aiOrganizeResult ? (
             <div>
               <div style={{ marginBottom: 8, fontWeight: 500 }}>整理结果预览：</div>
-              <div style={{ 
-                maxHeight: 400, 
-                overflow: 'auto', 
-                border: '1px solid #d9d9d9', 
-                borderRadius: 6, 
+              <div style={{
+                maxHeight: 400,
+                overflow: 'auto',
+                border: '1px solid #d9d9d9',
+                borderRadius: 6,
                 padding: 16,
                 background: '#fafafa'
               }}>
@@ -2186,11 +2180,11 @@ const Editor: React.FC<EditorProps> = ({
           ) : aiAnalyzeResult ? (
             <div>
               <div style={{ marginBottom: 8, fontWeight: 500 }}>分析结果：</div>
-              <div style={{ 
-                maxHeight: 400, 
-                overflow: 'auto', 
-                border: '1px solid #d9d9d9', 
-                borderRadius: 6, 
+              <div style={{
+                maxHeight: 400,
+                overflow: 'auto',
+                border: '1px solid #d9d9d9',
+                borderRadius: 6,
                 padding: 16,
                 background: '#fafafa'
               }}>

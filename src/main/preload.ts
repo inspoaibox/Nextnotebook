@@ -5,38 +5,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 应用路径
   getAppPath: () => ipcRenderer.invoke('get-app-path'),
   getAppPaths: () => ipcRenderer.invoke('get-app-paths'),
-  
+
   // 使用系统默认浏览器打开链接
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
-  
+
   // 使用系统默认程序打开本地文件
   openPath: (filePath: string) => ipcRenderer.invoke('open-path', filePath),
-  
+
   // 开机启动设置
   setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('set-auto-launch', enabled),
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
-  
+
   // 主题设置（保存到主进程可读取的文件，用于启动时背景色）
   saveThemeSettings: (settings: { theme: string }) => ipcRenderer.invoke('save-theme-settings', settings),
-  
+
   // 同步配置（保存到主进程文件系统，确保持久化）
   saveSyncConfig: (config: object) => ipcRenderer.invoke('save-sync-config', config),
   loadSyncConfig: () => ipcRenderer.invoke('load-sync-config'),
-  
+
   // 窗口操作
   minimizeToTray: () => ipcRenderer.send('window-minimize-to-tray'),
   quitApp: () => ipcRenderer.send('window-quit'),
-  
+
   // 窗口关闭请求监听
   onWindowCloseRequest: (callback: () => void) => {
     ipcRenderer.on('window-close-request', () => callback());
   },
-  
+
   // 菜单事件监听
   onMenuAction: (callback: (action: string) => void) => {
     // 监听统一的 menu-action 事件
     ipcRenderer.on('menu-action', (_event, action: string) => callback(action));
-    
+
     // 兼容旧的单独事件（菜单栏点击）
     const actions = [
       'new-note', 'quick-new-note', 'new-folder', 'import', 'export', 'find',
@@ -80,10 +80,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resetStatus: () => ipcRenderer.invoke('sync:resetStatus'),
     checkFirstSync: () => ipcRenderer.invoke('sync:checkFirstSync'),
     // 获取本地同步游标（可选指定服务器类型和 URL）
-    getLocalCursor: (serverType?: string, serverUrl?: string) => 
+    getLocalCursor: (serverType?: string, serverUrl?: string) =>
       ipcRenderer.invoke('sync:getLocalCursor', serverType, serverUrl),
     // 清除本地同步游标（可选指定服务器类型和 URL）
-    clearLocalCursor: (serverType?: string, serverUrl?: string) => 
+    clearLocalCursor: (serverType?: string, serverUrl?: string) =>
       ipcRenderer.invoke('sync:clearLocalCursor', serverType, serverUrl),
     // 监听同步时间更新事件
     onLastSyncTimeUpdated: (callback: (lastSyncTime: number) => void) => {
@@ -101,7 +101,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exportKey: (masterKey: string, exportPassword: string) => ipcRenderer.invoke('crypto:exportKey', masterKey, exportPassword),
     importKey: (encryptedKey: string, importPassword: string) => ipcRenderer.invoke('crypto:importKey', encryptedKey, importPassword),
   },
-  
+
   // 文件操作
   fs: {
     readFile: (path: string) => ipcRenderer.invoke('fs-read', path),
@@ -156,32 +156,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Resource API - 资源文件管理
   resource: {
     // 上传图片（从 base64 或文件路径）
-    uploadImage: (noteId: string, data: string, filename: string, mimeType: string) => 
+    uploadImage: (noteId: string, data: string, filename: string, mimeType: string) =>
       ipcRenderer.invoke('resource:uploadImage', noteId, data, filename, mimeType),
     // 上传附件
-    uploadAttachment: (noteId: string, data: string, filename: string, mimeType: string) => 
+    uploadAttachment: (noteId: string, data: string, filename: string, mimeType: string) =>
       ipcRenderer.invoke('resource:uploadAttachment', noteId, data, filename, mimeType),
     // 获取资源文件路径
-    getPath: (resourceId: string, ext: string) => 
+    getPath: (resourceId: string, ext: string) =>
       ipcRenderer.invoke('resource:getPath', resourceId, ext),
     // 读取资源文件（返回 base64）
-    read: (resourceId: string, ext: string) => 
+    read: (resourceId: string, ext: string) =>
       ipcRenderer.invoke('resource:read', resourceId, ext),
     // 删除资源
-    delete: (resourceId: string, ext: string) => 
+    delete: (resourceId: string, ext: string) =>
       ipcRenderer.invoke('resource:delete', resourceId, ext),
     // 获取笔记的所有资源
-    getNoteResources: (noteId: string) => 
+    getNoteResources: (noteId: string) =>
       ipcRenderer.invoke('resource:getNoteResources', noteId),
   },
 
   // Web Clipper API - 网页剪藏
   clipper: {
     // 确认剪藏
-    confirm: (data: { 
-      title: string; 
-      content: string; 
-      folderId?: string; 
+    confirm: (data: {
+      title: string;
+      content: string;
+      folderId?: string;
       tags?: string[];
       downloadImages?: boolean;
       images?: { src: string; alt: string }[];
@@ -206,15 +206,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getConnectedDevices: () => ipcRenderer.invoke('transfer:getConnectedDevices'),
     generateQRData: () => ipcRenderer.invoke('transfer:generateQRData'),
     getDeviceInfo: () => ipcRenderer.invoke('transfer:getDeviceInfo'),
-    
+
     // 消息和文件发送
-    sendMessage: (targetDeviceId: string, sessionId: string, message: object) => 
+    sendMessage: (targetDeviceId: string, sessionId: string, message: object) =>
       ipcRenderer.invoke('transfer:sendMessage', targetDeviceId, sessionId, message),
-    sendFile: (targetDeviceId: string, sessionId: string, filePath: string) => 
+    sendFile: (targetDeviceId: string, sessionId: string, filePath: string) =>
       ipcRenderer.invoke('transfer:sendFile', targetDeviceId, sessionId, filePath),
-    sendMessageRead: (targetDeviceId: string, messageIds: string[]) => 
+    sendMessageRead: (targetDeviceId: string, messageIds: string[]) =>
       ipcRenderer.invoke('transfer:sendMessageRead', targetDeviceId, messageIds),
-    
+
     // 数据库操作
     db: {
       // 设备
@@ -233,7 +233,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // 消息
       createMessage: (message: object) => ipcRenderer.invoke('transfer:db:createMessage', message),
       getMessage: (id: string) => ipcRenderer.invoke('transfer:db:getMessage', id),
-      getMessagesBySession: (sessionId: string, limit?: number, offset?: number) => 
+      getMessagesBySession: (sessionId: string, limit?: number, offset?: number) =>
         ipcRenderer.invoke('transfer:db:getMessagesBySession', sessionId, limit, offset),
       markMessageAsRead: (id: string) => ipcRenderer.invoke('transfer:db:markMessageAsRead', id),
       markSessionMessagesAsRead: (sessionId: string) => ipcRenderer.invoke('transfer:db:markSessionMessagesAsRead', sessionId),
@@ -243,7 +243,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       getFile: (id: string) => ipcRenderer.invoke('transfer:db:getFile', id),
       getFilesBySession: (sessionId: string) => ipcRenderer.invoke('transfer:db:getFilesBySession', sessionId),
       updateFileProgress: (id: string, progress: number) => ipcRenderer.invoke('transfer:db:updateFileProgress', id, progress),
-      completeFileTransfer: (id: string, localPath: string, fileHash?: string) => 
+      completeFileTransfer: (id: string, localPath: string, fileHash?: string) =>
         ipcRenderer.invoke('transfer:db:completeFileTransfer', id, localPath, fileHash),
       failFileTransfer: (id: string) => ipcRenderer.invoke('transfer:db:failFileTransfer', id),
       cancelFileTransfer: (id: string) => ipcRenderer.invoke('transfer:db:cancelFileTransfer', id),
@@ -253,7 +253,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       cleanupFailedTransfers: () => ipcRenderer.invoke('transfer:db:cleanupFailedTransfers'),
       getStats: () => ipcRenderer.invoke('transfer:db:getStats'),
     },
-    
+
     // 事件监听（返回取消订阅函数）
     onDeviceConnected: (callback: (device: object) => void) => {
       const handler = (_event: any, device: object) => callback(device);
@@ -290,16 +290,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('transfer:file-complete', handler);
       return () => ipcRenderer.removeListener('transfer:file-complete', handler);
     },
-    
+
     // 中继服务器客户端
     relay: {
-      connect: (serverUrl: string, relayKey: string) => 
+      connect: (serverUrl: string, relayKey: string) =>
         ipcRenderer.invoke('transfer:relay:connect', serverUrl, relayKey),
       disconnect: () => ipcRenderer.invoke('transfer:relay:disconnect'),
       getStatus: () => ipcRenderer.invoke('transfer:relay:getStatus'),
-      sendMessage: (targetDeviceId: string, sessionId: string, message: object) => 
+      getConnectedDevices: () => ipcRenderer.invoke('transfer:relay:getConnectedDevices'),
+      sendMessage: (targetDeviceId: string, sessionId: string, message: object) =>
         ipcRenderer.invoke('transfer:relay:sendMessage', targetDeviceId, sessionId, message),
-      sendFile: (targetDeviceId: string, sessionId: string, filePath: string) => 
+      sendFile: (targetDeviceId: string, sessionId: string, filePath: string) =>
         ipcRenderer.invoke('transfer:relay:sendFile', targetDeviceId, sessionId, filePath),
       // 中继事件监听
       onConnected: (callback: () => void) => {
@@ -322,12 +323,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('transfer:relay:device-list', handler);
         return () => ipcRenderer.removeListener('transfer:relay:device-list', handler);
       },
+      onMessageReceived: (callback: (data: object) => void) => {
+        const handler = (_event: any, data: object) => callback(data);
+        ipcRenderer.on('transfer:relay:message-received', handler);
+        return () => ipcRenderer.removeListener('transfer:relay:message-received', handler);
+      },
+      onFileIncoming: (callback: (data: object) => void) => {
+        const handler = (_event: any, data: object) => callback(data);
+        ipcRenderer.on('transfer:relay:file-incoming', handler);
+        return () => ipcRenderer.removeListener('transfer:relay:file-incoming', handler);
+      },
+      onFileChunk: (callback: (data: object) => void) => {
+        const handler = (_event: any, data: object) => callback(data);
+        ipcRenderer.on('transfer:relay:file-chunk', handler);
+        return () => ipcRenderer.removeListener('transfer:relay:file-chunk', handler);
+      },
+      onFileComplete: (callback: (data: object) => void) => {
+        const handler = (_event: any, data: object) => callback(data);
+        ipcRenderer.on('transfer:relay:file-complete', handler);
+        return () => ipcRenderer.removeListener('transfer:relay:file-complete', handler);
+      },
     },
   },
 
   // Notification API - 系统通知
   notification: {
-    show: (options: { title: string; body: string; icon?: string; tag?: string }) => 
+    show: (options: { title: string; body: string; icon?: string; tag?: string }) =>
       ipcRenderer.invoke('notification:show', options),
     // 监听通知点击事件
     onClick: (callback: (tag: string) => void) => {

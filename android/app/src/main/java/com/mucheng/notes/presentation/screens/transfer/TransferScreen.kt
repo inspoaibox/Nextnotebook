@@ -1,10 +1,15 @@
 /**
  * LAN Transfer Assistant - Android 传输界面
+ * 
+ * 支持两种独立模式：
+ * 1. 局域网模式：扫码连接同一网络的桌面端
+ * 2. 中继模式：通过云端中继服务器跨网络连接
  */
 
 package com.mucheng.notes.presentation.screens.transfer
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +19,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -28,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -40,8 +49,15 @@ import com.mucheng.notes.data.transfer.*
 import com.mucheng.notes.presentation.components.QRScannerDialog
 import com.mucheng.notes.presentation.viewmodel.TransferUiState
 import com.mucheng.notes.presentation.viewmodel.TransferViewModel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+
+// 连接模式枚举
+enum class TransferMode(val title: String, val icon: @Composable () -> Unit) {
+    LAN("局域网", { Icon(Icons.Default.Wifi, contentDescription = null) }),
+    RELAY("中继", { Icon(Icons.Default.Cloud, contentDescription = null) })
+}
 
 /**
  * 传输助手主界面
@@ -56,6 +72,11 @@ fun TransferScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    
+    // Tab 状态
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val currentMode = if (pagerState.currentPage == 0) TransferMode.LAN else TransferMode.RELAY
     
     // 相机权限
     var hasCameraPermission by remember {
@@ -71,6 +92,17 @@ fun TransferScreen(
         if (isGranted) {
             viewModel.setScanning(true)
         }
+    }
+    
+    // 中继服务器配置（从 SharedPreferences 加载）
+    var relayServerUrl by remember { mutableStateOf("") }
+    var relayKey by remember { mutableStateOf("") }
+    
+    // 加载保存的中继配置
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("transfer_relay", Context.MODE_PRIVATE)
+        relayServerUrl = prefs.getString("server_url", "") ?: ""
+        relayKey = prefs.getString("relay_key", "") ?: ""
     }
     
     // 显示扫码错误
@@ -106,27 +138,72 @@ fun TransferScreen(
                     .padding(bottom = bottomPadding.calculateBottomPadding())
             )
         } else {
-            // 设备列表视图
-            DeviceListView(
-                uiState = uiState,
-                onScanQR = {
-                    if (hasCameraPermission) {
-                        viewModel.setScanning(true)
-                    } else {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                },
-                onConnectRelay = { url, key -> viewModel.connectToRelay(url, key) },
-                onSelectDevice = { device ->
-                    val sessionId = viewModel.createSession(device)
-                },
-                onSelectSession = { viewModel.selectSession(it.id) },
-                onDisconnect = { viewModel.disconnect() },
+            // 模式选择 + 设备列表
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
                     .padding(bottom = bottomPadding.calculateBottomPadding())
-            )
+            ) {
+                // Tab 栏
+                TabRow(
+                    selectedTabIndex = pagerState.currentPage,
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
+                    TransferMode.entries.forEachIndexed { index, mode ->
+                        Tab(
+                            selected = pagerState.currentPage == index,
+                            onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                            text = { Text(mode.title) },
+                            icon = mode.icon
+                        )
+                    }
+                }
+                
+                // 分页内容
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    when (page) {
+                        0 -> LANModeContent(
+                            uiState = uiState,
+                            hasCameraPermission = hasCameraPermission,
+                            onRequestCameraPermission = {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            },
+                            onScanQR = { viewModel.setScanning(true) },
+                            onSelectDevice = { device ->
+                                viewModel.createSession(device)
+                            },
+                            onSelectSession = { viewModel.selectSession(it.id) },
+                            onDisconnect = { viewModel.disconnect() }
+                        )
+                        1 -> RelayModeContent(
+                            uiState = uiState,
+                            serverUrl = relayServerUrl,
+                            relayKey = relayKey,
+                            onServerUrlChange = { relayServerUrl = it },
+                            onRelayKeyChange = { relayKey = it },
+                            onConnect = {
+                                // 保存配置
+                                context.getSharedPreferences("transfer_relay", Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putString("server_url", relayServerUrl)
+                                    .putString("relay_key", relayKey)
+                                    .apply()
+                                // 连接
+                                viewModel.connectToRelay(relayServerUrl, relayKey)
+                            },
+                            onSelectDevice = { device ->
+                                viewModel.createSession(device)
+                            },
+                            onSelectSession = { viewModel.selectSession(it.id) },
+                            onDisconnect = { viewModel.disconnect() }
+                        )
+                    }
+                }
+            }
         }
     }
     
@@ -183,85 +260,106 @@ private fun ConnectionStatusBadge(state: ConnectionState) {
 }
 
 /**
- * 设备列表视图
+ * 局域网模式内容
  */
 @Composable
-private fun DeviceListView(
+private fun LANModeContent(
     uiState: TransferUiState,
+    hasCameraPermission: Boolean,
+    onRequestCameraPermission: () -> Unit,
     onScanQR: () -> Unit,
-    onConnectRelay: (String, String) -> Unit,  // (serverUrl, relayKey)
     onSelectDevice: (OnlineDevice) -> Unit,
     onSelectSession: (TransferSessionEntity) -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showRelayDialog by remember { mutableStateOf(false) }
-    
-    Column(modifier = modifier) {
-        // 连接操作区
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                when (uiState.connectionState) {
-                    is ConnectionState.Disconnected, is ConnectionState.Error -> {
-                        Text(
-                            text = "扫描二维码连接到桌面端",
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Button(onClick = onScanQR) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // 连接操作卡片
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    when (uiState.connectionState) {
+                        is ConnectionState.Disconnected, is ConnectionState.Error -> {
+                            Icon(
+                                Icons.Default.QrCodeScanner,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "扫描桌面端二维码连接",
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "确保手机和电脑在同一局域网内",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    if (hasCameraPermission) {
+                                        onScanQR()
+                                    } else {
+                                        onRequestCameraPermission()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 Icon(Icons.Default.QrCodeScanner, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("扫描二维码")
                             }
-                            OutlinedButton(onClick = { showRelayDialog = true }) {
-                                Icon(Icons.Default.Cloud, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("中继连接")
+                            if (uiState.connectionState is ConnectionState.Error) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = (uiState.connectionState as ConnectionState.Error).error.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
                             }
                         }
-                        if (uiState.connectionState is ConnectionState.Error) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = (uiState.connectionState as ConnectionState.Error).error.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
+                        is ConnectionState.Connecting -> {
+                            CircularProgressIndicator(modifier = Modifier.size(48.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("正在连接...")
                         }
-                    }
-                    is ConnectionState.Connecting -> {
-                        CircularProgressIndicator(modifier = Modifier.size(48.dp))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("正在连接...")
-                    }
-                    is ConnectionState.Connected -> {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "已连接",
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(onClick = onDisconnect) {
-                                Text("断开")
+                        is ConnectionState.Connected -> {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "已连接 (局域网)",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = "${uiState.onlineDevices.size} 个设备在线",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                                TextButton(onClick = onDisconnect) {
+                                    Text("断开")
+                                }
                             }
                         }
                     }
@@ -270,66 +368,240 @@ private fun DeviceListView(
         }
         
         // 在线设备列表
-        if (uiState.connectionState is ConnectionState.Connected) {
-            Text(
-                text = "在线设备 (${uiState.onlineDevices.size})",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-            
-            if (uiState.onlineDevices.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
+        if (uiState.connectionState is ConnectionState.Connected && uiState.onlineDevices.isNotEmpty()) {
+            item {
+                Text(
+                    text = "在线设备",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+            items(uiState.onlineDevices) { device ->
+                DeviceItem(device = device, onClick = { onSelectDevice(device) })
+            }
+        }
+        
+        // 历史会话
+        val lanSessions = uiState.sessions.filter { it.connectionType == ConnectionMode.LAN.value }
+        if (lanSessions.isNotEmpty()) {
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text(
+                    text = "历史会话",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+            items(lanSessions) { session ->
+                SessionItem(session = session, onClick = { onSelectSession(session) })
+            }
+        }
+    }
+}
+
+/**
+ * 中继模式内容
+ */
+@Composable
+private fun RelayModeContent(
+    uiState: TransferUiState,
+    serverUrl: String,
+    relayKey: String,
+    onServerUrlChange: (String) -> Unit,
+    onRelayKeyChange: (String) -> Unit,
+    onConnect: () -> Unit,
+    onSelectDevice: (OnlineDevice) -> Unit,
+    onSelectSession: (TransferSessionEntity) -> Unit,
+    onDisconnect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showKey by remember { mutableStateOf(false) }
+    val isConnectedToRelay = uiState.connectionState is ConnectionState.Connected && 
+        (uiState.connectionState as ConnectionState.Connected).mode == ConnectionMode.RELAY
+    
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // 连接操作卡片
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "暂无其他设备在线",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
+                    when {
+                        uiState.connectionState is ConnectionState.Connecting -> {
+                            CircularProgressIndicator(modifier = Modifier.size(48.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("正在连接中继服务器...")
+                        }
+                        isConnectedToRelay -> {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    Icons.Default.Cloud,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "已连接 (中继)",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = serverUrl,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                TextButton(onClick = onDisconnect) {
+                                    Text("断开")
+                                }
+                            }
+                        }
+                        else -> {
+                            Icon(
+                                Icons.Default.Cloud,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "连接中继服务器",
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "跨网络传输，无需同一局域网",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // 服务器地址输入
+                            OutlinedTextField(
+                                value = serverUrl,
+                                onValueChange = onServerUrlChange,
+                                label = { Text("服务器地址") },
+                                placeholder = { Text("https://your-server.com") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // 中继密钥输入
+                            OutlinedTextField(
+                                value = relayKey,
+                                onValueChange = onRelayKeyChange,
+                                label = { Text("中继密钥") },
+                                placeholder = { Text("输入服务器配置的密钥") },
+                                singleLine = true,
+                                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { showKey = !showKey }) {
+                                        Icon(
+                                            imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = if (showKey) "隐藏密钥" else "显示密钥"
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Button(
+                                onClick = onConnect,
+                                enabled = serverUrl.isNotBlank() && relayKey.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.CloudUpload, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("连接中继服务器")
+                            }
+                            
+                            if (uiState.connectionState is ConnectionState.Error) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = (uiState.connectionState as ConnectionState.Error).error.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
                 }
-            } else {
-                LazyColumn {
-                    items(uiState.onlineDevices) { device ->
-                        DeviceItem(
-                            device = device,
-                            onClick = { onSelectDevice(device) }
+            }
+        }
+        
+        // 提示信息
+        if (!isConnectedToRelay && uiState.connectionState !is ConnectionState.Connecting) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "中继模式使用同步服务器进行消息转发，支持不同网络之间的设备连接。请确保同步服务器已配置中继功能。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
                         )
                     }
                 }
             }
         }
         
-        // 历史会话
-        if (uiState.sessions.isNotEmpty()) {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            Text(
-                text = "历史会话",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-            LazyColumn {
-                items(uiState.sessions) { session ->
-                    SessionItem(
-                        session = session,
-                        onClick = { onSelectSession(session) }
-                    )
-                }
+        // 在线设备列表
+        if (isConnectedToRelay && uiState.onlineDevices.isNotEmpty()) {
+            item {
+                Text(
+                    text = "在线设备",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+            items(uiState.onlineDevices) { device ->
+                DeviceItem(device = device, onClick = { onSelectDevice(device) })
             }
         }
-    }
-    
-    // 中继服务器连接对话框
-    if (showRelayDialog) {
-        RelayServerDialog(
-            onDismiss = { showRelayDialog = false },
-            onConnect = { url, key ->
-                showRelayDialog = false
-                onConnectRelay(url, key)
+        
+        // 历史会话
+        val relaySessions = uiState.sessions.filter { it.connectionType == ConnectionMode.RELAY.value }
+        if (relaySessions.isNotEmpty()) {
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text(
+                    text = "历史会话",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
             }
-        )
+            items(relaySessions) { session ->
+                SessionItem(session = session, onClick = { onSelectSession(session) })
+            }
+        }
     }
 }
 
@@ -454,14 +726,31 @@ private fun ChatView(
         LazyColumn(
             state = listState,
             modifier = Modifier
-                .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(vertical = 16.dp)
+                .weight(1f),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(uiState.messages) { message ->
-                MessageBubble(message = message)
+            if (uiState.messages.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "暂无消息\n发送第一条消息开始聊天",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.outline,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else {
+                items(uiState.messages) { message ->
+                    MessageBubble(message = message)
+                }
             }
         }
         
@@ -478,7 +767,7 @@ private fun ChatView(
             ) {
                 // 附件按钮
                 IconButton(onClick = { filePickerLauncher.launch("*/*") }) {
-                    Icon(Icons.Default.AttachFile, contentDescription = "附件")
+                    Icon(Icons.Default.AttachFile, contentDescription = "发送文件")
                 }
                 
                 // 输入框
@@ -486,8 +775,10 @@ private fun ChatView(
                     value = inputText,
                     onValueChange = { inputText = it },
                     placeholder = { Text("输入消息...") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    maxLines = 4,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(
                         onSend = {
@@ -496,10 +787,9 @@ private fun ChatView(
                                 inputText = ""
                             }
                         }
-                    )
+                    ),
+                    shape = RoundedCornerShape(24.dp)
                 )
-                
-                Spacer(modifier = Modifier.width(8.dp))
                 
                 // 发送按钮
                 IconButton(
@@ -571,74 +861,4 @@ private fun MessageBubble(message: TransferMessageEntity) {
             }
         }
     }
-}
-
-/**
- * 中继服务器连接对话框
- */
-@Composable
-private fun RelayServerDialog(
-    onDismiss: () -> Unit,
-    onConnect: (String, String) -> Unit  // (serverUrl, relayKey)
-) {
-    var serverUrl by remember { mutableStateOf("") }
-    var relayKey by remember { mutableStateOf("") }
-    var showKey by remember { mutableStateOf(false) }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("连接中继服务器") },
-        text = {
-            Column {
-                Text(
-                    text = "输入中继服务器地址和密钥以连接",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = serverUrl,
-                    onValueChange = { serverUrl = it },
-                    label = { Text("服务器地址") },
-                    placeholder = { Text("https://your-server.com") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = relayKey,
-                    onValueChange = { relayKey = it },
-                    label = { Text("中继密钥") },
-                    placeholder = { Text("输入服务器配置的密钥") },
-                    singleLine = true,
-                    visualTransformation = if (showKey) 
-                        androidx.compose.ui.text.input.VisualTransformation.None 
-                    else 
-                        androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { showKey = !showKey }) {
-                            Icon(
-                                imageVector = if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (showKey) "隐藏密钥" else "显示密钥"
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConnect(serverUrl, relayKey) },
-                enabled = serverUrl.isNotBlank() && relayKey.isNotBlank()
-            ) {
-                Text("连接")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
 }

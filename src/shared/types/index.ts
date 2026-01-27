@@ -156,6 +156,7 @@ export interface AIConversationPayload {
   temperature: number;
   max_tokens: number;
   created_at: number;
+  web_search_enabled?: boolean; // 是否启用联网搜索
 }
 
 // AI 消息 payload
@@ -166,6 +167,7 @@ export interface AIMessagePayload {
   model: string;
   tokens_used?: number;
   created_at: number;
+  images?: string[]; // base64 编码的图片数组
 }
 
 // AI 配置 payload（用于同步 AI 渠道和模型配置）

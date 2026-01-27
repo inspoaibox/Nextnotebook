@@ -7,6 +7,7 @@ import { imageService, ProcessOptions } from './services/ImageService';
 import { pdfService, WatermarkOptions as PDFWatermarkOptions, SecurityOptions as PDFSecurityOptions, ImageToPdfOptions as PDFImageToPdfOptions } from './services/PDFService';
 import { ghostscriptService, ToImageOptions as GSToImageOptions, CompressLevel } from './services/GhostscriptService';
 import { clipperService } from './services/ClipperService';
+import { initializeTransferService } from './services/TransferService';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -86,7 +87,7 @@ function getUserTheme(): 'light' | 'dark' | 'system' {
 function getBackgroundColor(): string {
   const { nativeTheme } = require('electron');
   const userTheme = getUserTheme();
-  
+
   let isDarkMode = false;
   if (userTheme === 'dark') {
     isDarkMode = true;
@@ -94,7 +95,7 @@ function getBackgroundColor(): string {
     isDarkMode = nativeTheme.shouldUseDarkColors;
   }
   // userTheme === 'light' 时 isDarkMode 保持 false
-  
+
   return isDarkMode ? '#141414' : '#fafafa';
 }
 
@@ -125,7 +126,7 @@ function getIconPath(): string {
 function createWindow(): void {
   // 获取用户主题对应的背景色
   const backgroundColor = getBackgroundColor();
-  
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -172,10 +173,10 @@ function createWindow(): void {
   // 这些快捷键只在窗口获得焦点时生效，不会影响其他应用
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
-    
+
     const isMod = input.control || input.meta;
     const isShift = input.shift;
-    
+
     // Ctrl+N: 新建空白笔记
     if (isMod && !isShift && input.key === 'n') {
       sendToRenderer('menu-action', 'quick-new-note');
@@ -334,28 +335,28 @@ function createTray(): void {
   const iconPath = getIconPath();
   const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
-  
+
   const contextMenu = Menu.buildFromTemplate([
-    { 
-      label: '显示主窗口', 
+    {
+      label: '显示主窗口',
       click: () => {
         mainWindow?.show();
         mainWindow?.focus();
       }
     },
     { type: 'separator' },
-    { 
-      label: '退出', 
+    {
+      label: '退出',
       click: () => {
         isQuitting = true;
         app.quit();
       }
     },
   ]);
-  
+
   tray.setToolTip('暮城笔记');
   tray.setContextMenu(contextMenu);
-  
+
   // 点击托盘图标显示窗口
   tray.on('click', () => {
     mainWindow?.show();
@@ -369,7 +370,7 @@ app.whenReady().then(async () => {
   initializeDatabase();
   registerSyncIpcHandlers();
   createWindow();
-  
+
   // 启动 Web Clipper 服务
   try {
     const itemsManager = getItemsManager();
@@ -381,6 +382,14 @@ app.whenReady().then(async () => {
     console.log('Web Clipper service started');
   } catch (err) {
     console.error('Failed to start Web Clipper service:', err);
+  }
+
+  // 初始化传输服务
+  try {
+    await initializeTransferService();
+    console.log('Transfer service initialized');
+  } catch (err) {
+    console.error('Failed to initialize Transfer service:', err);
   }
 });
 
@@ -534,11 +543,11 @@ ipcMain.handle('image:saveFile', async (_event, buffer: string, defaultName: str
         { name: '所有文件', extensions: ['*'] },
       ],
     });
-    
+
     if (result.canceled || !result.filePath) {
       return false;
     }
-    
+
     const data = Buffer.from(buffer, 'base64');
     fs.writeFileSync(result.filePath, data);
     return true;
@@ -922,11 +931,11 @@ ipcMain.handle('pdf:saveFile', async (_event, buffer: string, defaultName: strin
         { name: '所有文件', extensions: ['*'] },
       ],
     });
-    
+
     if (result.canceled || !result.filePath) {
       return false;
     }
-    
+
     const data = base64ToBuffer(buffer);
     fs.writeFileSync(result.filePath, data);
     return true;
@@ -959,7 +968,7 @@ ipcMain.handle('resource:uploadImage', async (_event, noteId: string, data: stri
   try {
     const { v4: uuidv4 } = require('uuid');
     const resourceId = uuidv4();
-    
+
     // 解析 base64 数据
     let buffer: Buffer;
     if (data.startsWith('data:')) {
@@ -968,19 +977,19 @@ ipcMain.handle('resource:uploadImage', async (_event, noteId: string, data: stri
     } else {
       buffer = Buffer.from(data, 'base64');
     }
-    
+
     // 获取扩展名
     const ext = path.extname(filename).toLowerCase() || '.png';
     const resourceFilename = `${resourceId}${ext}`;
     const resourcePath = path.join(getResourcesDir(), resourceFilename);
-    
+
     // 写入文件
     fs.writeFileSync(resourcePath, buffer);
-    
+
     // 创建资源记录（使用 _id 确保数据库 ID 与文件名一致）
     const { getItemsManager } = require('./services/DatabaseService');
     const itemsManager = getItemsManager();
-    
+
     const payload = {
       _id: resourceId,  // 使用 resourceId 作为数据库记录 ID
       filename,
@@ -989,13 +998,13 @@ ipcMain.handle('resource:uploadImage', async (_event, noteId: string, data: stri
       note_id: noteId,
       file_hash: computeFileHash(buffer),
     };
-    
+
     itemsManager.create('resource', payload);
-    
+
     // 返回资源引用 URL
     const resourceUrl = `resource://${resourceId}${ext}`;
     console.log('Resource uploaded:', resourceUrl);
-    
+
     return resourceUrl;
   } catch (error) {
     console.error('resource:uploadImage error:', error);
@@ -1008,7 +1017,7 @@ ipcMain.handle('resource:uploadAttachment', async (_event, noteId: string, data:
   try {
     const { v4: uuidv4 } = require('uuid');
     const resourceId = uuidv4();
-    
+
     // 解析 base64 数据
     let buffer: Buffer;
     if (data.startsWith('data:')) {
@@ -1017,19 +1026,19 @@ ipcMain.handle('resource:uploadAttachment', async (_event, noteId: string, data:
     } else {
       buffer = Buffer.from(data, 'base64');
     }
-    
+
     // 获取扩展名
     const ext = path.extname(filename).toLowerCase() || '';
     const resourceFilename = `${resourceId}${ext}`;
     const resourcePath = path.join(getResourcesDir(), resourceFilename);
-    
+
     // 写入文件
     fs.writeFileSync(resourcePath, buffer);
-    
+
     // 创建资源记录（使用 _id 确保数据库 ID 与文件名一致）
     const { getItemsManager } = require('./services/DatabaseService');
     const itemsManager = getItemsManager();
-    
+
     const payload = {
       _id: resourceId,  // 使用 resourceId 作为数据库记录 ID
       filename,
@@ -1038,13 +1047,13 @@ ipcMain.handle('resource:uploadAttachment', async (_event, noteId: string, data:
       note_id: noteId,
       file_hash: computeFileHash(buffer),
     };
-    
+
     itemsManager.create('resource', payload);
-    
+
     // 返回资源信息
     const resourceUrl = `resource://${resourceId}${ext}`;
     console.log('Attachment uploaded:', resourceUrl);
-    
+
     return { url: resourceUrl, name: filename };
   } catch (error) {
     console.error('resource:uploadAttachment error:', error);
@@ -1071,12 +1080,12 @@ ipcMain.handle('resource:read', async (_event, resourceId: string, ext: string) 
   try {
     const resourcesDir = getResourcesDir();
     const resourcePath = path.join(resourcesDir, `${resourceId}${ext}`);
-    
+
     if (fs.existsSync(resourcePath)) {
       const buffer = fs.readFileSync(resourcePath);
       return buffer.toString('base64');
     }
-    
+
     return null;
   } catch (error) {
     console.error('resource:read error');
@@ -1104,7 +1113,7 @@ ipcMain.handle('resource:getNoteResources', async (_event, noteId: string) => {
   try {
     const { getItemsManager } = require('./services/DatabaseService');
     const itemsManager = getItemsManager();
-    
+
     const resources = itemsManager.getByType('resource');
     return resources
       .filter((r: any) => {
@@ -1162,44 +1171,44 @@ ipcMain.handle('transfer:startServer', async (_event, port?: number) => {
     if (transferServer) {
       return transferServer.getStatus();
     }
-    
+
     const deviceId = getOrCreateDeviceId();
     const deviceName = getDeviceName();
-    
+
     transferServer = new TransferServer(deviceId, deviceName);
-    
+
     // 设置事件监听
     transferServer.on('device:connected', (device) => {
       console.log('[Transfer] Device connected event:', device);
       mainWindow?.webContents.send('transfer:device-connected', device);
     });
-    
+
     transferServer.on('device:disconnected', (deviceId) => {
       console.log('[Transfer] Device disconnected event:', deviceId);
       mainWindow?.webContents.send('transfer:device-disconnected', deviceId);
     });
-    
+
     transferServer.on('device:list-updated', (devices) => {
       console.log('[Transfer] Device list updated event:', devices.length, 'devices');
       mainWindow?.webContents.send('transfer:device-list-updated', devices);
     });
-    
+
     transferServer.on('message:received', (data) => {
       mainWindow?.webContents.send('transfer:message-received', data);
     });
-    
+
     transferServer.on('file:incoming', (data) => {
       mainWindow?.webContents.send('transfer:file-incoming', data);
     });
-    
+
     transferServer.on('file:chunk', (data) => {
       mainWindow?.webContents.send('transfer:file-chunk', data);
     });
-    
+
     transferServer.on('file:complete', (data) => {
       mainWindow?.webContents.send('transfer:file-complete', data);
     });
-    
+
     const status = await transferServer.start(port);
     console.log('[Transfer] Server started:', status);
     return status;
@@ -1433,6 +1442,127 @@ ipcMain.handle('transfer:db:getStats', () => {
   return db.getStats();
 });
 
+// ============ Transfer Relay IPC Handlers ============
+
+import { relayClient } from './services/RelayClient';
+
+// 连接中继服务器
+ipcMain.handle('transfer:relay:connect', async (_event, serverUrl: string, relayKey: string) => {
+  try {
+    // 注入数据库实例，确保为了保存消息和文件
+    const db = initTransferDatabase();
+    relayClient.setDatabase(db);
+
+    const deviceId = getOrCreateDeviceId();
+    const deviceName = getDeviceName();
+
+    await relayClient.connect({
+      serverUrl,
+      relayKey,
+      deviceId,
+      deviceName,
+    });
+
+    // 设置事件监听
+    relayClient.on('connected', () => {
+      mainWindow?.webContents.send('transfer:relay:connected');
+    });
+
+    relayClient.on('disconnected', (reason) => {
+      mainWindow?.webContents.send('transfer:relay:disconnected', reason);
+    });
+
+    relayClient.on('error', (error) => {
+      mainWindow?.webContents.send('transfer:relay:error', error);
+    });
+
+    relayClient.on('device:list', (devices) => {
+      mainWindow?.webContents.send('transfer:relay:device-list', devices);
+    });
+
+    relayClient.on('device:online', () => {
+      mainWindow?.webContents.send('transfer:relay:device-list', relayClient.getConnectedDevices());
+    });
+
+    relayClient.on('device:offline', () => {
+      mainWindow?.webContents.send('transfer:relay:device-list', relayClient.getConnectedDevices());
+    });
+
+    relayClient.on('message:received', (data) => {
+      mainWindow?.webContents.send('transfer:relay:message-received', data);
+    });
+
+    relayClient.on('file:incoming', (data) => {
+      mainWindow?.webContents.send('transfer:relay:file-incoming', data);
+    });
+
+    relayClient.on('file:chunk', (data) => {
+      mainWindow?.webContents.send('transfer:relay:file-chunk', data);
+    });
+
+    relayClient.on('file:complete', (data) => {
+      mainWindow?.webContents.send('transfer:relay:file-complete', data);
+    });
+
+    relayClient.on('pair:request', (data) => {
+      // 自动接受配对请求（简化流程）
+      const sessionId = relayClient.acceptPairRequest(data.requesterId);
+      console.log(`[Relay] Auto accepted pair request from ${data.requesterName}, sessionId: ${sessionId}`);
+    });
+
+    relayClient.on('pair:success', (data) => {
+      console.log(`[Relay] Pair success with ${data.peerName}, sessionId: ${data.sessionId}`);
+      // 可以在这里通知前端配对成功
+    });
+
+    return true;
+  } catch (error) {
+    console.error('transfer:relay:connect error:', error);
+    throw error;
+  }
+});
+
+// 断开中继连接
+ipcMain.handle('transfer:relay:disconnect', async () => {
+  try {
+    relayClient.disconnect();
+    return true;
+  } catch (error) {
+    console.error('transfer:relay:disconnect error:', error);
+    throw error;
+  }
+});
+
+// 获取中继状态
+ipcMain.handle('transfer:relay:getStatus', () => {
+  return relayClient.getStatus();
+});
+
+// 获取中继在线设备
+ipcMain.handle('transfer:relay:getConnectedDevices', () => {
+  return relayClient.getConnectedDevices();
+});
+
+// 中继发送消息
+ipcMain.handle('transfer:relay:sendMessage', async (_event, targetDeviceId: string, sessionId: string, message: any) => {
+  try {
+    return relayClient.sendMessage(targetDeviceId, sessionId, message);
+  } catch (error) {
+    console.error('transfer:relay:sendMessage error:', error);
+    throw error;
+  }
+});
+
+// 中继发送文件
+ipcMain.handle('transfer:relay:sendFile', async (_event, targetDeviceId: string, sessionId: string, filePath: string) => {
+  try {
+    return await relayClient.sendFile(targetDeviceId, sessionId, filePath);
+  } catch (error) {
+    console.error('transfer:relay:sendFile error:', error);
+    throw error;
+  }
+});
+
 // 关闭传输数据库（在应用退出时调用）
 app.on('will-quit', () => {
   if (transferDatabase) {
@@ -1443,4 +1573,7 @@ app.on('will-quit', () => {
     transferServer.stop();
     transferServer = null;
   }
+  // 断开中继连接
+  relayClient.disconnect();
 });
+

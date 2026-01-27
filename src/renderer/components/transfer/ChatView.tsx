@@ -61,7 +61,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         ]);
         setMessages(msgs);
         setFiles(fls);
-        
+
         // 标记消息为已读
         await transferClient.markSessionMessagesAsRead(session.id);
       } catch (error) {
@@ -70,7 +70,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         setLoading(false);
       }
     };
-    
+
     loadData();
   }, [session.id]);
 
@@ -89,7 +89,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
           read_at: Date.now(),
         };
         setMessages(prev => [...prev, newMessage]);
-        
+
         // 保存到数据库
         transferClient.createMessage(newMessage);
       }
@@ -117,26 +117,42 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
     });
 
     const unsubFileChunk = transferClient.onFileChunk((data) => {
-      setFiles(prev => prev.map(f => 
-        f.id === data.fileId 
+      setFiles(prev => prev.map(f =>
+        f.id === data.fileId
           ? { ...f, progress: (data.chunkIndex / data.totalChunks) * 100, status: 'transferring' }
           : f
       ));
     });
 
     const unsubFileComplete = transferClient.onFileComplete((data) => {
-      setFiles(prev => prev.map(f => 
-        f.id === data.fileId 
+      setFiles(prev => prev.map(f =>
+        f.id === data.fileId
           ? { ...f, progress: 100, status: 'completed', completed_at: Date.now() }
           : f
       ));
     });
+
+    // 监听来自中继模式的消息刷新事件
+    const handleRelayRefresh = async (event: Event) => {
+      const customEvent = event as CustomEvent<{ sessionId: string }>;
+      if (customEvent.detail.sessionId === session.id) {
+        // 重新加载消息
+        try {
+          const msgs = await transferClient.getMessagesBySession(session.id);
+          setMessages(msgs);
+        } catch (error) {
+          console.error('Failed to refresh messages:', error);
+        }
+      }
+    };
+    window.addEventListener('transfer:refresh-messages', handleRelayRefresh);
 
     return () => {
       unsubMessage();
       unsubFileIncoming();
       unsubFileChunk();
       unsubFileComplete();
+      window.removeEventListener('transfer:refresh-messages', handleRelayRefresh);
     };
   }, [session.id]);
 
@@ -148,10 +164,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
   // 发送消息
   const handleSend = useCallback(async () => {
     if (!inputValue.trim()) return;
-    
+
     try {
       setSending(true);
-      
+
       const newMessage: TransferMessage = {
         id: transferClient.generateMessageId(),
         session_id: session.id,
@@ -162,21 +178,21 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         created_at: Date.now(),
         read_at: null,
       };
-      
+
       // 先添加到本地
       setMessages(prev => [...prev, newMessage]);
       setInputValue('');
-      
+
       // 保存到数据库
       await transferClient.createMessage(newMessage);
-      
+
       // 通过 Socket.IO 发送到对方
       await transferClient.sendTextMessage(
         session.peer_device_id,
         session.id,
         newMessage.content
       );
-      
+
     } catch (error) {
       message.error('发送失败');
     } finally {
@@ -209,7 +225,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
   // 渲染消息项
   const renderMessageItem = (msg: TransferMessage) => {
     const isSent = msg.direction === 'sent';
-    
+
     return (
       <div
         key={msg.id}
@@ -270,7 +286,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
   // 渲染文件项
   const renderFileItem = (file: TransferFile) => {
     const isSent = file.direction === 'sent';
-    
+
     return (
       <div
         key={file.id}
@@ -313,7 +329,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
               </Text>
             </div>
           </Space>
-          
+
           {file.status === 'transferring' && (
             <Progress
               percent={Math.round(file.progress)}
@@ -321,7 +337,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
               style={{ marginTop: 8 }}
             />
           )}
-          
+
           {file.status === 'completed' && file.direction === 'received' && (
             <Button
               type="link"
@@ -332,7 +348,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
               打开文件
             </Button>
           )}
-          
+
           {file.status === 'pending' && file.direction === 'received' && (
             <Button
               type="primary"
@@ -342,7 +358,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
               接收文件
             </Button>
           )}
-          
+
           <div style={{ textAlign: 'right', marginTop: 4 }}>
             <Text type="secondary" style={{ fontSize: 10 }}>
               {formatTime(file.created_at)}
@@ -411,8 +427,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
           </div>
         ) : (
           <>
-            {allItems.map(item => 
-              'content' in item 
+            {allItems.map(item =>
+              'content' in item
                 ? renderMessageItem(item as TransferMessage)
                 : renderFileItem(item as TransferFile)
             )}
@@ -432,8 +448,55 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         <Space.Compact style={{ width: '100%' }}>
           <Upload
             showUploadList={false}
-            beforeUpload={() => false}
-            // TODO: 实现文件上传
+            beforeUpload={async (file) => {
+              try {
+                // 获取文件路径（Electron 环境下可以直接获取）
+                const filePath = (file as any).path;
+                if (!filePath) {
+                  message.error('无法获取文件路径');
+                  return false;
+                }
+
+                console.log('[ChatView] Sending file:', filePath);
+
+                // 发送文件
+                const result = await transferClient.sendFile(
+                  session.peer_device_id,
+                  session.id,
+                  filePath
+                );
+
+                console.log('[ChatView] File sent:', result);
+
+                // 创建文件记录并添加到列表
+                const newFile: TransferFile = {
+                  id: result.id,
+                  session_id: session.id,
+                  filename: result.filename,
+                  file_size: result.fileSize,
+                  mime_type: result.mimeType,
+                  local_path: filePath,
+                  direction: 'sent',
+                  status: 'completed',
+                  progress: 100,
+                  file_hash: null,
+                  created_at: Date.now(),
+                  completed_at: Date.now(),
+                };
+
+                // 保存到数据库
+                await transferClient.createFileTransfer(newFile);
+
+                // 更新 UI
+                setFiles(prev => [...prev, newFile]);
+
+                message.success(`文件 ${result.filename} 已发送`);
+              } catch (error: any) {
+                console.error('[ChatView] Failed to send file:', error);
+                message.error(error.message || '文件发送失败');
+              }
+              return false; // 阻止默认上传行为
+            }}
           >
             <Button icon={<PaperClipOutlined />} />
           </Upload>

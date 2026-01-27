@@ -9,6 +9,8 @@ import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { app } from 'electron';
+import { TransferDatabase, TransferMessage, TransferFile } from '../../core/transfer/TransferDatabase';
 import {
   TRANSFER_CONSTANTS,
   SOCKET_EVENTS,
@@ -61,6 +63,15 @@ export class RelayClient {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private isConnecting = false;
+  private onlineDevices: RelayDevice[] = [];
+
+  // Database & File Handling
+  private db: TransferDatabase | null = null;
+  private fileStreams: Map<string, fs.WriteStream> = new Map();
+
+  setDatabase(db: TransferDatabase) {
+    this.db = db;
+  }
 
   // ============================================
   // 事件系统
@@ -101,6 +112,26 @@ export class RelayClient {
   // ============================================
 
   /**
+   * 获取中继状态
+   */
+  getStatus() {
+    return {
+      connected: this.socket?.connected || false,
+      serverUrl: this.config?.serverUrl || null,
+      connecting: this.isConnecting,
+      error: null,
+    };
+  }
+
+  /**
+   * 获取在线设备
+   */
+  getConnectedDevices() {
+    return this.onlineDevices;
+  }
+  // ============================================
+
+  /**
    * 连接到中继服务器
    */
   async connect(config: RelayConfig): Promise<void> {
@@ -121,7 +152,7 @@ export class RelayClient {
       try {
         // 构建连接 URL
         const url = config.serverUrl.replace(/\/$/, '');
-        
+
         this.socket = io(url, {
           path: '/transfer',
           auth: {
@@ -140,7 +171,7 @@ export class RelayClient {
           console.log('[RelayClient] Connected to relay server');
           this.isConnecting = false;
           this.reconnectAttempts = 0;
-          
+
           // 注册设备
           this.registerDevice();
           this.startHeartbeat();
@@ -152,7 +183,7 @@ export class RelayClient {
         this.socket.on('connect_error', (error) => {
           console.error('[RelayClient] Connection error:', error.message);
           this.isConnecting = false;
-          
+
           if (error.message === 'INVALID_RELAY_KEY') {
             this.emit('error', { code: 'INVALID_KEY', message: '中继密钥无效' });
             reject(new Error('中继密钥无效'));
@@ -184,12 +215,12 @@ export class RelayClient {
    */
   disconnect(): void {
     this.stopHeartbeat();
-    
+
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
     }
-    
+
     this.config = null;
     this.isConnecting = false;
     console.log('[RelayClient] Disconnected');
@@ -202,15 +233,7 @@ export class RelayClient {
     return this.socket?.connected || false;
   }
 
-  /**
-   * 获取连接状态
-   */
-  getStatus(): { connected: boolean; serverUrl: string | null } {
-    return {
-      connected: this.isConnected(),
-      serverUrl: this.config?.serverUrl || null,
-    };
-  }
+
 
   // ============================================
   // 设备注册
@@ -235,16 +258,22 @@ export class RelayClient {
 
     // 设备列表
     this.socket.on(SOCKET_EVENTS.DEVICE_LIST, (devices: RelayDevice[]) => {
+      this.onlineDevices = devices;
       this.emit('device:list', devices);
     });
 
     // 设备上线
     this.socket.on(SOCKET_EVENTS.DEVICE_ONLINE, (data: { device: RelayDevice }) => {
+      const exists = this.onlineDevices.some(d => d.id === data.device.id);
+      if (!exists) {
+        this.onlineDevices.push(data.device);
+      }
       this.emit('device:online', data.device);
     });
 
     // 设备下线
     this.socket.on(SOCKET_EVENTS.DEVICE_OFFLINE, (data: { deviceId: string }) => {
+      this.onlineDevices = this.onlineDevices.filter(d => d.id !== data.deviceId);
       this.emit('device:offline', data.deviceId);
     });
 
@@ -260,21 +289,130 @@ export class RelayClient {
 
     // 消息接收
     this.socket.on(SOCKET_EVENTS.MESSAGE_RECEIVE, (data: any) => {
+      console.log('[RelayClient] MESSAGE_RECEIVE event:', JSON.stringify(data));
+
+      // 保存到数据库
+      if (this.db) {
+        try {
+          const msg: TransferMessage = {
+            id: data.message?.id || `msg-${Date.now()}`,
+            session_id: data.sessionId || '',
+            direction: 'received',
+            type: (data.message?.type || 'text') as 'text' | 'file' | 'image',
+            content: data.message?.content || '',
+            file_id: null,
+            created_at: Date.now(),
+            read_at: null
+          };
+          this.db.createMessage(msg);
+          console.log('[RelayClient] Message saved to DB:', msg.id);
+        } catch (error) {
+          console.error('[RelayClient] Failed to save message:', error);
+        }
+      } else {
+        console.warn('[RelayClient] No database available to save message!');
+      }
       this.emit('message:received', data);
     });
 
     // 文件传入
     this.socket.on(SOCKET_EVENTS.FILE_INCOMING, (data: any) => {
+      // Relay 服务器转发的数据结构: { senderId, fileInfo: { id, filename, fileSize, mimeType, totalChunks } }
+      const fileInfo = data.fileInfo || data; // 兼容两种结构
+      const senderId = data.senderId;
+
+      if (this.db) {
+        try {
+          // 1. 创建写入流
+          const downloadPath = app.getPath('downloads');
+          const targetDir = path.join(downloadPath, 'NextNotebook');
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+          const targetPath = path.join(targetDir, path.basename(fileInfo.filename));
+
+          const stream = fs.createWriteStream(targetPath);
+          this.fileStreams.set(fileInfo.id, stream);
+
+          // 2. 保存传输记录到数据库
+          const fileData: TransferFile = {
+            id: fileInfo.id,
+            session_id: data.sessionId || '',
+            filename: fileInfo.filename,
+            file_size: fileInfo.fileSize,
+            mime_type: fileInfo.mimeType,
+            local_path: targetPath,
+            direction: 'received',
+            status: 'transferring',
+            progress: 0,
+            file_hash: null,
+            created_at: Date.now(),
+            completed_at: null
+          };
+          this.db.createFileTransfer(fileData);
+
+          console.log(`[RelayClient] File incoming: ${fileInfo.filename} from ${senderId}`);
+        } catch (error) {
+          console.error('[RelayClient] Failed to init file transfer:', error);
+        }
+      }
       this.emit('file:incoming', data);
     });
 
     // 文件分块
     this.socket.on(SOCKET_EVENTS.FILE_CHUNK, (data: any) => {
+      // 写入文件
+      const stream = this.fileStreams.get(data.fileId);
+      if (stream) {
+        try {
+          // 确保是 Buffer
+          const chunk = Buffer.isBuffer(data.chunk) ? data.chunk : Buffer.from(data.chunk);
+          stream.write(chunk);
+
+          // 更新进度 (可选：为了性能可以减少数据库写入频率)
+          // if (this.db) {
+          //   this.db.updateFileProgress(data.fileId, (data.index / data.total) * 100);
+          // }
+        } catch (error) {
+          console.error('[RelayClient] Failed to write chunk:', error);
+        }
+      }
       this.emit('file:chunk', data);
     });
 
     // 文件完成
     this.socket.on(SOCKET_EVENTS.FILE_COMPLETE, (data: any) => {
+      const stream = this.fileStreams.get(data.fileId);
+      if (stream) {
+        stream.end();
+        this.fileStreams.delete(data.fileId);
+
+        // 更新数据库
+        if (this.db) {
+          try {
+            // 需要获取 localPath
+            // 这里我们假设路径生成规则一致，或者从 fileDataCache 获取（如果实现了的话）
+            // 简单起见，重新构建路径
+            const downloadPath = app.getPath('downloads');
+            const targetPath = path.join(downloadPath, 'NextNotebook', data.filename || ''); // data included filename?
+
+            // 实际上完整性更好的是查询 DB 获取 path，但这里直接用 path
+            // Update: completeFileTransfer needs path.
+            // We should query DB if we want to be safe, but reconstructing is faster if filename available.
+            // data usually mirrors what we sent?
+            // Let's assume filename is in data if sender sends it, or we rely on our 'FILE_INCOMING' knowledge.
+            // But socket events for COMPLETE might just have fileId.
+            // If data has only fileId, we must look up DB.
+            // Let's look up DB.
+            const fileRecord = this.db.getFileById(data.fileId);
+            if (fileRecord && fileRecord.local_path) {
+              this.db.completeFileTransfer(data.fileId, fileRecord.local_path);
+            }
+          } catch (e) {
+            console.error('[RelayClient] Failed to complete file:', e);
+          }
+        }
+      }
       this.emit('file:complete', data);
     });
 
@@ -372,7 +510,7 @@ export class RelayClient {
     const fileId = uuidv4();
     const fileSize = stats.size;
     const totalChunks = Math.ceil(fileSize / TRANSFER_CONSTANTS.CHUNK_SIZE);
-    
+
     // 获取 MIME 类型
     const ext = path.extname(filename).toLowerCase().slice(1);
     const mimeTypes: Record<string, string> = {
@@ -433,7 +571,7 @@ export class RelayClient {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    
+
     this.heartbeatInterval = setInterval(() => {
       if (this.socket?.connected) {
         this.socket.emit(SOCKET_EVENTS.HEARTBEAT);

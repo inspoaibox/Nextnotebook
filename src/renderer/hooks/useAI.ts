@@ -11,6 +11,7 @@ export interface AIConversation {
   maxTokens: number;
   createdAt: number;
   updatedAt: number;
+  webSearchEnabled: boolean; // 是否启用联网搜索
 }
 
 export interface AIMessage {
@@ -22,6 +23,7 @@ export interface AIMessage {
   tokensUsed?: number;
   createdAt: number;
   isOptimistic?: boolean; // 乐观更新标记
+  images?: string[]; // base64 编码的图片数组
 }
 
 // 解析 payload
@@ -40,6 +42,7 @@ function itemToConversation(item: ItemBase): AIConversation {
     maxTokens: payload.max_tokens ?? 2048,
     createdAt: payload.created_at || item.created_time,
     updatedAt: item.updated_time,
+    webSearchEnabled: payload.web_search_enabled ?? false,
   };
 }
 
@@ -53,6 +56,7 @@ function itemToMessage(item: ItemBase): AIMessage {
     model: payload.model || '',
     tokensUsed: payload.tokens_used ?? 0,
     createdAt: payload.created_at || item.created_time,
+    images: payload.images || [],
   };
 }
 
@@ -245,7 +249,8 @@ export function useAIConversations() {
     model: string,
     systemPrompt: string = '',
     temperature: number = 0.7,
-    maxTokens: number = 4096
+    maxTokens: number = 4096,
+    webSearchEnabled: boolean = false
   ) => {
     const now = Date.now();
     const tempId = `temp-conv-${now}`;
@@ -260,6 +265,7 @@ export function useAIConversations() {
       maxTokens,
       createdAt: now,
       updatedAt: now,
+      webSearchEnabled,
     };
     
     setConversations(prev => {
@@ -276,6 +282,7 @@ export function useAIConversations() {
       temperature,
       max_tokens: maxTokens,
       created_at: now,
+      web_search_enabled: webSearchEnabled,
     };
     
     try {
@@ -314,6 +321,7 @@ export function useAIConversations() {
             systemPrompt: updates.system_prompt ?? c.systemPrompt,
             temperature: updates.temperature ?? c.temperature,
             maxTokens: updates.max_tokens ?? c.maxTokens,
+            webSearchEnabled: updates.web_search_enabled ?? c.webSearchEnabled,
             updatedAt: Date.now(),
           };
         }
@@ -433,8 +441,9 @@ export function useAIMessages(conversationId: string | null) {
     }
   }, [conversationId]);
 
-  // 当 conversationId 改变时，重置 streaming 状态
+  // 当 conversationId 改变时，只重置 UI 显示状态，不中断后台请求
   useEffect(() => {
+    // 只重置当前对话的显示状态
     setStreaming(false);
     setStreamingContent('');
     streamBufferRef.current = '';
@@ -442,6 +451,7 @@ export function useAIMessages(conversationId: string | null) {
       clearTimeout(streamUpdateTimerRef.current);
       streamUpdateTimerRef.current = null;
     }
+    // 注意：不取消正在进行的请求，让它们在后台完成
   }, [conversationId]);
 
   useEffect(() => {
@@ -466,37 +476,41 @@ export function useAIMessages(conversationId: string | null) {
     model: string,
     systemPrompt: string,
     temperature: number,
-    maxTokens: number
+    maxTokens: number,
+    images: string[] = []
   ) => {
     if (!conversationId) return null;
 
     const now = Date.now();
     const tempUserId = `temp-user-${now}`;
+    const targetConversationId = conversationId; // 保存当前对话 ID，避免闭包问题
     
     // 1. 乐观更新：立即在 UI 显示用户消息
     const optimisticUserMsg: AIMessage = {
       id: tempUserId,
-      conversationId,
+      conversationId: targetConversationId,
       role: 'user',
       content,
       model,
       createdAt: now,
       isOptimistic: true,
+      images: images.length > 0 ? images : undefined,
     };
     
     setMessages(prev => {
       const updated = [...prev, optimisticUserMsg];
-      messagesCache.current.set(conversationId, updated);
+      messagesCache.current.set(targetConversationId, updated);
       return updated;
     });
 
     // 2. 并行：保存用户消息到数据库（不阻塞 API 请求）
     const userPayload: AIMessagePayload = {
-      conversation_id: conversationId,
+      conversation_id: targetConversationId,
       role: 'user',
       content,
       model,
       created_at: now,
+      images: images.length > 0 ? images : undefined,
     };
     const saveUserMsgPromise = aiMessagesApi.create(userPayload);
 
@@ -512,15 +526,54 @@ export function useAIMessages(conversationId: string | null) {
       if (!m.content || m.content.trim() === '') {
         return;
       }
-      chatMessages.push({ role: m.role, content: m.content });
+      // 如果消息包含图片，构建多模态内容
+      if (m.images && m.images.length > 0) {
+        const contentParts: Array<{ type: 'text' | 'image_url'; text?: string; image_url?: { url: string } }> = [];
+        if (m.content) {
+          contentParts.push({ type: 'text', text: m.content });
+        }
+        m.images.forEach(img => {
+          contentParts.push({ type: 'image_url', image_url: { url: img } });
+        });
+        chatMessages.push({ role: m.role, content: contentParts });
+      } else {
+        chatMessages.push({ role: m.role, content: m.content });
+      }
     });
     // 添加当前用户消息
-    chatMessages.push({ role: 'user', content });
+    if (images.length > 0) {
+      // 多模态消息
+      const contentParts: Array<{ type: 'text' | 'image_url'; text?: string; image_url?: { url: string } }> = [];
+      if (content) {
+        contentParts.push({ type: 'text', text: content });
+      }
+      images.forEach(img => {
+        contentParts.push({ type: 'image_url', image_url: { url: img } });
+      });
+      chatMessages.push({ role: 'user', content: contentParts });
+    } else {
+      chatMessages.push({ role: 'user', content });
+    }
 
     // 4. 开始流式响应
     setStreaming(true);
     setStreamingContent('');
     streamBufferRef.current = '';
+
+    // 创建一个更新函数，只在当前对话时更新 UI
+    const updateStreamingContentForConversation = (chunk: string) => {
+      streamBufferRef.current += chunk;
+      
+      // 只在仍然是当前对话时更新 UI
+      if (conversationId === targetConversationId) {
+        if (!streamUpdateTimerRef.current) {
+          streamUpdateTimerRef.current = setTimeout(() => {
+            setStreamingContent(streamBufferRef.current);
+            streamUpdateTimerRef.current = null;
+          }, 50);
+        }
+      }
+    };
 
     try {
       const response = await callAIApi(channel, {
@@ -529,14 +582,16 @@ export function useAIMessages(conversationId: string | null) {
         temperature,
         max_tokens: maxTokens,
         stream: true,
-      }, updateStreamingContent);
+      }, updateStreamingContentForConversation);
 
-      // 确保最后一次更新
-      if (streamUpdateTimerRef.current) {
-        clearTimeout(streamUpdateTimerRef.current);
-        streamUpdateTimerRef.current = null;
+      // 确保最后一次更新（只在仍然是当前对话时）
+      if (conversationId === targetConversationId) {
+        if (streamUpdateTimerRef.current) {
+          clearTimeout(streamUpdateTimerRef.current);
+          streamUpdateTimerRef.current = null;
+        }
+        setStreamingContent(streamBufferRef.current);
       }
-      setStreamingContent(streamBufferRef.current);
 
       // 5. 等待用户消息保存完成
       const savedUserMsg = await saveUserMsgPromise;
@@ -545,7 +600,7 @@ export function useAIMessages(conversationId: string | null) {
       let savedAssistantMsg = null;
       if (response && response.trim()) {
         const assistantPayload: AIMessagePayload = {
-          conversation_id: conversationId,
+          conversation_id: targetConversationId,
           role: 'assistant',
           content: response,
           model,
@@ -555,45 +610,60 @@ export function useAIMessages(conversationId: string | null) {
       }
 
       // 7. 更新消息列表（替换乐观消息为真实消息）
-      setMessages(prev => {
-        const filtered = prev.filter(m => m.id !== tempUserId);
-        const newMsgs = [
-          ...filtered,
-          savedUserMsg ? itemToMessage(savedUserMsg) : optimisticUserMsg,
-        ];
-        // 只有非空响应才添加助手消息
-        if (response && response.trim()) {
-          newMsgs.push(
-            savedAssistantMsg ? itemToMessage(savedAssistantMsg) : {
-              id: `temp-assistant-${Date.now()}`,
-              conversationId,
-              role: 'assistant' as const,
-              content: response,
-              model,
-              createdAt: Date.now(),
-            }
-          );
+      // 无论当前是否在这个对话，都要更新缓存
+      const newMessages = await aiMessagesApi.getByConversation(targetConversationId);
+      if (newMessages) {
+        const msgs = newMessages.map(itemToMessage);
+        msgs.sort((a, b) => a.createdAt - b.createdAt);
+        messagesCache.current.set(targetConversationId, msgs);
+        
+        // 只在仍然是当前对话时更新 UI
+        if (conversationId === targetConversationId) {
+          setMessages(msgs);
         }
-        messagesCache.current.set(conversationId, newMsgs);
-        return newMsgs;
-      });
+      }
 
       return response;
     } catch (err) {
       // 发生错误时，移除乐观消息
       setMessages(prev => {
         const filtered = prev.filter(m => m.id !== tempUserId);
-        messagesCache.current.set(conversationId, filtered);
+        messagesCache.current.set(targetConversationId, filtered);
         return filtered;
       });
       console.error('AI API error:', err);
       throw err;
     } finally {
-      setStreaming(false);
-      setStreamingContent('');
-      streamBufferRef.current = '';
+      // 只在仍然是当前对话时重置 streaming 状态
+      if (conversationId === targetConversationId) {
+        setStreaming(false);
+        setStreamingContent('');
+        streamBufferRef.current = '';
+      }
     }
-  }, [conversationId, messages, updateStreamingContent]);
+  }, [conversationId, messages]);
+
+  const deleteMessage = useCallback(async (messageId: string) => {
+    if (!conversationId) return false;
+    
+    try {
+      // 乐观更新：立即从 UI 移除
+      setMessages(prev => {
+        const updated = prev.filter(m => m.id !== messageId);
+        messagesCache.current.set(conversationId, updated);
+        return updated;
+      });
+      
+      // 后台删除
+      await aiMessagesApi.delete(messageId);
+      return true;
+    } catch (err) {
+      console.error('Failed to delete message:', err);
+      // 失败时重新加载
+      loadMessages();
+      return false;
+    }
+  }, [conversationId, loadMessages]);
 
   // 清除缓存（用于同步后刷新）
   const clearCache = useCallback(() => {
@@ -606,6 +676,7 @@ export function useAIMessages(conversationId: string | null) {
     streaming,
     streamingContent,
     sendMessage,
+    deleteMessage,
     refresh: loadMessages,
     clearCache,
   };

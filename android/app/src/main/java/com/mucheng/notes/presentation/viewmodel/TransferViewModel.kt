@@ -11,8 +11,12 @@ import com.mucheng.notes.data.local.transfer.*
 import com.mucheng.notes.data.transfer.*
 import com.mucheng.notes.service.TransferNotificationService
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 import javax.inject.Inject
 
@@ -43,6 +47,10 @@ class TransferViewModel @Inject constructor(
     private val sessionDao = database.sessionDao()
     private val messageDao = database.messageDao()
     private val fileDao = database.fileDao()
+    
+    // 文件写入流管理
+    private val fileStreams = mutableMapOf<String, FileOutputStream>()
+    private val filePaths = mutableMapOf<String, String>()
 
     private val _uiState = MutableStateFlow(TransferUiState())
     val uiState: StateFlow<TransferUiState> = _uiState.asStateFlow()
@@ -192,11 +200,18 @@ class TransferViewModel @Inject constructor(
      */
     fun createSession(device: OnlineDevice): String {
         val sessionId = UUID.randomUUID().toString()
+        
+        // 根据当前连接状态确定连接类型
+        val currentConnectionType = when (val state = _uiState.value.connectionState) {
+            is ConnectionState.Connected -> state.mode.value
+            else -> ConnectionMode.LAN.value
+        }
+        
         val session = TransferSessionEntity(
             id = sessionId,
             peerDeviceId = device.id,
             peerDeviceName = device.name,
-            connectionType = ConnectionMode.LAN.value,
+            connectionType = currentConnectionType,
             startedAt = System.currentTimeMillis(),
             endedAt = null
         )
@@ -267,8 +282,16 @@ class TransferViewModel @Inject constructor(
      * 发送文本消息
      */
     fun sendTextMessage(content: String) {
-        val sessionId = _uiState.value.selectedSessionId ?: return
-        val session = _uiState.value.sessions.find { it.id == sessionId } ?: return
+        val sessionId = _uiState.value.selectedSessionId ?: run {
+            android.util.Log.e("TransferViewModel", "No selected session")
+            return
+        }
+        val session = _uiState.value.sessions.find { it.id == sessionId } ?: run {
+            android.util.Log.e("TransferViewModel", "Session not found: $sessionId")
+            return
+        }
+        
+        android.util.Log.d("TransferViewModel", "Sending message to device: ${session.peerDeviceId}, session: $sessionId")
         
         val messageId = UUID.randomUUID().toString()
         val message = TransferMessageEntity(
@@ -287,6 +310,7 @@ class TransferViewModel @Inject constructor(
             messageDao.insert(message)
             
             // 发送到对方
+            android.util.Log.d("TransferViewModel", "Calling transferClient.sendMessage with targetDeviceId=${session.peerDeviceId}")
             transferClient.sendMessage(
                 targetDeviceId = session.peerDeviceId,
                 sessionId = sessionId,
@@ -359,31 +383,39 @@ class TransferViewModel @Inject constructor(
      */
     private fun handleMessageReceived(event: MessageReceivedEvent) {
         viewModelScope.launch {
-            val message = TransferMessageEntity(
-                id = event.message.id,
-                sessionId = event.sessionId,
-                direction = MessageDirection.RECEIVED.value,
-                type = event.message.type.value,
-                content = event.message.content,
-                fileId = event.message.fileId,
-                createdAt = System.currentTimeMillis(),
-                readAt = if (_uiState.value.selectedSessionId == event.sessionId) System.currentTimeMillis() else null
-            )
-            messageDao.insert(message)
-            
-            // 如果当前会话是这个会话，标记为已读
-            if (_uiState.value.selectedSessionId == event.sessionId) {
-                transferClient.sendMessageRead(event.senderId, listOf(event.message.id))
-            } else {
-                // 显示通知
-                val device = deviceDao.getById(event.senderId)
-                val senderName = device?.name ?: "未知设备"
-                TransferNotificationService.showMessageNotification(
-                    context = getApplication(),
-                    senderName = senderName,
-                    messageContent = event.message.content,
-                    sessionId = event.sessionId
+            try {
+                // 先通过发送者设备 ID 查找或创建本地会话
+                // 注意：不能直接使用桌面端发来的 sessionId，因为那是桌面端的会话 ID，本地可能不存在
+                val localSessionId = findOrCreateSessionForDevice(event.senderId)
+                
+                val message = TransferMessageEntity(
+                    id = event.message.id,
+                    sessionId = localSessionId,  // 使用本地会话 ID
+                    direction = MessageDirection.RECEIVED.value,
+                    type = event.message.type.value,
+                    content = event.message.content,
+                    fileId = event.message.fileId,
+                    createdAt = System.currentTimeMillis(),
+                    readAt = if (_uiState.value.selectedSessionId == localSessionId) System.currentTimeMillis() else null
                 )
+                messageDao.insert(message)
+                
+                // 如果当前会话是这个会话，标记为已读
+                if (_uiState.value.selectedSessionId == localSessionId) {
+                    transferClient.sendMessageRead(event.senderId, listOf(event.message.id))
+                } else {
+                    // 显示通知
+                    val device = deviceDao.getById(event.senderId)
+                    val senderName = device?.name ?: "未知设备"
+                    TransferNotificationService.showMessageNotification(
+                        context = getApplication(),
+                        senderName = senderName,
+                        messageContent = event.message.content,
+                        sessionId = localSessionId
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("TransferViewModel", "Failed to handle message received", e)
             }
         }
     }
@@ -427,26 +459,46 @@ class TransferViewModel @Inject constructor(
     /**
      * 处理文件传入
      */
+    /**
+     * 处理文件传入
+     */
     private fun handleFileIncoming(event: FileIncomingEvent) {
         viewModelScope.launch {
-            // 查找或创建会话
-            val sessionId = findOrCreateSessionForDevice(event.senderId)
-            
-            val file = TransferFileEntity(
-                id = event.fileInfo.id,
-                sessionId = sessionId,
-                filename = event.fileInfo.filename,
-                fileSize = event.fileInfo.fileSize,
-                mimeType = event.fileInfo.mimeType,
-                localPath = null,
-                direction = MessageDirection.RECEIVED.value,
-                status = FileTransferStatus.PENDING.value,
-                progress = 0f,
-                fileHash = null,
-                createdAt = System.currentTimeMillis(),
-                completedAt = null
-            )
-            fileDao.insert(file)
+            try {
+                // 查找或创建会话
+                val sessionId = findOrCreateSessionForDevice(event.senderId)
+                
+                // 创建保存文件
+                val downloadsDir = getApplication<Application>().getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+                if (downloadsDir != null && !downloadsDir.exists()) {
+                    downloadsDir.mkdirs()
+                }
+                
+                // 处理文件名冲突? 简单覆盖
+                val file = File(downloadsDir, event.fileInfo.filename)
+                val fos = FileOutputStream(file)
+                
+                fileStreams[event.fileInfo.id] = fos
+                filePaths[event.fileInfo.id] = file.absolutePath
+                
+                val fileEntity = TransferFileEntity(
+                    id = event.fileInfo.id,
+                    sessionId = sessionId,
+                    filename = event.fileInfo.filename,
+                    fileSize = event.fileInfo.fileSize,
+                    mimeType = event.fileInfo.mimeType,
+                    localPath = file.absolutePath,
+                    direction = MessageDirection.RECEIVED.value,
+                    status = FileTransferStatus.TRANSFERRING.value,
+                    progress = 0f,
+                    fileHash = null,
+                    createdAt = System.currentTimeMillis(),
+                    completedAt = null
+                )
+                fileDao.insert(fileEntity)
+            } catch (e: Exception) {
+                android.util.Log.e("TransferViewModel", "Failed to init incoming file", e)
+            }
         }
     }
 
@@ -455,10 +507,21 @@ class TransferViewModel @Inject constructor(
      */
     private fun handleFileChunk(event: FileChunkEvent) {
         viewModelScope.launch {
-            val progress = (event.chunkIndex.toFloat() / event.totalChunks) * 100
-            fileDao.updateProgress(event.fileId, progress)
-            
-            // TODO: 写入临时文件
+            try {
+                // 写入文件
+                val stream = fileStreams[event.fileId]
+                if (stream != null) {
+                    withContext(Dispatchers.IO) {
+                        stream.write(event.chunk)
+                    }
+                }
+                
+                val progress = (event.chunkIndex.toFloat() / event.totalChunks) * 100
+                // 为减少数据库压力，可以节流更新，这里简化
+                fileDao.updateProgress(event.fileId, progress)
+            } catch (e: Exception) {
+                android.util.Log.e("TransferViewModel", "Failed to write chunk", e)
+            }
         }
     }
 
@@ -467,13 +530,24 @@ class TransferViewModel @Inject constructor(
      */
     private fun handleFileComplete(event: FileCompleteEvent) {
         viewModelScope.launch {
-            // TODO: 组装完整文件并保存
-            fileDao.completeTransfer(
-                id = event.fileId,
-                localPath = "", // TODO: 实际保存路径
-                fileHash = event.fileHash,
-                completedAt = System.currentTimeMillis()
-            )
+            try {
+                // 关闭流
+                val stream = fileStreams[event.fileId]
+                stream?.close()
+                fileStreams.remove(event.fileId)
+                
+                val path = filePaths[event.fileId] ?: ""
+                filePaths.remove(event.fileId)
+                
+                fileDao.completeTransfer(
+                    id = event.fileId,
+                    localPath = path,
+                    fileHash = event.fileHash,
+                    completedAt = System.currentTimeMillis()
+                )
+            } catch (e: Exception) {
+                 android.util.Log.e("TransferViewModel", "Failed to complete file", e)
+            }
         }
     }
 
@@ -481,6 +555,7 @@ class TransferViewModel @Inject constructor(
      * 查找或创建设备的会话
      */
     private suspend fun findOrCreateSessionForDevice(deviceId: String): String {
+        // 先检查是否有活跃的会话
         val existingSession = _uiState.value.sessions.find { 
             it.peerDeviceId == deviceId && it.endedAt == null 
         }
@@ -488,17 +563,41 @@ class TransferViewModel @Inject constructor(
             return existingSession.id
         }
         
+        // 也从数据库中查找活跃会话（UI state 可能未更新）
+        val dbSession = sessionDao.getActiveSessionByDevice(deviceId)
+        if (dbSession != null) {
+            return dbSession.id
+        }
+        
         // 创建新会话
         val device = _uiState.value.onlineDevices.find { it.id == deviceId }
         return if (device != null) {
             createSession(device)
         } else {
-            // 设备不在线，创建临时会话
+            // 设备不在线，尝试从数据库获取设备信息
+            val dbDevice = deviceDao.getById(deviceId)
+            val deviceName = dbDevice?.name ?: "未知设备"
+            
+            // 如果数据库中也没有设备记录，先创建设备记录
+            if (dbDevice == null) {
+                deviceDao.insert(TransferDeviceEntity(
+                    id = deviceId,
+                    name = deviceName,
+                    type = DeviceType.DESKTOP.value,
+                    lastIp = null,
+                    lastPort = null,
+                    lastSeen = System.currentTimeMillis(),
+                    isFavorite = false,
+                    createdAt = System.currentTimeMillis()
+                ))
+            }
+            
+            // 创建会话
             val sessionId = UUID.randomUUID().toString()
             val session = TransferSessionEntity(
                 id = sessionId,
                 peerDeviceId = deviceId,
-                peerDeviceName = "Unknown Device",
+                peerDeviceName = deviceName,
                 connectionType = ConnectionMode.LAN.value,
                 startedAt = System.currentTimeMillis(),
                 endedAt = null

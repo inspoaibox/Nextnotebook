@@ -2003,7 +2003,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                         c.models.map(m => ({
                           value: m.id,
                           label: `${m.name} (${c.name})`,
+                          key: `${c.id}-${m.id}`, // 添加唯一 key 避免重复
                         }))
+                      )
+                      .filter((option, index, self) => 
+                        // 去重：保留第一个出现的模型 ID
+                        index === self.findIndex(o => o.value === option.value)
                       )}
                   />
                 </div>

@@ -175,3 +175,78 @@ const deleteConversation = useCallback(async (id: string) => {
 - [x] Task 3: AI 界面导航流畅，对话列表正确显示（移除侧边栏）
 - [x] Task 4: 工具栏按钮正确插入 Markdown 语法
 - [x] Task 5: 锁定/解锁功能正常，密码验证正确
+
+
+---
+
+## Task 6: 桌面端图片上传功能 ✅ DONE
+
+**Priority:** High (功能增强)
+
+### Subtask 6.1: 扩展数据结构支持图片
+- **File:** `src/shared/types/index.ts`
+- **Change:** 在 `AIMessagePayload` 中添加 `images?: string[]` 字段
+- **Status:** ✅ 完成
+
+### Subtask 6.2: 创建图片处理工具函数
+- **File:** `src/renderer/utils/imageUtils.ts` (新建)
+- **Change:** 创建图片验证、转换、压缩等工具函数
+- **Status:** ✅ 完成
+
+功能：
+- `validateImage`: 验证图片格式和大小（支持 JPG/PNG/GIF/WebP，最大 5MB）
+- `fileToBase64`: 将文件转换为 base64
+- `compressImage`: 压缩图片（最大 2048x2048，质量 0.8）
+- `getImageFromClipboard`: 从剪贴板获取图片
+- `getImageDimensions`: 获取图片尺寸
+
+### Subtask 6.3: 更新 AI Hook 支持图片
+- **File:** `src/renderer/hooks/useAI.ts`
+- **Change:** 
+  - 在 `AIMessage` 接口添加 `images?: string[]`
+  - 更新 `sendMessage` 函数接受 `images` 参数
+  - 构建多模态消息内容（文本 + 图片）
+  - 保存图片到数据库
+- **Status:** ✅ 完成
+
+### Subtask 6.4: 更新 AI API 支持多模态
+- **File:** `src/renderer/services/aiApi.ts`
+- **Change:**
+  - 更新 `ChatMessage` 接口支持多模态内容
+  - OpenAI 格式：`{ type: 'text' | 'image_url', text?, image_url? }`
+  - Anthropic 格式：转换为 `{ type: 'image', source: { type: 'base64', data, media_type } }`
+  - Gemini 格式：转换为 `{ inline_data: { mime_type, data } }`
+- **Status:** ✅ 完成
+
+### Subtask 6.5: 实现 UI 图片上传功能
+- **File:** `src/renderer/components/AIAssistant.tsx`
+- **Change:**
+  - 添加 `selectedImages` 状态管理
+  - 实现图片上传按钮（Upload 组件）
+  - 实现粘贴图片功能（onPaste 事件）
+  - 显示图片预览（缩略图 + 删除按钮）
+  - 在消息中显示图片（点击放大）
+  - 发送消息时包含图片
+- **Status:** ✅ 完成
+
+---
+
+## Updated Implementation Order
+
+1. **Task 1** (Subtask 1.1 → 1.2) - 修复 AI API 500 错误，最高优先级
+2. **Task 2** (Subtask 2.1) - 修复级联删除，数据一致性
+3. **Task 3** (Subtask 3.1 → 3.2 → 3.3) - AI 界面重构
+4. **Task 4** (Subtask 4.1 → 4.2 → 4.3) - 笔记工具栏
+5. **Task 5** (Subtask 5.1 → 5.2 → 5.3 → 5.4 → 5.5) - 笔记锁定
+6. **Task 6** (Subtask 6.1 → 6.2 → 6.3 → 6.4 → 6.5) - 图片上传功能
+
+---
+
+## Updated Testing Checklist
+
+- [x] Task 1: 测试各渠道 AI 对话功能正常（修复 URL 规范化）
+- [x] Task 2: 删除对话后确认消息也被删除（桌面端级联删除）
+- [x] Task 3: AI 界面导航流畅，对话列表正确显示（移除侧边栏）
+- [x] Task 4: 工具栏按钮正确插入 Markdown 语法
+- [x] Task 5: 锁定/解锁功能正常，密码验证正确
+- [ ] Task 6: 图片上传、预览、发送功能正常，支持多种 AI 模型（OpenAI/Anthropic/Gemini）
