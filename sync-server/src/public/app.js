@@ -212,17 +212,22 @@ async function loadPage(page) {
 // 仪表盘
 async function loadDashboard(el) {
   const stats = await api('/items/count');
+  
+  // 获取所有类型
+  const allTypes = Object.keys(stats.byType || {});
+  
   el.innerHTML = `
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-value">${stats.byType?.note || 0}</div><div class="stat-label">笔记</div></div>
-      <div class="stat-card"><div class="stat-value">${stats.byType?.excel_note || 0}</div><div class="stat-label">Excel笔记</div></div>
-      <div class="stat-card"><div class="stat-value">${stats.byType?.folder || 0}</div><div class="stat-label">文件夹</div></div>
-      <div class="stat-card"><div class="stat-value">${stats.byType?.todo || 0}</div><div class="stat-label">待办</div></div>
-      <div class="stat-card"><div class="stat-value">${stats.byType?.bookmark || 0}</div><div class="stat-label">书签</div></div>
-      <div class="stat-card"><div class="stat-value">${stats.byType?.vault_entry || 0}</div><div class="stat-label">保险库</div></div>
-      <div class="stat-card"><div class="stat-value">${stats.byType?.ai_conversation || 0}</div><div class="stat-label">AI 对话</div></div>
-      <div class="stat-card"><div class="stat-value">${stats.byType?.resource || 0}</div><div class="stat-label">资源</div></div>
-      <div class="stat-card"><div class="stat-value">${stats.itemCount || 0}</div><div class="stat-label">总计</div></div>
+      ${allTypes.map(type => `
+        <div class="stat-card" style="cursor:pointer;" onclick="viewTypeItems('${type}')">
+          <div class="stat-value">${stats.byType[type] || 0}</div>
+          <div class="stat-label">${type}</div>
+        </div>
+      `).join('')}
+      <div class="stat-card">
+        <div class="stat-value">${stats.itemCount || 0}</div>
+        <div class="stat-label">总计</div>
+      </div>
     </div>
     <div class="card" style="margin-top:24px;">
       <div class="card-header">服务器信息</div>
@@ -230,6 +235,7 @@ async function loadDashboard(el) {
         <p><strong>状态:</strong> 运行中 ✅</p>
         <p><strong>当前用户:</strong> ${user?.username} (${user?.role})</p>
         <p><strong>时间:</strong> ${new Date().toLocaleString('zh-CN')}</p>
+        <p><strong>数据类型:</strong> ${allTypes.join(', ') || '无'}</p>
       </div>
     </div>
   `;
@@ -385,6 +391,20 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// 查看指定类型的数据项
+async function viewTypeItems(type) {
+  const content = document.getElementById('pageContent');
+  const title = document.getElementById('pageTitle');
+  title.textContent = `${type} 数据`;
+  content.innerHTML = '<div style="text-align:center;padding:40px;color:#666;">加载中...</div>';
+  
+  try {
+    await loadItems(content, type, type);
+  } catch (err) {
+    content.innerHTML = `<div style="color:#dc3545;padding:20px;">加载失败: ${err.message}</div>`;
+  }
 }
 
 async function viewItem(id) {
@@ -598,10 +618,28 @@ async function toggleReg(enabled) {
 
 // 变更日志
 async function loadLogs(el) {
-  const data = await api('/changes?limit=50');
+  const data = await api('/changes?limit=200');
+  
+  // 统计各类型数量
+  const typeCounts = {};
+  data.changes.forEach(c => {
+    typeCounts[c.type] = (typeCounts[c.type] || 0) + 1;
+  });
+  
   el.innerHTML = `
     <div class="card">
-      <div class="card-header">最近变更</div>
+      <div class="card-header">
+        <span>变更日志 (共 ${data.changes.length} 条)</span>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <select id="typeFilter" onchange="filterLogs()" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
+            <option value="">全部类型</option>
+            ${Object.entries(typeCounts).map(([type, count]) => 
+              `<option value="${type}">${type} (${count})</option>`
+            ).join('')}
+          </select>
+          <input type="text" id="searchLogs" placeholder="搜索ID..." onkeyup="filterLogs()" style="padding:6px;border:1px solid #ddd;border-radius:4px;width:150px;">
+        </div>
+      </div>
       <div class="card-body" style="padding:0;">
         ${data.changes.length === 0 ? '<p style="padding:20px;color:#666;">暂无变更记录</p>' : `
           <table style="width:100%;border-collapse:collapse;">
@@ -614,11 +652,11 @@ async function loadLogs(el) {
                 <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">状态</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="logsBody">
               ${data.changes.map(c => `
-                <tr>
+                <tr data-type="${c.type}" data-id="${c.item_id}">
                   <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${c.change_id}</td>
-                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${c.type}</td>
+                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;"><span style="padding:2px 6px;background:#e0e0e0;border-radius:3px;font-size:12px;">${c.type}</span></td>
                   <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${c.item_id.substring(0, 8)}...</td>
                   <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(c.updated_time)}</td>
                   <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${c.deleted_time ? '🗑️ 删除' : '✏️ 更新'}</td>
@@ -629,7 +667,27 @@ async function loadLogs(el) {
         `}
       </div>
     </div>
+    <div style="margin-top:16px;padding:16px;background:#f8f9fa;border-radius:6px;">
+      <strong>类型统计：</strong>
+      ${Object.entries(typeCounts).map(([type, count]) => 
+        `<span style="margin-left:12px;padding:4px 8px;background:#e0e0e0;border-radius:4px;">${type}: ${count}</span>`
+      ).join('')}
+    </div>
   `;
+}
+
+function filterLogs() {
+  const typeFilter = document.getElementById('typeFilter').value;
+  const searchText = document.getElementById('searchLogs').value.toLowerCase();
+  const rows = document.querySelectorAll('#logsBody tr');
+  
+  rows.forEach(row => {
+    const type = row.getAttribute('data-type');
+    const id = row.getAttribute('data-id').toLowerCase();
+    const typeMatch = !typeFilter || type === typeFilter;
+    const searchMatch = !searchText || id.includes(searchText);
+    row.style.display = (typeMatch && searchMatch) ? '' : 'none';
+  });
 }
 
 
