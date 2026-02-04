@@ -397,3 +397,126 @@ class PayloadCompatibilityTest : StringSpec({
         jsonStr shouldNotContain "\"matchType\""
     }
 })
+
+    /**
+     * 测试 ExcelNotePayload 字段名
+     */
+    "ExcelNotePayload field names are snake_case" {
+        val payload = ExcelNotePayload(
+            title = "Test Excel",
+            description = "Description",
+            folderId = "folder-123",
+            isPinned = true,
+            isLocked = false,
+            lockPasswordHash = null,
+            tags = listOf("tag1"),
+            sheets = emptyList(),
+            activeSheetIndex = 0
+        )
+        
+        val jsonStr = json.encodeToString(payload)
+        
+        jsonStr shouldContain "\"folder_id\""
+        jsonStr shouldContain "\"is_pinned\""
+        jsonStr shouldContain "\"is_locked\""
+        jsonStr shouldContain "\"lock_password_hash\""
+        jsonStr shouldContain "\"active_sheet_index\""
+        
+        jsonStr shouldNotContain "\"folderId\""
+        jsonStr shouldNotContain "\"isPinned\""
+        jsonStr shouldNotContain "\"isLocked\""
+        jsonStr shouldNotContain "\"lockPasswordHash\""
+        jsonStr shouldNotContain "\"activeSheetIndex\""
+    }
+    
+    /**
+     * 测试 ExcelSheet 字段名
+     */
+    "ExcelSheet field names are snake_case" {
+        val sheet = ExcelSheet(
+            id = "sheet-1",
+            name = "Sheet1",
+            rows = emptyList(),
+            columnWidths = listOf(100, 100),
+            rowHeights = listOf(25, 25),
+            frozenRows = 1,
+            frozenColumns = 1
+        )
+        
+        val jsonStr = json.encodeToString(sheet)
+        
+        jsonStr shouldContain "\"column_widths\""
+        jsonStr shouldContain "\"row_heights\""
+        jsonStr shouldContain "\"frozen_rows\""
+        jsonStr shouldContain "\"frozen_columns\""
+        
+        jsonStr shouldNotContain "\"columnWidths\""
+        jsonStr shouldNotContain "\"rowHeights\""
+        jsonStr shouldNotContain "\"frozenRows\""
+        jsonStr shouldNotContain "\"frozenColumns\""
+    }
+    
+    /**
+     * 测试 ExcelCell 字段名
+     */
+    "ExcelCell field names are snake_case" {
+        val cell = ExcelCell(
+            columnIndex = 0,
+            value = kotlinx.serialization.json.JsonPrimitive("test"),
+            formula = null,
+            style = null
+        )
+        
+        val jsonStr = json.encodeToString(cell)
+        
+        jsonStr shouldContain "\"column_index\""
+        jsonStr shouldNotContain "\"columnIndex\""
+    }
+    
+    /**
+     * 测试 ExcelRow 字段名
+     */
+    "ExcelRow field names are snake_case" {
+        val row = ExcelRow(
+            rowIndex = 0,
+            cells = emptyList()
+        )
+        
+        val jsonStr = json.encodeToString(row)
+        
+        jsonStr shouldContain "\"row_index\""
+        jsonStr shouldNotContain "\"rowIndex\""
+    }
+    
+    /**
+     * 测试 CellStyle 字段名
+     */
+    "CellStyle field names are snake_case" {
+        val style = CellStyle(
+            fontBold = true,
+            fontItalic = false,
+            fontColor = "#000000",
+            backgroundColor = "#FFFFFF",
+            textAlign = "center",
+            verticalAlign = "middle",
+            numberFormat = null
+        )
+        
+        val jsonStr = json.encodeToString(style)
+        
+        jsonStr shouldContain "\"font_bold\""
+        jsonStr shouldContain "\"font_italic\""
+        jsonStr shouldContain "\"font_color\""
+        jsonStr shouldContain "\"background_color\""
+        jsonStr shouldContain "\"text_align\""
+        jsonStr shouldContain "\"vertical_align\""
+        jsonStr shouldContain "\"number_format\""
+        
+        jsonStr shouldNotContain "\"fontBold\""
+        jsonStr shouldNotContain "\"fontItalic\""
+        jsonStr shouldNotContain "\"fontColor\""
+        jsonStr shouldNotContain "\"backgroundColor\""
+        jsonStr shouldNotContain "\"textAlign\""
+        jsonStr shouldNotContain "\"verticalAlign\""
+        jsonStr shouldNotContain "\"numberFormat\""
+    }

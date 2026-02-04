@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: FeatureSettings = {
   toolbox_enabled: true,
   diagram_enabled: true,
   transfer_enabled: true,
+  excel_enabled: true,
 };
 
 function getSettings(): FeatureSettings {

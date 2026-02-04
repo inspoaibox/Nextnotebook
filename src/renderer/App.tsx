@@ -17,6 +17,7 @@ import BookmarkPanel from './components/BookmarkPanel';
 import ToolboxPanel from './components/ToolboxPanel';
 import DiagramPanel from './components/DiagramPanel';
 import TransferPanel from './components/TransferPanel';
+import ExcelEditorPanel from './components/ExcelEditorPanel';
 import { useNotes, useNote } from './hooks/useNotes';
 import { useFolders } from './hooks/useFolders';
 import { useTags } from './hooks/useTags';
@@ -28,6 +29,14 @@ import { aiSettingsApi } from './services/aiApi';
 import { ItemBase, NotePayload } from '@shared/types';
 
 const { Sider, Content, Footer } = Layout;
+
+// 获取 electronAPI
+const getElectronAPI = () => {
+  if (typeof window !== 'undefined' && (window as any).electronAPI) {
+    return (window as any).electronAPI;
+  }
+  return null;
+};
 
 // 将 ItemBase 转换为 Note 的辅助函数
 function itemToNote(item: ItemBase) {
@@ -978,13 +987,52 @@ const App: React.FC = () => {
   }, [syncConfig, handleSync]);
 
   // 选择工具
-  const handleSelectTool = useCallback((tool: string | null) => {
+  const handleSelectTool = useCallback(async (tool: string | null) => {
+    // 处理 Excel 笔记创建
+    if (tool === 'excel-create') {
+      // 创建新的 Excel 笔记
+      try {
+        const api = getElectronAPI();
+        if (api?.items?.create) {
+          const payload = {
+            title: '新建 Excel 笔记',
+            folder_id: selectedFolderId === 'uncategorized' ? null : selectedFolderId,
+            is_pinned: false,
+            is_locked: false,
+            lock_password_hash: null,
+            tags: [],
+            sheets: [{
+              id: crypto.randomUUID(),
+              name: 'Sheet1',
+              rows: [],
+              column_widths: {},
+              row_heights: {},
+              frozen_rows: 0,
+              frozen_columns: 0,
+            }],
+            active_sheet_index: 0,
+          };
+          const newNote = await api.items.create('excel_note', payload);
+          if (newNote) {
+            setSelectedNoteId(newNote.id);
+            setCurrentTool(null);
+            await refresh();
+            message.success('Excel 笔记已创建');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to create Excel note:', err);
+        message.error('创建 Excel 笔记失败');
+      }
+      return;
+    }
+    
     setCurrentTool(tool);
     if (tool) {
       // 切换到工具时清除笔记选择
       setSelectedNoteId(null);
     }
-  }, []);
+  }, [selectedFolderId, refresh]);
 
   // 锁定应用
   const handleLockApp = useCallback(() => {
@@ -1132,6 +1180,7 @@ const App: React.FC = () => {
           toolboxEnabled={featureSettings.toolbox_enabled}
           diagramEnabled={featureSettings.diagram_enabled}
           transferEnabled={featureSettings.transfer_enabled}
+          excelEnabled={featureSettings.excel_enabled}
           currentTool={currentTool}
           onSelectFolder={handleSelectFolder}
           onSelectView={handleSelectView}
@@ -1206,23 +1255,28 @@ const App: React.FC = () => {
             </Sider>
             <Layout>
               <Content style={{ padding: 0, background: isDarkMode ? '#141414' : '#fff' }}>
-                <Editor
-                  noteId={selectedNoteId}
-                  note={currentNote}
-                  onSave={handleSaveNote}
-                  onToggleStar={handleTogglePin}
-                  onUpdateTags={handleUpdateNoteTags}
-                  onDelete={handleDeleteNote}
-                  onDuplicate={handleDuplicateNote}
-                  onLockNote={handleLockNoteFromEditor}
-                  onUnlockNote={handleUnlockNoteFromEditor}
-                  onUploadImage={handleUploadImage}
-                  onUploadAttachment={handleUploadAttachment}
-                  allTags={tags}
-                  onCreateTag={createTag}
-                  isTrashView={selectedView === 'trash'}
-                  defaultMode={isNewNote ? 'edit' : 'preview'}
-                />
+                {/* 根据笔记类型显示不同编辑器 */}
+                {currentNote?.type === 'excel_note' ? (
+                  <ExcelEditorPanel noteId={selectedNoteId} />
+                ) : (
+                  <Editor
+                    noteId={selectedNoteId}
+                    note={currentNote}
+                    onSave={handleSaveNote}
+                    onToggleStar={handleTogglePin}
+                    onUpdateTags={handleUpdateNoteTags}
+                    onDelete={handleDeleteNote}
+                    onDuplicate={handleDuplicateNote}
+                    onLockNote={handleLockNoteFromEditor}
+                    onUnlockNote={handleUnlockNoteFromEditor}
+                    onUploadImage={handleUploadImage}
+                    onUploadAttachment={handleUploadAttachment}
+                    allTags={tags}
+                    onCreateTag={createTag}
+                    isTrashView={selectedView === 'trash'}
+                    defaultMode={isNewNote ? 'edit' : 'preview'}
+                  />
+                )}
               </Content>
               <Footer style={{
                 padding: '4px 16px',

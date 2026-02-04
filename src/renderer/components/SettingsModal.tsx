@@ -1186,6 +1186,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                   onChange={checked => updateFeatureSettings({ diagram_enabled: checked })}
                 />
               </div>
+
+              {/* Excel 笔记 */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
+                <div>
+                  <div style={{ fontWeight: 500 }}>Excel 笔记</div>
+                  <p style={{ color: '#888', fontSize: 12, margin: '4px 0 0' }}>
+                    电子表格笔记，支持公式计算、导入导出
+                  </p>
+                </div>
+                <Switch
+                  checked={featureSettings.excel_enabled}
+                  onChange={checked => updateFeatureSettings({ excel_enabled: checked })}
+                />
+              </div>
             </div>
           </div>
         );

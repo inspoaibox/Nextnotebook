@@ -70,8 +70,10 @@
 6. THE Formula_Engine SHALL support AVERAGE function for calculating the average of a range
 7. THE Formula_Engine SHALL support COUNT function for counting non-empty cells
 8. THE Formula_Engine SHALL support MAX and MIN functions for finding extreme values
-9. IF a Formula contains an error, THEN THE System SHALL display an error indicator in the Cell
-10. WHEN a referenced Cell value changes, THE Formula_Engine SHALL recalculate dependent Formulas
+9. THE Formula_Engine SHALL support IF function for conditional logic (e.g., =IF(A1>10, "Yes", "No"))
+10. THE Formula_Engine SHALL support ROUND function for rounding numbers to specified decimal places
+11. IF a Formula contains an error, THEN THE System SHALL display an error indicator in the Cell
+12. WHEN a referenced Cell value changes, THE Formula_Engine SHALL recalculate dependent Formulas
 
 ### Requirement 5: 单元格格式化
 
@@ -83,9 +85,10 @@
 2. WHEN a user selects cells and applies italic formatting, THE Spreadsheet_Editor SHALL set font_italic to true for those Cells
 3. THE Spreadsheet_Editor SHALL support setting font color for selected Cells
 4. THE Spreadsheet_Editor SHALL support setting background color for selected Cells
-5. THE Spreadsheet_Editor SHALL support text alignment (left, center, right) for selected Cells
-6. THE Spreadsheet_Editor SHALL support number formatting (decimal places, percentage, currency)
-7. WHEN formatting is applied, THE System SHALL update the Cell_Style and mark the Excel_Note as modified
+5. THE Spreadsheet_Editor SHALL support horizontal text alignment (left, center, right) for selected Cells
+6. THE Spreadsheet_Editor SHALL support vertical text alignment (top, middle, bottom) for selected Cells
+7. THE Spreadsheet_Editor SHALL support number formatting (decimal places, percentage, currency)
+8. WHEN formatting is applied, THE System SHALL update the Cell_Style and mark the Excel_Note as modified
 
 ### Requirement 6: 行列操作
 
@@ -151,7 +154,34 @@
 5. THE Android_App SHALL support horizontal and vertical scrolling for large spreadsheets
 6. WHEN an Excel_Note is modified on Android, THE Android_App SHALL mark it for sync
 
-### Requirement 11: 性能优化
+### Requirement 11: 复制粘贴
+
+**User Story:** As a user, I want to copy and paste cells, so that I can efficiently duplicate and move data within the spreadsheet.
+
+#### Acceptance Criteria
+
+1. WHEN a user selects cells and presses Ctrl+C, THE Spreadsheet_Editor SHALL copy the selected cells to clipboard
+2. WHEN a user selects cells and presses Ctrl+X, THE Spreadsheet_Editor SHALL cut the selected cells
+3. WHEN a user presses Ctrl+V after copying, THE Spreadsheet_Editor SHALL paste the copied cells at the current selection
+4. WHEN pasting, THE System SHALL preserve cell values, formulas, and styles
+5. WHEN pasting formulas, THE System SHALL adjust relative cell references based on the paste location
+6. THE Spreadsheet_Editor SHALL support pasting from external sources (plain text, CSV format)
+7. WHEN a user right-clicks, THE Context_Menu SHALL provide Copy, Cut, and Paste options
+
+### Requirement 12: 撤销重做
+
+**User Story:** As a user, I want to undo and redo my actions, so that I can easily correct mistakes.
+
+#### Acceptance Criteria
+
+1. WHEN a user presses Ctrl+Z, THE Spreadsheet_Editor SHALL undo the last action
+2. WHEN a user presses Ctrl+Y or Ctrl+Shift+Z, THE Spreadsheet_Editor SHALL redo the last undone action
+3. THE System SHALL maintain an undo history of at least 50 actions
+4. THE Undo_History SHALL include cell edits, formatting changes, row/column operations, and sheet operations
+5. WHEN an Excel_Note is closed and reopened, THE Undo_History SHALL be cleared
+6. THE Toolbar SHALL display Undo and Redo buttons with disabled state when unavailable
+
+### Requirement 13: 性能优化
 
 **User Story:** As a user, I want the Excel editor to perform well with large datasets, so that I can work efficiently.
 

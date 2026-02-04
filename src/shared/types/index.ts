@@ -27,7 +27,8 @@ export type ItemType =
   | 'diagram'
   | 'ai_config'
   | 'ai_conversation'
-  | 'ai_message';
+  | 'ai_message'
+  | 'excel_note';
 
 // 图表类型
 export type DiagramType = 'mindmap' | 'flowchart' | 'whiteboard';
@@ -130,6 +131,7 @@ export interface FeatureSettings {
   toolbox_enabled: boolean;
   diagram_enabled: boolean;
   transfer_enabled: boolean;
+  excel_enabled: boolean;
 }
 
 // 书签 payload
@@ -276,7 +278,7 @@ export const DEFAULT_SYNC_MODULES: SyncModules = {
 
 // 模块到 ItemType 的映射
 export const SYNC_MODULE_TYPES: Record<keyof SyncModules, ItemType[]> = {
-  notes: ['note', 'folder', 'tag', 'resource'],
+  notes: ['note', 'folder', 'tag', 'resource', 'excel_note'],
   bookmarks: ['bookmark', 'bookmark_folder'],
   vault: ['vault_entry', 'vault_folder'],
   diagrams: ['diagram'],
@@ -414,3 +416,100 @@ export const COUNTRY_CONFIG: Record<GeneratorCountryCode, CountryConfig> = {
   'fr': { label: '法国', fakerLocale: 'fr' },
   'ru': { label: '俄罗斯', fakerLocale: 'ru' },
 };
+
+// ==================== Excel 笔记类型 ====================
+
+// Excel 笔记 Payload
+export interface ExcelNotePayload {
+  title: string;
+  description: string;
+  folder_id: string | null;
+  is_pinned: boolean;
+  is_locked: boolean;
+  lock_password_hash: string | null;
+  tags: string[];
+  sheets: ExcelSheet[];
+  active_sheet_index: number;
+}
+
+// 工作表
+export interface ExcelSheet {
+  id: string;
+  name: string;
+  rows: ExcelRow[];
+  column_widths: number[];
+  row_heights: number[];
+  frozen_rows: number;
+  frozen_columns: number;
+}
+
+// 行数据
+export interface ExcelRow {
+  row_index: number;
+  cells: ExcelCell[];
+}
+
+// 单元格
+export interface ExcelCell {
+  column_index: number;
+  value: CellValue;
+  formula: string | null;
+  style: CellStyle | null;
+}
+
+// 单元格值类型
+export type CellValue = string | number | boolean | null;
+
+// 单元格样式
+export interface CellStyle {
+  font_bold: boolean;
+  font_italic: boolean;
+  font_color: string | null;
+  background_color: string | null;
+  text_align: 'left' | 'center' | 'right';
+  vertical_align: 'top' | 'middle' | 'bottom';
+  number_format: NumberFormat | null;
+}
+
+// 数字格式类型
+export type NumberFormat =
+  | { type: 'general' }
+  | { type: 'number'; decimals: number }
+  | { type: 'percentage'; decimals: number }
+  | { type: 'currency'; symbol: string; decimals: number }
+  | { type: 'date'; pattern: string };
+
+// 默认单元格样式
+export const DEFAULT_CELL_STYLE: CellStyle = {
+  font_bold: false,
+  font_italic: false,
+  font_color: null,
+  background_color: null,
+  text_align: 'left',
+  vertical_align: 'middle',
+  number_format: null,
+};
+
+// 创建默认 Excel 笔记 Payload
+export const createDefaultExcelNotePayload = (title: string = '未命名表格'): ExcelNotePayload => ({
+  title,
+  description: '',
+  folder_id: null,
+  is_pinned: false,
+  is_locked: false,
+  lock_password_hash: null,
+  tags: [],
+  sheets: [createDefaultExcelSheet('Sheet1')],
+  active_sheet_index: 0,
+});
+
+// 创建默认工作表
+export const createDefaultExcelSheet = (name: string): ExcelSheet => ({
+  id: crypto.randomUUID ? crypto.randomUUID() : `sheet-${Date.now()}`,
+  name,
+  rows: [],
+  column_widths: [],
+  row_heights: [],
+  frozen_rows: 0,
+  frozen_columns: 0,
+});

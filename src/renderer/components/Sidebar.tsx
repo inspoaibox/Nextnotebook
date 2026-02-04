@@ -21,6 +21,7 @@ import {
   SwapOutlined,
   RightOutlined,
   DownOutlined,
+  FileExcelOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Folder } from '../hooks/useFolders';
@@ -38,6 +39,7 @@ interface SidebarProps {
   toolboxEnabled?: boolean;
   diagramEnabled?: boolean;
   transferEnabled?: boolean;
+  excelEnabled?: boolean;
   currentTool?: string | null;
   onSelectFolder: (folderId: string | null) => void;
   onSelectView: (view: 'all' | 'starred' | 'trash') => void;
@@ -66,6 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   toolboxEnabled,
   diagramEnabled,
   transferEnabled,
+  excelEnabled,
   currentTool,
   onSelectFolder,
   onSelectView,
@@ -325,8 +328,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const createMenuItems: MenuProps['items'] = [
-    { key: 'template', label: '从模板创建', onClick: onCreateNote },
-    { key: 'blank', label: '空白笔记', onClick: onQuickCreateNote },
+    { key: 'template', label: '从模板创建', icon: <FileTextOutlined />, onClick: onCreateNote },
+    { key: 'blank', label: '空白笔记', icon: <FileTextOutlined />, onClick: onQuickCreateNote },
+    ...(excelEnabled ? [{ 
+      key: 'excel', 
+      label: 'Excel 笔记', 
+      icon: <FileExcelOutlined />,
+      onClick: () => onSelectTool?.('excel-create'),
+    }] : []),
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {

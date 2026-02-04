@@ -153,7 +153,7 @@ class SyncIntegrationTest : StringSpec({
         val expectedTypes = listOf(
             "note", "folder", "tag", "resource", "todo",
             "vault_entry", "vault_folder", "bookmark", "bookmark_folder",
-            "diagram", "ai_config", "ai_conversation", "ai_message"
+            "diagram", "ai_config", "ai_conversation", "ai_message", "excel_note"
         )
         
         val actualTypes = ItemType.entries.map { it.value }

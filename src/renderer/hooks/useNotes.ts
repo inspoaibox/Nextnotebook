@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ItemBase, NotePayload } from '@shared/types';
+import { ItemBase, NotePayload, ExcelNotePayload } from '@shared/types';
 import { notesApi, itemsApi, parsePayload } from '../services/itemsApi';
 
 export interface Note {
@@ -13,9 +13,29 @@ export interface Note {
   tags: string[];
   createdAt: number;
   updatedAt: number;
+  type: 'note' | 'excel_note'; // 笔记类型
 }
 
 function itemToNote(item: ItemBase): Note {
+  // 判断是否是 Excel 笔记
+  if (item.type === 'excel_note') {
+    const payload = parsePayload<ExcelNotePayload>(item);
+    return {
+      id: item.id,
+      title: payload.title || '',
+      content: '', // Excel 笔记没有 content
+      folderId: payload.folder_id ?? null,
+      isPinned: payload.is_pinned ?? false,
+      isLocked: payload.is_locked ?? false,
+      lockPasswordHash: payload.lock_password_hash ?? null,
+      tags: payload.tags || [],
+      createdAt: item.created_time,
+      updatedAt: item.updated_time,
+      type: 'excel_note',
+    };
+  }
+  
+  // 普通笔记
   const payload = parsePayload<NotePayload>(item);
   return {
     id: item.id,
@@ -28,6 +48,7 @@ function itemToNote(item: ItemBase): Note {
     tags: payload.tags || [],  // 确保 tags 始终是数组
     createdAt: item.created_time,
     updatedAt: item.updated_time,
+    type: 'note',
   };
 }
 
@@ -40,7 +61,8 @@ export function useNotes(folderId: string | null) {
     try {
       setLoading(true);
       setError(null);
-      const items = await notesApi.getByFolder(folderId);
+      // 使用新的 API 同时获取普通笔记和 Excel 笔记
+      const items = await notesApi.getAllWithExcel(folderId);
       if (items && Array.isArray(items)) {
         const noteList = items.map(itemToNote);
         // 置顶笔记优先

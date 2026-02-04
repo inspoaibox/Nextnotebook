@@ -46,7 +46,7 @@ data class SyncConfig(
  * 模块到 ItemType 的映射（与桌面端一致）
  */
 object SyncModuleTypes {
-    val NOTES = listOf("note", "folder", "tag", "resource")
+    val NOTES = listOf("note", "folder", "tag", "resource", "excel_note")
     val BOOKMARKS = listOf("bookmark", "bookmark_folder")
     val VAULT = listOf("vault_entry", "vault_folder")
     val DIAGRAMS = listOf("diagram")

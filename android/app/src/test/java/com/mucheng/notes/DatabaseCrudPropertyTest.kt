@@ -28,7 +28,7 @@ class DatabaseCrudPropertyTest : StringSpec({
     val itemTypes = listOf(
         "note", "folder", "tag", "resource", "todo",
         "vault_entry", "vault_folder", "bookmark", "bookmark_folder",
-        "diagram", "ai_config", "ai_conversation", "ai_message"
+        "diagram", "ai_config", "ai_conversation", "ai_message", "excel_note"
     )
     
     // SyncStatus 枚举值

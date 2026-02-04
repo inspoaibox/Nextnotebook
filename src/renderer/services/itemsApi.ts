@@ -79,9 +79,55 @@ export const notesApi = {
     return api?.items?.getNotesByFolder(folderId) ?? Promise.resolve([]);
   },
 
+  // 获取所有笔记（包括普通笔记和 Excel 笔记）
+  getAllWithExcel: async (folderId: string | null): Promise<ItemBase[]> => {
+    const api = getElectronAPI();
+    if (!api?.items) return [];
+    
+    // 获取普通笔记
+    const notes = await (api.items.getNotesByFolder(folderId) ?? Promise.resolve([]));
+    
+    // 获取 Excel 笔记
+    const excelNotes = await (api.items.getByType('excel_note') ?? Promise.resolve([]));
+    
+    // 过滤 Excel 笔记（按文件夹）
+    const filteredExcelNotes = excelNotes.filter((item: ItemBase) => {
+      try {
+        const payload = JSON.parse(item.payload);
+        if (folderId === null) return true; // 所有笔记
+        if (folderId === 'uncategorized') return !payload.folder_id;
+        return payload.folder_id === folderId;
+      } catch {
+        return false;
+      }
+    });
+    
+    return [...notes, ...filteredExcelNotes];
+  },
+
   getPinned: (): Promise<ItemBase[]> => {
     const api = getElectronAPI();
     return api?.items?.getPinnedNotes() ?? Promise.resolve([]);
+  },
+
+  // 获取所有置顶笔记（包括 Excel）
+  getPinnedWithExcel: async (): Promise<ItemBase[]> => {
+    const api = getElectronAPI();
+    if (!api?.items) return [];
+    
+    const pinnedNotes = await (api.items.getPinnedNotes() ?? Promise.resolve([]));
+    const excelNotes = await (api.items.getByType('excel_note') ?? Promise.resolve([]));
+    
+    const pinnedExcelNotes = excelNotes.filter((item: ItemBase) => {
+      try {
+        const payload = JSON.parse(item.payload);
+        return payload.is_pinned === true;
+      } catch {
+        return false;
+      }
+    });
+    
+    return [...pinnedNotes, ...pinnedExcelNotes];
   },
 
   update: (id: string, payload: NotePayload): Promise<ItemBase | undefined> =>

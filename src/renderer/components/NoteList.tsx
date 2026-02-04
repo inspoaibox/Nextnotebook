@@ -14,6 +14,8 @@ import {
   PlusOutlined,
   FileAddOutlined,
   SnippetsOutlined,
+  FileExcelOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Note } from '../hooks/useNotes';
@@ -196,6 +198,7 @@ const NoteList: React.FC<NoteListProps> = ({
                     >
                       <div style={{ width: '100%' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {note.type === 'excel_note' && <FileExcelOutlined style={{ color: '#52c41a', fontSize: 12 }} />}
                           {note.isPinned && <StarFilled style={{ color: '#faad14', fontSize: 12 }} />}
                           {note.isLocked && <LockOutlined style={{ color: '#ff4d4f', fontSize: 12 }} />}
                           <Text strong ellipsis style={{ flex: 1, fontSize: 13 }}>

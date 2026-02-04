@@ -153,8 +153,16 @@ export interface CellStyle {
   background_color: string | null;
   text_align: 'left' | 'center' | 'right';
   vertical_align: 'top' | 'middle' | 'bottom';
-  number_format: string | null;
+  number_format: NumberFormat | null;
 }
+
+// 数字格式类型
+export type NumberFormat = 
+  | { type: 'general' }
+  | { type: 'number'; decimals: number }
+  | { type: 'percentage'; decimals: number }
+  | { type: 'currency'; symbol: string; decimals: number }
+  | { type: 'date'; pattern: string };
 
 // 功能开关扩展
 export interface FeatureSettings {
@@ -237,6 +245,8 @@ export interface UseExcelNotesReturn {
   currentSheet: ExcelSheet | null;
   loading: boolean;
   error: string | null;
+  canUndo: boolean;
+  canRedo: boolean;
   
   // 笔记操作
   createExcelNote: (folderId?: string) => Promise<ItemBase>;
@@ -265,6 +275,15 @@ export interface UseExcelNotesReturn {
   setRowHeight: (rowIndex: number, height: number) => void;
   setFrozenRows: (count: number) => void;
   setFrozenColumns: (count: number) => void;
+  
+  // 复制粘贴操作
+  copySelection: () => void;
+  cutSelection: () => void;
+  pasteAtSelection: () => void;
+  
+  // 撤销重做操作
+  undo: () => void;
+  redo: () => void;
 }
 ```
 
@@ -476,19 +495,19 @@ data class CellStyle(
 
 *For any* invalid formula (syntax error, circular reference, invalid reference), the system SHALL return an error indicator rather than crash or return incorrect results.
 
-**Validates: Requirements 4.9**
+**Validates: Requirements 4.11**
 
 ### Property 10: 公式依赖重算
 
 *For any* cell with a formula referencing other cells, when any referenced cell value changes, the formula SHALL be recalculated to reflect the new value.
 
-**Validates: Requirements 4.10**
+**Validates: Requirements 4.12**
 
 ### Property 11: 单元格样式持久化
 
 *For any* cell with style properties (bold, italic, colors, alignment), the style SHALL be correctly stored in the payload and retrieved unchanged.
 
-**Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5**
+**Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.6**
 
 ### Property 12: 行列操作数据完整性
 
@@ -536,7 +555,25 @@ data class CellStyle(
 
 *For any* formula, repeated evaluation without dependency changes SHALL return the same cached result.
 
-**Validates: Requirements 11.4**
+**Validates: Requirements 13.4**
+
+### Property 20: 复制粘贴数据完整性
+
+*For any* copy-paste operation, the pasted cells SHALL contain the same values, formulas (with adjusted references), and styles as the source cells.
+
+**Validates: Requirements 11.3, 11.4, 11.5**
+
+### Property 21: 撤销重做一致性
+
+*For any* sequence of edits followed by undo operations, the spreadsheet state SHALL return to the exact state before those edits.
+
+**Validates: Requirements 12.1, 12.4**
+
+### Property 22: 撤销重做对称性
+
+*For any* undo operation followed by a redo operation, the spreadsheet state SHALL return to the state before the undo.
+
+**Validates: Requirements 12.1, 12.2**
 
 ## Error Handling
 
@@ -596,6 +633,8 @@ data class CellStyle(
 3. **Property 7 测试**: 公式计算正确性
 4. **Property 8 测试**: 聚合函数正确性
 5. **Property 15 测试**: 导入导出往返
+6. **Property 20 测试**: 复制粘贴数据完整性
+7. **Property 21 测试**: 撤销重做一致性
 
 ### 集成测试
 
