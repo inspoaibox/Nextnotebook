@@ -142,15 +142,19 @@ export class SyncEngine {
     const types = new Set<ItemType>();
     const modules = this.options.syncModules;
     
+    console.log('[SyncEngine] Building allowed types, syncModules:', modules);
+    
     for (const [module, enabled] of Object.entries(modules)) {
       if (enabled) {
         const moduleTypes = SYNC_MODULE_TYPES[module as keyof SyncModules];
+        console.log(`[SyncEngine] Module ${module} enabled, types:`, moduleTypes);
         if (moduleTypes) {
           moduleTypes.forEach(t => types.add(t));
         }
       }
     }
     
+    console.log('[SyncEngine] Final allowed types:', [...types]);
     return types;
   }
 
@@ -218,8 +222,31 @@ export class SyncEngine {
     const errors: string[] = [];
     let count = 0;
 
-    const pendingItems = this.itemsManager.getPendingSync()
-      .filter(item => this.shouldSyncType(item.type));
+    // 调试：检查数据库中所有 excel_note 的状态
+    const allExcelNotes = this.itemsManager.getByType('excel_note');
+    console.log('[SyncEngine] All excel_note in database:', allExcelNotes.length);
+    allExcelNotes.forEach(note => {
+      console.log(`[SyncEngine] Excel note: id=${note.id}, sync_status=${note.sync_status}, deleted_time=${note.deleted_time}`);
+    });
+
+    const allPendingItems = this.itemsManager.getPendingSync();
+    console.log('[SyncEngine] All pending items:', allPendingItems.length);
+    console.log('[SyncEngine] All pending items by type:', allPendingItems.reduce((acc, i) => {
+      acc[i.type] = (acc[i.type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>));
+    console.log('[SyncEngine] Allowed types:', [...this.allowedTypes]);
+    
+    // 检查是否有 excel_note 类型
+    const excelNotes = allPendingItems.filter(i => i.type === 'excel_note');
+    if (excelNotes.length > 0) {
+      console.log('[SyncEngine] Found excel_note items in pending:', excelNotes.map(i => ({ id: i.id, sync_status: i.sync_status })));
+    } else {
+      console.log('[SyncEngine] No excel_note items in pending sync');
+    }
+    
+    const pendingItems = allPendingItems.filter(item => this.shouldSyncType(item.type));
+    console.log('[SyncEngine] Filtered pending items:', pendingItems.length, 'types:', [...new Set(pendingItems.map(i => i.type))]);
 
     const total = pendingItems.length;
     if (total === 0) {

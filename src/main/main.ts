@@ -347,6 +347,14 @@ function createMenu(): void {
       label: '帮助',
       submenu: [
         { label: '关于暮城笔记', click: () => sendToRenderer('menu-action', 'settings-about') },
+        { type: 'separator' },
+        { 
+          label: '开发者工具', 
+          accelerator: 'F12', 
+          click: () => {
+            mainWindow?.webContents.toggleDevTools();
+          }
+        },
       ],
     },
   ];

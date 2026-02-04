@@ -33,7 +33,7 @@ function itemToNote(item: ItemBase): Note {
       updatedAt: item.updated_time,
       type: 'excel_note',
     };
-  }
+  } 
   
   // 普通笔记
   const payload = parsePayload<NotePayload>(item);

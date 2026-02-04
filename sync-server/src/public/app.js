@@ -116,6 +116,9 @@ function renderApp() {
         <div class="nav-item ${currentPage === 'notes' ? 'active' : ''}" onclick="navigate('notes')">
           <span class="icon">📝</span> 笔记
         </div>
+        <div class="nav-item ${currentPage === 'excel_notes' ? 'active' : ''}" onclick="navigate('excel_notes')">
+          <span class="icon">📊</span> Excel笔记
+        </div>
         <div class="nav-item ${currentPage === 'folders' ? 'active' : ''}" onclick="navigate('folders')">
           <span class="icon">📁</span> 文件夹
         </div>
@@ -179,7 +182,7 @@ async function loadPage(page) {
   const content = document.getElementById('pageContent');
   const title = document.getElementById('pageTitle');
   const titles = {
-    dashboard: '仪表盘', notes: '笔记管理', folders: '文件夹', todos: '待办事项',
+    dashboard: '仪表盘', notes: '笔记管理', excel_notes: 'Excel笔记', folders: '文件夹', todos: '待办事项',
     bookmarks: '书签管理', vault: '保险库', ai: 'AI 助手', resources: '资源文件',
     users: '用户管理', settings: '系统设置', logs: '变更日志'
   };
@@ -190,6 +193,7 @@ async function loadPage(page) {
     switch (page) {
       case 'dashboard': await loadDashboard(content); break;
       case 'notes': await loadItems(content, 'note', '笔记'); break;
+      case 'excel_notes': await loadItems(content, 'excel_note', 'Excel笔记'); break;
       case 'folders': await loadItems(content, 'folder', '文件夹'); break;
       case 'todos': await loadItems(content, 'todo', '待办'); break;
       case 'bookmarks': await loadItems(content, 'bookmark', '书签'); break;
@@ -211,6 +215,7 @@ async function loadDashboard(el) {
   el.innerHTML = `
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-value">${stats.byType?.note || 0}</div><div class="stat-label">笔记</div></div>
+      <div class="stat-card"><div class="stat-value">${stats.byType?.excel_note || 0}</div><div class="stat-label">Excel笔记</div></div>
       <div class="stat-card"><div class="stat-value">${stats.byType?.folder || 0}</div><div class="stat-label">文件夹</div></div>
       <div class="stat-card"><div class="stat-value">${stats.byType?.todo || 0}</div><div class="stat-label">待办</div></div>
       <div class="stat-card"><div class="stat-value">${stats.byType?.bookmark || 0}</div><div class="stat-label">书签</div></div>

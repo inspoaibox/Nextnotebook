@@ -195,7 +195,9 @@ export function useExcelNotes(folderId?: string | null): UseExcelNotesReturn {
       const payload = createDefaultExcelNotePayload(title || '未命名表格');
       payload.folder_id = targetFolderId ?? folderId ?? null;
 
+      console.log('[useExcelNotes] Creating excel_note with payload:', payload);
       const item = await itemsApi.create('excel_note', payload);
+      console.log('[useExcelNotes] Created excel_note:', item);
       if (item) {
         await loadExcelNotes();
         return item;

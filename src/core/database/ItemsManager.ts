@@ -144,6 +144,8 @@ export class ItemsManager {
       schema_version: 1,
     };
 
+    console.log(`[ItemsManager] Creating item: type=${type}, id=${item.id}, sync_status=${item.sync_status}`);
+
     this.db.run(
       `INSERT INTO items (id, type, created_time, updated_time, deleted_time, payload, 
        content_hash, sync_status, local_rev, remote_rev, encryption_applied, schema_version)
@@ -154,6 +156,10 @@ export class ItemsManager {
         item.remote_rev, item.encryption_applied, item.schema_version,
       ]
     );
+
+    // 验证创建后的状态
+    const created = this.getById(item.id);
+    console.log(`[ItemsManager] Created item verified: id=${item.id}, sync_status=${created?.sync_status}`);
 
     return item;
   }
@@ -214,8 +220,11 @@ export class ItemsManager {
 
     // 只有内容变化时才更新
     if (newHash === existing.content_hash) {
+      console.log(`[ItemsManager] update: no content change for id=${id}, type=${existing.type}`);
       return existing;
     }
+
+    console.log(`[ItemsManager] update: updating id=${id}, type=${existing.type}, old_sync_status=${existing.sync_status}, new_sync_status=modified`);
 
     this.db.run(
       `UPDATE items SET payload = ?, content_hash = ?, updated_time = ?, 
@@ -223,7 +232,9 @@ export class ItemsManager {
       [payloadStr, newHash, now, id]
     );
 
-    return this.getById(id);
+    const updated = this.getById(id);
+    console.log(`[ItemsManager] update: verified id=${id}, sync_status=${updated?.sync_status}`);
+    return updated;
   }
 
   // 从远端同步更新 Item（不改变 sync_status 为 modified）
@@ -291,9 +302,18 @@ export class ItemsManager {
 
   // 获取需要同步的 Items
   getPendingSync(): ItemBase[] {
-    return this.db.query<ItemBase>(
+    const items = this.db.query<ItemBase>(
       "SELECT * FROM items WHERE sync_status IN ('modified', 'deleted') ORDER BY updated_time ASC"
     );
+    console.log(`[ItemsManager] getPendingSync: found ${items.length} items`);
+    if (items.length > 0) {
+      const byType = items.reduce((acc, i) => {
+        acc[i.type] = (acc[i.type] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      console.log('[ItemsManager] getPendingSync by type:', byType);
+    }
+    return items;
   }
 
   // 标记同步完成
