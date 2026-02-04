@@ -286,33 +286,43 @@ class TransferViewModel @Inject constructor(
             android.util.Log.e("TransferViewModel", "No selected session")
             return
         }
-        val session = _uiState.value.sessions.find { it.id == sessionId } ?: run {
-            android.util.Log.e("TransferViewModel", "Session not found: $sessionId")
-            return
-        }
         
-        android.util.Log.d("TransferViewModel", "Sending message to device: ${session.peerDeviceId}, session: $sessionId")
-        
-        val messageId = UUID.randomUUID().toString()
-        val message = TransferMessageEntity(
-            id = messageId,
-            sessionId = sessionId,
-            direction = MessageDirection.SENT.value,
-            type = MessageType.TEXT.value,
-            content = content,
-            fileId = null,
-            createdAt = System.currentTimeMillis(),
-            readAt = null
-        )
+        // 先从 UI state 查找会话，如果没有则从数据库查找
+        var session = _uiState.value.sessions.find { it.id == sessionId }
         
         viewModelScope.launch {
+            // 如果 UI state 中没有会话，尝试从数据库获取
+            if (session == null) {
+                session = sessionDao.getById(sessionId)
+                android.util.Log.d("TransferViewModel", "Session not in UI state, fetched from DB: ${session != null}")
+            }
+            
+            if (session == null) {
+                android.util.Log.e("TransferViewModel", "Session not found: $sessionId")
+                return@launch
+            }
+            
+            android.util.Log.d("TransferViewModel", "Sending message to device: ${session!!.peerDeviceId}, session: $sessionId")
+            
+            val messageId = UUID.randomUUID().toString()
+            val message = TransferMessageEntity(
+                id = messageId,
+                sessionId = sessionId,
+                direction = MessageDirection.SENT.value,
+                type = MessageType.TEXT.value,
+                content = content,
+                fileId = null,
+                createdAt = System.currentTimeMillis(),
+                readAt = null
+            )
+            
             // 保存到本地
             messageDao.insert(message)
             
             // 发送到对方
-            android.util.Log.d("TransferViewModel", "Calling transferClient.sendMessage with targetDeviceId=${session.peerDeviceId}")
+            android.util.Log.d("TransferViewModel", "Calling transferClient.sendMessage with targetDeviceId=${session!!.peerDeviceId}")
             transferClient.sendMessage(
-                targetDeviceId = session.peerDeviceId,
+                targetDeviceId = session!!.peerDeviceId,
                 sessionId = sessionId,
                 message = TransferMessageData(
                     id = messageId,
@@ -320,6 +330,9 @@ class TransferViewModel @Inject constructor(
                     content = content
                 )
             )
+            
+            // 手动刷新消息列表（确保 UI 更新）
+            loadSessionMessages(sessionId)
         }
     }
 
@@ -328,12 +341,24 @@ class TransferViewModel @Inject constructor(
      */
     fun sendFile(uri: android.net.Uri) {
         val sessionId = _uiState.value.selectedSessionId ?: return
-        val session = _uiState.value.sessions.find { it.id == sessionId } ?: return
         
         viewModelScope.launch {
+            // 先从 UI state 查找会话，如果没有则从数据库查找
+            var session = _uiState.value.sessions.find { it.id == sessionId }
+            
+            if (session == null) {
+                session = sessionDao.getById(sessionId)
+                android.util.Log.d("TransferViewModel", "sendFile: Session not in UI state, fetched from DB: ${session != null}")
+            }
+            
+            if (session == null) {
+                android.util.Log.e("TransferViewModel", "sendFile: Session not found: $sessionId")
+                return@launch
+            }
+            
             try {
                 val sentFileInfo = transferClient.sendFileFromUri(
-                    targetDeviceId = session.peerDeviceId,
+                    targetDeviceId = session!!.peerDeviceId,
                     sessionId = sessionId,
                     uri = uri,
                     onProgress = { progress ->
@@ -372,6 +397,10 @@ class TransferViewModel @Inject constructor(
                 )
                 messageDao.insert(message)
                 
+                // 手动刷新 UI（确保 Flow 更新）
+                loadSessionFiles(sessionId)
+                loadSessionMessages(sessionId)
+                
             } catch (e: Exception) {
                 android.util.Log.e("TransferViewModel", "Failed to send file", e)
             }
@@ -384,9 +413,13 @@ class TransferViewModel @Inject constructor(
     private fun handleMessageReceived(event: MessageReceivedEvent) {
         viewModelScope.launch {
             try {
+                android.util.Log.d("TransferViewModel", "handleMessageReceived: senderId=${event.senderId}, sessionId=${event.sessionId}")
+                android.util.Log.d("TransferViewModel", "handleMessageReceived: message=${event.message}")
+                
                 // 先通过发送者设备 ID 查找或创建本地会话
                 // 注意：不能直接使用桌面端发来的 sessionId，因为那是桌面端的会话 ID，本地可能不存在
                 val localSessionId = findOrCreateSessionForDevice(event.senderId)
+                android.util.Log.d("TransferViewModel", "handleMessageReceived: localSessionId=$localSessionId")
                 
                 val message = TransferMessageEntity(
                     id = event.message.id,
@@ -399,6 +432,11 @@ class TransferViewModel @Inject constructor(
                     readAt = if (_uiState.value.selectedSessionId == localSessionId) System.currentTimeMillis() else null
                 )
                 messageDao.insert(message)
+                
+                // 手动刷新消息列表（确保 UI 更新）
+                if (_uiState.value.selectedSessionId == localSessionId) {
+                    loadSessionMessages(localSessionId)
+                }
                 
                 // 如果当前会话是这个会话，标记为已读
                 if (_uiState.value.selectedSessionId == localSessionId) {
@@ -465,8 +503,12 @@ class TransferViewModel @Inject constructor(
     private fun handleFileIncoming(event: FileIncomingEvent) {
         viewModelScope.launch {
             try {
+                android.util.Log.d("TransferViewModel", "handleFileIncoming: senderId=${event.senderId}")
+                android.util.Log.d("TransferViewModel", "handleFileIncoming: fileInfo=${event.fileInfo}")
+                
                 // 查找或创建会话
                 val sessionId = findOrCreateSessionForDevice(event.senderId)
+                android.util.Log.d("TransferViewModel", "handleFileIncoming: sessionId=$sessionId")
                 
                 // 创建保存文件
                 val downloadsDir = getApplication<Application>().getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
@@ -496,6 +538,11 @@ class TransferViewModel @Inject constructor(
                     completedAt = null
                 )
                 fileDao.insert(fileEntity)
+                
+                // 手动刷新文件列表（确保 UI 更新）
+                if (_uiState.value.selectedSessionId == sessionId) {
+                    loadSessionFiles(sessionId)
+                }
             } catch (e: Exception) {
                 android.util.Log.e("TransferViewModel", "Failed to init incoming file", e)
             }
@@ -531,6 +578,8 @@ class TransferViewModel @Inject constructor(
     private fun handleFileComplete(event: FileCompleteEvent) {
         viewModelScope.launch {
             try {
+                android.util.Log.d("TransferViewModel", "handleFileComplete: fileId=${event.fileId}, hash=${event.fileHash}")
+                
                 // 关闭流
                 val stream = fileStreams[event.fileId]
                 stream?.close()
@@ -545,6 +594,12 @@ class TransferViewModel @Inject constructor(
                     fileHash = event.fileHash,
                     completedAt = System.currentTimeMillis()
                 )
+                
+                // 手动刷新文件列表（确保 UI 更新）
+                val sessionId = _uiState.value.selectedSessionId
+                if (sessionId != null) {
+                    loadSessionFiles(sessionId)
+                }
             } catch (e: Exception) {
                  android.util.Log.e("TransferViewModel", "Failed to complete file", e)
             }
@@ -571,6 +626,13 @@ class TransferViewModel @Inject constructor(
         
         // 创建新会话
         val device = _uiState.value.onlineDevices.find { it.id == deviceId }
+        
+        // 根据当前连接状态确定连接类型
+        val currentConnectionType = when (val state = _uiState.value.connectionState) {
+            is ConnectionState.Connected -> state.mode.value
+            else -> ConnectionMode.LAN.value
+        }
+        
         return if (device != null) {
             createSession(device)
         } else {
@@ -592,13 +654,13 @@ class TransferViewModel @Inject constructor(
                 ))
             }
             
-            // 创建会话
+            // 创建会话（使用当前连接类型）
             val sessionId = UUID.randomUUID().toString()
             val session = TransferSessionEntity(
                 id = sessionId,
                 peerDeviceId = deviceId,
                 peerDeviceName = deviceName,
-                connectionType = ConnectionMode.LAN.value,
+                connectionType = currentConnectionType,
                 startedAt = System.currentTimeMillis(),
                 endedAt = null
             )
@@ -616,6 +678,8 @@ class TransferViewModel @Inject constructor(
      */
     private fun handlePairSuccess(event: PairSuccessEvent) {
         viewModelScope.launch {
+            android.util.Log.d("TransferViewModel", "handlePairSuccess: sessionId=${event.sessionId}, peerId=${event.peerId}, peerName=${event.peerName}")
+            
             // 保存设备信息
             val existingDevice = deviceDao.getById(event.peerId)
             if (existingDevice == null) {
@@ -629,6 +693,15 @@ class TransferViewModel @Inject constructor(
                     isFavorite = false,
                     createdAt = System.currentTimeMillis()
                 ))
+                android.util.Log.d("TransferViewModel", "handlePairSuccess: Created new device record")
+            }
+            
+            // 检查是否已存在相同的会话
+            val existingSession = sessionDao.getById(event.sessionId)
+            if (existingSession != null) {
+                android.util.Log.d("TransferViewModel", "handlePairSuccess: Session already exists, selecting it")
+                selectSession(event.sessionId)
+                return@launch
             }
             
             // 创建会话
@@ -641,6 +714,10 @@ class TransferViewModel @Inject constructor(
                 endedAt = null
             )
             sessionDao.insert(session)
+            android.util.Log.d("TransferViewModel", "handlePairSuccess: Created new session")
+            
+            // 等待一小段时间让 Flow 更新
+            kotlinx.coroutines.delay(100)
             
             selectSession(event.sessionId)
         }

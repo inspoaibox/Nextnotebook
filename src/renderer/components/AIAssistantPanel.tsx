@@ -58,13 +58,18 @@ const AIAssistantPanel: React.FC = () => {
   const currentTemperature = currentConversation?.temperature ?? 0.7;
   const currentMaxTokens = currentConversation?.maxTokens ?? 4096;
   const currentSystemPrompt = currentConversation?.systemPrompt || '你是一个有帮助的AI助手。';
+  // 从对话中读取保存的渠道 ID（关键修复：避免不同渠道的同名模型混淆）
+  const savedChannelId = currentConversation?.channelId;
 
   // 当前选中的渠道（用于级联选择）
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
 
-  // 根据当前模型推断渠道
-  const currentModelInfo = allModels.find(m => m.id === currentModel);
-  const currentChannelId = currentModelInfo?.channel?.id || selectedChannelId;
+  // 根据当前模型和渠道查找模型信息
+  // 优先使用保存的渠道 ID（解决不同渠道有相同模型 ID 的问题）
+  const currentModelInfo = savedChannelId
+    ? allModels.find(m => m.id === currentModel && m.channel?.id === savedChannelId)
+    : allModels.find(m => m.id === currentModel);
+  const currentChannelId = savedChannelId || currentModelInfo?.channel?.id || selectedChannelId;
 
   // 当前渠道下的模型列表
   const currentChannelModels = currentChannelId
@@ -123,7 +128,9 @@ const AIAssistantPanel: React.FC = () => {
         values.model,
         values.systemPrompt,
         values.temperature,
-        values.maxTokens
+        values.maxTokens,
+        false,  // webSearchEnabled
+        values.channelId  // 传递渠道 ID
       );
       if (conv) {
         setCurrentConversationId(conv.id);
@@ -185,8 +192,21 @@ const AIAssistantPanel: React.FC = () => {
       return;
     }
 
-    const modelInfo = allModels.find(m => m.id === currentModel);
-    if (!modelInfo) {
+    // 调试日志：追踪模型切换问题
+    console.log('[AI Assistant] handleSend - Debug Info:', {
+      currentConversationId,
+      'currentConversation?.model': currentConversation?.model,
+      'currentConversation?.channelId': currentConversation?.channelId,
+      currentModel,
+      savedChannelId,
+      currentChannelId,
+      'currentModelInfo?.id': currentModelInfo?.id,
+      'currentModelInfo?.channel?.id': currentModelInfo?.channel?.id,
+      'currentModelInfo?.channel?.name': currentModelInfo?.channel?.name,
+    });
+
+    // 使用 currentModelInfo（已经使用 channelId 精确匹配），避免不同渠道同名模型的问题
+    if (!currentModelInfo) {
       message.error('当前对话的模型不可用，请检查AI渠道设置');
       return;
     }
@@ -209,9 +229,15 @@ const AIAssistantPanel: React.FC = () => {
     setSending(true);
 
     try {
+      console.log('[AI Assistant] Sending message with:', {
+        model: currentModel,
+        channelName: currentModelInfo.channel.name,
+        channelType: currentModelInfo.channel.type,
+        apiUrl: currentModelInfo.channel.api_url,
+      });
       await sendMessage(
         content,
-        modelInfo.channel,
+        currentModelInfo.channel,  // 使用正确匹配的渠道
         currentModel,
         currentSystemPrompt,
         currentTemperature,
@@ -243,26 +269,19 @@ const AIAssistantPanel: React.FC = () => {
     }
   };
 
-  // 更新当前对话的模型
-  const handleModelChange = (modelId: string) => {
+  // 更新当前对话的模型（同时保存渠道 ID，避免同名模型混淆）
+  const handleModelChange = (modelId: string, channelId?: string) => {
     if (currentConversationId) {
-      updateConversation(currentConversationId, { model: modelId });
+      const targetChannelId = channelId || selectedChannelId || currentChannelId || undefined;
+      console.log('[AI Assistant] Model change:', { modelId, channelId: targetChannelId });
+      updateConversation(currentConversationId, {
+        model: modelId,
+        channel_id: targetChannelId  // 同时保存渠道 ID
+      });
     }
   };
 
-  // 更新当前对话的温度
-  const handleTemperatureChange = (value: number) => {
-    if (currentConversationId) {
-      updateConversation(currentConversationId, { temperature: value });
-    }
-  };
 
-  // 更新当前对话的最大Token
-  const handleMaxTokensChange = (value: number) => {
-    if (currentConversationId) {
-      updateConversation(currentConversationId, { max_tokens: value });
-    }
-  };
 
   // 更新当前对话的系统提示词
   const handleSystemPromptChange = (prompt: string) => {
@@ -292,10 +311,10 @@ const AIAssistantPanel: React.FC = () => {
               value={currentChannelId}
               onChange={(channelId) => {
                 setSelectedChannelId(channelId);
-                // 切换渠道时，自动选择该渠道的第一个模型
+                // 切换渠道时，自动选择该渠道的第一个模型，并传递渠道 ID
                 const channel = settings.channels.find(c => c.id === channelId);
                 if (channel && channel.models.length > 0) {
-                  handleModelChange(channel.models[0].id);
+                  handleModelChange(channel.models[0].id, channelId);
                 }
               }}
               placeholder="选择渠道"
@@ -307,7 +326,7 @@ const AIAssistantPanel: React.FC = () => {
             <Select
               style={{ width: '100%' }}
               value={currentModel}
-              onChange={handleModelChange}
+              onChange={(modelId) => handleModelChange(modelId, currentChannelId || undefined)}
               placeholder="选择模型"
               disabled={!currentChannelId}
               options={currentChannelModels.map(m => ({ value: m.id, label: m.name }))}
@@ -318,32 +337,14 @@ const AIAssistantPanel: React.FC = () => {
     </div>
   );
 
-  // 参数设置弹出内容
+  // 参数设置弹出内容 (使用独立组件管理状态)
   const settingsPopoverContent = (
-    <div style={{ width: 280 }}>
-      {!currentConversationId ? (
-        <div style={{ color: '#999', fontSize: 12 }}>请先创建或选择对话</div>
-      ) : (
-        <>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ marginBottom: 4, color: '#666', fontSize: 12 }}>温度: {currentTemperature}</div>
-            <Slider
-              min={0} max={2} step={0.1}
-              value={currentTemperature}
-              onChangeComplete={handleTemperatureChange}
-            />
-          </div>
-          <div>
-            <div style={{ marginBottom: 4, color: '#666', fontSize: 12 }}>最大Token: {currentMaxTokens}</div>
-            <Slider
-              min={256} max={32768} step={256}
-              value={currentMaxTokens}
-              onChangeComplete={handleMaxTokensChange}
-            />
-          </div>
-        </>
-      )}
-    </div>
+    <ConversationSettings
+      conversationId={currentConversationId}
+      temperature={currentTemperature}
+      maxTokens={currentMaxTokens}
+      onUpdate={(updates) => currentConversationId && updateConversation(currentConversationId, updates)}
+    />
   );
 
   // 系统提示词弹出内容
@@ -763,6 +764,49 @@ const MessageBubble: React.FC<{ message: AIMessage }> = ({ message }) => {
           </div>
         )}
         {message.content}
+      </div>
+    </div>
+  );
+};
+
+// 独立的设置组件，分离状态以优化 Slider 拖拽体验
+const ConversationSettings: React.FC<{
+  conversationId: string | null;
+  temperature: number;
+  maxTokens: number;
+  onUpdate: (updates: any) => void;
+}> = ({ conversationId, temperature, maxTokens, onUpdate }) => {
+  const [localTemp, setLocalTemp] = useState(temperature);
+  const [localTokens, setLocalTokens] = useState(maxTokens);
+
+  useEffect(() => {
+    setLocalTemp(temperature);
+    setLocalTokens(maxTokens);
+  }, [temperature, maxTokens]);
+
+  if (!conversationId) {
+    return <div style={{ width: 280, color: '#999', fontSize: 12 }}>请先创建或选择对话</div>;
+  }
+
+  return (
+    <div style={{ width: 280 }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 4, color: '#666', fontSize: 12 }}>温度: {localTemp}</div>
+        <Slider
+          min={0} max={2} step={0.1}
+          value={localTemp}
+          onChange={setLocalTemp}
+          onChangeComplete={(v) => onUpdate({ temperature: v })}
+        />
+      </div>
+      <div>
+        <div style={{ marginBottom: 4, color: '#666', fontSize: 12 }}>最大Token: {localTokens}</div>
+        <Slider
+          min={256} max={32768} step={256}
+          value={localTokens}
+          onChange={setLocalTokens}
+          onChangeComplete={(v) => onUpdate({ max_tokens: v })}
+        />
       </div>
     </div>
   );

@@ -602,7 +602,41 @@ export const transferClient = {
     filePath: string
   ): Promise<{ id: string; filename: string; fileSize: number; mimeType: string }> {
     if (!transferApi) throw new Error('Transfer API not available');
-    return transferApi.sendFile(targetDeviceId, sessionId, filePath);
+    
+    const result = await transferApi.sendFile(targetDeviceId, sessionId, filePath);
+    
+    // 保存文件记录到本地数据库
+    const fileEntity: TransferFile = {
+      id: result.id,
+      session_id: sessionId,
+      filename: result.filename,
+      file_size: result.fileSize,
+      mime_type: result.mimeType,
+      local_path: filePath,
+      direction: 'sent',
+      status: 'completed',
+      progress: 100,
+      file_hash: null,
+      created_at: Date.now(),
+      completed_at: Date.now(),
+    };
+    await this.createFileTransfer(fileEntity);
+    
+    // 创建文件消息
+    const messageId = this.generateMessageId();
+    const message: TransferMessage = {
+      id: messageId,
+      session_id: sessionId,
+      direction: 'sent',
+      type: 'file',
+      content: result.filename,
+      file_id: result.id,
+      created_at: Date.now(),
+      read_at: null,
+    };
+    await this.createMessage(message);
+    
+    return result;
   },
 
   /**
@@ -671,6 +705,14 @@ export const transferClient = {
   onFileComplete(callback: (data: any) => void): () => void {
     if (!transferApi) return () => { };
     return transferApi.onFileComplete(callback);
+  },
+
+  /**
+   * 监听会话创建事件（设备连接时自动创建的会话）
+   */
+  onSessionCreated(callback: (data: { sessionId: string; peerDeviceId: string; peerDeviceName: string }) => void): () => void {
+    if (!transferApi) return () => { };
+    return transferApi.onSessionCreated(callback);
   },
 
   // ============================================

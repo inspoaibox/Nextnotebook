@@ -77,26 +77,35 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
   // 监听新消息
   useEffect(() => {
     const unsubMessage = transferClient.onMessageReceived((data) => {
-      if (data.sessionId === session.id) {
+      // 通过 senderId 匹配会话，而不是 sessionId（因为两端的 sessionId 不同）
+      console.log('[ChatView] Message received:', data);
+      console.log('[ChatView] Current session peer_device_id:', session.peer_device_id);
+      
+      if (data.senderId === session.peer_device_id) {
         const newMessage: TransferMessage = {
-          id: transferClient.generateMessageId(),
+          id: data.message?.id || transferClient.generateMessageId(),
           session_id: session.id,
           direction: 'received',
-          type: data.message.type || 'text',
-          content: data.message.content,
-          file_id: data.message.fileId || null,
+          type: data.message?.type || 'text',
+          content: data.message?.content || '',
+          file_id: data.message?.fileId || null,
           created_at: Date.now(),
           read_at: Date.now(),
         };
         setMessages(prev => [...prev, newMessage]);
 
-        // 保存到数据库
-        transferClient.createMessage(newMessage);
+        // 注意：消息已在 main.ts 中保存到数据库，这里不需要重复保存
+        
+        // 发送已读回执
+        transferClient.sendMessageReadReceipt(data.senderId, [newMessage.id]);
       }
     });
 
     const unsubFileIncoming = transferClient.onFileIncoming((data) => {
-      if (data.sessionId === session.id) {
+      // 通过 senderId 匹配会话
+      console.log('[ChatView] File incoming:', data);
+      
+      if (data.senderId === session.peer_device_id) {
         const newFile: TransferFile = {
           id: data.fileInfo.id,
           session_id: session.id,
@@ -112,11 +121,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
           completed_at: null,
         };
         setFiles(prev => [...prev, newFile]);
-        transferClient.createFileTransfer(newFile);
+        // 注意：文件记录已在 main.ts 中保存到数据库，这里不需要重复保存
       }
     });
 
     const unsubFileChunk = transferClient.onFileChunk((data) => {
+      // 文件分块不需要匹配 session，直接通过 fileId 更新
       setFiles(prev => prev.map(f =>
         f.id === data.fileId
           ? { ...f, progress: (data.chunkIndex / data.totalChunks) * 100, status: 'transferring' }
@@ -125,11 +135,21 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
     });
 
     const unsubFileComplete = transferClient.onFileComplete((data) => {
+      // 文件完成不需要匹配 session，直接通过 fileId 更新
       setFiles(prev => prev.map(f =>
         f.id === data.fileId
-          ? { ...f, progress: 100, status: 'completed', completed_at: Date.now() }
+          ? { 
+              ...f, 
+              progress: 100, 
+              status: 'completed', 
+              completed_at: Date.now(),
+              local_path: data.localPath || f.local_path 
+            }
           : f
       ));
+      
+      // 更新数据库，使用服务器返回的本地路径
+      transferClient.completeFileTransfer(data.fileId, data.localPath || '', data.fileHash);
     });
 
     // 监听来自中继模式的消息刷新事件
@@ -186,19 +206,38 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
       // 保存到数据库
       await transferClient.createMessage(newMessage);
 
-      // 通过 Socket.IO 发送到对方
-      await transferClient.sendTextMessage(
-        session.peer_device_id,
-        session.id,
-        newMessage.content
-      );
+      // 根据连接类型选择发送方式
+      if (session.connection_type === 'relay') {
+        // 中继模式：使用 relay API
+        const transferApi = (window as any).electronAPI?.transfer;
+        if (transferApi?.relay) {
+          await transferApi.relay.sendMessage(
+            session.peer_device_id,
+            session.id,
+            {
+              id: newMessage.id,
+              type: 'text',
+              content: newMessage.content,
+            }
+          );
+        } else {
+          throw new Error('中继 API 不可用');
+        }
+      } else {
+        // 局域网模式：使用原有 API
+        await transferClient.sendTextMessage(
+          session.peer_device_id,
+          session.id,
+          newMessage.content
+        );
+      }
 
     } catch (error) {
       message.error('发送失败');
     } finally {
       setSending(false);
     }
-  }, [inputValue, session.id, session.peer_device_id]);
+  }, [inputValue, session.id, session.peer_device_id, session.connection_type]);
 
   // 处理按键
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -459,16 +498,33 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
 
                 console.log('[ChatView] Sending file:', filePath);
 
-                // 发送文件
-                const result = await transferClient.sendFile(
-                  session.peer_device_id,
-                  session.id,
-                  filePath
-                );
+                let result: { id: string; filename: string; fileSize: number; mimeType: string };
+
+                // 根据连接类型选择发送方式
+                if (session.connection_type === 'relay') {
+                  // 中继模式：使用 relay API
+                  const transferApi = (window as any).electronAPI?.transfer;
+                  if (transferApi?.relay) {
+                    result = await transferApi.relay.sendFile(
+                      session.peer_device_id,
+                      session.id,
+                      filePath
+                    );
+                  } else {
+                    throw new Error('中继 API 不可用');
+                  }
+                } else {
+                  // 局域网模式：使用原有 API
+                  result = await transferClient.sendFile(
+                    session.peer_device_id,
+                    session.id,
+                    filePath
+                  );
+                }
 
                 console.log('[ChatView] File sent:', result);
 
-                // 创建文件记录并添加到列表
+                // 创建文件记录用于 UI 显示（数据库已在 sendFile 中保存）
                 const newFile: TransferFile = {
                   id: result.id,
                   session_id: session.id,
@@ -484,11 +540,26 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
                   completed_at: Date.now(),
                 };
 
-                // 保存到数据库
-                await transferClient.createFileTransfer(newFile);
-
                 // 更新 UI
                 setFiles(prev => [...prev, newFile]);
+
+                // 中继模式下需要手动保存文件记录到数据库
+                if (session.connection_type === 'relay') {
+                  await transferClient.createFileTransfer(newFile);
+                  // 创建文件消息
+                  const messageId = transferClient.generateMessageId();
+                  const fileMessage: TransferMessage = {
+                    id: messageId,
+                    session_id: session.id,
+                    direction: 'sent',
+                    type: 'file',
+                    content: result.filename,
+                    file_id: result.id,
+                    created_at: Date.now(),
+                    read_at: null,
+                  };
+                  await transferClient.createMessage(fileMessage);
+                }
 
                 message.success(`文件 ${result.filename} 已发送`);
               } catch (error: any) {

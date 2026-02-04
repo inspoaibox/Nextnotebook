@@ -44,7 +44,7 @@ export const aiMessagesApi = {
         // 回退到原始方法
       }
     }
-    
+
     // 原始方法：加载所有消息后过滤
     const allMessages = await itemsApi.getByType('ai_message');
     return allMessages.filter(item => {
@@ -98,7 +98,7 @@ export const aiSettingsApi = {
 
       // 检查是否已存在配置记录
       const existing = await api.items.getById(AI_CONFIG_ID);
-      
+
       const payload = {
         enabled: settings.enabled,
         default_channel: settings.default_channel,
@@ -144,8 +144,11 @@ export const aiSettingsApi = {
 
 // AI API 调用
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string | Array<{ type: 'text' | 'image_url'; text?: string; image_url?: { url: string } }>;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string | null | Array<{ type: 'text' | 'image_url'; text?: string; image_url?: { url: string } }>;
+  tool_calls?: any[];
+  tool_call_id?: string;
+  name?: string;
 }
 
 export interface ChatCompletionOptions {
@@ -156,28 +159,68 @@ export interface ChatCompletionOptions {
   stream?: boolean;
 }
 
+async function getMcpTools(settings: AISettings) {
+  if (!settings.mcp_servers) return { tools: [], serverMap: {} };
+  const tools = [];
+  const serverMap: Record<string, string> = {}; // toolName -> serverId
+
+  const api = (window as any).electronAPI;
+  if (!api?.mcp) return { tools: [], serverMap: {} };
+
+  for (const server of settings.mcp_servers) {
+    if (server.enabled) {
+      try {
+        const serverTools = await api.mcp.listTools(server.id);
+        for (const t of serverTools) {
+          tools.push({
+            type: 'function',
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.inputSchema
+            }
+          });
+          serverMap[t.name] = server.id;
+        }
+      } catch (e) {
+        console.error(`Failed to list tools for server ${server.name}:`, e);
+      }
+    }
+  }
+  return { tools, serverMap };
+}
+
 export async function callAIApi(
   channel: AIChannel,
   options: ChatCompletionOptions,
   onChunk?: (chunk: string) => void
 ): Promise<string> {
   let { api_url, api_key, type } = channel;
-  
+
+  // 调试日志：记录实际调用的渠道信息
+  console.log('[callAIApi] Channel info:', {
+    channelId: channel.id,
+    channelName: channel.name,
+    channelType: type,
+    apiUrl: api_url,
+    model: options.model,
+  });
+
   // Gemini API 使用不同的 URL 和格式
   if (type === 'gemini') {
+    console.log('[callAIApi] Routing to Gemini API');
     return callGeminiApi(api_url, api_key, options, onChunk);
   }
-  
-  // 自动补全 OpenAI 兼容的 API 地址（用户只需填 https://xxx/v1）
+
+  // 自动补全 OpenAI 兼容的 API 地址
   if ((type === 'openai' || type === 'custom') && !api_url.endsWith('/chat/completions')) {
     api_url = api_url.replace(/\/$/, '') + '/chat/completions';
   }
-  
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  // 根据渠道类型设置认证头
   if (type === 'openai' || type === 'custom') {
     headers['Authorization'] = `Bearer ${api_key}`;
   } else if (type === 'anthropic') {
@@ -185,13 +228,26 @@ export async function callAIApi(
     headers['anthropic-version'] = '2023-06-01';
   }
 
+  // MCP integration (Only for OpenAI/Custom for now)
+  let mcpTools: any[] = [];
+  let mcpServerMap: Record<string, string> = {};
+
+  if (type === 'openai' || type === 'custom') {
+    const settings = aiSettingsApi.get();
+    const { tools, serverMap } = await getMcpTools(settings);
+    mcpTools = tools;
+    mcpServerMap = serverMap;
+  }
+
   // 构建请求体
   let body: any;
   if (type === 'anthropic') {
-    // Anthropic API 格式
+    // Anthropic API 格式 (省略...这部分保持不变但为了简洁我在此处重写)
+    // ... Copy existing Anthropic logic or simplify if necessary.
+    // For this rewrite, I should assume I'm keeping the exact Anthropic logic as before but just updating the signature
+    // Wait, replace_file_content replaces the BLOCK. I need to include the Anthropic logic again.
     const systemMsg = options.messages.find(m => m.role === 'system');
     const otherMsgs = options.messages.filter(m => m.role !== 'system').map(msg => {
-      // Anthropic 支持多模态内容
       if (Array.isArray(msg.content)) {
         return {
           role: msg.role,
@@ -199,7 +255,6 @@ export async function callAIApi(
             if (part.type === 'text') {
               return { type: 'text', text: part.text };
             } else if (part.type === 'image_url') {
-              // Anthropic 使用 image 类型，需要提取 base64 数据
               const base64Data = part.image_url?.url.split(',')[1] || '';
               const mediaType = part.image_url?.url.match(/data:(.*?);/)?.[1] || 'image/jpeg';
               return {
@@ -225,7 +280,7 @@ export async function callAIApi(
       ...(options.temperature !== undefined && { temperature: options.temperature }),
     };
   } else {
-    // OpenAI 兼容格式（支持多模态）
+    // OpenAI 兼容格式
     body = {
       model: options.model,
       messages: options.messages,
@@ -233,6 +288,10 @@ export async function callAIApi(
       ...(options.max_tokens && { max_tokens: options.max_tokens }),
       stream: options.stream || false,
     };
+    if (mcpTools.length > 0) {
+      body.tools = mcpTools;
+      body.tool_choice = 'auto';
+    }
   }
 
   // 流式响应处理
@@ -254,6 +313,10 @@ export async function callAIApi(
     const decoder = new TextDecoder();
     let fullContent = '';
 
+    // Tools handling for stream
+    let currentToolCalls: any[] = [];
+    let currentToolCallIndex = -1;
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -268,11 +331,42 @@ export async function callAIApi(
         try {
           const json = JSON.parse(data);
           let content = '';
-          
+
           if (type === 'anthropic') {
             content = json.delta?.text || '';
           } else {
-            content = json.choices?.[0]?.delta?.content || '';
+            const choice = json.choices?.[0];
+            const delta = choice?.delta;
+
+            // Handle content
+            if (delta?.content) {
+              content = delta.content;
+            }
+
+            // Handle tool calls
+            if (delta?.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                if (tc.index !== undefined) {
+                  currentToolCallIndex = tc.index;
+                  if (!currentToolCalls[currentToolCallIndex]) {
+                    currentToolCalls[currentToolCallIndex] = { ...tc, arguments: '' };
+                  }
+                }
+                if (tc.function?.name) {
+                  currentToolCalls[currentToolCallIndex].function = currentToolCalls[currentToolCallIndex].function || {};
+                  currentToolCalls[currentToolCallIndex].function.name = tc.function.name;
+                }
+                if (tc.function?.arguments) {
+                  currentToolCalls[currentToolCallIndex].function = currentToolCalls[currentToolCallIndex].function || {};
+                  currentToolCalls[currentToolCallIndex].function.arguments = (currentToolCalls[currentToolCallIndex].function.arguments || '') + tc.function.arguments;
+                  currentToolCalls[currentToolCallIndex].arguments += tc.function.arguments; // Backup
+                }
+                if (tc.id) {
+                  currentToolCalls[currentToolCallIndex].id = tc.id;
+                  currentToolCalls[currentToolCallIndex].type = tc.type;
+                }
+              }
+            }
           }
 
           if (content) {
@@ -283,10 +377,68 @@ export async function callAIApi(
       }
     }
 
+    // Check if we have tool calls to execute
+    if (currentToolCalls.length > 0) {
+      // 1. Append assistant message with tool calls
+      const assistantMsg: ChatMessage = {
+        role: 'assistant',
+        content: fullContent || null, // Content might be null if only tool call
+        tool_calls: currentToolCalls.map(tc => ({
+          id: tc.id,
+          type: tc.type,
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments // JSON string
+          }
+        }))
+      };
+
+      const nextMessages = [...options.messages, assistantMsg];
+
+      // 2. Execute tools
+      for (const tc of currentToolCalls) {
+        const toolName = tc.function.name;
+        const argsStr = tc.function.arguments;
+        const serverId = mcpServerMap[toolName];
+
+        let result = "";
+        if (serverId) {
+          onChunk(`\n> 调用工具: ${toolName}...\n`);
+          try {
+            const args = JSON.parse(argsStr);
+            const toolResult = await (window as any).electronAPI.mcp.callTool(serverId, toolName, args);
+            result = JSON.stringify(toolResult);
+          } catch (e: any) {
+            result = `Error: ${e.message}`;
+          }
+        } else {
+          result = `Error: Tool ${toolName} not found.`;
+        }
+
+        // 3. Append tool result message
+        nextMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          name: toolName,
+          content: result
+        });
+      }
+
+      // 4. Recursively call API
+      return await callAIApi(channel, {
+        ...options,
+        messages: nextMessages
+      }, onChunk);
+    }
+
     return fullContent;
   }
 
-  // 非流式响应
+  // 非流式响应 (Simplified for non-streaming, but handles tools logic similarly if needed. 
+  // Since streaming is preferred, I will just copy the existing non-streaming logic for regular calls 
+  // but if tools are present, they are handled better in streaming or needs similar logic.
+  // For brevity, I'll assume users use streaming or apply similar logic.)
+
   const response = await fetch(api_url, {
     method: 'POST',
     headers,
@@ -299,11 +451,46 @@ export async function callAIApi(
   }
 
   const data = await response.json();
+  const choice = data.choices?.[0];
+  const msg = choice?.message;
+
+  if (type === 'openai' || type === 'custom') {
+    if (msg?.tool_calls) {
+      const assistantMsg: ChatMessage = msg;
+      const nextMessages = [...options.messages, assistantMsg];
+
+      for (const tc of msg.tool_calls) {
+        const toolName = tc.function.name;
+        const serverId = mcpServerMap[toolName];
+        let result = "";
+        try {
+          const args = JSON.parse(tc.function.arguments);
+          const toolResult = await (window as any).electronAPI.mcp.callTool(serverId, toolName, args);
+          result = JSON.stringify(toolResult);
+        } catch (e: any) {
+          result = `Error: ${e.message}`;
+        }
+
+        nextMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          name: toolName,
+          content: result
+        });
+      }
+
+      return await callAIApi(channel, {
+        ...options,
+        messages: nextMessages
+      }, onChunk);
+    }
+    return msg?.content || '';
+  }
 
   if (type === 'anthropic') {
     return data.content?.[0]?.text || '';
   }
-  return data.choices?.[0]?.message?.content || '';
+  return msg?.content || '';
 }
 
 // Gemini API 调用
@@ -314,15 +501,21 @@ async function callGeminiApi(
   onChunk?: (chunk: string) => void
 ): Promise<string> {
   // Gemini API URL 格式: {baseUrl}/models/{model}:generateContent?key={apiKey}
-  // 或流式: {baseUrl}/models/{model}:streamGenerateContent?key={apiKey}
+  // 或流式: {baseUrl}/models/{model}:streamGenerateContent?key={apiKey}&alt=sse
   const isStream = options.stream && onChunk;
   const endpoint = isStream ? 'streamGenerateContent' : 'generateContent';
-  const url = `${baseUrl}/models/${options.model}:${endpoint}?key=${apiKey}`;
-  
+  // 注意：流式响应需要 alt=sse 参数
+  const url = isStream
+    ? `${baseUrl}/models/${options.model}:${endpoint}?key=${apiKey}&alt=sse`
+    : `${baseUrl}/models/${options.model}:${endpoint}?key=${apiKey}`;
+
+  console.log('[Gemini API] Request URL:', url);
+  console.log('[Gemini API] Stream mode:', isStream);
+
   // 转换消息格式为 Gemini 格式
   const contents: any[] = [];
   let systemInstruction: string | undefined;
-  
+
   for (const msg of options.messages) {
     if (msg.role === 'system') {
       systemInstruction = typeof msg.content === 'string' ? msg.content : '';
@@ -357,7 +550,7 @@ async function callGeminiApi(
       }
     }
   }
-  
+
   const body: any = {
     contents,
     generationConfig: {
@@ -365,65 +558,99 @@ async function callGeminiApi(
       ...(options.max_tokens && { maxOutputTokens: options.max_tokens }),
     },
   };
-  
+
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
-  
+
+  console.log('[Gemini API] Request body:', JSON.stringify(body, null, 2));
+
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  
+
+  console.log('[Gemini API] Response status:', response.status);
+
   if (!response.ok) {
     const error = await response.text();
+    console.error('[Gemini API] Error response:', error);
     throw new Error(`Gemini API 请求失败: ${response.status} - ${error}`);
   }
-  
-  // 流式响应
+
+  // 流式响应 (SSE 格式)
   if (isStream && onChunk) {
     const reader = response.body?.getReader();
     if (!reader) throw new Error('无法读取响应流');
-    
+
     const decoder = new TextDecoder();
     let fullContent = '';
     let buffer = '';
-    
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      
+
       buffer += decoder.decode(value, { stream: true });
-      
-      // Gemini 流式响应是 JSON 数组格式
-      // 尝试解析完整的 JSON 对象
+
+      // SSE 格式: data: {...}\n\n
       const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      
-      for (const line of lines) {
+      buffer = '';
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // 如果是最后一行且不完整，保存到 buffer
+        if (i === lines.length - 1 && !line.endsWith('}')) {
+          buffer = line;
+          continue;
+        }
+
         const trimmed = line.trim();
-        if (!trimmed || trimmed === '[' || trimmed === ']' || trimmed === ',') continue;
-        
-        try {
-          // 移除可能的前导逗号
-          const jsonStr = trimmed.startsWith(',') ? trimmed.slice(1) : trimmed;
-          const json = JSON.parse(jsonStr);
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (text) {
-            fullContent += text;
-            onChunk(text);
+        if (!trimmed) continue;
+
+        // SSE 格式处理
+        if (trimmed.startsWith('data: ')) {
+          const jsonStr = trimmed.slice(6); // 移除 "data: " 前缀
+          try {
+            const json = JSON.parse(jsonStr);
+            const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (text) {
+              fullContent += text;
+              onChunk(text);
+            }
+          } catch (e) {
+            console.log('[Gemini API] Parse error for line:', trimmed, e);
           }
-        } catch { /* ignore parse errors */ }
+        } else if (trimmed.startsWith('{')) {
+          // 直接 JSON 格式（非 SSE）
+          try {
+            const json = JSON.parse(trimmed);
+            const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (text) {
+              fullContent += text;
+              onChunk(text);
+            }
+          } catch (e) {
+            // 可能是不完整的 JSON，跳过
+          }
+        }
       }
     }
-    
+
+    console.log('[Gemini API] Stream complete, total content length:', fullContent.length);
     return fullContent;
   }
-  
+
   // 非流式响应
   const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  console.log('[Gemini API] Non-stream response:', JSON.stringify(data, null, 2));
+  const result = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!result) {
+    console.warn('[Gemini API] Empty response, full data:', data);
+  }
+  return result;
 }
 
 // 预设渠道模板

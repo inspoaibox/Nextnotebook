@@ -290,6 +290,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('transfer:file-complete', handler);
       return () => ipcRenderer.removeListener('transfer:file-complete', handler);
     },
+    onSessionCreated: (callback: (data: object) => void) => {
+      const handler = (_event: any, data: object) => callback(data);
+      ipcRenderer.on('transfer:session-created', handler);
+      return () => ipcRenderer.removeListener('transfer:session-created', handler);
+    },
 
     // 中继服务器客户端
     relay: {
@@ -344,6 +349,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('transfer:relay:file-complete', handler);
       },
     },
+  },
+
+  // MCP API
+  mcp: {
+    startServer: (config: object) => ipcRenderer.invoke('mcp:startServer', config),
+    stopServer: (serverId: string) => ipcRenderer.invoke('mcp:stopServer', serverId),
+    listTools: (serverId: string) => ipcRenderer.invoke('mcp:listTools', serverId),
+    callTool: (serverId: string, toolName: string, args: any) => ipcRenderer.invoke('mcp:callTool', serverId, toolName, args),
   },
 
   // Notification API - 系统通知

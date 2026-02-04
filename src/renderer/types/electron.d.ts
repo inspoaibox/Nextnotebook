@@ -311,10 +311,10 @@ export interface TransferAPI {
   getConnectedDevices: () => Promise<ConnectedDevice[]>;
   generateQRData: () => Promise<PairingQRData | null>;
   getDeviceInfo: () => Promise<DeviceInfo>;
-  
+
   // 数据库操作
   db: TransferDatabaseAPI;
-  
+
   // 事件监听（返回取消订阅函数）
   onDeviceConnected: (callback: (device: ConnectedDevice) => void) => () => void;
   onDeviceDisconnected: (callback: (deviceId: string) => void) => () => void;
@@ -371,6 +371,14 @@ export interface ElectronAPI {
   clipper: ClipperAPI;
   transfer: TransferAPI;
   notification: NotificationAPI;
+  mcp: McpAPI;
+}
+
+export interface McpAPI {
+  startServer: (config: object) => Promise<{ success: boolean; error?: string }>;
+  stopServer: (serverId: string) => Promise<{ success: boolean; error?: string }>;
+  listTools: (serverId: string) => Promise<any[]>;
+  callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
 }
 
 declare global {
@@ -379,4 +387,4 @@ declare global {
   }
 }
 
-export {};
+export { };

@@ -330,9 +330,10 @@ class TransferClient(
     /**
      * 开始文件传输
      */
-    fun startFileTransfer(targetDeviceId: String, fileInfo: FileTransferInfo) {
+    fun startFileTransfer(targetDeviceId: String, sessionId: String, fileInfo: FileTransferInfo) {
         socket?.emit(SocketEvents.FILE_START, JSONObject().apply {
             put("targetDeviceId", targetDeviceId)
+            put("sessionId", sessionId)
             put("fileInfo", JSONObject().apply {
                 put("id", fileInfo.id)
                 put("filename", fileInfo.filename)
@@ -417,7 +418,7 @@ class TransferClient(
         )
         
         // 发送文件开始事件
-        startFileTransfer(targetDeviceId, fileInfo)
+        startFileTransfer(targetDeviceId, sessionId, fileInfo)
         
         // 读取并发送文件分块
         contentResolver.openInputStream(uri)?.use { inputStream ->

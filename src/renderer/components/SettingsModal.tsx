@@ -124,6 +124,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
     deleteChannel,
     addModelToChannel,
     deleteModelFromChannel,
+    addMcpServer,
+    updateMcpServer,
+    deleteMcpServer,
   } = useAISettings();
   const { settings: featureSettings, updateSettings: updateFeatureSettings } = useFeatureSettings();
   const [form] = Form.useForm();
@@ -152,6 +155,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   const [showAddModel, setShowAddModel] = useState<string | null>(null);
   const [newModelName, setNewModelName] = useState('');
   const [newModelId, setNewModelId] = useState('');
+
+  // MCP 设置状态
+  const [showMcpModal, setShowMcpModal] = useState(false);
+  const [editingMcpServer, setEditingMcpServer] = useState<any | null>(null);
+  const [mcpServerForm, setMcpServerForm] = useState({
+    name: '',
+    command: '',
+    args: '',
+    env: '{}',
+  });
 
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings>(() => {
     const saved = localStorage.getItem('mucheng-security');
@@ -860,35 +873,66 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   const handleRefreshModels = async (channel: AIChannel) => {
     message.loading({ content: '获取模型列表...', key: 'refresh-models' });
     try {
-      // 从 api_url 提取基础 URL（移除 /chat/completions 或 /messages 等路径）
-      let baseUrl = channel.api_url;
-      if (baseUrl.endsWith('/chat/completions')) {
-        baseUrl = baseUrl.replace('/chat/completions', '');
-      } else if (baseUrl.endsWith('/messages')) {
-        baseUrl = baseUrl.replace('/messages', '');
-      } else if (baseUrl.endsWith('/')) {
-        baseUrl = baseUrl.slice(0, -1);
+      let models: AIModel[] = [];
+
+      // Gemini API 使用不同的格式
+      if (channel.type === 'gemini') {
+        // Gemini API: {baseUrl}/models?key={apiKey}
+        let baseUrl = channel.api_url;
+        if (baseUrl.endsWith('/')) {
+          baseUrl = baseUrl.slice(0, -1);
+        }
+
+        const response = await fetch(`${baseUrl}/models?key=${channel.api_key}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`获取失败: ${response.status} - ${errorText}`);
+        }
+        const data = await response.json();
+
+        // Gemini 返回格式: { models: [{ name: "models/gemini-1.5-flash", ... }] }
+        models = (data.models || [])
+          .filter((m: any) => m.name && m.supportedGenerationMethods?.includes('generateContent'))
+          .map((m: any) => ({
+            id: m.name.replace('models/', ''), // "models/gemini-1.5-flash" -> "gemini-1.5-flash"
+            name: m.displayName || m.name.replace('models/', ''),
+            channel_id: channel.id,
+            max_tokens: m.inputTokenLimit || 1048576,
+            is_custom: false,
+          }));
+      } else {
+        // OpenAI 兼容 API
+        let baseUrl = channel.api_url;
+        if (baseUrl.endsWith('/chat/completions')) {
+          baseUrl = baseUrl.replace('/chat/completions', '');
+        } else if (baseUrl.endsWith('/messages')) {
+          baseUrl = baseUrl.replace('/messages', '');
+        } else if (baseUrl.endsWith('/')) {
+          baseUrl = baseUrl.slice(0, -1);
+        }
+
+        const response = await fetch(`${baseUrl}/models`, {
+          headers: {
+            Authorization: `Bearer ${channel.api_key}`,
+          },
+        });
+        if (!response.ok) throw new Error('获取失败');
+        const data = await response.json();
+        models = (data.data || []).map((m: any) => ({
+          id: m.id,
+          name: m.id,
+          channel_id: channel.id,
+          max_tokens: 4096,
+          is_custom: false,
+        }));
       }
 
-      const response = await fetch(`${baseUrl}/models`, {
-        headers: {
-          Authorization: `Bearer ${channel.api_key}`,
-        },
-      });
-      if (!response.ok) throw new Error('获取失败');
-      const data = await response.json();
-      const models: AIModel[] = (data.data || []).map((m: any) => ({
-        id: m.id,
-        name: m.id,
-        channel_id: channel.id,
-        max_tokens: 4096,
-        is_custom: false,
-      }));
       // 更新渠道的模型列表
       updateChannel(channel.id, { models });
       message.success({ content: `已获取 ${models.length} 个模型`, key: 'refresh-models' });
-    } catch (err) {
-      message.error({ content: '获取模型列表失败', key: 'refresh-models' });
+    } catch (err: any) {
+      console.error('获取模型列表失败:', err);
+      message.error({ content: `获取模型列表失败: ${err.message || '未知错误'}`, key: 'refresh-models' });
     }
   };
 
@@ -1654,6 +1698,116 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
           <div>
             <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 500 }}>AI 设置</h3>
 
+            {/* MCP 工具服务 */}
+            <div style={{ marginBottom: 24, border: '1px solid #d9d9d9', borderRadius: 8, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: 14 }}>MCP 工具服务</div>
+                  <div style={{ fontSize: 12, color: '#888' }}>
+                    Model Context Protocol (MCP) 允许 AI 连接外部工具和数据
+                  </div>
+                </div>
+                <Button
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    setEditingMcpServer(null);
+                    setMcpServerForm({
+                      name: '',
+                      command: '',
+                      args: '',
+                      env: '{}',
+                    });
+                    setShowMcpModal(true);
+                  }}
+                >
+                  添加服务
+                </Button>
+              </div>
+
+              {(!aiSettings.mcp_servers || aiSettings.mcp_servers.length === 0) ? (
+                <div style={{ textAlign: 'center', color: '#999', padding: '12px 0', fontSize: 13, background: '#fafafa', borderRadius: 6 }}>
+                  暂无 MCP 服务，添加后 AI 可调用本地工具
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {aiSettings.mcp_servers.map(server => (
+                    <div
+                      key={server.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 12px',
+                        background: '#fafafa',
+                        borderRadius: 6,
+                        border: '1px solid #f0f0f0'
+                      }}
+                    >
+                      <div style={{ flex: 1, overflow: 'hidden' }}>
+                        <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {server.name}
+                          <Tag color={server.enabled ? 'green' : 'default'} style={{ margin: 0, fontSize: 10, lineHeight: '18px' }}>
+                            {server.enabled ? '已启用' : '已禁用'}
+                          </Tag>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#666', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 4 }}>
+                          <span style={{ fontFamily: 'monospace', background: '#eee', padding: '0 4px', borderRadius: 2 }}>{server.command}</span>
+                          <span style={{ marginLeft: 4 }}>{server.args.join(' ')}</span>
+                        </div>
+                      </div>
+                      <Space>
+                        <Switch
+                          size="small"
+                          checked={server.enabled}
+                          onChange={async (checked) => {
+                            updateMcpServer(server.id, { enabled: checked });
+                            try {
+                              if (checked) {
+                                await window.electronAPI.mcp.startServer({ ...server, enabled: true });
+                                message.success('MCP 服务已启动');
+                              } else {
+                                await window.electronAPI.mcp.stopServer(server.id);
+                                message.success('MCP 服务已停止');
+                              }
+                            } catch (e) {
+                              message.error('操作失败: ' + e);
+                            }
+                          }}
+                        />
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={() => {
+                            setEditingMcpServer(server);
+                            setMcpServerForm({
+                              name: server.name,
+                              command: server.command,
+                              args: server.args.join(' '),
+                              env: JSON.stringify(server.env || {}, null, 2),
+                            });
+                            setShowMcpModal(true);
+                          }}
+                        />
+                        <Popconfirm
+                          title="删除此 MCP 服务？"
+                          onConfirm={async () => {
+                            deleteMcpServer(server.id);
+                            await window.electronAPI.mcp.stopServer(server.id);
+                          }}
+                        >
+                          <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                        </Popconfirm>
+                      </Space>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <Divider style={{ margin: '16px 0' }} />
+
             {/* 渠道列表 */}
             <div style={{ marginBottom: 16 }}>
               <div
@@ -2006,7 +2160,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                           key: `${c.id}-${m.id}`, // 添加唯一 key 避免重复
                         }))
                       )
-                      .filter((option, index, self) => 
+                      .filter((option, index, self) =>
                         // 去重：保留第一个出现的模型 ID
                         index === self.findIndex(o => o.value === option.value)
                       )}
@@ -2014,6 +2168,108 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                 </div>
               </>
             )}
+
+            {/* MCP 添加/编辑弹窗 */}
+            <Modal
+              title={editingMcpServer ? '编辑 MCP 服务' : '添加 MCP 服务'}
+              open={showMcpModal}
+              onCancel={() => setShowMcpModal(false)}
+              onOk={async () => {
+                if (!mcpServerForm.name || !mcpServerForm.command) {
+                  message.error('请填写名称和命令');
+                  return;
+                }
+
+                let env = {};
+                try {
+                  env = JSON.parse(mcpServerForm.env || '{}');
+                } catch (e) {
+                  message.error('环境变量必须是有效的 JSON 格式');
+                  return;
+                }
+
+                const args = mcpServerForm.args ? mcpServerForm.args.split(' ').filter(a => a.trim()) : [];
+
+                if (editingMcpServer) {
+                  const updatedConfig = {
+                    ...editingMcpServer,
+                    name: mcpServerForm.name,
+                    command: mcpServerForm.command,
+                    args,
+                    env,
+                  };
+
+                  updateMcpServer(editingMcpServer.id, {
+                    name: mcpServerForm.name,
+                    command: mcpServerForm.command,
+                    args,
+                    env,
+                  });
+
+                  // If enabled, restart it
+                  if (editingMcpServer.enabled) {
+                    try {
+                      await window.electronAPI.mcp.stopServer(editingMcpServer.id);
+                      await window.electronAPI.mcp.startServer(updatedConfig);
+                      message.success('MCP 服务已更新并重启');
+                    } catch (e) {
+                      message.error('服务重启失败');
+                    }
+                  } else {
+                    message.success('MCP 服务已更新');
+                  }
+                } else {
+                  const newConfig = {
+                    id: `mcp_${Date.now()}`,
+                    name: mcpServerForm.name,
+                    command: mcpServerForm.command,
+                    args,
+                    env,
+                    enabled: true,
+                  };
+                  addMcpServer(newConfig);
+                  try {
+                    await window.electronAPI.mcp.startServer(newConfig);
+                    message.success('MCP 服务已添加并启动');
+                  } catch (e) {
+                    message.error('服务启动失败');
+                  }
+                }
+                setShowMcpModal(false);
+              }}
+            >
+              <Form layout="vertical">
+                <Form.Item label="名称" required tooltip="给这个工具服务起个名字，例如 '本地文件助手'">
+                  <Input
+                    placeholder="E.g. Filesystem"
+                    value={mcpServerForm.name}
+                    onChange={e => setMcpServerForm(prev => ({ ...prev, name: e.target.value }))}
+                  />
+                </Form.Item>
+                <Form.Item label="命令" required tooltip="可执行文件的名称或路径，例如 'npx', 'python', 'docker'">
+                  <Input
+                    placeholder="E.g. npx"
+                    value={mcpServerForm.command}
+                    onChange={e => setMcpServerForm(prev => ({ ...prev, command: e.target.value }))}
+                  />
+                </Form.Item>
+                <Form.Item label="参数" tooltip="命令行参数，用空格分隔。例如 '-y @modelcontextprotocol/server-filesystem ./src'">
+                  <Input
+                    placeholder="E.g. -y @modelcontextprotocol/server-filesystem /path/to/allow"
+                    value={mcpServerForm.args}
+                    onChange={e => setMcpServerForm(prev => ({ ...prev, args: e.target.value }))}
+                  />
+                </Form.Item>
+                <Form.Item label="环境变量 (JSON)" tooltip='可选。JSON 对象格式，例如 {"Node_ENV": "development"}'>
+                  <Input.TextArea
+                    placeholder="{}"
+                    rows={4}
+                    value={mcpServerForm.env}
+                    onChange={e => setMcpServerForm(prev => ({ ...prev, env: e.target.value }))}
+                  />
+                </Form.Item>
+              </Form>
+            </Modal>
           </div>
         );
 

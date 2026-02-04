@@ -24,6 +24,7 @@ import { useSettings } from './contexts/SettingsContext';
 import { useFeatureSettings } from './hooks/useFeatureSettings';
 import { itemsApi, notesApi, parsePayload } from './services/itemsApi';
 import { syncApi } from './services/syncApi';
+import { aiSettingsApi } from './services/aiApi';
 import { ItemBase, NotePayload } from '@shared/types';
 
 const { Sider, Content, Footer } = Layout;
@@ -80,7 +81,7 @@ const App: React.FC = () => {
     handleTogglePin: (id: string, isPinned: boolean) => void;
     updateSettings: (updates: any) => void;
   }>();
-  
+
   const stateRef = React.useRef<{
     currentTool: string | null;
     selectedNoteId: string | null;
@@ -98,6 +99,23 @@ const App: React.FC = () => {
 
   // 监听窗口关闭请求
   useEffect(() => {
+    // Start MCP servers
+    const startMcpServers = async () => {
+      try {
+        const aiSettings = await aiSettingsApi.loadFromDb();
+        if (aiSettings && aiSettings.mcp_servers) {
+          for (const server of aiSettings.mcp_servers) {
+            if (server.enabled) {
+              await window.electronAPI.mcp.startServer(server);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to start MCP servers:', err);
+      }
+    };
+    startMcpServers();
+
     const api = (window as any).electronAPI;
     if (api?.onWindowCloseRequest) {
       api.onWindowCloseRequest(() => {
@@ -110,7 +128,7 @@ const App: React.FC = () => {
             closeToTray = parsed.close_to_tray || false;
           } catch { /* ignore */ }
         }
-        
+
         if (closeToTray) {
           // 最小化到托盘
           api.minimizeToTray?.();
@@ -129,7 +147,7 @@ const App: React.FC = () => {
       api.onMenuAction((action: string) => {
         const state = stateRef.current;
         const callbacks = callbacksRef.current;
-        
+
         switch (action) {
           case 'new-note':
             if (!state?.currentTool) {
@@ -282,7 +300,7 @@ const App: React.FC = () => {
         setSyncInitialized(false);
         return;
       }
-      
+
       try {
         const success = await syncApi.initialize({
           enabled: syncConfig.enabled,
@@ -300,7 +318,7 @@ const App: React.FC = () => {
           syncModules: syncConfig.sync_modules,
           lastSyncTime: syncConfig.last_sync_time,  // 传递上次同步时间
         });
-        
+
         if (success) {
           await syncApi.start();
           setSyncInitialized(true);
@@ -479,7 +497,7 @@ const App: React.FC = () => {
   // 处理图片上传
   const handleUploadImage = useCallback(async (file: File): Promise<string | null> => {
     if (!selectedNoteId) return null;
-    
+
     try {
       // 读取文件为 base64
       const reader = new FileReader();
@@ -488,7 +506,7 @@ const App: React.FC = () => {
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      
+
       // 上传到资源管理器
       const url = await window.electronAPI.resource.uploadImage(
         selectedNoteId,
@@ -496,12 +514,12 @@ const App: React.FC = () => {
         file.name,
         file.type
       );
-      
+
       // 通知同步服务有内容变更
       if (syncInitialized) {
         await syncApi.notifyChange();
       }
-      
+
       return url;
     } catch (error) {
       console.error('Upload image failed:', error);
@@ -512,7 +530,7 @@ const App: React.FC = () => {
   // 处理附件上传
   const handleUploadAttachment = useCallback(async (file: File): Promise<{ url: string; name: string } | null> => {
     if (!selectedNoteId) return null;
-    
+
     try {
       // 读取文件为 base64
       const reader = new FileReader();
@@ -521,7 +539,7 @@ const App: React.FC = () => {
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      
+
       // 上传到资源管理器
       const result = await window.electronAPI.resource.uploadAttachment(
         selectedNoteId,
@@ -529,12 +547,12 @@ const App: React.FC = () => {
         file.name,
         file.type || 'application/octet-stream'
       );
-      
+
       // 通知同步服务有内容变更
       if (syncInitialized) {
         await syncApi.notifyChange();
       }
-      
+
       return result;
     } catch (error) {
       console.error('Upload attachment failed:', error);
@@ -555,19 +573,19 @@ const App: React.FC = () => {
       // 获取完整笔记信息
       const noteItem = await itemsApi.getById(id);
       if (!noteItem) return;
-      
+
       const payload = parsePayload<NotePayload>(noteItem);
       const storedHash = payload.lock_password_hash;
-      
+
       let password = '';
       Modal.confirm({
         title: '删除加密笔记',
         content: (
           <div>
             <p style={{ marginBottom: 8, color: '#666' }}>此笔记已加密，删除前需要验证密码：</p>
-            <input 
-              type="password" 
-              placeholder="输入笔记密码" 
+            <input
+              type="password"
+              placeholder="输入笔记密码"
               style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
               onChange={(e) => { password = e.target.value; }}
             />
@@ -582,12 +600,12 @@ const App: React.FC = () => {
             return Promise.reject();
           }
           const inputHash = await computePasswordHash(password);
-          
+
           if (inputHash !== storedHash) {
             message.error('密码错误');
             return Promise.reject();
           }
-          
+
           await deleteNote(id);
           if (selectedNoteId === id) {
             setSelectedNoteId(null);
@@ -597,7 +615,7 @@ const App: React.FC = () => {
       });
       return;
     }
-    
+
     // 非加密笔记直接删除
     await deleteNote(id);
     if (selectedNoteId === id) {
@@ -667,7 +685,7 @@ const App: React.FC = () => {
   // 执行移动/复制操作
   const handleConfirmMoveNote = useCallback(async () => {
     if (!moveNoteId) return;
-    
+
     try {
       if (moveMode === 'move') {
         // 移动：更新笔记的 folder_id
@@ -694,7 +712,7 @@ const App: React.FC = () => {
     } catch (err) {
       message.error('操作失败');
     }
-    
+
     setMoveNoteModalOpen(false);
     setMoveNoteId(null);
   }, [moveNoteId, moveTargetFolderId, moveMode, updateNote, notes, currentNote, refresh]);
@@ -729,9 +747,9 @@ const App: React.FC = () => {
       content: (
         <div>
           <p style={{ marginBottom: 8 }}>请设置笔记密码：</p>
-          <input 
-            type="password" 
-            placeholder="输入密码" 
+          <input
+            type="password"
+            placeholder="输入密码"
             style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
             onChange={(e) => { password = e.target.value; }}
           />
@@ -746,7 +764,7 @@ const App: React.FC = () => {
         }
         // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
         const passwordHash = await computePasswordHash(password);
-        
+
         await updateNote(noteId, { is_locked: true, lock_password_hash: passwordHash });
         await refresh();
         message.success('笔记已锁定');
@@ -759,23 +777,23 @@ const App: React.FC = () => {
     // 获取笔记的密码哈希
     const note = filteredNotes.find(n => n.id === noteId);
     if (!note) return;
-    
+
     // 从数据库获取完整笔记信息
     const noteItem = await itemsApi.getById(noteId);
     if (!noteItem) return;
-    
+
     const payload = parsePayload<NotePayload>(noteItem);
     const storedHash = payload.lock_password_hash;
-    
+
     let password = '';
     Modal.confirm({
       title: '解锁笔记',
       content: (
         <div>
           <p style={{ marginBottom: 8 }}>请输入笔记密码：</p>
-          <input 
-            type="password" 
-            placeholder="输入密码" 
+          <input
+            type="password"
+            placeholder="输入密码"
             style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
             onChange={(e) => { password = e.target.value; }}
           />
@@ -790,12 +808,12 @@ const App: React.FC = () => {
         }
         // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
         const inputHash = await computePasswordHash(password);
-        
+
         if (inputHash !== storedHash) {
           message.error('密码错误');
           return Promise.reject();
         }
-        
+
         await updateNote(noteId, { is_locked: false, lock_password_hash: null });
         await refresh();
         message.success('笔记已解锁');
@@ -856,7 +874,7 @@ const App: React.FC = () => {
           syncInterval: syncConfig.sync_interval,
           syncModules: syncConfig.sync_modules,
         });
-        
+
         if (success) {
           await syncApi.start();
           setSyncInitialized(true);
@@ -870,13 +888,13 @@ const App: React.FC = () => {
         return;
       }
     }
-    
+
     setSyncStatus('syncing');
     setSyncProgress({ phase: 'connecting', message: '正在连接服务器...' });
-    
+
     try {
       const result = await syncApi.trigger();
-      
+
       if (result) {
         setLastSyncResult(result);  // 立即更新结果
         if (result.success) {
@@ -895,9 +913,9 @@ const App: React.FC = () => {
           // 检查是否是密钥不匹配错误
           const keyMismatchError = result.errors.find(e => e.includes('key mismatch'));
           // 检查是否是 token 过期错误
-          const tokenExpiredError = result.errors.find(e => 
-            e.includes('登录已过期') || 
-            e.includes('访问令牌无效') || 
+          const tokenExpiredError = result.errors.find(e =>
+            e.includes('登录已过期') ||
+            e.includes('访问令牌无效') ||
             e.includes('Token refresh failed')
           );
           if (keyMismatchError) {
@@ -942,7 +960,7 @@ const App: React.FC = () => {
         try {
           message.loading({ content: '正在标记数据...', key: 'force-resync' });
           const result = await syncApi.forceResync();
-          
+
           if (result.success) {
             message.success({ content: `已标记 ${result.count} 项数据，开始同步...`, key: 'force-resync' });
             // 更新待同步数量
@@ -1015,10 +1033,10 @@ const App: React.FC = () => {
         }
       } catch { /* ignore */ }
     }
-    
+
     const newAttempts = failedAttempts + 1;
     setFailedAttempts(newAttempts);
-    
+
     // 5次失败后锁定30秒
     if (newAttempts >= 5) {
       setLockedUntil(Date.now() + 30000);
@@ -1027,7 +1045,7 @@ const App: React.FC = () => {
         setFailedAttempts(0);
       }, 30000);
     }
-    
+
     return false;
   }, [failedAttempts]);
 
@@ -1087,7 +1105,7 @@ const App: React.FC = () => {
   // 如果应用被锁定，显示锁定界面
   if (isAppLocked) {
     return (
-      <LockScreen 
+      <LockScreen
         onUnlock={handleUnlockApp}
         failedAttempts={failedAttempts}
         lockedUntil={lockedUntil}
@@ -1143,7 +1161,7 @@ const App: React.FC = () => {
             const hasVaultPassword = !!localStorage.getItem('mucheng-vault-password');
             if (hasVaultPassword && !vaultUnlocked) {
               return (
-                <VaultLockScreen 
+                <VaultLockScreen
                   hasPassword={true}
                   onUnlock={() => setVaultUnlocked(true)}
                   onSetPassword={() => setSettingsOpen(true)}
@@ -1206,9 +1224,9 @@ const App: React.FC = () => {
                   defaultMode={isNewNote ? 'edit' : 'preview'}
                 />
               </Content>
-              <Footer style={{ 
-                padding: '4px 16px', 
-                background: isDarkMode ? '#1f1f1f' : '#fafafa', 
+              <Footer style={{
+                padding: '4px 16px',
+                background: isDarkMode ? '#1f1f1f' : '#fafafa',
                 borderTop: `1px solid ${isDarkMode ? '#303030' : '#f0f0f0'}`,
                 display: 'flex',
                 justifyContent: 'flex-end',
@@ -1237,7 +1255,7 @@ const App: React.FC = () => {
         onSelect={handleTemplateSelect}
       />
       <WelcomeGuide open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
-      
+
       {/* 移动/复制笔记到文件夹 Modal */}
       <Modal
         title="移动/复制笔记"

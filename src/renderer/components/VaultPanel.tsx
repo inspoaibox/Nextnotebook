@@ -607,7 +607,7 @@ const CustomFieldEditor: React.FC<{
 };
 
 const VaultPanel: React.FC = () => {
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>('all');
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -623,7 +623,7 @@ const VaultPanel: React.FC = () => {
     y: number;
     folderId: string | null;
   }>({ visible: false, x: 0, y: 0, folderId: null });
-  
+
   // 文件夹重命名状态
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renamingFolderName, setRenamingFolderName] = useState('');
@@ -1059,7 +1059,7 @@ const VaultPanel: React.FC = () => {
                                 window.electronAPI?.openExternal(url);
                               };
                               let hostname = url;
-                              try { hostname = new URL(url).hostname; } catch {}
+                              try { hostname = new URL(url).hostname; } catch { }
                               return (
                                 <div key={uri.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#f9fafb', borderRadius: 4, border: '1px solid #f3f4f6' }}>
                                   <GlobalOutlined style={{ color: '#096dd9', fontSize: 14 }} />

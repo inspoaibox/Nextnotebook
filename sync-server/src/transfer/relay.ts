@@ -514,11 +514,13 @@ export class TransferRelayServer {
     }
   }
 
-  private handleFileCancel(socket: Socket, data: any): void {
-    const senderId = this.socketToDevice.get(socket.id);
+  private handleFileCancel(_socket: Socket, data: any): void {
+    const { targetDeviceId, fileId, senderId: dataSenderId } = data;
+    
+    // 如果 data 中没有 senderId，从 socket 获取
+    const senderId = dataSenderId || this.socketToDevice.get(_socket.id);
     if (!senderId) return;
 
-    const { targetDeviceId, fileId } = data;
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (target) {

@@ -7,6 +7,9 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { createServer, Server as HttpServer } from 'http';
 import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
+import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import {
   TRANSFER_CONSTANTS,
@@ -56,6 +59,7 @@ export interface TransferServerEvents {
   'device:disconnected': (deviceId: string) => void;
   'device:list-updated': (devices: ConnectedDevice[]) => void;
   'pair:request': (data: { requesterId: string; requesterName: string }) => void;
+  'session:created': (data: { sessionId: string; peerDeviceId: string; peerDeviceName: string }) => void;
   'message:received': (data: any) => void;
   'file:incoming': (data: any) => void;
   'file:chunk': (data: any) => void;
@@ -86,6 +90,10 @@ export class TransferServer {
 
   private deviceId: string;
   private deviceName: string;
+
+  // 文件接收相关
+  private fileStreams: Map<string, fs.WriteStream> = new Map();
+  private fileInfoCache: Map<string, { filename: string; localPath: string; sessionId?: string }> = new Map();
 
   constructor(deviceId: string, deviceName: string) {
     this.deviceId = deviceId;
@@ -195,6 +203,21 @@ export class TransferServer {
       clearInterval(this.sessionTimeoutInterval);
       this.sessionTimeoutInterval = null;
     }
+
+    // 清理所有未完成的文件流
+    for (const [fileId, stream] of this.fileStreams) {
+      try {
+        stream.end();
+        const fileInfo = this.fileInfoCache.get(fileId);
+        if (fileInfo?.localPath && fs.existsSync(fileInfo.localPath)) {
+          fs.unlinkSync(fileInfo.localPath);
+        }
+      } catch (error) {
+        console.error('[TransferServer] Failed to cleanup file stream:', error);
+      }
+    }
+    this.fileStreams.clear();
+    this.fileInfoCache.clear();
 
     if (this.io) {
       // 通知所有连接的设备
@@ -546,6 +569,13 @@ export class TransferServer {
     });
     console.log(`[TransferServer] Auto-paired with device: ${deviceName}, sessionId: ${sessionId}`);
 
+    // 发出事件通知 main.ts 创建会话记录
+    this.emit('session:created', {
+      sessionId,
+      peerDeviceId: deviceId,
+      peerDeviceName: deviceName,
+    });
+
     this.emit('device:connected', device);
     this.emit('device:list-updated', this.getConnectedDevices());
   }
@@ -637,9 +667,16 @@ export class TransferServer {
 
   private handleMessageSend(socket: Socket, data: any): void {
     const senderId = this.socketToDevice.get(socket.id);
-    if (!senderId) return;
+    if (!senderId) {
+      console.warn('[TransferServer] handleMessageSend: senderId not found for socket', socket.id);
+      return;
+    }
 
     const { targetDeviceId, sessionId, message } = data;
+    console.log(`[TransferServer] handleMessageSend: from=${senderId}, to=${targetDeviceId}, sessionId=${sessionId}`);
+    console.log(`[TransferServer] handleMessageSend: this.deviceId=${this.deviceId}`);
+    console.log(`[TransferServer] handleMessageSend: targetDeviceId === this.deviceId: ${targetDeviceId === this.deviceId}`);
+    console.log(`[TransferServer] handleMessageSend: message=`, message);
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
@@ -655,6 +692,7 @@ export class TransferServer {
 
     if (!target) {
       console.log(`[TransferServer] Target device ${targetDeviceId} not found in connected devices`);
+      console.log(`[TransferServer] Connected devices:`, Array.from(this.connectedDevices.keys()));
       socket.emit(SOCKET_EVENTS.ERROR, createTransferError(TransferErrorCode.SESSION_NOT_FOUND));
       return;
     }
@@ -664,11 +702,14 @@ export class TransferServer {
 
     const targetSocket = this.io?.sockets.sockets.get(target.socketId);
     if (targetSocket) {
+      console.log(`[TransferServer] Forwarding message to device ${targetDeviceId}`);
       targetSocket.emit(SOCKET_EVENTS.MESSAGE_RECEIVE, {
         senderId,
         sessionId,
         message,
       });
+    } else {
+      console.warn(`[TransferServer] Target socket not found for device ${targetDeviceId}`);
     }
 
     this.emit('message:received', { senderId, sessionId, message });
@@ -694,27 +735,70 @@ export class TransferServer {
 
   private handleFileStart(socket: Socket, data: any): void {
     const senderId = this.socketToDevice.get(socket.id);
-    if (!senderId) return;
+    if (!senderId) {
+      console.warn('[TransferServer] handleFileStart: senderId not found');
+      return;
+    }
 
-    const { targetDeviceId, fileInfo } = data;
+    const { targetDeviceId, fileInfo, sessionId } = data;
+    console.log(`[TransferServer] handleFileStart: from=${senderId}, to=${targetDeviceId}`);
+    console.log(`[TransferServer] handleFileStart: this.deviceId=${this.deviceId}`);
+    console.log(`[TransferServer] handleFileStart: targetDeviceId === this.deviceId: ${targetDeviceId === this.deviceId}`);
+    console.log(`[TransferServer] handleFileStart: fileInfo=`, fileInfo);
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
-      // 文件发给桌面端自己，直接发出事件
+      // 文件发给桌面端自己，创建写入流并保存文件
       console.log(`[TransferServer] File incoming for desktop from ${senderId}: ${fileInfo?.filename}`);
-      this.emit('file:incoming', { senderId, fileInfo });
+      
+      try {
+        // 创建下载目录
+        const downloadPath = app.getPath('downloads');
+        const targetDir = path.join(downloadPath, 'NextNotebook');
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
+        
+        // 创建目标文件路径（处理文件名冲突）
+        let targetPath = path.join(targetDir, path.basename(fileInfo.filename));
+        let counter = 1;
+        const ext = path.extname(fileInfo.filename);
+        const baseName = path.basename(fileInfo.filename, ext);
+        while (fs.existsSync(targetPath)) {
+          targetPath = path.join(targetDir, `${baseName}_${counter}${ext}`);
+          counter++;
+        }
+        
+        // 创建写入流
+        const stream = fs.createWriteStream(targetPath);
+        this.fileStreams.set(fileInfo.id, stream);
+        this.fileInfoCache.set(fileInfo.id, { 
+          filename: fileInfo.filename, 
+          localPath: targetPath,
+          sessionId: sessionId 
+        });
+        
+        console.log(`[TransferServer] Created write stream for file: ${targetPath}`);
+      } catch (error) {
+        console.error('[TransferServer] Failed to create write stream:', error);
+      }
+      
+      this.emit('file:incoming', { senderId, fileInfo, sessionId });
       return;
     }
 
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (!target) {
+      console.warn(`[TransferServer] handleFileStart: target device ${targetDeviceId} not found`);
+      console.log(`[TransferServer] Connected devices:`, Array.from(this.connectedDevices.keys()));
       socket.emit(SOCKET_EVENTS.ERROR, createTransferError(TransferErrorCode.SESSION_NOT_FOUND));
       return;
     }
 
     const targetSocket = this.io?.sockets.sockets.get(target.socketId);
     if (targetSocket) {
+      console.log(`[TransferServer] Forwarding file start to device ${targetDeviceId}`);
       targetSocket.emit(SOCKET_EVENTS.FILE_INCOMING, {
         senderId,
         fileInfo,
@@ -732,7 +816,17 @@ export class TransferServer {
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
-      // 文件块发给桌面端自己，直接发出事件
+      // 文件块发给桌面端自己，写入文件
+      const stream = this.fileStreams.get(fileId);
+      if (stream) {
+        try {
+          // chunk 是 base64 编码的字符串，需要解码
+          const buffer = Buffer.from(chunk, 'base64');
+          stream.write(buffer);
+        } catch (error) {
+          console.error('[TransferServer] Failed to write chunk:', error);
+        }
+      }
       this.emit('file:chunk', { senderId, fileId, chunkIndex, chunk, totalChunks });
       return;
     }
@@ -763,9 +857,29 @@ export class TransferServer {
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
-      // 文件完成发给桌面端自己，直接发出事件
+      // 文件完成发给桌面端自己，关闭写入流
       console.log(`[TransferServer] File complete for desktop from ${senderId}`);
-      this.emit('file:complete', { senderId, fileId, fileHash });
+      
+      const stream = this.fileStreams.get(fileId);
+      const fileInfo = this.fileInfoCache.get(fileId);
+      
+      if (stream) {
+        stream.end();
+        this.fileStreams.delete(fileId);
+        console.log(`[TransferServer] Closed write stream for file: ${fileInfo?.localPath}`);
+      }
+      
+      // 发出事件，包含本地路径和 sessionId
+      this.emit('file:complete', { 
+        senderId, 
+        fileId, 
+        fileHash,
+        localPath: fileInfo?.localPath,
+        filename: fileInfo?.filename,
+        sessionId: fileInfo?.sessionId
+      });
+      
+      this.fileInfoCache.delete(fileId);
       return;
     }
 
@@ -793,7 +907,26 @@ export class TransferServer {
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
-      // 不需要特殊处理，只是取消
+      // 取消文件传输，清理写入流和临时文件
+      const stream = this.fileStreams.get(fileId);
+      const fileInfo = this.fileInfoCache.get(fileId);
+      
+      if (stream) {
+        stream.end();
+        this.fileStreams.delete(fileId);
+        
+        // 删除未完成的文件
+        if (fileInfo?.localPath && fs.existsSync(fileInfo.localPath)) {
+          try {
+            fs.unlinkSync(fileInfo.localPath);
+            console.log(`[TransferServer] Deleted incomplete file: ${fileInfo.localPath}`);
+          } catch (error) {
+            console.error('[TransferServer] Failed to delete incomplete file:', error);
+          }
+        }
+      }
+      
+      this.fileInfoCache.delete(fileId);
       return;
     }
 

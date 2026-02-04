@@ -14,7 +14,7 @@ export interface ItemBase {
   schema_version: number;        // payload 版本
 }
 
-export type ItemType = 
+export type ItemType =
   | 'note'
   | 'folder'
   | 'tag'
@@ -152,6 +152,7 @@ export interface BookmarkFolderPayload {
 export interface AIConversationPayload {
   title: string;
   model: string;
+  channel_id?: string;  // 渠道 ID（解决不同渠道有相同模型 ID 的问题）
   system_prompt: string;
   temperature: number;
   max_tokens: number;
@@ -198,12 +199,23 @@ export interface AIModel {
   is_custom: boolean;
 }
 
+// MCP Server 配置
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  command: string;      // 执行命令，如 'npx' 或 'python'
+  args: string[];       // 命令行参数
+  env?: Record<string, string>; // 环境变量
+  enabled: boolean;
+}
+
 // AI 设置
 export interface AISettings {
   enabled: boolean;
   default_channel: string;
   default_model: string;
   channels: AIChannel[];
+  mcp_servers?: McpServerConfig[]; // MCP 工具服务器配置
 }
 
 export type SyncStatus = 'clean' | 'modified' | 'deleted' | 'conflict';

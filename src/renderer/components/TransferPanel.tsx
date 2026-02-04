@@ -196,6 +196,27 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
       setServerStatus(prev => ({ ...prev, connectedDevices: devices.length }));
     });
 
+    // 监听会话创建事件（设备连接时自动创建的会话）
+    const unsubSessionCreated = transferClient.onSessionCreated(async (data: any) => {
+      console.log('[TransferPanel] Session created:', data);
+      const { sessionId, peerDeviceId, peerDeviceName } = data;
+      
+      // 重新加载会话列表
+      try {
+        const allSessions = await transferClient.getAllSessions();
+        setSessions(allSessions);
+        
+        // 自动选中新会话
+        const newSession = allSessions.find(s => s.id === sessionId);
+        if (newSession) {
+          setSelectedSessionId(sessionId);
+          console.log('[TransferPanel] Auto-selected new session from device connect:', sessionId);
+        }
+      } catch (error) {
+        console.error('[TransferPanel] Failed to reload sessions after session created:', error);
+      }
+    });
+
     // ======== Relay 事件 ========
     const transferApi = (window as any).electronAPI?.transfer;
     let unsubRelayDeviceList = () => { };
@@ -264,26 +285,206 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
 
     // ======== 通用消息事件 (LAN) ========
     // 监听新消息并显示通知
-    const unsubMessageReceived = transferClient.onMessageReceived((data: any) => {
+    const unsubMessageReceived = transferClient.onMessageReceived(async (data: any) => {
+      console.log('[TransferPanel] LAN message received:', data);
+      
+      // 使用 main.ts 返回的桌面端会话 ID
+      const desktopSessionId = data.desktopSessionId;
+      
+      // 查找会话
+      let targetSession = sessions.find(s => s.id === desktopSessionId || s.peer_device_id === data.senderId);
+      
+      if (!targetSession && desktopSessionId) {
+        // main.ts 已经创建了会话，从数据库重新加载会话列表
+        console.log('[TransferPanel] Reloading sessions after new session created by main process');
+        try {
+          const allSessions = await transferClient.getAllSessions();
+          setSessions(allSessions);
+          targetSession = allSessions.find(s => s.id === desktopSessionId);
+          
+          // 自动选中新会话
+          if (targetSession) {
+            setSelectedSessionId(desktopSessionId);
+            console.log('[TransferPanel] Auto-selected new session:', desktopSessionId);
+          }
+        } catch (error) {
+          console.error('[TransferPanel] Failed to reload sessions:', error);
+        }
+      }
+      
+      if (!targetSession) {
+        // 如果还是没有会话，尝试手动创建
+        console.log('[TransferPanel] Creating new session for device:', data.senderId);
+        
+        // 先从本地状态查找设备，如果没有则从服务器获取最新设备列表
+        let device = lanDevices.find(d => d.id === data.senderId);
+        
+        if (!device) {
+          // 从服务器获取最新的设备列表
+          try {
+            const connectedDevices = await transferClient.getConnectedDevices();
+            device = connectedDevices.find(d => d.id === data.senderId);
+            // 更新本地状态
+            if (connectedDevices.length > 0) {
+              setLanDevices(connectedDevices);
+            }
+          } catch (e) {
+            console.warn('[TransferPanel] Failed to fetch connected devices:', e);
+          }
+        }
+        
+        if (device) {
+          try {
+            // 先保存设备信息
+            const existingDevice = await transferClient.getDevice(device.id);
+            if (!existingDevice) {
+              await transferClient.createDevice({
+                id: device.id,
+                name: device.name,
+                type: device.type,
+                last_ip: device.ip,
+                last_port: null,
+                last_seen: Date.now(),
+                is_favorite: 0,
+              });
+            }
+
+            // 创建会话
+            const sessionId = transferClient.generateSessionId();
+            const newSession: TransferSession = {
+              id: sessionId,
+              peer_device_id: device.id,
+              peer_device_name: device.name,
+              connection_type: 'lan',
+              started_at: Date.now(),
+              ended_at: null,
+            };
+
+            await transferClient.createSession(newSession);
+            setSessions(prev => [newSession, ...prev]);
+            targetSession = newSession;
+            
+            // 自动选中新会话
+            setSelectedSessionId(sessionId);
+            
+            console.log('[TransferPanel] New session created:', sessionId);
+          } catch (error) {
+            console.error('[TransferPanel] Failed to create session:', error);
+          }
+        } else {
+          console.warn('[TransferPanel] Device not found for senderId:', data.senderId);
+        }
+      }
+      
       // 如果不是当前选中的会话，显示系统通知
-      if (data.sessionId !== selectedSessionId) {
+      if (targetSession && targetSession.id !== selectedSessionId) {
         const notificationApi = (window as any).electronAPI?.notification;
         if (notificationApi) {
           notificationApi.show({
-            title: '新消息',
+            title: `来自 ${targetSession.peer_device_name} 的消息`,
             body: data.message?.content || '收到新消息',
-            tag: `transfer-message-${data.sessionId}`,
+            tag: `transfer-message-${targetSession.id}`,
           });
         }
       }
     });
 
-    const unsubFileIncoming = transferClient.onFileIncoming((data: any) => {
-      if (data.sessionId !== selectedSessionId) {
+    const unsubFileIncoming = transferClient.onFileIncoming(async (data: any) => {
+      console.log('[TransferPanel] LAN file incoming:', data);
+      
+      // 使用 main.ts 返回的桌面端会话 ID
+      const desktopSessionId = data.desktopSessionId;
+      
+      // 查找会话
+      let targetSession = sessions.find(s => s.id === desktopSessionId || s.peer_device_id === data.senderId);
+      
+      if (!targetSession && desktopSessionId) {
+        // main.ts 已经创建了会话，从数据库重新加载会话列表
+        console.log('[TransferPanel] Reloading sessions after new session created for file');
+        try {
+          const allSessions = await transferClient.getAllSessions();
+          setSessions(allSessions);
+          targetSession = allSessions.find(s => s.id === desktopSessionId);
+          
+          // 自动选中新会话
+          if (targetSession) {
+            setSelectedSessionId(desktopSessionId);
+            console.log('[TransferPanel] Auto-selected new session for file:', desktopSessionId);
+          }
+        } catch (error) {
+          console.error('[TransferPanel] Failed to reload sessions:', error);
+        }
+      }
+      
+      if (!targetSession) {
+        // 如果还是没有会话，尝试手动创建
+        console.log('[TransferPanel] Creating new session for file from device:', data.senderId);
+        
+        // 先从本地状态查找设备，如果没有则从服务器获取最新设备列表
+        let device = lanDevices.find(d => d.id === data.senderId);
+        
+        if (!device) {
+          // 从服务器获取最新的设备列表
+          try {
+            const connectedDevices = await transferClient.getConnectedDevices();
+            device = connectedDevices.find(d => d.id === data.senderId);
+            // 更新本地状态
+            if (connectedDevices.length > 0) {
+              setLanDevices(connectedDevices);
+            }
+          } catch (e) {
+            console.warn('[TransferPanel] Failed to fetch connected devices:', e);
+          }
+        }
+        
+        if (device) {
+          try {
+            // 先保存设备信息
+            const existingDevice = await transferClient.getDevice(device.id);
+            if (!existingDevice) {
+              await transferClient.createDevice({
+                id: device.id,
+                name: device.name,
+                type: device.type,
+                last_ip: device.ip,
+                last_port: null,
+                last_seen: Date.now(),
+                is_favorite: 0,
+              });
+            }
+
+            // 创建会话
+            const sessionId = transferClient.generateSessionId();
+            const newSession: TransferSession = {
+              id: sessionId,
+              peer_device_id: device.id,
+              peer_device_name: device.name,
+              connection_type: 'lan',
+              started_at: Date.now(),
+              ended_at: null,
+            };
+
+            await transferClient.createSession(newSession);
+            setSessions(prev => [newSession, ...prev]);
+            targetSession = newSession;
+            
+            // 自动选中新会话
+            setSelectedSessionId(sessionId);
+            
+            console.log('[TransferPanel] New session created for file:', sessionId);
+          } catch (error) {
+            console.error('[TransferPanel] Failed to create session:', error);
+          }
+        } else {
+          console.warn('[TransferPanel] Device not found for file senderId:', data.senderId);
+        }
+      }
+      
+      if (targetSession && targetSession.id !== selectedSessionId) {
         const notificationApi = (window as any).electronAPI?.notification;
         if (notificationApi) {
           notificationApi.show({
-            title: '收到文件',
+            title: `来自 ${targetSession.peer_device_name} 的文件`,
             body: data.fileInfo?.filename || '收到新文件',
             tag: `transfer-file-${data.fileInfo?.id}`,
           });
@@ -295,6 +496,7 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
       unsubLanDeviceConnected();
       unsubLanDeviceDisconnected();
       unsubLanDeviceListUpdated();
+      unsubSessionCreated();
       unsubRelayDeviceList();
       unsubRelayConnected();
       unsubRelayDisconnected();
@@ -304,7 +506,7 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
       unsubMessageReceived();
       unsubFileIncoming();
     };
-  }, [visible, selectedSessionId]);
+  }, [visible, selectedSessionId, sessions, lanDevices]);
 
   // ============================================
   // 局域网模式操作

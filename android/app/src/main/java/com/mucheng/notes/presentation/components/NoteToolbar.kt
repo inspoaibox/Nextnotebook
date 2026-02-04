@@ -21,9 +21,12 @@ import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.HorizontalRule
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Title
+import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,8 +42,8 @@ import androidx.compose.ui.unit.dp
 
 
 /**
- * 笔记编辑器工具栏
- * 提供 Markdown 格式化和插入功能
+ * 笔记编辑器工具栏 - 增强版
+ * 提供 Markdown 格式化、撤销/重做、表格插入等功能
  */
 @Composable
 fun NoteToolbar(
@@ -59,6 +62,15 @@ fun NoteToolbar(
     onLinkClick: () -> Unit,
     onImageClick: () -> Unit,
     onAttachmentClick: () -> Unit,
+    // 新增功能
+    onUndoClick: (() -> Unit)? = null,
+    onRedoClick: (() -> Unit)? = null,
+    onTableClick: (() -> Unit)? = null,
+    onHorizontalRuleClick: (() -> Unit)? = null,
+    onCodeBlockClick: (() -> Unit)? = null,
+    // 撤销/重做状态
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -74,6 +86,28 @@ fun NoteToolbar(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 撤销/重做按钮组
+            if (onUndoClick != null) {
+                ToolbarIconButton(
+                    icon = Icons.Default.Undo,
+                    contentDescription = "撤销",
+                    onClick = onUndoClick,
+                    enabled = canUndo
+                )
+            }
+            if (onRedoClick != null) {
+                ToolbarIconButton(
+                    icon = Icons.Default.Redo,
+                    contentDescription = "重做",
+                    onClick = onRedoClick,
+                    enabled = canRedo
+                )
+            }
+            
+            if (onUndoClick != null || onRedoClick != null) {
+                ToolbarDivider()
+            }
+            
             // 格式化按钮组
             ToolbarIconButton(
                 icon = Icons.Default.FormatBold,
@@ -132,14 +166,38 @@ fun NoteToolbar(
             )
             ToolbarIconButton(
                 icon = Icons.Default.Code,
-                contentDescription = "代码",
+                contentDescription = "行内代码",
                 onClick = onCodeClick
             )
+            
+            // 代码块
+            if (onCodeBlockClick != null) {
+                ToolbarTextButton(text = "```", onClick = onCodeBlockClick)
+            }
+            
             ToolbarIconButton(
                 icon = Icons.Default.Link,
                 contentDescription = "链接",
                 onClick = onLinkClick
             )
+            
+            // 表格
+            if (onTableClick != null) {
+                ToolbarIconButton(
+                    icon = Icons.Default.TableChart,
+                    contentDescription = "表格",
+                    onClick = onTableClick
+                )
+            }
+            
+            // 水平分隔线
+            if (onHorizontalRuleClick != null) {
+                ToolbarIconButton(
+                    icon = Icons.Default.HorizontalRule,
+                    contentDescription = "分隔线",
+                    onClick = onHorizontalRuleClick
+                )
+            }
             
             ToolbarDivider()
             
@@ -162,13 +220,16 @@ fun NoteToolbar(
 private fun ToolbarIconButton(
     icon: ImageVector,
     contentDescription: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
     IconButton(
         onClick = onClick,
         modifier = Modifier.size(40.dp),
+        enabled = enabled,
         colors = IconButtonDefaults.iconButtonColors(
-            contentColor = MaterialTheme.colorScheme.onSurface
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         )
     ) {
         Icon(

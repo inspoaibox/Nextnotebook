@@ -6,6 +6,7 @@ export interface AIConversation {
   id: string;
   title: string;
   model: string;
+  channelId: string;  // 渠道 ID（解决不同渠道同名模型混淆）
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
@@ -37,6 +38,7 @@ function itemToConversation(item: ItemBase): AIConversation {
     id: item.id,
     title: payload.title || '新对话',
     model: payload.model || '',
+    channelId: payload.channel_id || '',  // 读取渠道 ID
     systemPrompt: payload.system_prompt || '',
     temperature: payload.temperature ?? 0.7,
     maxTokens: payload.max_tokens ?? 2048,
@@ -91,7 +93,7 @@ export function useAISettings() {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('ai-settings-updated', handleCustomEvent);
     window.addEventListener('sync-completed', handleSyncCompleted);
-    
+
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('ai-settings-updated', handleCustomEvent);
@@ -149,8 +151,8 @@ export function useAISettings() {
     setSettings(prev => {
       const newSettings = {
         ...prev,
-        channels: prev.channels.map(c => 
-          c.id === channelId 
+        channels: prev.channels.map(c =>
+          c.id === channelId
             ? { ...c, models: [...c.models, { ...model, channel_id: channelId }] }
             : c
         ),
@@ -165,11 +167,49 @@ export function useAISettings() {
     setSettings(prev => {
       const newSettings = {
         ...prev,
-        channels: prev.channels.map(c => 
-          c.id === channelId 
+        channels: prev.channels.map(c =>
+          c.id === channelId
             ? { ...c, models: c.models.filter(m => m.id !== modelId) }
             : c
         ),
+      };
+      aiSettingsApi.save(newSettings);
+      window.dispatchEvent(new Event('ai-settings-updated'));
+      return newSettings;
+    });
+  }, []);
+
+  const addMcpServer = useCallback((server: any) => {
+    setSettings(prev => {
+      const newSettings = {
+        ...prev,
+        mcp_servers: [...(prev.mcp_servers || []), server],
+      };
+      aiSettingsApi.save(newSettings);
+      window.dispatchEvent(new Event('ai-settings-updated'));
+      return newSettings;
+    });
+  }, []);
+
+  const updateMcpServer = useCallback((serverId: string, updates: any) => {
+    setSettings(prev => {
+      const newSettings = {
+        ...prev,
+        mcp_servers: (prev.mcp_servers || []).map((s: any) =>
+          s.id === serverId ? { ...s, ...updates } : s
+        ),
+      };
+      aiSettingsApi.save(newSettings);
+      window.dispatchEvent(new Event('ai-settings-updated'));
+      return newSettings;
+    });
+  }, []);
+
+  const deleteMcpServer = useCallback((serverId: string) => {
+    setSettings(prev => {
+      const newSettings = {
+        ...prev,
+        mcp_servers: (prev.mcp_servers || []).filter((s: any) => s.id !== serverId),
       };
       aiSettingsApi.save(newSettings);
       window.dispatchEvent(new Event('ai-settings-updated'));
@@ -185,13 +225,16 @@ export function useAISettings() {
     deleteChannel,
     addModelToChannel,
     deleteModelFromChannel,
+    addMcpServer,
+    updateMcpServer,
+    deleteMcpServer,
   };
 }
 
 export function useAIConversations() {
   const [conversations, setConversations] = useState<AIConversation[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // 对话列表缓存
   const conversationsCache = useRef<AIConversation[] | null>(null);
 
@@ -211,7 +254,7 @@ export function useAIConversations() {
       }).catch(console.error);
       return;
     }
-    
+
     try {
       setLoading(true);
       const items = await aiConversationsApi.getAll();
@@ -250,16 +293,18 @@ export function useAIConversations() {
     systemPrompt: string = '',
     temperature: number = 0.7,
     maxTokens: number = 4096,
-    webSearchEnabled: boolean = false
+    webSearchEnabled: boolean = false,
+    channelId: string = ''  // 新增: 渠道 ID
   ) => {
     const now = Date.now();
     const tempId = `temp-conv-${now}`;
-    
+
     // 乐观更新：立即在 UI 显示新对话
     const optimisticConv: AIConversation = {
       id: tempId,
       title,
       model,
+      channelId,  // 包含渠道 ID
       systemPrompt,
       temperature,
       maxTokens,
@@ -267,24 +312,25 @@ export function useAIConversations() {
       updatedAt: now,
       webSearchEnabled,
     };
-    
+
     setConversations(prev => {
       const updated = [optimisticConv, ...prev];
       conversationsCache.current = updated;
       return updated;
     });
-    
+
     // 后台保存到数据库
     const payload: AIConversationPayload = {
       title,
       model,
+      channel_id: channelId,  // 保存渠道 ID
       system_prompt: systemPrompt,
       temperature,
       max_tokens: maxTokens,
       created_at: now,
       web_search_enabled: webSearchEnabled,
     };
-    
+
     try {
       const item = await aiConversationsApi.create(payload);
       if (item) {
@@ -318,6 +364,7 @@ export function useAIConversations() {
             ...c,
             title: updates.title ?? c.title,
             model: updates.model ?? c.model,
+            channelId: updates.channel_id ?? c.channelId,  // 添加渠道 ID 更新
             systemPrompt: updates.system_prompt ?? c.systemPrompt,
             temperature: updates.temperature ?? c.temperature,
             maxTokens: updates.max_tokens ?? c.maxTokens,
@@ -330,7 +377,7 @@ export function useAIConversations() {
       conversationsCache.current = updated;
       return updated;
     });
-    
+
     // 后台保存
     try {
       const existingItems = await aiConversationsApi.getAll();
@@ -362,7 +409,7 @@ export function useAIConversations() {
       conversationsCache.current = updated;
       return updated;
     });
-    
+
     // 后台删除
     try {
       // 1. 先删除所有关联的消息（级联删除）
@@ -396,7 +443,7 @@ export function useAIMessages(conversationId: string | null) {
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
-  
+
   // 消息缓存，避免频繁从数据库加载
   const messagesCache = useRef<Map<string, AIMessage[]>>(new Map());
   // 流式响应防抖
@@ -408,7 +455,7 @@ export function useAIMessages(conversationId: string | null) {
       setMessages([]);
       return;
     }
-    
+
     // 先检查缓存
     const cached = messagesCache.current.get(conversationId);
     if (cached && cached.length > 0) {
@@ -424,7 +471,7 @@ export function useAIMessages(conversationId: string | null) {
       }).catch(console.error);
       return;
     }
-    
+
     try {
       setLoading(true);
       const items = await aiMessagesApi.getByConversation(conversationId);
@@ -461,7 +508,7 @@ export function useAIMessages(conversationId: string | null) {
   // 防抖更新流式内容（每 50ms 更新一次 UI，减少重渲染）
   const updateStreamingContent = useCallback((chunk: string) => {
     streamBufferRef.current += chunk;
-    
+
     if (!streamUpdateTimerRef.current) {
       streamUpdateTimerRef.current = setTimeout(() => {
         setStreamingContent(streamBufferRef.current);
@@ -481,10 +528,20 @@ export function useAIMessages(conversationId: string | null) {
   ) => {
     if (!conversationId) return null;
 
+    // 调试日志：记录传入的渠道和模型参数
+    console.log('[sendMessage] Called with:', {
+      conversationId,
+      channelId: channel.id,
+      channelName: channel.name,
+      channelType: channel.type,
+      model,
+      apiUrl: channel.api_url,
+    });
+
     const now = Date.now();
     const tempUserId = `temp-user-${now}`;
     const targetConversationId = conversationId; // 保存当前对话 ID，避免闭包问题
-    
+
     // 1. 乐观更新：立即在 UI 显示用户消息
     const optimisticUserMsg: AIMessage = {
       id: tempUserId,
@@ -496,7 +553,7 @@ export function useAIMessages(conversationId: string | null) {
       isOptimistic: true,
       images: images.length > 0 ? images : undefined,
     };
-    
+
     setMessages(prev => {
       const updated = [...prev, optimisticUserMsg];
       messagesCache.current.set(targetConversationId, updated);
@@ -563,7 +620,7 @@ export function useAIMessages(conversationId: string | null) {
     // 创建一个更新函数，只在当前对话时更新 UI
     const updateStreamingContentForConversation = (chunk: string) => {
       streamBufferRef.current += chunk;
-      
+
       // 只在仍然是当前对话时更新 UI
       if (conversationId === targetConversationId) {
         if (!streamUpdateTimerRef.current) {
@@ -616,7 +673,7 @@ export function useAIMessages(conversationId: string | null) {
         const msgs = newMessages.map(itemToMessage);
         msgs.sort((a, b) => a.createdAt - b.createdAt);
         messagesCache.current.set(targetConversationId, msgs);
-        
+
         // 只在仍然是当前对话时更新 UI
         if (conversationId === targetConversationId) {
           setMessages(msgs);
@@ -645,7 +702,7 @@ export function useAIMessages(conversationId: string | null) {
 
   const deleteMessage = useCallback(async (messageId: string) => {
     if (!conversationId) return false;
-    
+
     try {
       // 乐观更新：立即从 UI 移除
       setMessages(prev => {
@@ -653,7 +710,7 @@ export function useAIMessages(conversationId: string | null) {
         messagesCache.current.set(conversationId, updated);
         return updated;
       });
-      
+
       // 后台删除
       await aiMessagesApi.delete(messageId);
       return true;

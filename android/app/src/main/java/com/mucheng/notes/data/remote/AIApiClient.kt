@@ -98,17 +98,36 @@ class AIApiClient @Inject constructor() {
     
     /**
      * 规范化 API URL，自动补全 /chat/completions
+     * 
+     * 支持的输入格式:
+     * - https://api.openai.com/v1 -> https://api.openai.com/v1/chat/completions
+     * - https://api.openai.com/v1/ -> https://api.openai.com/v1/chat/completions
+     * - https://api.openai.com/v1/chat/completions -> 保持不变
+     * - https://custom.api.com/api/chat/completions -> 保持不变
      */
     private fun normalizeApiUrl(url: String): String {
         var normalized = url.trim()
+        
         // 移除末尾斜杠
-        if (normalized.endsWith("/")) {
+        while (normalized.endsWith("/")) {
             normalized = normalized.dropLast(1)
         }
-        // 如果 URL 不包含 /chat/completions，自动补全（修复：使用 contains 而非 endsWith）
-        if (!normalized.contains("/chat/completions")) {
-            normalized = "$normalized/chat/completions"
+        
+        // 检查 URL 是否已经以 /chat/completions 结尾
+        if (normalized.endsWith("/chat/completions")) {
+            android.util.Log.d("AIApiClient", "API URL already complete: $normalized")
+            return normalized
         }
+        
+        // 检查 URL 是否包含 /completions（可能是其他格式）
+        if (normalized.contains("/completions")) {
+            android.util.Log.d("AIApiClient", "API URL contains completions path: $normalized")
+            return normalized
+        }
+        
+        // 自动补全 /chat/completions
+        normalized = "$normalized/chat/completions"
+        android.util.Log.d("AIApiClient", "API URL normalized to: $normalized")
         return normalized
     }
     
@@ -155,10 +174,114 @@ class AIApiClient @Inject constructor() {
             .post(requestBody)
             .build()
         
+        android.util.Log.d("AIApiClient", "Sending request to: $apiUrl")
+        
         val response = httpClient.newCall(httpRequest).execute()
         
         if (!response.isSuccessful) {
-            throw IOException("API 请求失败: ${response.code}")
+            val errorBody = try {
+                response.body?.string() ?: "No response body"
+            } catch (e: Exception) {
+                "Failed to read error body"
+            }
+            android.util.Log.e("AIApiClient", "API request failed: ${response.code}, URL: $apiUrl, Body: $errorBody")
+            throw IOException("API 请求失败: ${response.code} - $errorBody")
+        }
+        
+        val source = response.body?.source() ?: throw IOException("响应体为空")
+        
+        while (!source.exhausted()) {
+            val line = source.readUtf8Line() ?: break
+            
+            if (line.startsWith("data: ")) {
+                val data = line.removePrefix("data: ").trim()
+                
+                if (data == "[DONE]") break
+                
+                try {
+                    val chunk = json.decodeFromString<ChatCompletionResponse>(data)
+                    val content = chunk.choices?.firstOrNull()?.delta?.content
+                    if (!content.isNullOrEmpty()) {
+                        emit(content)
+                    }
+                } catch (e: Exception) {
+                    // 忽略解析错误
+                }
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+    
+    /**
+     * 发送带图片的聊天请求（视觉模型）
+     * 支持 OpenAI Vision API 格式
+     */
+    fun streamChatWithImage(
+        channel: AIChannel,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        imageBase64: String,
+        temperature: Float = 0.7f,
+        maxTokens: Int = 4096
+    ): Flow<String> = flow {
+        val apiUrl = normalizeApiUrl(channel.apiUrl)
+        
+        // 构建 Vision API 请求体
+        // 格式: { "role": "user", "content": [ { "type": "text", "text": "..." }, { "type": "image_url", "image_url": { "url": "data:..." } } ] }
+        val requestBodyJson = buildJsonObject {
+            put("model", model)
+            put("temperature", temperature)
+            put("max_tokens", maxTokens)
+            put("stream", true)
+            put("messages", buildJsonArray {
+                // System message
+                add(buildJsonObject {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+                // User message with image
+                add(buildJsonObject {
+                    put("role", "user")
+                    put("content", buildJsonArray {
+                        // Text content
+                        add(buildJsonObject {
+                            put("type", "text")
+                            put("text", userPrompt)
+                        })
+                        // Image content
+                        add(buildJsonObject {
+                            put("type", "image_url")
+                            put("image_url", buildJsonObject {
+                                put("url", imageBase64)
+                            })
+                        })
+                    })
+                })
+            })
+        }
+        
+        val requestBody = requestBodyJson.toString()
+            .toRequestBody("application/json".toMediaType())
+        
+        val httpRequest = Request.Builder()
+            .url(apiUrl)
+            .addHeader("Authorization", "Bearer ${channel.apiKey}")
+            .addHeader("Content-Type", "application/json")
+            .post(requestBody)
+            .build()
+        
+        android.util.Log.d("AIApiClient", "Sending vision request to: $apiUrl")
+        
+        val response = httpClient.newCall(httpRequest).execute()
+        
+        if (!response.isSuccessful) {
+            val errorBody = try {
+                response.body?.string() ?: "No response body"
+            } catch (e: Exception) {
+                "Failed to read error body"
+            }
+            android.util.Log.e("AIApiClient", "Vision API request failed: ${response.code}, URL: $apiUrl, Body: $errorBody")
+            throw IOException("图片处理 API 请求失败: ${response.code} - $errorBody")
         }
         
         val source = response.body?.source() ?: throw IOException("响应体为空")

@@ -365,8 +365,10 @@ export class RelayClient {
       const stream = this.fileStreams.get(data.fileId);
       if (stream) {
         try {
-          // 确保是 Buffer
-          const chunk = Buffer.isBuffer(data.chunk) ? data.chunk : Buffer.from(data.chunk);
+          // 中继服务器转发的 chunk 是 base64 编码的字符串
+          const chunk = Buffer.isBuffer(data.chunk) 
+            ? data.chunk 
+            : Buffer.from(data.chunk, 'base64');
           stream.write(chunk);
 
           // 更新进度 (可选：为了性能可以减少数据库写入频率)
@@ -390,24 +392,18 @@ export class RelayClient {
         // 更新数据库
         if (this.db) {
           try {
-            // 需要获取 localPath
-            // 这里我们假设路径生成规则一致，或者从 fileDataCache 获取（如果实现了的话）
-            // 简单起见，重新构建路径
-            const downloadPath = app.getPath('downloads');
-            const targetPath = path.join(downloadPath, 'NextNotebook', data.filename || ''); // data included filename?
-
-            // 实际上完整性更好的是查询 DB 获取 path，但这里直接用 path
-            // Update: completeFileTransfer needs path.
-            // We should query DB if we want to be safe, but reconstructing is faster if filename available.
-            // data usually mirrors what we sent?
-            // Let's assume filename is in data if sender sends it, or we rely on our 'FILE_INCOMING' knowledge.
-            // But socket events for COMPLETE might just have fileId.
-            // If data has only fileId, we must look up DB.
-            // Let's look up DB.
             const fileRecord = this.db.getFileById(data.fileId);
             if (fileRecord && fileRecord.local_path) {
               this.db.completeFileTransfer(data.fileId, fileRecord.local_path);
             }
+            
+            // 发出事件时包含 localPath 和 filename
+            this.emit('file:complete', { 
+              ...data, 
+              localPath: fileRecord?.local_path,
+              filename: fileRecord?.filename 
+            });
+            return;
           } catch (e) {
             console.error('[RelayClient] Failed to complete file:', e);
           }

@@ -8,6 +8,8 @@ import { pdfService, WatermarkOptions as PDFWatermarkOptions, SecurityOptions as
 import { ghostscriptService, ToImageOptions as GSToImageOptions, CompressLevel } from './services/GhostscriptService';
 import { clipperService } from './services/ClipperService';
 import { initializeTransferService } from './services/TransferService';
+import { mcpService } from './services/McpService';
+import { McpServerConfig } from '../shared/types';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -143,10 +145,37 @@ function createWindow(): void {
     },
   });
 
-  // 窗口准备好后再显示
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+  // 使用 dom-ready 事件代替 ready-to-show
+  // dom-ready 确保 HTML 已完全解析，加载动画可以正常显示
+  let windowShown = false;
+  const showWindow = () => {
+    if (!windowShown && mainWindow) {
+      windowShown = true;
+      mainWindow.show();
+      console.log('[Main] Window shown');
+    }
+  };
+
+  // 当 DOM 准备就绪时显示窗口（加载动画此时可见）
+  mainWindow.webContents.once('dom-ready', () => {
+    console.log('[Main] DOM ready');
+    showWindow();
   });
+
+  // 后备：如果 dom-ready 没有触发（不应该发生），使用 ready-to-show
+  mainWindow.once('ready-to-show', () => {
+    console.log('[Main] ready-to-show');
+    // 给 DOM 一点时间完成渲染
+    setTimeout(showWindow, 100);
+  });
+
+  // 最终后备：最多等待 3 秒
+  setTimeout(() => {
+    if (!windowShown) {
+      console.log('[Main] Fallback: showing window after timeout');
+      showWindow();
+    }
+  }, 3000);
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:3001');
@@ -1193,19 +1222,230 @@ ipcMain.handle('transfer:startServer', async (_event, port?: number) => {
       mainWindow?.webContents.send('transfer:device-list-updated', devices);
     });
 
+    // 处理自动配对创建的会话
+    transferServer.on('session:created', (data) => {
+      console.log('[Transfer] Session created event:', data);
+      const db = initTransferDatabase();
+      const { sessionId, peerDeviceId, peerDeviceName } = data;
+      
+      // 获取设备信息
+      const device = transferServer?.getConnectedDevices().find(d => d.id === peerDeviceId);
+      
+      // 创建设备记录（如果不存在）
+      try {
+        db.createDevice({
+          id: peerDeviceId,
+          name: peerDeviceName,
+          type: device?.type || 'android',
+          last_ip: device?.ip || '',
+          last_port: 0,
+          last_seen: Date.now(),
+          is_favorite: 0,
+        });
+        console.log('[Transfer] Created device record for:', peerDeviceName);
+      } catch (e) {
+        // 设备可能已存在，忽略错误
+        console.log('[Transfer] Device already exists or error:', e);
+      }
+      
+      // 创建会话记录
+      try {
+        db.createSession({
+          id: sessionId,
+          peer_device_id: peerDeviceId,
+          peer_device_name: peerDeviceName,
+          connection_type: 'lan',
+          started_at: Date.now(),
+          ended_at: null,
+        });
+        console.log('[Transfer] Created session record:', sessionId);
+      } catch (e) {
+        // 会话可能已存在，忽略错误
+        console.log('[Transfer] Session already exists or error:', e);
+      }
+      
+      // 通知渲染进程会话已创建
+      mainWindow?.webContents.send('transfer:session-created', {
+        sessionId,
+        peerDeviceId,
+        peerDeviceName,
+      });
+    });
+
     transferServer.on('message:received', (data) => {
-      mainWindow?.webContents.send('transfer:message-received', data);
+      console.log('[Transfer] Message received event:', data);
+      
+      // Save message to database
+      const db = initTransferDatabase();
+      const { senderId, sessionId, message } = data;
+      
+      // Find session for this device (by peer_device_id)
+      const sessions = db.getSessionsByDevice(senderId);
+      let targetSessionId: string;
+      
+      if (sessions.length > 0) {
+        // 使用已存在的会话
+        targetSessionId = sessions[0].id;
+        console.log('[Transfer] Found existing session:', targetSessionId);
+      } else {
+        // 没有会话，需要创建一个新会话
+        // 先获取设备信息
+        const device = transferServer?.getConnectedDevices().find(d => d.id === senderId);
+        if (device) {
+          // 创建设备记录
+          try {
+            db.createDevice({
+              id: device.id,
+              name: device.name,
+              type: device.type,
+              last_ip: device.ip,
+              last_port: 0,
+              last_seen: Date.now(),
+              is_favorite: 0,
+            });
+          } catch (e) {
+            // 设备可能已存在，忽略错误
+          }
+          
+          // 创建会话
+          targetSessionId = uuidv4();
+          db.createSession({
+            id: targetSessionId,
+            peer_device_id: device.id,
+            peer_device_name: device.name,
+            connection_type: 'lan',
+            started_at: Date.now(),
+            ended_at: null,
+          });
+          console.log('[Transfer] Created new session:', targetSessionId, 'for device:', device.name);
+        } else {
+          // 设备不在连接列表中，使用原始 sessionId
+          targetSessionId = sessionId;
+          console.log('[Transfer] Device not found, using original sessionId:', sessionId);
+        }
+      }
+      
+      if (message && message.id) {
+        db.createMessage({
+          id: message.id,
+          session_id: targetSessionId,
+          direction: 'received',
+          type: message.type || 'text',
+          content: message.content || '',
+          file_id: message.fileId || null,
+          created_at: Date.now(),
+          read_at: null,
+        });
+        console.log('[Transfer] Message saved to session:', targetSessionId);
+      }
+      
+      // 发送到渲染进程，包含正确的 sessionId
+      mainWindow?.webContents.send('transfer:message-received', {
+        ...data,
+        desktopSessionId: targetSessionId, // 添加桌面端的会话 ID
+      });
     });
 
     transferServer.on('file:incoming', (data) => {
-      mainWindow?.webContents.send('transfer:file-incoming', data);
+      console.log('[Transfer] File incoming event:', data);
+      
+      // Save file record to database
+      const db = initTransferDatabase();
+      const { senderId, fileInfo, sessionId: incomingSessionId } = data;
+      
+      // Find session for this device (by peer_device_id)
+      const sessions = db.getSessionsByDevice(senderId);
+      let targetSessionId: string;
+      
+      if (sessions.length > 0) {
+        // 使用已存在的会话
+        targetSessionId = sessions[0].id;
+        console.log('[Transfer] Found existing session for file:', targetSessionId);
+      } else {
+        // 没有会话，需要创建一个新会话
+        const device = transferServer?.getConnectedDevices().find(d => d.id === senderId);
+        if (device) {
+          // 创建设备记录
+          try {
+            db.createDevice({
+              id: device.id,
+              name: device.name,
+              type: device.type,
+              last_ip: device.ip,
+              last_port: 0,
+              last_seen: Date.now(),
+              is_favorite: 0,
+            });
+          } catch (e) {
+            // 设备可能已存在，忽略错误
+          }
+          
+          // 创建会话
+          targetSessionId = uuidv4();
+          db.createSession({
+            id: targetSessionId,
+            peer_device_id: device.id,
+            peer_device_name: device.name,
+            connection_type: 'lan',
+            started_at: Date.now(),
+            ended_at: null,
+          });
+          console.log('[Transfer] Created new session for file:', targetSessionId, 'for device:', device.name);
+        } else {
+          // 设备不在连接列表中，使用 unknown
+          targetSessionId = 'unknown';
+          console.log('[Transfer] Device not found for file, using unknown session');
+        }
+      }
+      
+      console.log('[Transfer] File incoming - incomingSessionId:', incomingSessionId, 'targetSessionId:', targetSessionId);
+      
+      if (fileInfo && fileInfo.id) {
+        db.createFileTransfer({
+          id: fileInfo.id,
+          session_id: targetSessionId,
+          filename: fileInfo.filename,
+          file_size: fileInfo.fileSize,
+          mime_type: fileInfo.mimeType,
+          local_path: null, // Will be set when complete
+          direction: 'received',
+          status: 'transferring',
+          progress: 0,
+          file_hash: null,
+          created_at: Date.now(),
+          completed_at: null,
+        });
+        console.log('[Transfer] File record saved to session:', targetSessionId);
+      }
+      
+      // 发送到渲染进程，包含正确的 sessionId
+      mainWindow?.webContents.send('transfer:file-incoming', {
+        ...data,
+        desktopSessionId: targetSessionId,
+      });
     });
 
     transferServer.on('file:chunk', (data) => {
+      // Update progress in database
+      const db = initTransferDatabase();
+      const { fileId, chunkIndex, totalChunks } = data;
+      if (fileId && totalChunks > 0) {
+        const progress = ((chunkIndex + 1) / totalChunks) * 100;
+        db.updateFileProgress(fileId, progress);
+      }
+      
       mainWindow?.webContents.send('transfer:file-chunk', data);
     });
 
     transferServer.on('file:complete', (data) => {
+      // Update file record in database
+      const db = initTransferDatabase();
+      const { fileId, fileHash, localPath } = data;
+      
+      if (fileId) {
+        db.completeFileTransfer(fileId, localPath || '', fileHash || null);
+      }
+      
       mainWindow?.webContents.send('transfer:file-complete', data);
     });
 
@@ -1575,5 +1815,52 @@ app.on('will-quit', () => {
   }
   // 断开中继连接
   relayClient.disconnect();
+  // 停止 MCP 服务
+  mcpService.dispose();
+});
+
+
+// ============ MCP API IPC Handlers ============
+
+// Start an MCP server
+ipcMain.handle('mcp:startServer', async (_event, config: McpServerConfig) => {
+  try {
+    await mcpService.startServer(config);
+    return { success: true };
+  } catch (error: any) {
+    console.error('mcp:startServer error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Stop an MCP server
+ipcMain.handle('mcp:stopServer', async (_event, serverId: string) => {
+  try {
+    await mcpService.stopServer(serverId);
+    return { success: true };
+  } catch (error: any) {
+    console.error('mcp:stopServer error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// List tools
+ipcMain.handle('mcp:listTools', async (_event, serverId: string) => {
+  try {
+    return await mcpService.listTools(serverId);
+  } catch (error: any) {
+    console.error('mcp:listTools error:', error);
+    throw error;
+  }
+});
+
+// Call tool
+ipcMain.handle('mcp:callTool', async (_event, serverId: string, toolName: string, args: any) => {
+  try {
+    return await mcpService.callTool(serverId, toolName, args);
+  } catch (error: any) {
+    console.error('mcp:callTool error:', error);
+    throw error;
+  }
 });
 
