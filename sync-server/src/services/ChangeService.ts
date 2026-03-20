@@ -77,6 +77,28 @@ export class ChangeService {
     };
   }
 
+  // 检查游标是否已过期（游标对应的变更记录已被清理）
+  isCursorExpired(cursor: string, userId?: string): boolean {
+    const db = getDatabase();
+    const cursorNum = parseInt(cursor, 10);
+    if (isNaN(cursorNum)) return false;
+
+    const userFilter = userId ? 'AND (user_id = ? OR user_id IS NULL)' : '';
+    const userParams = userId ? [userId] : [];
+
+    // 查找比游标更新的最早一条变更
+    const stmt = db.prepare(`
+      SELECT MIN(change_id) as min_id FROM changes
+      WHERE change_id > 0 ${userFilter}
+    `);
+    const row = stmt.get(...userParams) as { min_id: number | null };
+
+    if (row.min_id === null) return false; // 没有任何变更，不算过期
+
+    // 如果最早现存变更的 change_id 大于游标，说明中间有变更被清理掉了
+    return row.min_id > cursorNum + 1;
+  }
+
   // 清理过期变更
   cleanupBefore(timestamp: number): number {
     const db = getDatabase();

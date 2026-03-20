@@ -1051,7 +1051,7 @@ const VaultPanel: React.FC = () => {
                       {selectedEntry.uris.length > 0 && (
                         <div className="vault-detail-section">
                           <div className="vault-field-label" style={{ marginBottom: 8 }}>关联网站</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {selectedEntry.uris.map(uri => {
                               const url = normalizeUrl(uri.uri);
                               const handleOpenUrl = (e: React.MouseEvent) => {
@@ -1061,12 +1061,19 @@ const VaultPanel: React.FC = () => {
                               let hostname = url;
                               try { hostname = new URL(url).hostname; } catch { }
                               return (
-                                <div key={uri.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#f9fafb', borderRadius: 4, border: '1px solid #f3f4f6' }}>
-                                  <GlobalOutlined style={{ color: '#096dd9', fontSize: 14 }} />
-                                  <a href={url} onClick={handleOpenUrl} style={{ flex: 1, fontWeight: 500, fontSize: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', cursor: 'pointer' }}>
-                                    {uri.name || hostname}
-                                  </a>
-                                  <a href={url} onClick={handleOpenUrl} style={{ fontSize: 12, color: '#bbb', cursor: 'pointer' }}>↗</a>
+                                <div key={uri.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#f9fafb', borderRadius: 6, border: '1px solid #f0f0f0' }}>
+                                  <GlobalOutlined style={{ color: '#096dd9', fontSize: 15, flexShrink: 0 }} />
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 500, fontSize: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                      {uri.name || hostname}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: '#999', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginTop: 1 }}>
+                                      {uri.uri}
+                                    </div>
+                                  </div>
+                                  <Button type="text" size="small" icon={<GlobalOutlined />} onClick={handleOpenUrl} title="打开网站" style={{ flexShrink: 0 }} />
+                                  <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyToClipboard(uri.uri, '链接')} title="复制链接" style={{ flexShrink: 0 }} />
+                                  <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEditEntry(selectedEntry)} title="修改" style={{ flexShrink: 0 }} />
                                 </div>
                               );
                             })}

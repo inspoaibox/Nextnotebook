@@ -441,6 +441,15 @@ export interface ExcelSheet {
   row_heights: number[];
   frozen_rows: number;
   frozen_columns: number;
+  merged_cells?: MergedCell[];  // 合并单元格区域
+}
+
+// 合并单元格区域
+export interface MergedCell {
+  start_row: number;
+  start_col: number;
+  end_row: number;
+  end_col: number;
 }
 
 // 行数据

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -164,7 +165,11 @@ fun NotesScreen(
             showPasswordDialog = true
         } else {
             // 未加密笔记，直接进入详情页
-            navController.navigate(Screen.NoteDetail.createRoute(note.id, null))
+            if (note.isExcelNote) {
+                navController.navigate(Screen.ExcelDetail.createRoute(note.id))
+            } else {
+                navController.navigate(Screen.NoteDetail.createRoute(note.id, null))
+            }
         }
     }
     
@@ -177,7 +182,11 @@ fun NotesScreen(
                     showPasswordDialog = false
                     unlockPassword = ""
                     unlockError = null
-                    navController.navigate(Screen.NoteDetail.createRoute(note.id, null))
+                    if (note.isExcelNote) {
+                        navController.navigate(Screen.ExcelDetail.createRoute(note.id))
+                    } else {
+                        navController.navigate(Screen.NoteDetail.createRoute(note.id, null))
+                    }
                 } else {
                     unlockError = "密码错误，请重试"
                 }
@@ -932,13 +941,26 @@ private fun NoteCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = note.title.ifEmpty { "无标题" },
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Excel 笔记显示表格图标
+                        if (note.isExcelNote) {
+                            Icon(
+                                Icons.Default.TableChart,
+                                contentDescription = "Excel 笔记",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(end = 8.dp).size(20.dp)
+                            )
+                        }
+                        Text(
+                            text = note.title.ifEmpty { "无标题" },
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -963,6 +985,18 @@ private fun NoteCard(
                             )
                         }
                     }
+                }
+                
+                // Excel 笔记显示预览信息
+                if (note.isExcelNote && note.content.isNotEmpty()) {
+                    Text(
+                        text = note.content,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
         }

@@ -568,6 +568,32 @@ export class ServerAdapter implements StorageAdapter {
     }
   }
 
+  // 检查游标是否已过期（游标对应的变更记录已被清理）
+  async isCursorExpired(cursor: string): Promise<boolean> {
+    try {
+      const result = await this.request<{ expired: boolean }>(
+        'GET',
+        `/api/changes/cursor-check?cursor=${encodeURIComponent(cursor)}`
+      );
+      return result.expired;
+    } catch (error) {
+      console.error('[ServerAdapter] isCursorExpired check failed:', error);
+      return false;
+    }
+  }
+
+  // 全量拉取所有 item（新客户端首次同步使用，绕过变更日志）
+  async listAllItems(): Promise<ItemBase[]> {
+    try {
+      const result = await this.request<{ items: ItemBase[] }>('GET', '/api/items/all');
+      console.log(`[ServerAdapter] listAllItems: got ${result.items?.length ?? 0} items`);
+      return result.items || [];
+    } catch (error) {
+      console.error('[ServerAdapter] listAllItems failed:', error);
+      return [];
+    }
+  }
+
   // 检查远端是否已有数据
   async hasExistingData(): Promise<boolean> {
     try {

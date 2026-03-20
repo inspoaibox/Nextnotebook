@@ -69,7 +69,7 @@ export const config: Config = {
   apiKeys: parseApiKeys(process.env.API_KEYS),
   logLevel: process.env.LOG_LEVEL || 'info',
   maxResourceSize: parseInt(process.env.MAX_RESOURCE_SIZE || '104857600', 10),
-  changeLogRetentionDays: parseInt(process.env.CHANGE_LOG_RETENTION_DAYS || '7', 10),
+  changeLogRetentionDays: parseInt(process.env.CHANGE_LOG_RETENTION_DAYS || '90', 10),
   corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
   // JWT 配置
   jwtSecret: getOrGenerateSecret(process.env.JWT_SECRET, 'mucheng-sync-server-jwt-secret-change-in-production'),

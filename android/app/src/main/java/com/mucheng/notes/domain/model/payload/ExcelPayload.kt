@@ -30,7 +30,19 @@ data class ExcelSheet(
     @SerialName("column_widths") val columnWidths: List<Int> = emptyList(),
     @SerialName("row_heights") val rowHeights: List<Int> = emptyList(),
     @SerialName("frozen_rows") val frozenRows: Int = 0,
-    @SerialName("frozen_columns") val frozenColumns: Int = 0
+    @SerialName("frozen_columns") val frozenColumns: Int = 0,
+    @SerialName("merged_cells") val mergedCells: List<MergedCell> = emptyList()
+)
+
+/**
+ * 合并单元格区域
+ */
+@Serializable
+data class MergedCell(
+    @SerialName("start_row") val startRow: Int,
+    @SerialName("start_col") val startCol: Int,
+    @SerialName("end_row") val endRow: Int,
+    @SerialName("end_col") val endCol: Int
 )
 
 /**

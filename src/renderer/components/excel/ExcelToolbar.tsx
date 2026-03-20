@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Button, Tooltip, Divider, Select, ColorPicker } from 'antd';
+import { Button, Tooltip, Divider, Select, ColorPicker, Badge } from 'antd';
 import {
   BoldOutlined,
   ItalicOutlined,
@@ -22,6 +22,12 @@ import {
   MinusOutlined,
   ImportOutlined,
   ExportOutlined,
+  MergeCellsOutlined,
+  SplitCellsOutlined,
+  SearchOutlined,
+  SortAscendingOutlined,
+  SortDescendingOutlined,
+  FilterOutlined,
 } from '@ant-design/icons';
 import { CellStyle, NumberFormat } from '@shared/types';
 
@@ -29,6 +35,10 @@ interface ExcelToolbarProps {
   selectedStyle: CellStyle | null;
   canUndo: boolean;
   canRedo: boolean;
+  hasSelection: boolean;
+  isMerged: boolean;
+  hasActiveFilters: boolean;
+  showFilterButtons: boolean;
   onStyleChange: (style: Partial<CellStyle>) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -39,6 +49,14 @@ interface ExcelToolbarProps {
   onImport: () => void;
   onExportXlsx: () => void;
   onExportCsv: () => void;
+  onMergeCells: () => void;
+  onUnmergeCells: () => void;
+  onFind: () => void;
+  onReplace: () => void;
+  onSortAsc: () => void;
+  onSortDesc: () => void;
+  onToggleFilter: () => void;
+  onClearFilters: () => void;
 }
 
 const numberFormatOptions = [
@@ -77,6 +95,10 @@ export const ExcelToolbar: React.FC<ExcelToolbarProps> = ({
   selectedStyle,
   canUndo,
   canRedo,
+  hasSelection,
+  isMerged,
+  hasActiveFilters,
+  showFilterButtons,
   onStyleChange,
   onUndo,
   onRedo,
@@ -87,6 +109,14 @@ export const ExcelToolbar: React.FC<ExcelToolbarProps> = ({
   onImport,
   onExportXlsx,
   onExportCsv,
+  onMergeCells,
+  onUnmergeCells,
+  onFind,
+  onReplace,
+  onSortAsc,
+  onSortDesc,
+  onToggleFilter,
+  onClearFilters,
 }) => {
   return (
     <div className="excel-toolbar" style={{ 
@@ -267,6 +297,30 @@ export const ExcelToolbar: React.FC<ExcelToolbarProps> = ({
 
       <Divider type="vertical" />
 
+      {/* 合并单元格 */}
+      <Tooltip title="合并单元格">
+        <Button 
+          icon={<MergeCellsOutlined />}
+          onClick={onMergeCells}
+          disabled={!hasSelection || isMerged}
+          size="small"
+        >
+          合并
+        </Button>
+      </Tooltip>
+      <Tooltip title="取消合并">
+        <Button 
+          icon={<SplitCellsOutlined />}
+          onClick={onUnmergeCells}
+          disabled={!isMerged}
+          size="small"
+        >
+          拆分
+        </Button>
+      </Tooltip>
+
+      <Divider type="vertical" />
+
       {/* 导入导出 */}
       <Tooltip title="导入 Excel/CSV">
         <Button 
@@ -286,6 +340,64 @@ export const ExcelToolbar: React.FC<ExcelToolbarProps> = ({
           导出
         </Button>
       </Tooltip>
+
+      <Divider type="vertical" />
+
+      {/* 查找替换 */}
+      <Tooltip title="查找 (Ctrl+F)">
+        <Button 
+          icon={<SearchOutlined />}
+          onClick={onFind}
+          size="small"
+        >
+          查找
+        </Button>
+      </Tooltip>
+
+      <Divider type="vertical" />
+
+      {/* 排序筛选 */}
+      <Tooltip title="升序排序 (按当前选中列)">
+        <Button 
+          icon={<SortAscendingOutlined />}
+          onClick={onSortAsc}
+          size="small"
+        >
+          升序
+        </Button>
+      </Tooltip>
+      <Tooltip title="降序排序 (按当前选中列)">
+        <Button 
+          icon={<SortDescendingOutlined />}
+          onClick={onSortDesc}
+          size="small"
+        >
+          降序
+        </Button>
+      </Tooltip>
+      <Tooltip title={showFilterButtons ? '关闭筛选' : '启用筛选 (在列头显示筛选按钮)'}>
+        <Badge dot={hasActiveFilters} offset={[-5, 5]}>
+          <Button 
+            icon={<FilterOutlined />}
+            onClick={onToggleFilter}
+            size="small"
+            type={showFilterButtons ? 'primary' : 'default'}
+          >
+            筛选
+          </Button>
+        </Badge>
+      </Tooltip>
+      {hasActiveFilters && (
+        <Tooltip title="清除所有筛选">
+          <Button 
+            size="small"
+            onClick={onClearFilters}
+            danger
+          >
+            清除
+          </Button>
+        </Tooltip>
+      )}
     </div>
   );
 };

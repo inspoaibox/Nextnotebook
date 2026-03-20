@@ -16,6 +16,11 @@ interface ItemRepository {
     fun getByType(type: ItemType): Flow<List<ItemEntity>>
     
     /**
+     * 按多种类型获取所有项目（实时流）
+     */
+    fun getByTypes(types: List<ItemType>): Flow<List<ItemEntity>>
+    
+    /**
      * 按 ID 获取单个项目
      */
     suspend fun getById(id: String): ItemEntity?

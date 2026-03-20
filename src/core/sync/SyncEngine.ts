@@ -344,11 +344,127 @@ export class SyncEngine {
         currentCursor = null;
       }
     }
-    
-    let lastSuccessfulCursor = currentCursor;  // 记录最后成功处理的游标
 
     console.log('[SyncEngine] Pull starting with cursor:', currentCursor, 'timestamp:', localTimestamp, 'server:', this.serverIdentifier);
     this.reportProgress({ phase: 'pulling', message: '正在获取远端变更列表...' });
+
+    // ✅ 触发全量拉取的两种情况：
+    // 1. 游标为 null（新客户端首次同步）
+    // 2. 游标已过期（长时间离线，变更日志已被清理）
+    const cursorExpired = currentCursor && this.adapter.isCursorExpired
+      ? await this.adapter.isCursorExpired(currentCursor)
+      : false;
+
+    if ((!currentCursor || cursorExpired) && this.adapter.listAllItems) {
+      const remoteHasData = this.adapter.hasExistingData
+        ? await this.adapter.hasExistingData()
+        : false;
+
+      if (remoteHasData) {
+        if (cursorExpired) {
+          console.log('[SyncEngine] Cursor expired (change logs cleaned up) — falling back to full pull');
+          this.reportProgress({ phase: 'pulling', message: '变更日志已过期，正在全量拉取远端数据...' });
+          // 清除过期游标，避免后续误用
+          this.clearServerCursor();
+        } else {
+          console.log('[SyncEngine] No cursor found and remote has data — performing full pull');
+          this.reportProgress({ phase: 'pulling', message: '首次同步，正在全量拉取远端数据...' });
+        }
+
+        const allItems = await this.adapter.listAllItems();
+        const filteredItems = allItems.filter(item => this.shouldSyncType(item.type));
+        console.log(`[SyncEngine] Full pull: ${filteredItems.length} items to process (filtered from ${allItems.length})`);
+
+        const total = filteredItems.length;
+        for (const remoteItem of filteredItems) {
+          try {
+            // 跳过已删除的 item
+            if (remoteItem.deleted_time !== null) {
+              const localItem = this.itemsManager.getByIdIncludeDeleted(remoteItem.id);
+              if (localItem) {
+                this.itemsManager.markDeletedFromRemote(remoteItem.id, remoteItem.deleted_time);
+              }
+              continue;
+            }
+
+            const localItem = this.itemsManager.getByIdIncludeDeleted(remoteItem.id);
+
+            if (!localItem) {
+              // 本地没有，直接创建
+              this.itemsManager.createWithId(remoteItem);
+              count++;
+            } else if (localItem.content_hash !== remoteItem.content_hash) {
+              // 内容不同，检查冲突
+              if (localItem.sync_status === 'modified') {
+                // 有冲突，创建副本
+                const conflictPayload = JSON.parse(localItem.payload);
+                conflictPayload.title = `${conflictPayload.title || 'Untitled'} (冲突副本)`;
+                conflictPayload.is_conflict = true;
+                this.itemsManager.create(localItem.type, conflictPayload);
+                this.itemsManager.updateFromRemote(remoteItem);
+                conflicts++;
+              } else {
+                // 远端更新，覆盖本地
+                this.itemsManager.updateFromRemote(remoteItem);
+              }
+              count++;
+            }
+            // 内容相同则跳过
+
+            if (count % 50 === 0) {
+              this.reportProgress({
+                phase: 'pulling',
+                message: `正在全量下载... (${count}/${total})`,
+                current: count,
+                total,
+              });
+            }
+
+            // 同时下载资源文件
+            if (remoteItem.type === 'resource' && this.resourcesDir) {
+              try {
+                const payload = JSON.parse(remoteItem.payload) as ResourcePayload;
+                const ext = path.extname(payload.filename).toLowerCase() || '.bin';
+                const resourceId = `${remoteItem.id}${ext}`;
+                const resourceFilePath = path.join(this.resourcesDir, resourceId);
+
+                if (!fs.existsSync(resourceFilePath)) {
+                  if (!fs.existsSync(this.resourcesDir)) {
+                    fs.mkdirSync(this.resourcesDir, { recursive: true });
+                  }
+                  const fileData = await this.adapter.getResource(resourceId);
+                  if (fileData) {
+                    fs.writeFileSync(resourceFilePath, fileData);
+                  }
+                }
+              } catch (resourceError) {
+                console.error(`[SyncEngine] Error downloading resource for ${remoteItem.id}:`, resourceError);
+              }
+            }
+          } catch (error) {
+            errors.push(`Error processing item ${remoteItem.id}: ${(error as Error).message}`);
+          }
+        }
+
+        // 全量拉取完成后，将游标设置为最新（用最大 change_id 或当前时间戳）
+        // 这样后续增量同步就能正常工作
+        const newCursor = Date.now().toString();
+        this.setServerCursor(newCursor, Date.now());
+        console.log('[SyncEngine] Full pull complete, set cursor to:', newCursor);
+
+        this.reportProgress({
+          phase: 'pulling',
+          message: `全量下载完成，共 ${count} 项`,
+          current: count,
+          total,
+        });
+
+        return { count, conflicts, errors };
+      }
+    }
+
+    // ✅ 增量同步：有游标时走变更日志路径
+    let lastSuccessfulCursor = currentCursor;  // 记录最后成功处理的游标
 
     // 循环拉取所有变更
     let hasMore = true;

@@ -32,6 +32,7 @@ import androidx.navigation.navArgument
 import com.mucheng.notes.R
 import com.mucheng.notes.presentation.screens.ai.AIScreen
 import com.mucheng.notes.presentation.screens.bookmarks.BookmarksScreen
+import com.mucheng.notes.presentation.screens.excel.ExcelDetailScreen
 import com.mucheng.notes.presentation.screens.notes.NoteDetailScreen
 import com.mucheng.notes.presentation.screens.notes.NotesScreen
 import com.mucheng.notes.presentation.screens.settings.*
@@ -55,6 +56,9 @@ sealed class Screen(
             val base = if (noteId != null) "note/$noteId" else "note/new"
             return if (folderId != null) "$base?folderId=$folderId" else base
         }
+    }
+    object ExcelDetail : Screen("excel/{noteId}", R.string.nav_notes, Icons.AutoMirrored.Filled.Notes) {
+        fun createRoute(noteId: String): String = "excel/$noteId"
     }
     object Bookmarks : Screen("bookmarks", R.string.nav_bookmarks, Icons.Default.Bookmark, "bookmarks")
     object Todos : Screen("todos", R.string.nav_todos, Icons.Default.CheckCircle, "todos")
@@ -186,6 +190,20 @@ fun MainNavigation(
                 NoteDetailScreen(
                     noteId = if (noteId == "new") null else noteId,
                     defaultFolderId = folderId,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable(
+                route = Screen.ExcelDetail.route,
+                arguments = listOf(
+                    navArgument("noteId") { 
+                        type = NavType.StringType
+                    }
+                )
+            ) { backStackEntry ->
+                val noteId = backStackEntry.arguments?.getString("noteId") ?: return@composable
+                ExcelDetailScreen(
+                    noteId = noteId,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

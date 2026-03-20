@@ -22,6 +22,10 @@ class ItemRepositoryImpl @Inject constructor(
         return itemDao.getByType(type.value)
     }
     
+    override fun getByTypes(types: List<ItemType>): Flow<List<ItemEntity>> {
+        return itemDao.getByTypes(types.map { it.value })
+    }
+    
     override suspend fun getById(id: String): ItemEntity? {
         return itemDao.getByIdNotDeleted(id)
     }

@@ -598,6 +598,75 @@ export class WebDAVAdapter implements StorageAdapter {
     }
   }
 
+  // 检查游标是否已过期（游标对应的变更日志文件已被清理）
+  async isCursorExpired(cursor: string): Promise<boolean> {
+    try {
+      const changesDir = this.getPath(PATHS.CHANGES);
+      const dirExists = await this.withTimeout(this.client.exists(changesDir));
+      if (!dirExists) return false; // 没有变更目录，不算过期
+
+      const files = await this.withTimeout(
+        this.client.getDirectoryContents(changesDir)
+      ) as Array<{ basename: string }>;
+
+      const sortedFiles = files
+        .filter(f => f.basename && f.basename.endsWith('.json'))
+        .sort((a, b) => a.basename.localeCompare(b.basename));
+
+      if (sortedFiles.length === 0) return false;
+
+      // 游标文件已不存在，且游标时间戳早于最早现存变更日志
+      const cursorExists = sortedFiles.some(f => f.basename === cursor);
+      if (cursorExists) return false;
+
+      // 游标文件不存在，检查游标时间戳是否早于最早现存文件
+      const cursorTimestamp = parseInt(cursor.replace('.json', ''), 10);
+      const earliestTimestamp = parseInt(sortedFiles[0].basename.replace('.json', ''), 10);
+
+      if (!isNaN(cursorTimestamp) && !isNaN(earliestTimestamp)) {
+        // 游标比最早现存变更还旧，说明中间有数据被清理掉了
+        return cursorTimestamp < earliestTimestamp;
+      }
+
+      return false;
+    } catch (error) {
+      console.error('[WebDAVAdapter] isCursorExpired check failed:', error);
+      return false;
+    }
+  }
+
+  // 全量拉取所有 item（新客户端首次同步使用，绕过变更日志）
+  async listAllItems(): Promise<ItemBase[]> {
+    const items: ItemBase[] = [];
+    try {
+      const itemsDir = this.getPath(PATHS.ITEMS);
+      const dirExists = await this.withTimeout(this.client.exists(itemsDir));
+      if (!dirExists) return items;
+
+      const files = await this.withTimeout(
+        this.client.getDirectoryContents(itemsDir)
+      ) as Array<{ basename: string }>;
+
+      const jsonFiles = files.filter(f => f.basename.endsWith('.json'));
+      console.log(`[WebDAVAdapter] listAllItems: found ${jsonFiles.length} item files`);
+
+      for (const file of jsonFiles) {
+        try {
+          const content = await this.withTimeout(
+            this.client.getFileContents(`${itemsDir}/${file.basename}`, { format: 'text' })
+          );
+          const item = JSON.parse(content as string) as ItemBase;
+          items.push(item);
+        } catch (e) {
+          console.warn(`[WebDAVAdapter] Failed to read item file ${file.basename}:`, e);
+        }
+      }
+    } catch (error) {
+      console.error('[WebDAVAdapter] listAllItems failed:', error);
+    }
+    return items;
+  }
+
   // 检查远端是否已有数据
   async hasExistingData(): Promise<boolean> {
     try {

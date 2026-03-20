@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.mucheng.notes.data.local.entity.ItemEntity
 import com.mucheng.notes.domain.model.ItemType
 import com.mucheng.notes.domain.model.SyncStatus
+import com.mucheng.notes.domain.model.payload.ExcelNotePayload
 import com.mucheng.notes.domain.model.payload.FolderPayload
 import com.mucheng.notes.domain.model.payload.NotePayload
 import com.mucheng.notes.domain.repository.ItemRepository
@@ -91,10 +92,10 @@ class NotesViewModel @Inject constructor(
     }
     
     /**
-     * 笔记列表（实时流）
+     * 笔记列表（实时流）- 包含普通笔记和 Excel 笔记
      */
-    val notes: StateFlow<List<NoteItem>> = itemRepository.getByType(ItemType.NOTE)
-        .map { items -> items.map { it.toNoteItem() } }
+    val notes: StateFlow<List<NoteItem>> = itemRepository.getByTypes(listOf(ItemType.NOTE, ItemType.EXCEL_NOTE))
+        .map { items -> items.mapNotNull { it.toNoteItem() } }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     
     /**
@@ -497,21 +498,51 @@ class NotesViewModel @Inject constructor(
         }
     }
     
-    private fun ItemEntity.toNoteItem(): NoteItem {
+    private fun ItemEntity.toNoteItem(): NoteItem? {
         return try {
-            val payload = json.decodeFromString<NotePayload>(this.payload)
-            NoteItem(
-                id = this.id,
-                title = payload.title,
-                content = payload.content,
-                folderId = payload.folderId,
-                isPinned = payload.isPinned,
-                isLocked = payload.isLocked,
-                tags = payload.tags,
-                updatedTime = this.updatedTime
-            )
+            when (this.type) {
+                ItemType.NOTE.value -> {
+                    val payload = json.decodeFromString<NotePayload>(this.payload)
+                    NoteItem(
+                        id = this.id,
+                        title = payload.title,
+                        content = payload.content,
+                        folderId = payload.folderId,
+                        isPinned = payload.isPinned,
+                        isLocked = payload.isLocked,
+                        tags = payload.tags,
+                        updatedTime = this.updatedTime,
+                        isExcelNote = false
+                    )
+                }
+                ItemType.EXCEL_NOTE.value -> {
+                    val payload = json.decodeFromString<ExcelNotePayload>(this.payload)
+                    // 生成 Excel 笔记的预览内容（显示工作表数量和单元格数量）
+                    val sheetCount = payload.sheets.size
+                    val cellCount = payload.sheets.sumOf { sheet -> 
+                        sheet.rows.sumOf { row -> row.cells.size }
+                    }
+                    val previewContent = "表格笔记 · ${sheetCount}个工作表 · ${cellCount}个单元格"
+                    
+                    NoteItem(
+                        id = this.id,
+                        title = payload.title,
+                        content = previewContent,
+                        folderId = payload.folderId,
+                        isPinned = payload.isPinned,
+                        isLocked = payload.isLocked,
+                        tags = payload.tags,
+                        updatedTime = this.updatedTime,
+                        isExcelNote = true
+                    )
+                }
+                else -> {
+                    android.util.Log.w("NotesViewModel", "Unknown item type: ${this.type}")
+                    null
+                }
+            }
         } catch (e: Exception) {
-            android.util.Log.e("NotesViewModel", "Failed to parse note payload: ${e.message}, payload: ${this.payload}")
+            android.util.Log.e("NotesViewModel", "Failed to parse note payload: ${e.message}, type: ${this.type}, payload: ${this.payload}")
             // 返回一个默认的笔记，避免崩溃
             NoteItem(
                 id = this.id,
@@ -521,7 +552,8 @@ class NotesViewModel @Inject constructor(
                 isPinned = false,
                 isLocked = false,
                 tags = emptyList(),
-                updatedTime = this.updatedTime
+                updatedTime = this.updatedTime,
+                isExcelNote = this.type == ItemType.EXCEL_NOTE.value
             )
         }
     }
@@ -562,7 +594,8 @@ data class NoteItem(
     val isPinned: Boolean,
     val isLocked: Boolean,
     val tags: List<String>,
-    val updatedTime: Long
+    val updatedTime: Long,
+    val isExcelNote: Boolean = false  // 是否为 Excel 笔记
 )
 
 /**

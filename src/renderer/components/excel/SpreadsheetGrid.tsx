@@ -4,8 +4,9 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { ExcelSheet, ExcelCell, CellValue, CellStyle, NumberFormat } from '@shared/types';
+import { ExcelSheet, ExcelCell, CellValue, CellStyle, NumberFormat, MergedCell } from '@shared/types';
 import { FormulaEngine } from '@core/excel/FormulaEngine';
+import { ColumnFilterDropdown, ColumnFilter } from './ColumnFilterDropdown';
 
 interface SpreadsheetGridProps {
   sheet: ExcelSheet;
@@ -19,6 +20,14 @@ interface SpreadsheetGridProps {
   onColumnWidthChange: (col: number, width: number) => void;
   onRowHeightChange: (row: number, height: number) => void;
   onClearRange?: (startRow: number, startCol: number, endRow: number, endCol: number) => void;
+  getMergedCellInfo?: (row: number, col: number) => MergedCell | null;
+  hiddenRows?: Set<number>;
+  onAutoFill?: (sourceRange: { startRow: number; startCol: number; endRow: number; endCol: number }, targetRange: { startRow: number; startCol: number; endRow: number; endCol: number }) => void;
+  // 筛选相关
+  columnFilters?: Map<number, ColumnFilter>;
+  onColumnSort?: (column: number, order: 'asc' | 'desc') => void;
+  onColumnFilter?: (column: number, filter: ColumnFilter | null) => void;
+  showFilterButtons?: boolean;
 }
 
 const DEFAULT_COL_WIDTH = 100;
@@ -51,6 +60,13 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   onColumnWidthChange,
   onRowHeightChange,
   onClearRange,
+  getMergedCellInfo,
+  hiddenRows = new Set(),
+  onAutoFill,
+  columnFilters,
+  onColumnSort,
+  onColumnFilter,
+  showFilterButtons = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,19 +76,28 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   const [selectionStart, setSelectionStart] = useState<{ row: number; col: number } | null>(null);
   const [resizingCol, setResizingCol] = useState<number | null>(null);
   const [resizingRow, setResizingRow] = useState<number | null>(null);
-  const [resizeStartX, setResizeStartX] = useState(0);
-  const [resizeStartY, setResizeStartY] = useState(0);
-  const [resizeStartWidth, setResizeStartWidth] = useState(0);
-  const [resizeStartHeight, setResizeStartHeight] = useState(0);
+  // 用 ref 存储拖拽中间状态，避免 useEffect 依赖变化导致事件监听反复重建
+  const resizingColRef = useRef<number | null>(null);
+  const resizingRowRef = useRef<number | null>(null);
+  const resizeStartXRef = useRef(0);
+  const resizeStartYRef = useRef(0);
+  const resizeStartWidthRef = useRef(0);
+  const resizeStartHeightRef = useRef(0);
   // 本地临时宽度/高度，用于拖拽时的实时显示
   const [tempColWidths, setTempColWidths] = useState<Record<number, number>>({});
   const [tempRowHeights, setTempRowHeights] = useState<Record<number, number>>({});
+  const tempColWidthsRef = useRef<Record<number, number>>({});
+  const tempRowHeightsRef = useRef<Record<number, number>>({});
   
   // 行/列头拖拽选择状态
   const [isSelectingRows, setIsSelectingRows] = useState(false);
   const [isSelectingCols, setIsSelectingCols] = useState(false);
   const [rowSelectionStart, setRowSelectionStart] = useState<number | null>(null);
   const [colSelectionStart, setColSelectionStart] = useState<number | null>(null);
+  
+  // 自动填充拖拽状态
+  const [isAutoFilling, setIsAutoFilling] = useState(false);
+  const [autoFillTarget, setAutoFillTarget] = useState<{ row: number; col: number } | null>(null);
   
   // 是否正在编辑公式（以 = 开头）
   const isEditingFormula = editValue.startsWith('=');
@@ -91,6 +116,16 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   // 获取单元格
   const getCell = useCallback((row: number, col: number): ExcelCell | undefined => {
     return cellMap.get(`${row},${col}`);
+  }, [cellMap]);
+
+  // 获取某列的所有值（用于筛选下拉）
+  const getColumnValues = useCallback((col: number): CellValue[] => {
+    const values: CellValue[] = [];
+    for (let row = 0; row < VISIBLE_ROWS; row++) {
+      const cell = cellMap.get(`${row},${col}`);
+      values.push(cell?.value ?? null);
+    }
+    return values;
   }, [cellMap]);
 
   // 获取列宽（优先使用临时值）
@@ -148,7 +183,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     return String(value);
   };
 
-  // 获取单元格样式
+  // 获取单元格样式（只返回字体和颜色相关样式，对齐由内容 div 的 flexbox 控制）
   const getCellStyle = useCallback((cell: ExcelCell | undefined): React.CSSProperties => {
     const style = cell?.style;
     return {
@@ -156,8 +191,6 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       fontStyle: style?.font_italic ? 'italic' : 'normal',
       color: style?.font_color || '#000',
       backgroundColor: style?.background_color || 'transparent',
-      textAlign: (style?.text_align as any) || 'left',
-      verticalAlign: style?.vertical_align || 'middle',
     };
   }, []);
 
@@ -176,6 +209,50 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     }
     return false;
   }, [selectedCell, selectedRange]);
+
+  // 判断单元格是否在自动填充目标范围内
+  const isCellInAutoFillTarget = useCallback((row: number, col: number): boolean => {
+    if (!isAutoFilling || !autoFillTarget) return false;
+    
+    const sourceRange = selectedRange || (selectedCell ? {
+      startRow: selectedCell.row,
+      startCol: selectedCell.col,
+      endRow: selectedCell.row,
+      endCol: selectedCell.col,
+    } : null);
+    
+    if (!sourceRange) return false;
+    
+    const targetRow = autoFillTarget.row;
+    const targetCol = autoFillTarget.col;
+    
+    // 向下填充
+    if (targetRow > sourceRange.endRow && 
+        col >= sourceRange.startCol && col <= sourceRange.endCol &&
+        row > sourceRange.endRow && row <= targetRow) {
+      return true;
+    }
+    // 向上填充
+    if (targetRow < sourceRange.startRow && 
+        col >= sourceRange.startCol && col <= sourceRange.endCol &&
+        row < sourceRange.startRow && row >= targetRow) {
+      return true;
+    }
+    // 向右填充
+    if (targetCol > sourceRange.endCol && 
+        row >= sourceRange.startRow && row <= sourceRange.endRow &&
+        col > sourceRange.endCol && col <= targetCol) {
+      return true;
+    }
+    // 向左填充
+    if (targetCol < sourceRange.startCol && 
+        row >= sourceRange.startRow && row <= sourceRange.endRow &&
+        col < sourceRange.startCol && col >= targetCol) {
+      return true;
+    }
+    
+    return false;
+  }, [isAutoFilling, autoFillTarget, selectedRange, selectedCell]);
 
   // 处理单元格点击 - 单击选中，双击编辑，公式模式下插入引用
   const handleCellClick = useCallback((row: number, col: number, e: React.MouseEvent) => {
@@ -336,9 +413,12 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     handleCellClick(row, col, e);
   }, [handleCellClick]);
 
-  // 处理鼠标移动（选择范围）
+  // 处理鼠标移动（选择范围或自动填充）
   const handleMouseMove = useCallback((row: number, col: number) => {
-    if (isSelecting && selectionStart) {
+    if (isAutoFilling) {
+      // 自动填充拖拽时更新目标位置
+      setAutoFillTarget({ row, col });
+    } else if (isSelecting && selectionStart) {
       onRangeSelect(
         Math.min(selectionStart.row, row),
         Math.min(selectionStart.col, col),
@@ -346,17 +426,80 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
         Math.max(selectionStart.col, col)
       );
     }
-  }, [isSelecting, selectionStart, onRangeSelect]);
+  }, [isSelecting, selectionStart, onRangeSelect, isAutoFilling]);
 
   // 处理鼠标释放
   const handleMouseUp = useCallback(() => {
+    // 处理自动填充完成
+    if (isAutoFilling && autoFillTarget && onAutoFill) {
+      const sourceRange = selectedRange || (selectedCell ? {
+        startRow: selectedCell.row,
+        startCol: selectedCell.col,
+        endRow: selectedCell.row,
+        endCol: selectedCell.col,
+      } : null);
+      
+      if (sourceRange) {
+        // 确定填充方向和目标范围
+        const targetRow = autoFillTarget.row;
+        const targetCol = autoFillTarget.col;
+        
+        let targetRange: { startRow: number; startCol: number; endRow: number; endCol: number };
+        
+        if (targetRow > sourceRange.endRow) {
+          // 向下填充
+          targetRange = {
+            startRow: sourceRange.endRow + 1,
+            startCol: sourceRange.startCol,
+            endRow: targetRow,
+            endCol: sourceRange.endCol,
+          };
+        } else if (targetRow < sourceRange.startRow) {
+          // 向上填充
+          targetRange = {
+            startRow: targetRow,
+            startCol: sourceRange.startCol,
+            endRow: sourceRange.startRow - 1,
+            endCol: sourceRange.endCol,
+          };
+        } else if (targetCol > sourceRange.endCol) {
+          // 向右填充
+          targetRange = {
+            startRow: sourceRange.startRow,
+            startCol: sourceRange.endCol + 1,
+            endRow: sourceRange.endRow,
+            endCol: targetCol,
+          };
+        } else if (targetCol < sourceRange.startCol) {
+          // 向左填充
+          targetRange = {
+            startRow: sourceRange.startRow,
+            startCol: targetCol,
+            endRow: sourceRange.endRow,
+            endCol: sourceRange.startCol - 1,
+          };
+        } else {
+          targetRange = sourceRange;
+        }
+        
+        if (targetRange.startRow !== sourceRange.startRow || 
+            targetRange.startCol !== sourceRange.startCol ||
+            targetRange.endRow !== sourceRange.endRow ||
+            targetRange.endCol !== sourceRange.endCol) {
+          onAutoFill(sourceRange, targetRange);
+        }
+      }
+    }
+    
+    setIsAutoFilling(false);
+    setAutoFillTarget(null);
     setIsSelecting(false);
     setSelectionStart(null);
     setIsSelectingRows(false);
     setIsSelectingCols(false);
     setRowSelectionStart(null);
     setColSelectionStart(null);
-  }, []);
+  }, [isAutoFilling, autoFillTarget, onAutoFill, selectedRange, selectedCell]);
 
   // 判断单元格是否被选中
   const isCellSelected = useCallback((row: number, col: number): boolean => {
@@ -378,6 +521,44 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   const isFrozen = useCallback((row: number, col: number): boolean => {
     return row < sheet.frozen_rows || col < sheet.frozen_columns;
   }, [sheet.frozen_rows, sheet.frozen_columns]);
+
+  // 检查单元格是否是合并区域的起始单元格
+  const isMergedCellStart = useCallback((row: number, col: number): MergedCell | null => {
+    if (!getMergedCellInfo) return null;
+    const merged = getMergedCellInfo(row, col);
+    if (merged && merged.start_row === row && merged.start_col === col) {
+      return merged;
+    }
+    return null;
+  }, [getMergedCellInfo]);
+
+  // 检查单元格是否应该被隐藏（是合并区域的非起始单元格）
+  const isMergedCellHidden = useCallback((row: number, col: number): boolean => {
+    if (!getMergedCellInfo) return false;
+    const merged = getMergedCellInfo(row, col);
+    if (merged && (merged.start_row !== row || merged.start_col !== col)) {
+      return true;
+    }
+    return false;
+  }, [getMergedCellInfo]);
+
+  // 计算合并单元格的宽度
+  const getMergedCellWidth = useCallback((merged: MergedCell): number => {
+    let width = 0;
+    for (let col = merged.start_col; col <= merged.end_col; col++) {
+      width += getColWidth(col);
+    }
+    return width;
+  }, [getColWidth]);
+
+  // 计算合并单元格的高度
+  const getMergedCellHeight = useCallback((merged: MergedCell): number => {
+    let height = 0;
+    for (let row = merged.start_row; row <= merged.end_row; row++) {
+      height += getRowHeight(row);
+    }
+    return height;
+  }, [getRowHeight]);
 
   // 点击列头选择整列（支持拖拽选择多列）
   const handleColumnHeaderMouseDown = useCallback((col: number, e: React.MouseEvent) => {
@@ -429,67 +610,139 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
     }
   }, [isSelectingRows, rowSelectionStart, onRangeSelect]);
 
+  // 计算列的最佳宽度（根据内容自适应）
+  const calculateOptimalColWidth = useCallback((col: number): number => {
+    let maxWidth = 50; // 最小宽度
+    
+    // 遍历所有行，找到该列最宽的内容
+    for (let row = 0; row < VISIBLE_ROWS; row++) {
+      const cell = getCell(row, col);
+      if (cell) {
+        const displayValue = formatCellValue(cell);
+        if (displayValue) {
+          // 估算文本宽度（每个字符约 8px，中文约 14px）
+          const charWidth = displayValue.split('').reduce((width, char) => {
+            return width + (char.charCodeAt(0) > 127 ? 14 : 8);
+          }, 0);
+          maxWidth = Math.max(maxWidth, charWidth + 16); // 加上 padding
+        }
+      }
+    }
+    
+    // 也考虑列头的宽度
+    const headerText = colToLetter(col);
+    const headerWidth = headerText.length * 10 + 20;
+    maxWidth = Math.max(maxWidth, headerWidth);
+    
+    return Math.min(maxWidth, 400); // 最大宽度限制
+  }, [getCell, formatCellValue]);
+
+  // 计算行的最佳高度（根据内容自适应）
+  const calculateOptimalRowHeight = useCallback((row: number): number => {
+    let maxHeight = DEFAULT_ROW_HEIGHT;
+    
+    // 遍历该行所有列，检查是否有多行内容
+    for (let col = 0; col < VISIBLE_COLS; col++) {
+      const cell = getCell(row, col);
+      if (cell) {
+        const displayValue = formatCellValue(cell);
+        if (displayValue) {
+          // 检查是否有换行符
+          const lines = displayValue.split('\n').length;
+          const lineHeight = 20;
+          const neededHeight = lines * lineHeight + 5;
+          maxHeight = Math.max(maxHeight, neededHeight);
+        }
+      }
+    }
+    
+    return Math.min(maxHeight, 200); // 最大高度限制
+  }, [getCell, formatCellValue]);
+
+  // 双击列边框自适应宽度
+  const handleColResizeDoubleClick = useCallback((col: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const optimalWidth = calculateOptimalColWidth(col);
+    onColumnWidthChange(col, optimalWidth);
+  }, [calculateOptimalColWidth, onColumnWidthChange]);
+
+  // 双击行边框自适应高度
+  const handleRowResizeDoubleClick = useCallback((row: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const optimalHeight = calculateOptimalRowHeight(row);
+    onRowHeightChange(row, optimalHeight);
+  }, [calculateOptimalRowHeight, onRowHeightChange]);
+
+  // 点击左上角全选
+  const handleSelectAll = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    onRangeSelect(0, 0, VISIBLE_ROWS - 1, VISIBLE_COLS - 1);
+  }, [onRangeSelect]);
+
   // 开始调整列宽
   const handleColResizeStart = useCallback((col: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setResizingCol(col);
-    setResizeStartX(e.clientX);
+    resizingColRef.current = col;
+    resizeStartXRef.current = e.clientX;
     const currentWidth = sheet.column_widths[col] || DEFAULT_COL_WIDTH;
-    setResizeStartWidth(currentWidth);
+    resizeStartWidthRef.current = currentWidth;
+    setResizingCol(col);
   }, [sheet.column_widths]);
 
   // 开始调整行高
   const handleRowResizeStart = useCallback((row: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setResizingRow(row);
-    setResizeStartY(e.clientY);
+    resizingRowRef.current = row;
+    resizeStartYRef.current = e.clientY;
     const currentHeight = sheet.row_heights[row] || DEFAULT_ROW_HEIGHT;
-    setResizeStartHeight(currentHeight);
+    resizeStartHeightRef.current = currentHeight;
+    setResizingRow(row);
   }, [sheet.row_heights]);
 
   // 处理调整大小的鼠标移动
   useEffect(() => {
-    if (resizingCol === null && resizingRow === null) return;
-
     const handleMouseMove = (e: MouseEvent) => {
-      if (resizingCol !== null) {
-        const delta = e.clientX - resizeStartX;
-        const newWidth = Math.max(30, resizeStartWidth + delta);
-        // 使用本地状态实时更新显示
-        setTempColWidths(prev => ({ ...prev, [resizingCol]: newWidth }));
+      if (resizingColRef.current !== null) {
+        const delta = e.clientX - resizeStartXRef.current;
+        const newWidth = Math.max(30, resizeStartWidthRef.current + delta);
+        tempColWidthsRef.current = { ...tempColWidthsRef.current, [resizingColRef.current]: newWidth };
+        setTempColWidths({ ...tempColWidthsRef.current });
       }
-      if (resizingRow !== null) {
-        const delta = e.clientY - resizeStartY;
-        const newHeight = Math.max(20, resizeStartHeight + delta);
-        // 使用本地状态实时更新显示
-        setTempRowHeights(prev => ({ ...prev, [resizingRow]: newHeight }));
+      if (resizingRowRef.current !== null) {
+        const delta = e.clientY - resizeStartYRef.current;
+        const newHeight = Math.max(20, resizeStartHeightRef.current + delta);
+        tempRowHeightsRef.current = { ...tempRowHeightsRef.current, [resizingRowRef.current]: newHeight };
+        setTempRowHeights({ ...tempRowHeightsRef.current });
       }
     };
 
     const handleMouseUp = () => {
-      // 拖拽结束时，提交最终值到父组件
-      if (resizingCol !== null && tempColWidths[resizingCol] !== undefined) {
-        onColumnWidthChange(resizingCol, tempColWidths[resizingCol]);
-        // 清除临时值
-        setTempColWidths(prev => {
-          const next = { ...prev };
-          delete next[resizingCol];
-          return next;
-        });
+      if (resizingColRef.current !== null) {
+        const col = resizingColRef.current;
+        const w = tempColWidthsRef.current[col];
+        if (w !== undefined) {
+          onColumnWidthChange(col, w);
+          delete tempColWidthsRef.current[col];
+          setTempColWidths({ ...tempColWidthsRef.current });
+        }
+        resizingColRef.current = null;
+        setResizingCol(null);
       }
-      if (resizingRow !== null && tempRowHeights[resizingRow] !== undefined) {
-        onRowHeightChange(resizingRow, tempRowHeights[resizingRow]);
-        // 清除临时值
-        setTempRowHeights(prev => {
-          const next = { ...prev };
-          delete next[resizingRow];
-          return next;
-        });
+      if (resizingRowRef.current !== null) {
+        const row = resizingRowRef.current;
+        const h = tempRowHeightsRef.current[row];
+        if (h !== undefined) {
+          onRowHeightChange(row, h);
+          delete tempRowHeightsRef.current[row];
+          setTempRowHeights({ ...tempRowHeightsRef.current });
+        }
+        resizingRowRef.current = null;
+        setResizingRow(null);
       }
-      setResizingCol(null);
-      setResizingRow(null);
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -499,7 +752,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [resizingCol, resizingRow, resizeStartX, resizeStartY, resizeStartWidth, resizeStartHeight, tempColWidths, tempRowHeights, onColumnWidthChange, onRowHeightChange]);
+  }, [onColumnWidthChange, onRowHeightChange]);
 
   return (
     <div
@@ -524,16 +777,26 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
         {/* 列头 */}
         <thead>
           <tr>
-            <th style={{
-              width: HEADER_WIDTH,
-              height: HEADER_HEIGHT,
-              background: '#f5f5f5',
-              border: '1px solid #d9d9d9',
-              position: 'sticky',
-              top: 0,
-              left: 0,
-              zIndex: 3,
-            }} />
+            <th 
+              style={{
+                width: HEADER_WIDTH,
+                height: HEADER_HEIGHT,
+                background: selectedRange && 
+                  selectedRange.startRow === 0 && 
+                  selectedRange.endRow === VISIBLE_ROWS - 1 &&
+                  selectedRange.startCol === 0 &&
+                  selectedRange.endCol === VISIBLE_COLS - 1 
+                    ? '#bae7ff' : '#f5f5f5',
+                border: '1px solid #d9d9d9',
+                position: 'sticky',
+                top: 0,
+                left: 0,
+                zIndex: 3,
+                cursor: 'pointer',
+              }}
+              onClick={handleSelectAll}
+              title="全选 (Ctrl+A)"
+            />
             {Array.from({ length: VISIBLE_COLS }, (_, col) => {
               // 判断整列是否被选中
               const isColSelected = selectedRange && 
@@ -585,6 +848,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                         background: resizingCol === col ? '#1890ff' : 'transparent',
                       }}
                       onMouseDown={(e) => handleColResizeStart(col, e)}
+                      onDoubleClick={(e) => handleColResizeDoubleClick(col, e)}
                       onMouseEnter={(e) => {
                         (e.target as HTMLElement).style.background = '#1890ff';
                       }}
@@ -594,6 +858,16 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                         }
                       }}
                     />
+                    {/* 筛选下拉按钮 */}
+                    {showFilterButtons && onColumnSort && onColumnFilter && (
+                      <ColumnFilterDropdown
+                        column={col}
+                        columnValues={getColumnValues(col)}
+                        currentFilter={columnFilters?.get(col)}
+                        onSort={onColumnSort}
+                        onFilter={(filter) => onColumnFilter(col, filter)}
+                      />
+                    )}
                   </div>
                 </th>
               );
@@ -601,7 +875,13 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
           </tr>
         </thead>
         <tbody>
-          {Array.from({ length: VISIBLE_ROWS }, (_, row) => (
+          {Array.from({ length: VISIBLE_ROWS }, (_, row) => {
+            // 如果行被隐藏（筛选），跳过渲染
+            if (hiddenRows.has(row)) {
+              return null;
+            }
+            
+            return (
             <tr key={row}>
               {/* 行头 */}
               {(() => {
@@ -654,6 +934,7 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                           background: resizingRow === row ? '#1890ff' : 'transparent',
                         }}
                         onMouseDown={(e) => handleRowResizeStart(row, e)}
+                        onDoubleClick={(e) => handleRowResizeDoubleClick(row, e)}
                         onMouseEnter={(e) => {
                           (e.target as HTMLElement).style.background = '#1890ff';
                         }}
@@ -669,24 +950,41 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
               })()}
               {/* 数据单元格 */}
               {Array.from({ length: VISIBLE_COLS }, (_, col) => {
+                // 检查是否是合并单元格的隐藏部分
+                if (isMergedCellHidden(row, col)) {
+                  return null; // 不渲染被合并的单元格
+                }
+
                 const cell = getCell(row, col);
                 const isEditing = editingCell?.row === row && editingCell?.col === col;
                 const isSelected = isCellSelected(row, col);
+                const isAutoFillTarget = isCellInAutoFillTarget(row, col);
                 const frozen = isFrozen(row, col);
+                
+                // 检查是否是合并单元格的起始位置
+                const mergedInfo = isMergedCellStart(row, col);
+                const colSpan = mergedInfo ? mergedInfo.end_col - mergedInfo.start_col + 1 : 1;
+                const rowSpan = mergedInfo ? mergedInfo.end_row - mergedInfo.start_row + 1 : 1;
+                
+                // 计算合并单元格的尺寸
+                const cellWidth = mergedInfo ? getMergedCellWidth(mergedInfo) : getColWidth(col);
+                const cellHeight = mergedInfo ? getMergedCellHeight(mergedInfo) : getRowHeight(row);
 
                 return (
                   <td
                     key={col}
+                    colSpan={colSpan}
+                    rowSpan={rowSpan}
                     style={{
-                      width: getColWidth(col),
-                      height: getRowHeight(row),
-                      border: '1px solid #e8e8e8',
+                      width: cellWidth,
+                      height: cellHeight,
+                      border: isAutoFillTarget ? '1px dashed #1890ff' : '1px solid #e8e8e8',
                       padding: 0,
                       position: frozen ? 'sticky' : 'relative',
                       left: frozen && col < sheet.frozen_columns ? HEADER_WIDTH + col * getColWidth(col) : undefined,
                       top: frozen && row < sheet.frozen_rows ? HEADER_HEIGHT + row * getRowHeight(row) : undefined,
                       zIndex: frozen ? 1 : 0,
-                      background: isSelected ? '#e6f7ff' : (frozen ? '#fafafa' : '#fff'),
+                      background: isAutoFillTarget ? '#f0f9ff' : (isSelected ? '#e6f7ff' : (frozen ? '#fafafa' : '#fff')),
                       boxShadow: isSelected && selectedCell?.row === row && selectedCell?.col === col
                         ? 'inset 0 0 0 2px #1890ff'
                         : undefined,
@@ -765,16 +1063,55 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         fontSize: 13,
-                        lineHeight: `${getRowHeight(row) - 4}px`,
+                        display: 'flex',
+                        alignItems: cell?.style?.vertical_align === 'top' ? 'flex-start' : 
+                                   cell?.style?.vertical_align === 'bottom' ? 'flex-end' : 'center',
+                        justifyContent: cell?.style?.text_align === 'center' ? 'center' : 
+                                       cell?.style?.text_align === 'right' ? 'flex-end' : 'flex-start',
+                        boxSizing: 'border-box',
                       }}>
-                        {formatCellValue(cell)}
+                        <span style={{ 
+                          overflow: 'hidden', 
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {formatCellValue(cell)}
+                        </span>
                       </div>
+                    )}
+                    {/* 自动填充手柄 - 显示在选择范围的右下角单元格 */}
+                    {!isEditing && onAutoFill && (
+                      (selectedRange 
+                        ? (row === selectedRange.endRow && col === selectedRange.endCol)
+                        : (selectedCell?.row === row && selectedCell?.col === col)
+                      ) && (
+                        <div
+                          className="auto-fill-handle"
+                          style={{
+                            position: 'absolute',
+                            right: -3,
+                            bottom: -3,
+                            width: 6,
+                            height: 6,
+                            background: '#1890ff',
+                            cursor: 'crosshair',
+                            zIndex: 10,
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsAutoFilling(true);
+                            setAutoFillTarget({ row, col });
+                          }}
+                        />
+                      )
                     )}
                   </td>
                 );
               })}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

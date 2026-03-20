@@ -5,6 +5,27 @@ import { getDatabase } from '../database';
 
 const router = Router();
 
+// GET /api/items/all - 全量拉取所有数据项（新客户端首次同步使用）
+router.get('/all', (req, res, next) => {
+  try {
+    const db = getDatabase();
+    let sql = 'SELECT * FROM items';
+    const params: (string | number)[] = [];
+
+    if (req.userId) {
+      sql += ' WHERE (user_id = ? OR user_id IS NULL)';
+      params.push(req.userId);
+    }
+
+    sql += ' ORDER BY updated_time ASC';
+
+    const items = db.prepare(sql).all(...params);
+    res.json({ items });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/items/count - 获取数据项计数
 router.get('/count', (req, res, next) => {
   try {

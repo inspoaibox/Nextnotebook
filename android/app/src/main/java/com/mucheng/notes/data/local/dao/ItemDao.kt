@@ -21,6 +21,12 @@ interface ItemDao {
     fun getByType(type: String): Flow<List<ItemEntity>>
     
     /**
+     * 按多种类型获取所有未删除的项目（实时流）
+     */
+    @Query("SELECT * FROM items WHERE type IN (:types) AND deleted_time IS NULL ORDER BY updated_time DESC")
+    fun getByTypes(types: List<String>): Flow<List<ItemEntity>>
+    
+    /**
      * 按类型获取所有未删除的项目（一次性查询）
      */
     @Query("SELECT * FROM items WHERE type = :type AND deleted_time IS NULL ORDER BY updated_time DESC")

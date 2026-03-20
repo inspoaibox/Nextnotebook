@@ -4,6 +4,22 @@ import { createError } from '../middleware/errorHandler';
 
 const router = Router();
 
+// GET /api/changes/cursor-check - 检查游标是否已过期
+router.get('/cursor-check', (req, res, next) => {
+  try {
+    const cursor = req.query.cursor as string | undefined;
+    if (!cursor) {
+      return res.json({ expired: false });
+    }
+
+    const changeService = new ChangeService();
+    const expired = changeService.isCursorExpired(cursor, req.userId);
+    res.json({ expired });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/changes - 获取变更列表
 router.get('/', (req, res, next) => {
   try {

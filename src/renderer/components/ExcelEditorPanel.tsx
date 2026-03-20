@@ -12,6 +12,8 @@ import { FormulaBar } from './excel/FormulaBar';
 import { SheetTabs } from './excel/SheetTabs';
 import { SpreadsheetGrid } from './excel/SpreadsheetGrid';
 import { CellContextMenu } from './excel/CellContextMenu';
+import { FindReplaceDialog, FindResult, FindOptions } from './excel/FindReplaceDialog';
+import { SortDialog, FilterDialog, SortConfig, FilterCondition } from './excel/SortFilterDialog';
 import { useExcelNotes, Selection } from '../hooks/useExcelNotes';
 import { FormulaEngine } from '@core/excel/FormulaEngine';
 import { ImportExportService } from '@core/excel/ImportExportService';
@@ -68,6 +70,22 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
     redo,
     canUndo,
     canRedo,
+    mergeCells,
+    unmergeCells,
+    isCellMerged,
+    getMergedCellInfo,
+    findInSheet,
+    replaceInSheet,
+    replaceAllInSheet,
+    sortByColumn,
+    sortBySelectedColumn,
+    applyFilters,
+    applyColumnFilter,
+    clearFilters,
+    activeFilters,
+    hiddenRows,
+    columnFilters,
+    autoFill,
   } = useExcelNotes();
 
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>({ row: 0, col: 0 });
@@ -77,6 +95,13 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
   const [newNoteName, setNewNoteName] = useState('');
   const [editingTitle, setEditingTitle] = useState(''); // 本地标题编辑状态
   const [isEditingTitle, setIsEditingTitle] = useState(false); // 是否正在编辑标题
+  const [showFilterButtons, setShowFilterButtons] = useState(false); // 是否显示筛选按钮
+  
+  // 对话框状态
+  const [findDialogOpen, setFindDialogOpen] = useState(false);
+  const [findDialogMode, setFindDialogMode] = useState<'find' | 'replace'>('find');
+  const [sortDialogOpen, setSortDialogOpen] = useState(false);
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   
   // 文件输入 ref
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,10 +128,16 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
   // 获取当前选中单元格
   const getCurrentCell = useCallback(() => {
     if (!currentSheet || !selectedCell) return null;
-    const row = currentSheet.rows.find(r => r.row_index === selectedCell.row);
+    
+    // 检查是否是合并单元格，如果是则获取起始单元格
+    const mergedInfo = getMergedCellInfo(selectedCell.row, selectedCell.col);
+    const targetRow = mergedInfo ? mergedInfo.start_row : selectedCell.row;
+    const targetCol = mergedInfo ? mergedInfo.start_col : selectedCell.col;
+    
+    const row = currentSheet.rows.find(r => r.row_index === targetRow);
     if (!row) return null;
-    return row.cells.find(c => c.column_index === selectedCell.col) || null;
-  }, [currentSheet, selectedCell]);
+    return row.cells.find(c => c.column_index === targetCol) || null;
+  }, [currentSheet, selectedCell, getMergedCellInfo]);
 
   // 当前单元格地址
   const cellAddress = useMemo(() => {
@@ -174,41 +205,69 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
       // 批量更新范围内的单元格样式
       for (let r = selectedRange.startRow; r <= selectedRange.endRow; r++) {
         for (let c = selectedRange.startCol; c <= selectedRange.endCol; c++) {
-          updateCellStyle(r, c, style);
+          // 检查是否是合并单元格，如果是则更新起始单元格的样式
+          const mergedInfo = getMergedCellInfo(r, c);
+          if (mergedInfo) {
+            updateCellStyle(mergedInfo.start_row, mergedInfo.start_col, style);
+          } else {
+            updateCellStyle(r, c, style);
+          }
         }
       }
     } else if (selectedCell) {
-      updateCellStyle(selectedCell.row, selectedCell.col, style);
+      // 检查是否是合并单元格，如果是则更新起始单元格的样式
+      const mergedInfo = getMergedCellInfo(selectedCell.row, selectedCell.col);
+      if (mergedInfo) {
+        updateCellStyle(mergedInfo.start_row, mergedInfo.start_col, style);
+      } else {
+        updateCellStyle(selectedCell.row, selectedCell.col, style);
+      }
     }
-  }, [selectedCell, selectedRange, updateCellStyle]);
+  }, [selectedCell, selectedRange, updateCellStyle, getMergedCellInfo]);
 
   // 处理插入行
   const handleInsertRow = useCallback(() => {
-    if (selectedCell) {
+    if (selectedRange) {
+      // 在选区起始行插入
+      insertRow(selectedRange.startRow);
+    } else if (selectedCell) {
       insertRow(selectedCell.row);
     }
-  }, [selectedCell, insertRow]);
+  }, [selectedCell, selectedRange, insertRow]);
 
-  // 处理删除行
+  // 处理删除行 - 支持多行删除
   const handleDeleteRow = useCallback(() => {
-    if (selectedCell) {
+    if (selectedRange) {
+      // 从后往前删除，避免索引偏移问题
+      for (let r = selectedRange.endRow; r >= selectedRange.startRow; r--) {
+        deleteRow(r);
+      }
+    } else if (selectedCell) {
       deleteRow(selectedCell.row);
     }
-  }, [selectedCell, deleteRow]);
+  }, [selectedCell, selectedRange, deleteRow]);
 
   // 处理插入列
   const handleInsertColumn = useCallback(() => {
-    if (selectedCell) {
+    if (selectedRange) {
+      // 在选区起始列插入
+      insertColumn(selectedRange.startCol);
+    } else if (selectedCell) {
       insertColumn(selectedCell.col);
     }
-  }, [selectedCell, insertColumn]);
+  }, [selectedCell, selectedRange, insertColumn]);
 
-  // 处理删除列
+  // 处理删除列 - 支持多列删除
   const handleDeleteColumn = useCallback(() => {
-    if (selectedCell) {
+    if (selectedRange) {
+      // 从后往前删除，避免索引偏移问题
+      for (let c = selectedRange.endCol; c >= selectedRange.startCol; c--) {
+        deleteColumn(c);
+      }
+    } else if (selectedCell) {
       deleteColumn(selectedCell.col);
     }
-  }, [selectedCell, deleteColumn]);
+  }, [selectedCell, selectedRange, deleteColumn]);
 
   // 处理复制
   const handleCopy = useCallback(async () => {
@@ -290,6 +349,117 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
       updateCellStyle(selectedCell.row, selectedCell.col, emptyStyle);
     }
   }, [selectedCell, selectedRange, updateCellStyle]);
+
+  // 处理合并单元格
+  const handleMergeCells = useCallback(() => {
+    if (selectedRange) {
+      const success = mergeCells(
+        selectedRange.startRow,
+        selectedRange.startCol,
+        selectedRange.endRow,
+        selectedRange.endCol
+      );
+      if (success) {
+        message.success('单元格已合并');
+      } else {
+        message.warning('无法合并：选区与现有合并单元格冲突');
+      }
+    }
+  }, [selectedRange, mergeCells]);
+
+  // 处理取消合并
+  const handleUnmergeCells = useCallback(() => {
+    if (selectedCell) {
+      unmergeCells(selectedCell.row, selectedCell.col);
+      message.success('已取消合并');
+    }
+  }, [selectedCell, unmergeCells]);
+
+  // 检查当前选中单元格是否已合并
+  const isCurrentCellMerged = useMemo(() => {
+    if (!selectedCell) return false;
+    return isCellMerged(selectedCell.row, selectedCell.col);
+  }, [selectedCell, isCellMerged]);
+
+  // 检查是否有多单元格选区（用于判断是否可以合并）
+  const hasMultiCellSelection = useMemo(() => {
+    if (!selectedRange) return false;
+    return selectedRange.startRow !== selectedRange.endRow || 
+           selectedRange.startCol !== selectedRange.endCol;
+  }, [selectedRange]);
+
+  // 查找替换处理
+  const handleFind = useCallback((searchText: string, options: FindOptions): FindResult[] => {
+    return findInSheet(searchText, options);
+  }, [findInSheet]);
+
+  const handleReplace = useCallback((searchText: string, replaceText: string, options: FindOptions): number => {
+    if (!selectedCell) return 0;
+    return replaceInSheet(searchText, replaceText, options, selectedCell.row, selectedCell.col) ? 1 : 0;
+  }, [selectedCell, replaceInSheet]);
+
+  const handleReplaceAll = useCallback((searchText: string, replaceText: string, options: FindOptions): number => {
+    return replaceAllInSheet(searchText, replaceText, options);
+  }, [replaceAllInSheet]);
+
+  const handleNavigateToResult = useCallback((result: FindResult) => {
+    setSelectedCell({ row: result.row, col: result.col });
+    setSelectedRange(null);
+    setSelection({ startRow: result.row, startCol: result.col, endRow: result.row, endCol: result.col });
+  }, [setSelection]);
+
+  // 排序处理 - 根据当前选中的列排序
+  const handleSort = useCallback((config: SortConfig) => {
+    sortByColumn(config);
+    message.success(`已按列 ${colToLetter(config.column)} ${config.order === 'asc' ? '升序' : '降序'}排序`);
+  }, [sortByColumn]);
+
+  // 快速排序 - 使用当前选中的列
+  const handleQuickSort = useCallback((order: 'asc' | 'desc') => {
+    if (!selectedCell) {
+      message.warning('请先选择一个单元格');
+      return;
+    }
+    sortBySelectedColumn(order);
+    message.success(`已按列 ${colToLetter(selectedCell.col)} ${order === 'asc' ? '升序' : '降序'}排序`);
+  }, [selectedCell, sortBySelectedColumn]);
+
+  // 切换筛选按钮显示
+  const handleToggleFilter = useCallback(() => {
+    setShowFilterButtons(prev => !prev);
+    if (!showFilterButtons) {
+      message.info('已启用筛选，点击列头的筛选图标进行筛选');
+    } else {
+      // 关闭筛选时清除所有筛选
+      clearFilters();
+      message.info('已关闭筛选');
+    }
+  }, [showFilterButtons, clearFilters]);
+
+  // 列筛选处理
+  const handleColumnFilter = useCallback((column: number, filter: any) => {
+    applyColumnFilter(column, filter);
+  }, [applyColumnFilter]);
+
+  // 列排序处理
+  const handleColumnSort = useCallback((column: number, order: 'asc' | 'desc') => {
+    sortByColumn({ column, order });
+    message.success(`已按列 ${colToLetter(column)} ${order === 'asc' ? '升序' : '降序'}排序`);
+  }, [sortByColumn]);
+
+  // 筛选处理（旧的弹窗方式，保留兼容）
+  const handleApplyFilter = useCallback((conditions: FilterCondition[]) => {
+    applyFilters(conditions);
+    if (conditions.length > 0) {
+      message.success(`已应用 ${conditions.length} 个筛选条件`);
+    }
+  }, [applyFilters]);
+
+  const handleClearFilters = useCallback(() => {
+    clearFilters();
+    setShowFilterButtons(false);
+    message.success('已清除筛选');
+  }, [clearFilters]);
 
   // 处理导入
   const handleImport = useCallback(async (file: File) => {
@@ -428,6 +598,16 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
             e.preventDefault();
             handleStyleChange({ font_italic: !currentCellStyle?.font_italic });
             break;
+          case 'f':
+            e.preventDefault();
+            setFindDialogMode('find');
+            setFindDialogOpen(true);
+            break;
+          case 'h':
+            e.preventDefault();
+            setFindDialogMode('replace');
+            setFindDialogOpen(true);
+            break;
         }
       }
     };
@@ -549,6 +729,8 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
 
     return (
       <CellContextMenu
+        hasSelection={hasMultiCellSelection}
+        isMerged={isCurrentCellMerged}
         onCopy={handleCopy}
         onCut={handleCut}
         onPaste={handlePaste}
@@ -560,6 +742,8 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
         onDeleteColumn={handleDeleteColumn}
         onClearContent={handleClearContent}
         onClearFormat={handleClearFormat}
+        onMergeCells={handleMergeCells}
+        onUnmergeCells={handleUnmergeCells}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {/* 标题栏 */}
@@ -596,6 +780,9 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
             selectedStyle={currentCellStyle}
             canUndo={canUndo}
             canRedo={canRedo}
+            hasSelection={hasMultiCellSelection}
+            isMerged={isCurrentCellMerged}
+            hasActiveFilters={activeFilters.length > 0}
             onStyleChange={handleStyleChange}
             onUndo={undo}
             onRedo={redo}
@@ -606,6 +793,15 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
             onImport={triggerFileSelect}
             onExportXlsx={handleExportXlsx}
             onExportCsv={handleExportCsv}
+            onMergeCells={handleMergeCells}
+            onUnmergeCells={handleUnmergeCells}
+            onFind={() => { setFindDialogMode('find'); setFindDialogOpen(true); }}
+            onReplace={() => { setFindDialogMode('replace'); setFindDialogOpen(true); }}
+            onSortAsc={() => handleQuickSort('asc')}
+            onSortDesc={() => handleQuickSort('desc')}
+            onToggleFilter={handleToggleFilter}
+            onClearFilters={handleClearFilters}
+            showFilterButtons={showFilterButtons}
           />
 
           {/* 公式栏 */}
@@ -634,6 +830,13 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
             onColumnWidthChange={setColumnWidth}
             onRowHeightChange={setRowHeight}
             onClearRange={clearCellRange}
+            getMergedCellInfo={getMergedCellInfo}
+            hiddenRows={hiddenRows}
+            onAutoFill={autoFill}
+            columnFilters={columnFilters}
+            onColumnSort={handleColumnSort}
+            onColumnFilter={handleColumnFilter}
+            showFilterButtons={showFilterButtons}
           />
 
           {/* 工作表标签 */}
@@ -666,6 +869,35 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
         accept=".xlsx,.xls,.csv"
         style={{ display: 'none' }}
         onChange={handleFileInputChange}
+      />
+      
+      {/* 查找替换对话框 */}
+      <FindReplaceDialog
+        open={findDialogOpen}
+        mode={findDialogMode}
+        onClose={() => setFindDialogOpen(false)}
+        onFind={handleFind}
+        onReplace={handleReplace}
+        onReplaceAll={handleReplaceAll}
+        onNavigateToResult={handleNavigateToResult}
+      />
+      
+      {/* 排序对话框 */}
+      <SortDialog
+        open={sortDialogOpen}
+        columnCount={26}
+        onClose={() => setSortDialogOpen(false)}
+        onSort={handleSort}
+      />
+      
+      {/* 筛选对话框 */}
+      <FilterDialog
+        open={filterDialogOpen}
+        columnCount={26}
+        activeFilters={activeFilters}
+        onClose={() => setFilterDialogOpen(false)}
+        onApplyFilter={handleApplyFilter}
+        onClearFilters={handleClearFilters}
       />
     </div>
   );

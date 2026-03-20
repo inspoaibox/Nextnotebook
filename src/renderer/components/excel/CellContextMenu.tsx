@@ -16,10 +16,14 @@ import {
   InsertRowRightOutlined,
   DeleteColumnOutlined,
   ClearOutlined,
+  MergeCellsOutlined,
+  SplitCellsOutlined,
 } from '@ant-design/icons';
 
 interface CellContextMenuProps {
   children: React.ReactNode;
+  hasSelection: boolean;
+  isMerged: boolean;
   onCopy: () => void;
   onCut: () => void;
   onPaste: () => void;
@@ -31,10 +35,14 @@ interface CellContextMenuProps {
   onDeleteColumn: () => void;
   onClearContent: () => void;
   onClearFormat: () => void;
+  onMergeCells: () => void;
+  onUnmergeCells: () => void;
 }
 
 export const CellContextMenu: React.FC<CellContextMenuProps> = ({
   children,
+  hasSelection,
+  isMerged,
   onCopy,
   onCut,
   onPaste,
@@ -46,6 +54,8 @@ export const CellContextMenu: React.FC<CellContextMenuProps> = ({
   onDeleteColumn,
   onClearContent,
   onClearFormat,
+  onMergeCells,
+  onUnmergeCells,
 }) => {
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
     switch (key) {
@@ -82,6 +92,12 @@ export const CellContextMenu: React.FC<CellContextMenuProps> = ({
       case 'clearFormat':
         onClearFormat();
         break;
+      case 'mergeCells':
+        onMergeCells();
+        break;
+      case 'unmergeCells':
+        onUnmergeCells();
+        break;
     }
   };
 
@@ -100,6 +116,19 @@ export const CellContextMenu: React.FC<CellContextMenuProps> = ({
       key: 'paste',
       label: '粘贴',
       icon: <SnippetsOutlined />,
+    },
+    { type: 'divider' },
+    {
+      key: 'mergeCells',
+      label: '合并单元格',
+      icon: <MergeCellsOutlined />,
+      disabled: !hasSelection || isMerged,
+    },
+    {
+      key: 'unmergeCells',
+      label: '取消合并',
+      icon: <SplitCellsOutlined />,
+      disabled: !isMerged,
     },
     { type: 'divider' },
     {

@@ -24,8 +24,8 @@ export interface SyncCursor {
   timestamp: number;
 }
 
-// 变更日志保留时间（毫秒）- 7 天
-export const CHANGE_LOG_RETENTION = 7 * 24 * 60 * 60 * 1000;
+// 变更日志保留时间（毫秒）- 90 天
+export const CHANGE_LOG_RETENTION = 90 * 24 * 60 * 60 * 1000;
 
 // 统一的存储适配器接口
 export interface StorageAdapter {
@@ -72,6 +72,13 @@ export interface StorageAdapter {
 
   // 检查远端是否已有数据（用于首次同步检测）
   hasExistingData?(): Promise<boolean>;
+
+  // 全量拉取所有 item（新客户端首次同步使用，绕过变更日志）
+  listAllItems?(): Promise<ItemBase[]>;
+
+  // 检查游标是否已过期（游标对应的变更日志已被清理）
+  // 返回 true 表示游标过期，需要降级到全量拉取
+  isCursorExpired?(cursor: string): Promise<boolean>;
 
   // 密钥指纹验证
   getKeyFingerprint(): Promise<string | null>;
