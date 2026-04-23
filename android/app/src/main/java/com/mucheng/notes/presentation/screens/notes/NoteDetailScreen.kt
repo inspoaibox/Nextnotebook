@@ -1431,8 +1431,8 @@ private fun wrapContentInHtml(content: String, isDarkTheme: Boolean): String {
  */
 private fun markdownToHtml(markdown: String): String {
     var html = markdown
-    
-    // 代码块（需要先处理，避免内部内容被其他规则影响）
+
+    // 1. 代码块（最先处理，避免内部内容被其他规则影响）
     val codeBlockRegex = Regex("```(\\w*)\\n([\\s\\S]*?)```")
     html = codeBlockRegex.replace(html) { match ->
         val language = match.groupValues[1]
@@ -1441,6 +1441,29 @@ private fun markdownToHtml(markdown: String): String {
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         "<pre><code class=\"language-$language\">$code</code></pre>"
+    }
+
+    // 2. Markdown 表格（在其他行级规则之前处理，防止 --- 被水平线规则替换）
+    // 标准格式：表头行 + 分隔行（| --- |）+ 数据行
+    val tableRegex = Regex("""(?m)(^\|.+\|[ \t]*\n)(^\|[ \t]*[-:]+[-| :\t]*\|[ \t]*\n)((?:^\|.+\|[ \t]*\n?)*)""")
+    html = tableRegex.replace(html) { m ->
+        val headerLine = m.groupValues[1].trim()
+        val bodyLines = m.groupValues[3].trim().lines().filter { it.trim().startsWith("|") }
+
+        fun parseCells(line: String) = line.trim()
+            .removePrefix("|").removeSuffix("|")
+            .split("|").map { it.trim() }
+
+        val sb = StringBuilder("<table><thead><tr>")
+        parseCells(headerLine).forEach { sb.append("<th>$it</th>") }
+        sb.append("</tr></thead><tbody>")
+        bodyLines.forEach { line ->
+            sb.append("<tr>")
+            parseCells(line).forEach { sb.append("<td>$it</td>") }
+            sb.append("</tr>")
+        }
+        sb.append("</tbody></table>")
+        sb.toString()
     }
     
     // 行内代码
@@ -1532,6 +1555,12 @@ private fun markdownToHtml(markdown: String): String {
             trimmedLine.startsWith("<li") ||
             trimmedLine.startsWith("<pre") ||
             trimmedLine.startsWith("<blockquote") ||
+            trimmedLine.startsWith("<table") ||
+            trimmedLine.startsWith("<thead") ||
+            trimmedLine.startsWith("<tbody") ||
+            trimmedLine.startsWith("<tr") ||
+            trimmedLine.startsWith("<th") ||
+            trimmedLine.startsWith("<td") ||
             trimmedLine.startsWith("<hr") ||
             trimmedLine.startsWith("</")) {
             if (inParagraph) {

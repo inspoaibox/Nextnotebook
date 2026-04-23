@@ -45,6 +45,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.mucheng.notes.data.local.transfer.TransferMessageEntity
 import com.mucheng.notes.data.local.transfer.TransferSessionEntity
+import com.mucheng.notes.data.local.transfer.TransferFileEntity
 import com.mucheng.notes.data.transfer.*
 import com.mucheng.notes.presentation.components.QRScannerDialog
 import com.mucheng.notes.presentation.viewmodel.TransferUiState
@@ -129,9 +130,11 @@ fun TransferScreen(
             // 聊天视图
             ChatView(
                 uiState = uiState,
-                onBack = { viewModel.selectSession("") },
+                onBack = { viewModel.deselectSession() },
                 onSendMessage = { viewModel.sendTextMessage(it) },
                 onSendFile = { uri -> viewModel.sendFile(uri) },
+                onOpenFile = { fileId -> viewModel.openFile(fileId) },
+                onOpenFolder = { fileId -> viewModel.openFileFolder(fileId) },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
@@ -673,6 +676,8 @@ private fun ChatView(
     onBack: () -> Unit,
     onSendMessage: (String) -> Unit,
     onSendFile: (android.net.Uri) -> Unit,
+    onOpenFile: (String) -> Unit,
+    onOpenFolder: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val session = uiState.sessions.find { it.id == uiState.selectedSessionId }
@@ -749,7 +754,15 @@ private fun ChatView(
                 }
             } else {
                 items(uiState.messages) { message ->
-                    MessageBubble(message = message)
+                    val fileEntity = if (message.type == "file" && message.fileId != null) {
+                        uiState.files.find { it.id == message.fileId }
+                    } else null
+                    MessageBubble(
+                        message = message,
+                        fileEntity = fileEntity,
+                        onOpenFile = { fileId -> onOpenFile(fileId) },
+                        onOpenFolder = { fileId -> onOpenFolder(fileId) }
+                    )
                 }
             }
         }
@@ -819,9 +832,16 @@ private fun ChatView(
  * 消息气泡
  */
 @Composable
-private fun MessageBubble(message: TransferMessageEntity) {
+private fun MessageBubble(
+    message: TransferMessageEntity,
+    fileEntity: TransferFileEntity? = null,
+    onOpenFile: (String) -> Unit = {},
+    onOpenFolder: (String) -> Unit = {}
+) {
     val isSent = message.direction == MessageDirection.SENT.value
+    val isFileMessage = message.type == "file" || message.type == "image"
     val dateFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val context = LocalContext.current
     
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -841,14 +861,63 @@ private fun MessageBubble(message: TransferMessageEntity) {
             modifier = Modifier.widthIn(max = 280.dp)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isSent) 
-                        MaterialTheme.colorScheme.onPrimary 
-                    else 
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (isFileMessage) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .clickable(enabled = fileEntity != null) {
+                                fileEntity?.let { onOpenFile(it.id) }
+                            }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (message.type == "image") Icons.Filled.Image else Icons.Filled.AttachFile,
+                            contentDescription = "File",
+                            modifier = Modifier.size(20.dp),
+                            tint = if (isSent)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = message.content.ifBlank { "文件" },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isSent)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (fileEntity != null && fileEntity.localPath != null) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            TextButton(
+                                onClick = { onOpenFile(fileEntity.id) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text("打开", style = MaterialTheme.typography.labelSmall)
+                            }
+                            TextButton(
+                                onClick = { onOpenFolder(fileEntity.id) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text("打开文件夹", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isSent) 
+                            MaterialTheme.colorScheme.onPrimary 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = dateFormat.format(Date(message.createdAt)),

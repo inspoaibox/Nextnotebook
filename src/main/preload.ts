@@ -17,7 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
 
   // 主题设置（保存到主进程可读取的文件，用于启动时背景色）
-  saveThemeSettings: (settings: { theme: string }) => ipcRenderer.invoke('save-theme-settings', settings),
+  saveThemeSettings: (settings: { theme: string }) =>
+    ipcRenderer.invoke('save-theme-settings', settings),
 
   // 同步配置（保存到主进程文件系统，确保持久化）
   saveSyncConfig: (config: object) => ipcRenderer.invoke('save-sync-config', config),
@@ -39,11 +40,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // 兼容旧的单独事件（菜单栏点击）
     const actions = [
-      'new-note', 'quick-new-note', 'new-folder', 'import', 'export', 'find',
-      'toggle-sidebar', 'theme-light', 'theme-dark', 'theme-system',
-      'sync-now', 'sync-settings', 'open-settings', 'about',
-      'save-note', 'delete-note', 'duplicate-note', 'toggle-edit-mode',
-      'toggle-star', 'prev-note', 'next-note', 'escape'
+      'new-note',
+      'quick-new-note',
+      'new-folder',
+      'import',
+      'export',
+      'find',
+      'toggle-sidebar',
+      'theme-light',
+      'theme-dark',
+      'theme-system',
+      'sync-now',
+      'sync-settings',
+      'open-settings',
+      'about',
+      'save-note',
+      'delete-note',
+      'duplicate-note',
+      'toggle-edit-mode',
+      'toggle-star',
+      'prev-note',
+      'next-note',
+      'escape',
     ];
     actions.forEach(action => {
       ipcRenderer.on(action, () => callback(action));
@@ -61,7 +79,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     hardDelete: (id: string) => ipcRenderer.invoke('items:hardDelete', id),
     restore: (id: string) => ipcRenderer.invoke('items:restore', id),
     search: (query: string, type?: string) => ipcRenderer.invoke('items:search', query, type),
-    getNotesByFolder: (folderId: string | null) => ipcRenderer.invoke('items:getNotesByFolder', folderId),
+    getNotesByFolder: (folderId: string | null) =>
+      ipcRenderer.invoke('items:getNotesByFolder', folderId),
     getPinnedNotes: () => ipcRenderer.invoke('items:getPinnedNotes'),
     getDeleted: (type?: string) => ipcRenderer.invoke('items:getDeleted', type),
     getStats: () => ipcRenderer.invoke('items:getStats'),
@@ -87,19 +106,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('sync:clearLocalCursor', serverType, serverUrl),
     // 监听同步时间更新事件
     onLastSyncTimeUpdated: (callback: (lastSyncTime: number) => void) => {
-      ipcRenderer.on('sync:lastSyncTimeUpdated', (_event, lastSyncTime: number) => callback(lastSyncTime));
+      ipcRenderer.on('sync:lastSyncTimeUpdated', (_event, lastSyncTime: number) =>
+        callback(lastSyncTime)
+      );
     },
     // 监听 token 刷新事件
-    onTokenRefreshed: (callback: (data: { token: string; refreshToken: string; expiresIn: number }) => void) => {
+    onTokenRefreshed: (
+      callback: (data: { token: string; refreshToken: string; expiresIn: number }) => void
+    ) => {
       ipcRenderer.on('sync:tokenRefreshed', (_event, data) => callback(data));
+    },
+    onReloginRequired: (callback: () => void) => {
+      ipcRenderer.on('sync:reloginRequired', () => callback());
     },
   },
 
   // Crypto API
   crypto: {
-    generateKey: (exportPassword: string) => ipcRenderer.invoke('crypto:generateKey', exportPassword),
-    exportKey: (masterKey: string, exportPassword: string) => ipcRenderer.invoke('crypto:exportKey', masterKey, exportPassword),
-    importKey: (encryptedKey: string, importPassword: string) => ipcRenderer.invoke('crypto:importKey', encryptedKey, importPassword),
+    generateKey: (exportPassword: string) =>
+      ipcRenderer.invoke('crypto:generateKey', exportPassword),
+    exportKey: (masterKey: string, exportPassword: string) =>
+      ipcRenderer.invoke('crypto:exportKey', masterKey, exportPassword),
+    importKey: (encryptedKey: string, importPassword: string) =>
+      ipcRenderer.invoke('crypto:importKey', encryptedKey, importPassword),
   },
 
   // 文件操作
@@ -112,9 +141,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Image API - 图片处理
   image: {
     getMetadata: (input: string) => ipcRenderer.invoke('image:getMetadata', input),
-    process: (input: string, options: object) => ipcRenderer.invoke('image:process', input, options),
-    generatePreview: (input: string, maxSize: number) => ipcRenderer.invoke('image:generatePreview', input, maxSize),
-    saveFile: (buffer: string, defaultName: string) => ipcRenderer.invoke('image:saveFile', buffer, defaultName),
+    process: (input: string, options: object) =>
+      ipcRenderer.invoke('image:process', input, options),
+    generatePreview: (input: string, maxSize: number) =>
+      ipcRenderer.invoke('image:generatePreview', input, maxSize),
+    saveFile: (buffer: string, defaultName: string) =>
+      ipcRenderer.invoke('image:saveFile', buffer, defaultName),
   },
 
   // PDF API - PDF 处理
@@ -130,7 +162,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deletePages: (options: object) => ipcRenderer.invoke('pdf:deletePages', options),
     extractPages: (options: object) => ipcRenderer.invoke('pdf:extractPages', options),
     setSecurity: (options: object) => ipcRenderer.invoke('pdf:setSecurity', options),
-    removeSecurity: (file: string, password: string) => ipcRenderer.invoke('pdf:removeSecurity', file, password),
+    removeSecurity: (file: string, password: string) =>
+      ipcRenderer.invoke('pdf:removeSecurity', file, password),
     getMetadata: (file: string) => ipcRenderer.invoke('pdf:getMetadata', file),
     setMetadata: (options: object) => ipcRenderer.invoke('pdf:setMetadata', options),
     imagesToPdf: (options: object) => ipcRenderer.invoke('pdf:imagesToPdf', options),
@@ -143,7 +176,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     repair: (file: string) => ipcRenderer.invoke('pdf:repair', file),
     convertVersion: (options: object) => ipcRenderer.invoke('pdf:convertVersion', options),
     linearize: (file: string) => ipcRenderer.invoke('pdf:linearize', file),
-    saveFile: (buffer: string, defaultName: string) => ipcRenderer.invoke('pdf:saveFile', buffer, defaultName),
+    saveFile: (buffer: string, defaultName: string) =>
+      ipcRenderer.invoke('pdf:saveFile', buffer, defaultName),
   },
 
   // Data API - 数据导入导出
@@ -165,14 +199,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getPath: (resourceId: string, ext: string) =>
       ipcRenderer.invoke('resource:getPath', resourceId, ext),
     // 读取资源文件（返回 base64）
-    read: (resourceId: string, ext: string) =>
-      ipcRenderer.invoke('resource:read', resourceId, ext),
+    read: (resourceId: string, ext: string) => ipcRenderer.invoke('resource:read', resourceId, ext),
     // 删除资源
     delete: (resourceId: string, ext: string) =>
       ipcRenderer.invoke('resource:delete', resourceId, ext),
     // 获取笔记的所有资源
-    getNoteResources: (noteId: string) =>
-      ipcRenderer.invoke('resource:getNoteResources', noteId),
+    getNoteResources: (noteId: string) => ipcRenderer.invoke('resource:getNoteResources', noteId),
   },
 
   // Web Clipper API - 网页剪藏
@@ -185,8 +217,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       tags?: string[];
       downloadImages?: boolean;
       images?: { src: string; alt: string }[];
-    }) =>
-      ipcRenderer.invoke('clipper:confirm', data),
+    }) => ipcRenderer.invoke('clipper:confirm', data),
     // 取消剪藏
     cancel: () => ipcRenderer.invoke('clipper:cancel'),
     // 获取待处理的剪藏
@@ -221,13 +252,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       createDevice: (device: object) => ipcRenderer.invoke('transfer:db:createDevice', device),
       getDevice: (id: string) => ipcRenderer.invoke('transfer:db:getDevice', id),
       getAllDevices: () => ipcRenderer.invoke('transfer:db:getAllDevices'),
-      updateDevice: (id: string, updates: object) => ipcRenderer.invoke('transfer:db:updateDevice', id, updates),
+      updateDevice: (id: string, updates: object) =>
+        ipcRenderer.invoke('transfer:db:updateDevice', id, updates),
       deleteDevice: (id: string) => ipcRenderer.invoke('transfer:db:deleteDevice', id),
       // 会话
       createSession: (session: object) => ipcRenderer.invoke('transfer:db:createSession', session),
       getSession: (id: string) => ipcRenderer.invoke('transfer:db:getSession', id),
       getAllSessions: () => ipcRenderer.invoke('transfer:db:getAllSessions'),
-      getSessionsByDevice: (deviceId: string) => ipcRenderer.invoke('transfer:db:getSessionsByDevice', deviceId),
+      getSessionsByDevice: (deviceId: string) =>
+        ipcRenderer.invoke('transfer:db:getSessionsByDevice', deviceId),
       endSession: (id: string) => ipcRenderer.invoke('transfer:db:endSession', id),
       deleteSession: (id: string) => ipcRenderer.invoke('transfer:db:deleteSession', id),
       // 消息
@@ -236,20 +269,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
       getMessagesBySession: (sessionId: string, limit?: number, offset?: number) =>
         ipcRenderer.invoke('transfer:db:getMessagesBySession', sessionId, limit, offset),
       markMessageAsRead: (id: string) => ipcRenderer.invoke('transfer:db:markMessageAsRead', id),
-      markSessionMessagesAsRead: (sessionId: string) => ipcRenderer.invoke('transfer:db:markSessionMessagesAsRead', sessionId),
+      markSessionMessagesAsRead: (sessionId: string) =>
+        ipcRenderer.invoke('transfer:db:markSessionMessagesAsRead', sessionId),
       deleteMessage: (id: string) => ipcRenderer.invoke('transfer:db:deleteMessage', id),
       // 文件传输
-      createFileTransfer: (file: object) => ipcRenderer.invoke('transfer:db:createFileTransfer', file),
+      createFileTransfer: (file: object) =>
+        ipcRenderer.invoke('transfer:db:createFileTransfer', file),
       getFile: (id: string) => ipcRenderer.invoke('transfer:db:getFile', id),
-      getFilesBySession: (sessionId: string) => ipcRenderer.invoke('transfer:db:getFilesBySession', sessionId),
-      updateFileProgress: (id: string, progress: number) => ipcRenderer.invoke('transfer:db:updateFileProgress', id, progress),
+      getFilesBySession: (sessionId: string) =>
+        ipcRenderer.invoke('transfer:db:getFilesBySession', sessionId),
+      updateFileProgress: (id: string, progress: number) =>
+        ipcRenderer.invoke('transfer:db:updateFileProgress', id, progress),
       completeFileTransfer: (id: string, localPath: string, fileHash?: string) =>
         ipcRenderer.invoke('transfer:db:completeFileTransfer', id, localPath, fileHash),
       failFileTransfer: (id: string) => ipcRenderer.invoke('transfer:db:failFileTransfer', id),
       cancelFileTransfer: (id: string) => ipcRenderer.invoke('transfer:db:cancelFileTransfer', id),
       deleteFile: (id: string) => ipcRenderer.invoke('transfer:db:deleteFile', id),
       // 清理和统计
-      cleanupOldSessions: (daysOld: number) => ipcRenderer.invoke('transfer:db:cleanupOldSessions', daysOld),
+      cleanupOldSessions: (daysOld: number) =>
+        ipcRenderer.invoke('transfer:db:cleanupOldSessions', daysOld),
       cleanupFailedTransfers: () => ipcRenderer.invoke('transfer:db:cleanupFailedTransfers'),
       getStats: () => ipcRenderer.invoke('transfer:db:getStats'),
     },
@@ -307,6 +345,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('transfer:relay:sendMessage', targetDeviceId, sessionId, message),
       sendFile: (targetDeviceId: string, sessionId: string, filePath: string) =>
         ipcRenderer.invoke('transfer:relay:sendFile', targetDeviceId, sessionId, filePath),
+      sendPairRequest: (targetDeviceId: string) =>
+        ipcRenderer.invoke('transfer:relay:sendPairRequest', targetDeviceId),
       // 中继事件监听
       onConnected: (callback: () => void) => {
         const handler = () => callback();
@@ -356,7 +396,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     startServer: (config: object) => ipcRenderer.invoke('mcp:startServer', config),
     stopServer: (serverId: string) => ipcRenderer.invoke('mcp:stopServer', serverId),
     listTools: (serverId: string) => ipcRenderer.invoke('mcp:listTools', serverId),
-    callTool: (serverId: string, toolName: string, args: any) => ipcRenderer.invoke('mcp:callTool', serverId, toolName, args),
+    callTool: (serverId: string, toolName: string, args: any) =>
+      ipcRenderer.invoke('mcp:callTool', serverId, toolName, args),
   },
 
   // Notification API - 系统通知

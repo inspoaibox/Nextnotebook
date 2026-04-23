@@ -40,6 +40,7 @@ data class ConversationItem(
     val id: String,
     val title: String,
     val model: String,
+    val channelId: String?,
     val systemPrompt: String,
     val temperature: Float,
     val maxTokens: Int,
@@ -98,14 +99,21 @@ class AIViewModel @Inject constructor(
         } else emptyList()
     }
     
-    private fun findChannelForModel(modelId: String): AIChannel? {
-        return getUserChannels().find { channel -> channel.models.any { it.id == modelId } }
+    private fun findChannelForModel(modelId: String, channelId: String? = null): AIChannel? {
+        val channels = getUserChannels()
+        // 优先按 channelId 精确匹配（桌面端同步过来的对话带有 channel_id）
+        if (!channelId.isNullOrBlank()) {
+            val byChannelId = channels.find { it.id == channelId }
+            if (byChannelId != null) return byChannelId
+        }
+        // fallback：按 modelId 匹配
+        return channels.find { channel -> channel.models.any { it.id == modelId } }
     }
     
-    fun createConversation(title: String = "新对话", model: String = "gpt-4", systemPrompt: String = "", temperature: Float = 0.7f, maxTokens: Int = 4096) {
+    fun createConversation(title: String = "新对话", channelId: String? = null, model: String = "gpt-4", systemPrompt: String = "", temperature: Float = 0.7f, maxTokens: Int = 4096) {
         viewModelScope.launch {
             try {
-                val payload = AIConversationPayload(title = title, model = model, systemPrompt = systemPrompt, temperature = temperature, maxTokens = maxTokens, createdAt = System.currentTimeMillis())
+                val payload = AIConversationPayload(title = title, model = model, channelId = channelId, systemPrompt = systemPrompt, temperature = temperature, maxTokens = maxTokens, createdAt = System.currentTimeMillis())
                 val item = itemRepository.create(ItemType.AI_CONVERSATION, json.encodeToString(payload))
                 _uiState.value = _uiState.value.copy(selectedConversationId = item.id, error = null)
             } catch (e: Exception) {
@@ -119,7 +127,7 @@ class AIViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(selectedConversationId = conversationId)
     }
     
-    fun sendMessageWithSettings(content: String, modelId: String, systemPrompt: String, temperature: Float, maxTokens: Int) {
+    fun sendMessageWithSettings(content: String, modelId: String, channelId: String?, systemPrompt: String, temperature: Float, maxTokens: Int) {
         val conversationId = _uiState.value.selectedConversationId ?: return
         viewModelScope.launch {
             try {
@@ -129,7 +137,7 @@ class AIViewModel @Inject constructor(
                 
                 _uiState.value = _uiState.value.copy(isThinking = true, error = null)
                 
-                val channel = findChannelForModel(modelId)
+                val channel = findChannelForModel(modelId, channelId)
                 if (channel == null) {
                     val errorPayload = AIMessagePayload(conversationId = conversationId, role = "assistant", content = "未找到模型对应的 AI 渠道", model = modelId, tokensUsed = null, createdAt = System.currentTimeMillis())
                     itemRepository.create(ItemType.AI_MESSAGE, json.encodeToString(errorPayload))
@@ -196,7 +204,7 @@ class AIViewModel @Inject constructor(
     fun sendMessage(content: String) {
         val conversationId = _uiState.value.selectedConversationId ?: return
         val conversation = conversations.value.find { it.id == conversationId } ?: return
-        sendMessageWithSettings(content, conversation.model, conversation.systemPrompt, conversation.temperature, conversation.maxTokens)
+        sendMessageWithSettings(content, conversation.model, conversation.channelId, conversation.systemPrompt, conversation.temperature, conversation.maxTokens)
     }
     
     fun deleteConversation(conversationId: String) {
@@ -225,26 +233,19 @@ class AIViewModel @Inject constructor(
     }
     
 
-    fun updateSettings(conversationId: String, model: String, systemPrompt: String, temperature: Float, maxTokens: Int) {
+    fun updateSettings(conversationId: String, channelId: String?, model: String, systemPrompt: String, temperature: Float, maxTokens: Int) {
         viewModelScope.launch {
             val item = itemRepository.getById(conversationId) ?: return@launch
             try {
                 val payloadData = json.decodeFromString<AIConversationPayload>(item.payload)
                 val updatedPayload = payloadData.copy(
                     model = model,
+                    channelId = channelId,
                     systemPrompt = systemPrompt,
                     temperature = temperature,
                     maxTokens = maxTokens
                 )
                 itemRepository.update(conversationId, json.encodeToString(updatedPayload))
-                if (_pendingConversation?.id == conversationId) {
-                    _pendingConversation = _pendingConversation?.copy(
-                        model = model,
-                        systemPrompt = systemPrompt,
-                        temperature = temperature,
-                        maxTokens = maxTokens
-                    )
-                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = "更新设置失败: ${e.message}")
             }
@@ -263,6 +264,7 @@ class AIViewModel @Inject constructor(
                 id = id,
                 title = payloadData.title,
                 model = payloadData.model,
+                channelId = payloadData.channelId,
                 systemPrompt = payloadData.systemPrompt,
                 temperature = payloadData.temperature,
                 maxTokens = payloadData.maxTokens,

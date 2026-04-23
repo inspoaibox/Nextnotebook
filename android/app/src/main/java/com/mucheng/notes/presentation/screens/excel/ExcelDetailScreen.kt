@@ -107,7 +107,7 @@ fun ExcelDetailScreen(
                         sheet = currentSheet,
                         selectedCell = uiState.selectedCell,
                         onCellSelect = { row, col -> viewModel.selectCell(row, col) },
-                        onCellChange = { row, col, value -> viewModel.updateCell(row, col, value) },
+                        onCellChange = { _, _, _ -> },
                         getCellDisplayValue = { row, col ->
                             viewModel.getCellDisplayValue(currentSheet, row, col)
                         }

@@ -69,9 +69,34 @@ npm install
 ```
 
 ### 开发模式
+
+开发时有两种启动方式：
+
+**方式一：一键启动（推荐）**
+
+webpack 编译 + Electron 自动等待编译完成后启动，一个命令搞定：
+
+```bash
+npm run dev:app
+```
+
+> 内部流程：同时启动 main/renderer 的 webpack watch，等待 `http://localhost:3001` 就绪后自动拉起 Electron。
+
+**方式二：分步启动**
+
+先启动 webpack 编译（保持终端运行）：
+
 ```bash
 npm run dev
 ```
+
+等终端出现 `webpack compiled successfully` 后，再开一个终端启动 Electron：
+
+```bash
+npm start
+```
+
+> `npm run dev` 只负责编译和热更新，不会自动打开应用窗口，必须配合 `npm start` 使用。
 
 ### 构建应用
 ```bash
@@ -111,8 +136,15 @@ npm install
 ```
 
 2. **构建代码**
+
+清理缓存后构建:
+```bash
+Remove-Item -Recurse -Force node_modules\.cache -ErrorAction SilentlyContinue; Write-Host "done"
+```
+
 ```bash
 npm run build
+npm run dist:win
 ```
 此命令会依次执行：
 - `npm run build:main` - 构建 Electron 主进程
@@ -296,9 +328,10 @@ src/
 
 | 命令 | 说明 |
 |------|------|
-| `npm run dev` | 启动开发服务器 |
+| `npm run dev:app` | 一键启动开发模式（编译 + Electron） |
+| `npm run dev` | 仅启动 webpack 编译（不启动 Electron） |
+| `npm start` | 启动 Electron（需先编译） |
 | `npm run build` | 构建生产版本 |
-| `npm start` | 运行构建后的应用 |
 | `npm test` | 运行测试 |
 | `npm run lint` | 代码检查 |
 | `npm run format` | 代码格式化 |

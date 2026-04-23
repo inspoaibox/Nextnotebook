@@ -45,6 +45,13 @@ export function useFolders() {
     loadFolders();
   }, [loadFolders]);
 
+  // 监听同步完成事件，刷新文件夹列表
+  useEffect(() => {
+    const handleSyncCompleted = () => { loadFolders(); };
+    window.addEventListener('sync-completed', handleSyncCompleted);
+    return () => { window.removeEventListener('sync-completed', handleSyncCompleted); };
+  }, [loadFolders]);
+
   const createFolder = useCallback(async (name: string, parentId: string | null = null) => {
     const payload: FolderPayload = {
       name,

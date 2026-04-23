@@ -366,27 +366,119 @@ class SyncEngine @Inject constructor(
         
         var count = 0
         var conflicts = 0
-        var nextCursor = cursor
         
         android.util.Log.d("SyncEngine", "Starting pull, cursor=$cursor, isFirstSync=${cursor == null}, enabledTypes=$enabledTypes")
-        android.util.Log.d("SyncEngine", "SyncModules: notes=${cfg.syncModules.notes}, bookmarks=${cfg.syncModules.bookmarks}, vault=${cfg.syncModules.vault}")
+
+        // ✅ 触发全量拉取的两种情况：
+        // 1. 游标为 null（新客户端首次同步）
+        // 2. 游标已过期（长时间离线，变更日志已被清理）
+        val cursorExpired = if (cursor != null) {
+            try { adapter.isCursorExpired(cursor) } catch (e: Exception) { false }
+        } else false
+
+        if ((cursor == null || cursorExpired)) {
+            val remoteHasData = try { adapter.hasData() } catch (e: Exception) { false }
+
+            if (remoteHasData) {
+                if (cursorExpired) {
+                    android.util.Log.d("SyncEngine", "Cursor expired — falling back to full pull")
+                    clearLocalSyncCursor()
+                } else {
+                    android.util.Log.d("SyncEngine", "No cursor and remote has data — performing full pull")
+                }
+
+                val allItems = adapter.listAllItems()
+                val filteredItems = allItems.filter { it.type in enabledTypes }
+                android.util.Log.d("SyncEngine", "Full pull: ${filteredItems.size} items (filtered from ${allItems.size})")
+
+                for (remoteItem in filteredItems) {
+                    try {
+                        // 跳过已删除的 item
+                        if (remoteItem.deletedTime != null) {
+                            val localItem = itemDao.getById(remoteItem.id)
+                            if (localItem != null) {
+                                itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                            }
+                            continue
+                        }
+
+                        val localItem = itemDao.getById(remoteItem.id)
+
+                        if (localItem == null) {
+                            // 本地没有，直接创建
+                            itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                            count++
+                        } else if (localItem.contentHash != remoteItem.contentHash) {
+                            // 内容不同，检查冲突
+                            if (localItem.syncStatus == "modified") {
+                                val conflictItem = createConflictCopy(localItem)
+                                itemDao.upsert(conflictItem)
+                                itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                                conflicts++
+                            } else {
+                                itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                            }
+                            count++
+                        }
+                        // 内容相同则跳过
+
+                        // 如果是资源类型，下载资源文件
+                        if (remoteItem.type == "resource") {
+                            try {
+                                val payload = json.decodeFromString<ResourcePayload>(remoteItem.payload)
+                                val ext = getExtensionFromFilename(payload.filename)
+                                val resourceId = "${remoteItem.id}$ext"
+                                val downloadResult = adapter.downloadResource(resourceId)
+                                if (downloadResult.isSuccess) {
+                                    val data = downloadResult.getOrThrow()
+                                    val cacheFile = File(resourceCacheDir, resourceId)
+                                    cacheFile.writeBytes(data)
+                                    val now = System.currentTimeMillis()
+                                    resourceCacheDao.upsert(
+                                        ResourceCacheEntity(
+                                            resourceId = remoteItem.id,
+                                            localPath = cacheFile.absolutePath,
+                                            downloadedAt = now,
+                                            lastAccessedAt = now
+                                        )
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.w("SyncEngine", "Failed to download resource: ${e.message}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("SyncEngine", "Error processing full pull item ${remoteItem.id}: ${e.message}")
+                    }
+                }
+
+                // ✅ 全量拉取完成后，设置游标
+                // 自建服务器：用 latestChangeId；WebDAV：用时间戳
+                // 注意：latestChangeId 可能为 0（changes 表为空），此时用 "0" 作为游标
+                // 这样下次增量同步 WHERE change_id > 0 能正确拉取到所有后续变更
+                val lastChangeId = adapter.getLastFullPullChangeId()
+                val newCursor = when {
+                    lastChangeId != null && lastChangeId > 0 -> lastChangeId.toString()
+                    lastChangeId != null && lastChangeId == 0L -> "0"  // changes 表为空，用 "0" 作为起始游标
+                    else -> "0"  // WebDAV 或无法获取 changeId 时，用 "0" 保证增量同步能正常工作
+                }
+                setLocalSyncCursor(SyncCursor(newCursor, System.currentTimeMillis()))
+                android.util.Log.d("SyncEngine", "Full pull complete: count=$count, conflicts=$conflicts, cursor set to $newCursor")
+
+                return PullResult(count, conflicts)
+            }
+        }
+
+        // ✅ 增量同步：有游标时走变更日志路径
+        var nextCursor = cursor
         
         do {
             val result = adapter.listChanges(nextCursor)
             android.util.Log.d("SyncEngine", "Got ${result.changes.size} changes, hasMore=${result.hasMore}")
 
-            // 打印所有变更的类型，帮助调试
-            result.changes.forEach { change ->
-                android.util.Log.d("SyncEngine", "Change available: itemId=${change.itemId}, type=${change.type}, inEnabled=${change.type in enabledTypes}")
-            }
-
             for (change in result.changes) {
-                if (change.type !in enabledTypes) {
-                    android.util.Log.d("SyncEngine", "Skipping change ${change.itemId}, type ${change.type} not enabled")
-                    continue
-                }
+                if (change.type !in enabledTypes) continue
 
-                // 从远端获取完整的item数据 (与桌面端逻辑一致)
                 val remoteItem = adapter.getItem(change.itemId)
                 if (remoteItem == null) {
                     android.util.Log.w("SyncEngine", "Remote item ${change.itemId} not found, skipping")
@@ -394,32 +486,14 @@ class SyncEngine @Inject constructor(
                 }
 
                 val localItem = itemDao.getById(remoteItem.id)
-                android.util.Log.d("SyncEngine", "Processing change: id=${remoteItem.id}, type=${remoteItem.type}, localExists=${localItem != null}, localStatus=${localItem?.syncStatus}")
 
-                // 检查是否是自己刚上传的 (与桌面端逻辑一致)
                 if (localItem != null && localItem.syncStatus == "clean") {
-                    // 检查内容哈希是否一致，且删除状态也一致，才跳过
                     val hashMatches = localItem.contentHash == change.contentHash
                     val deletedStatusMatches = (localItem.deletedTime == null) == (remoteItem.deletedTime == null)
-                    
-                    if (hashMatches && deletedStatusMatches) {
-                        android.util.Log.d("SyncEngine", "Skipping - hash and deleted status match: ${remoteItem.id}")
-                        continue
-                    }
-                    
-                    // 哈希不同或删除状态不同，说明远端有更新，继续处理
-                    if (!hashMatches) {
-                        android.util.Log.d("SyncEngine", "Remote update detected for ${remoteItem.id}, local_hash=${localItem.contentHash}, remote_hash=${change.contentHash}")
-                    }
-                    if (!deletedStatusMatches) {
-                        android.util.Log.d("SyncEngine", "Remote deletion status changed for ${remoteItem.id}, local_deleted=${localItem.deletedTime}, remote_deleted=${remoteItem.deletedTime}")
-                    }
+                    if (hashMatches && deletedStatusMatches) continue
                 }
 
-                // 检查是否有冲突
                 if (localItem != null && localItem.syncStatus == "modified") {
-                    // 本地也有修改，产生冲突
-                    android.util.Log.d("SyncEngine", "Conflict detected for item: ${remoteItem.id}")
                     val conflictItem = createConflictCopy(localItem)
                     itemDao.upsert(conflictItem)
                     itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
@@ -428,23 +502,17 @@ class SyncEngine @Inject constructor(
                     continue
                 }
 
-                // 直接使用远端数据（明文同步，不需要解密）
                 // 如果是资源类型，下载资源文件
                 if (remoteItem.type == "resource") {
                     try {
                         val payload = json.decodeFromString<ResourcePayload>(remoteItem.payload)
                         val ext = getExtensionFromFilename(payload.filename)
                         val resourceId = "${remoteItem.id}$ext"
-                        
-                        // 下载资源文件
                         val downloadResult = adapter.downloadResource(resourceId)
                         if (downloadResult.isSuccess) {
                             val data = downloadResult.getOrThrow()
-                            // 保存到本地缓存
                             val cacheFile = File(resourceCacheDir, resourceId)
                             cacheFile.writeBytes(data)
-                            
-                            // 更新缓存记录
                             val now = System.currentTimeMillis()
                             resourceCacheDao.upsert(
                                 ResourceCacheEntity(
@@ -454,25 +522,20 @@ class SyncEngine @Inject constructor(
                                     lastAccessedAt = now
                                 )
                             )
-                            android.util.Log.d("SyncEngine", "Downloaded resource file: $resourceId")
-                        } else {
-                            android.util.Log.w("SyncEngine", "Failed to download resource file: $resourceId")
                         }
                     } catch (e: Exception) {
-                        android.util.Log.w("SyncEngine", "Failed to download resource file: ${e.message}")
+                        android.util.Log.w("SyncEngine", "Failed to download resource: ${e.message}")
                     }
                 }
-                
-                // 写入本地
+
                 itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
-                android.util.Log.d("SyncEngine", if (localItem == null) "Inserted new item: ${remoteItem.id}" else "Updated existing item: ${remoteItem.id}")
                 count++
             }
 
             nextCursor = result.nextCursor
         } while (result.hasMore && nextCursor != null)
 
-        // ✅ 更新本地同步游标（保存到 SharedPreferences，不再保存到 WebDAV）
+        // ✅ 更新本地同步游标
         if (nextCursor != null) {
             setLocalSyncCursor(SyncCursor(nextCursor, System.currentTimeMillis()))
         }

@@ -20,7 +20,18 @@ router.get('/all', (req, res, next) => {
     sql += ' ORDER BY updated_time ASC';
 
     const items = db.prepare(sql).all(...params);
-    res.json({ items });
+
+    // 返回当前最大 change_id，客户端全量拉取后用这个值作为游标（按用户过滤）
+    let maxChangeSql = 'SELECT MAX(change_id) as max_id FROM changes';
+    const maxChangeParams: (string | number)[] = [];
+    if (req.userId) {
+      maxChangeSql += ' WHERE (user_id = ? OR user_id IS NULL)';
+      maxChangeParams.push(req.userId);
+    }
+    const maxChange = db.prepare(maxChangeSql).get(...maxChangeParams) as { max_id: number | null };
+    const latestChangeId = maxChange?.max_id ?? 0;
+
+    res.json({ items, latestChangeId });
   } catch (error) {
     next(error);
   }

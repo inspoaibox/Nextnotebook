@@ -311,6 +311,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
               ? `导入成功！新增 ${result.itemsImported} 条数据，跳过 ${result.itemsSkipped} 条已存在数据，导入 ${result.resourcesImported} 个附件`
               : `导入成功！共导入 ${result.itemsImported} 条数据，${result.resourcesImported} 个附件`;
           message.success(msg);
+          // 如果导入了 AI 设置，清除 localStorage 旧值，重载后会从数据库重新读取
+          if (result.aiSettingsImported) {
+            localStorage.removeItem('mucheng-ai-settings');
+          }
           // 刷新页面以显示新数据
           window.location.reload();
         } else if (result.error !== '已取消') {

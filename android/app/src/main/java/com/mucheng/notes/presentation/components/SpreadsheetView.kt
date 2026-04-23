@@ -26,6 +26,7 @@ import com.mucheng.notes.presentation.viewmodel.CellPosition
 
 /**
  * 电子表格视图组件
+ * @param readOnly 只读预览模式，只渲染有数据的区域
  */
 @Composable
 fun SpreadsheetView(
@@ -34,15 +35,25 @@ fun SpreadsheetView(
     onCellSelect: (Int, Int) -> Unit,
     onCellChange: (Int, Int, String) -> Unit,
     getCellDisplayValue: (Int, Int) -> String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    readOnly: Boolean = false
 ) {
     val horizontalScrollState = rememberScrollState()
-    val visibleRows = 50
-    val visibleCols = 26
     val cellWidth = 100.dp
     val cellHeight = 36.dp
     val headerWidth = 50.dp
     val headerHeight = 36.dp
+
+    // 计算实际有数据的行列范围，只读模式下只渲染有数据的区域
+    val maxDataRow = if (sheet.rows.isEmpty()) 0
+        else sheet.rows.maxOf { it.rowIndex } + 1
+    val maxDataCol = if (sheet.rows.isEmpty()) 0
+        else sheet.rows.flatMap { it.cells }.maxOfOrNull { it.columnIndex + 1 } ?: 0
+
+    // 只读模式：只显示有数据的区域（最少显示 5 行 5 列）
+    // 编辑模式：显示 50 行 26 列
+    val visibleRows = if (readOnly) maxOf(maxDataRow, 5) else 50
+    val visibleCols = if (readOnly) maxOf(maxDataCol, 5) else 26
 
     Column(modifier = modifier.fillMaxSize()) {
         // 列头
@@ -105,7 +116,8 @@ fun SpreadsheetView(
                             isSelected = selectedCell.row == row && selectedCell.col == col,
                             onClick = { onCellSelect(row, col) },
                             onValueChange = { onCellChange(row, col, it) },
-                            modifier = Modifier.size(cellWidth, cellHeight)
+                            modifier = Modifier.size(cellWidth, cellHeight),
+                            readOnly = readOnly
                         )
                     }
                 }
@@ -123,7 +135,8 @@ private fun SpreadsheetCell(
     isSelected: Boolean,
     onClick: () -> Unit,
     onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    readOnly: Boolean = false
 ) {
     var isEditing by remember { mutableStateOf(false) }
     var editValue by remember(value) { mutableStateOf(value) }
@@ -132,23 +145,24 @@ private fun SpreadsheetCell(
     Box(
         modifier = modifier
             .border(
-                width = if (isSelected) 2.dp else 0.5.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                width = if (isSelected && !readOnly) 2.dp else 0.5.dp,
+                color = if (isSelected && !readOnly) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outline
             )
             .background(
-                if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                if (isSelected && !readOnly) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                 else MaterialTheme.colorScheme.surface
             )
             .clickable {
-                onClick()
-                if (isSelected) {
-                    isEditing = true
+                if (!readOnly) {
+                    onClick()
+                    if (isSelected) isEditing = true
                 }
             }
             .padding(4.dp),
         contentAlignment = Alignment.CenterStart
     ) {
-        if (isEditing && isSelected) {
+        if (isEditing && isSelected && !readOnly) {
             BasicTextField(
                 value = editValue,
                 onValueChange = { editValue = it },
@@ -158,21 +172,13 @@ private fun SpreadsheetCell(
                     .onFocusChanged { state ->
                         if (!state.isFocused && isEditing) {
                             isEditing = false
-                            if (editValue != value) {
-                                onValueChange(editValue)
-                            }
+                            if (editValue != value) onValueChange(editValue)
                         }
                     },
-                textStyle = TextStyle(
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
+                textStyle = TextStyle(fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface),
                 singleLine = true
             )
-            
-            LaunchedEffect(Unit) {
-                focusRequester.requestFocus()
-            }
+            LaunchedEffect(Unit) { focusRequester.requestFocus() }
         } else {
             Text(
                 text = value,

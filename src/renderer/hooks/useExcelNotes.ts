@@ -224,6 +224,7 @@ export function useExcelNotes(folderId?: string | null): UseExcelNotesReturn {
   }, []);
 
   const updatePayload = useCallback((newPayload: ExcelNotePayload, addToHistory = true) => {
+    console.log('[Excel] updatePayload called, addToHistory:', addToHistory);
     if (addToHistory) {
       pushHistory(newPayload);
     }
@@ -347,7 +348,9 @@ export function useExcelNotes(folderId?: string | null): UseExcelNotesReturn {
   }, [currentNote, currentPayload]);
 
   const saveCurrentNote = useCallback(async () => {
+    console.log('[Excel] saveCurrentNote called, hasNote:', !!currentNote, 'hasPayload:', !!currentPayload, 'isDirty:', isDirtyRef.current);
     if (currentNote && currentPayload && isDirtyRef.current) {
+      console.log('[Excel] Actually saving note:', currentNote.id);
       await itemsApi.update(currentNote.id, currentPayload);
       isDirtyRef.current = false;
     }
@@ -701,6 +704,7 @@ export function useExcelNotes(folderId?: string | null): UseExcelNotesReturn {
   // ==================== 行列操作 ====================
 
   const insertRow = useCallback((rowIndex: number) => {
+    console.log('[Excel] insertRow called:', rowIndex, !!currentPayload, !!currentSheet);
     if (!currentPayload || !currentSheet) return;
 
     const sheetIndex = currentPayload.active_sheet_index;
@@ -743,6 +747,7 @@ export function useExcelNotes(folderId?: string | null): UseExcelNotesReturn {
   }, [currentPayload, currentSheet, updatePayload]);
 
   const deleteRow = useCallback((rowIndex: number) => {
+    console.log('[Excel] deleteRow called:', rowIndex, !!currentPayload, !!currentSheet);
     if (!currentPayload || !currentSheet) return;
 
     const sheetIndex = currentPayload.active_sheet_index;
@@ -792,6 +797,7 @@ export function useExcelNotes(folderId?: string | null): UseExcelNotesReturn {
   }, [currentPayload, currentSheet, updatePayload]);
 
   const insertColumn = useCallback((colIndex: number) => {
+    console.log('[Excel] insertColumn called:', colIndex, !!currentPayload, !!currentSheet);
     if (!currentPayload || !currentSheet) return;
 
     const sheetIndex = currentPayload.active_sheet_index;
@@ -837,6 +843,7 @@ export function useExcelNotes(folderId?: string | null): UseExcelNotesReturn {
   }, [currentPayload, currentSheet, updatePayload]);
 
   const deleteColumn = useCallback((colIndex: number) => {
+    console.log('[Excel] deleteColumn called:', colIndex, !!currentPayload, !!currentSheet);
     if (!currentPayload || !currentSheet) return;
 
     const sheetIndex = currentPayload.active_sheet_index;
@@ -889,6 +896,7 @@ export function useExcelNotes(folderId?: string | null): UseExcelNotesReturn {
   }, [currentPayload, currentSheet, updatePayload]);
 
   const setColumnWidth = useCallback((colIndex: number, width: number) => {
+    console.log('[Excel] setColumnWidth called:', colIndex, width, !!currentPayload, !!currentSheet);
     if (!currentPayload || !currentSheet) return;
 
     const sheetIndex = currentPayload.active_sheet_index;
@@ -913,6 +921,7 @@ export function useExcelNotes(folderId?: string | null): UseExcelNotesReturn {
   }, [currentPayload, currentSheet, updatePayload]);
 
   const setRowHeight = useCallback((rowIndex: number, height: number) => {
+    console.log('[Excel] setRowHeight called:', rowIndex, height, !!currentPayload, !!currentSheet);
     if (!currentPayload || !currentSheet) return;
 
     const sheetIndex = currentPayload.active_sheet_index;

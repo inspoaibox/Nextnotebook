@@ -744,6 +744,35 @@ const VaultPanel: React.FC = () => {
     setEditModalOpen(true);
   };
 
+  const handleDuplicateEntry = (entry: VaultEntry) => {
+    // 复制当前条目数据，标题加"(副本)"，打开新建编辑框
+    setEditingEntry(null);
+    form.setFieldsValue({
+      name: `${entry.name} (副本)`,
+      entry_type: entry.entryType,
+      folder_id: entry.folderId,
+      username: entry.username,
+      password: entry.password,
+      totp_secrets: entry.totpSecrets,
+      uris: entry.uris,
+      notes: entry.notes,
+      card_holder_name: entry.cardHolderName,
+      card_number: entry.cardNumber,
+      card_brand: entry.cardBrand,
+      card_exp_month: entry.cardExpMonth,
+      card_exp_year: entry.cardExpYear,
+      card_cvv: entry.cardCvv,
+      identity_title: entry.identityTitle,
+      identity_first_name: entry.identityFirstName,
+      identity_last_name: entry.identityLastName,
+      identity_email: entry.identityEmail,
+      identity_phone: entry.identityPhone,
+      identity_address: entry.identityAddress,
+      custom_fields: entry.customFields,
+    });
+    setEditModalOpen(true);
+  };
+
   const handleSaveEntry = async () => {
     try {
       const values = await form.validateFields();
@@ -1014,6 +1043,7 @@ const VaultPanel: React.FC = () => {
                   </div>
                   <Space size={8}>
                     <Button icon={<EditOutlined />} onClick={() => handleEditEntry(selectedEntry)}>编辑</Button>
+                    <Button icon={<CopyOutlined />} onClick={() => handleDuplicateEntry(selectedEntry)}>复制</Button>
                     <Popconfirm title="确定删除？" onConfirm={() => handleDeleteEntry(selectedEntry.id)}>
                       <Button danger icon={<DeleteOutlined />} />
                     </Popconfirm>

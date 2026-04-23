@@ -28,6 +28,7 @@ espressoCore = "3.6.1"
 socketio = "2.1.0"
 zxing = "3.5.3"
 zxingAndroid = "4.3.0"
+material = "1.10.0"
 
 [libraries]
 # AndroidX Core
@@ -95,6 +96,7 @@ socketio-client = { group = "io.socket", name = "socket.io-client", version.ref 
 # QR Code
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 zxing-android = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingAndroid" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

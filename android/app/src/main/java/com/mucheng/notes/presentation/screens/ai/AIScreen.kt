@@ -110,6 +110,12 @@ fun AIScreen(
     val uiState by viewModel.uiState.collectAsState()
     val settingsState by settingsViewModel.uiState.collectAsState()
 
+    // 每次进入 AI 界面时，从 SharedPreferences 重新加载渠道配置
+    // 确保同步后的最新渠道信息能被正确显示
+    LaunchedEffect(Unit) {
+        settingsViewModel.reloadAiConfigFromPrefs()
+    }
+
     // 解析配置
     val userChannels = remember(settingsState.aiChannelsJson) {
         if (settingsState.aiChannelsJson.isNotBlank()) {
@@ -129,8 +135,8 @@ fun AIScreen(
     val currentConversation = conversations.find { it.id == uiState.selectedConversationId }
     
     // 设置更新回调
-    val handleUpdateSettings: (String, String, String, Float, Int) -> Unit = { convId, model, systemPrompt, temperature, maxTokens ->
-        viewModel.updateSettings(convId, model, systemPrompt, temperature, maxTokens)
+    val handleUpdateSettings: (String, String?, String, String, Float, Int) -> Unit = { convId, channelId, model, systemPrompt, temperature, maxTokens ->
+        viewModel.updateSettings(convId, channelId, model, systemPrompt, temperature, maxTokens)
     }
     
     // 根据是否选中对话显示不同视图
@@ -174,8 +180,8 @@ fun AIScreen(
             CreateConversationDialog(
                 channels = userChannels,
                 onDismiss = { showCreateDialog = false },
-                onCreate = { title, model, systemPrompt, temperature, maxTokens ->
-                    viewModel.createConversation(title, model, systemPrompt, temperature, maxTokens)
+                onCreate = { title, channelId, model, systemPrompt, temperature, maxTokens ->
+                    viewModel.createConversation(title, channelId, model, systemPrompt, temperature, maxTokens)
                     showCreateDialog = false
                 }
             )
@@ -373,44 +379,35 @@ fun ChatScreen(
     bottomPadding: PaddingValues,
     onBack: () -> Unit,
     onSettingsClick: () -> Unit,
-    onUpdateSettings: (String, String, String, Float, Int) -> Unit
+    onUpdateSettings: (String, String?, String, String, Float, Int) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
     var showSettingsPanel by remember { mutableStateOf(false) }
     var showModelSelector by remember { mutableStateOf(false) }
-    
-    // 当前对话设置（可编辑）- 使用 conversation 的值作为初始值
+
+    var currentChannelId by remember(conversation?.id) { mutableStateOf(conversation?.channelId) }
     var currentModel by remember(conversation?.id) { mutableStateOf(conversation?.model ?: "") }
     var currentSystemPrompt by remember(conversation?.id) { mutableStateOf(conversation?.systemPrompt ?: "") }
     var currentTemperature by remember(conversation?.id) { mutableFloatStateOf(conversation?.temperature ?: 0.7f) }
     var currentMaxTokens by remember(conversation?.id) { mutableStateOf(conversation?.maxTokens ?: 4096) }
-    
-    // 当 conversation 的具体属性变化时（如从数据库重新加载），更新本地状态
-    // 但只在用户没有主动修改的情况下更新
+
     LaunchedEffect(conversation?.model) {
-        if (conversation != null && currentModel.isEmpty()) {
-            currentModel = conversation.model
-        }
+        if (conversation != null && currentModel.isEmpty()) currentModel = conversation.model
+    }
+    LaunchedEffect(conversation?.channelId) {
+        if (conversation != null) currentChannelId = conversation.channelId
     }
     LaunchedEffect(conversation?.systemPrompt) {
-        if (conversation != null) {
-            // 始终同步 systemPrompt，因为它可能从服务器同步过来
-            currentSystemPrompt = conversation.systemPrompt
-        }
+        if (conversation != null) currentSystemPrompt = conversation.systemPrompt
     }
     LaunchedEffect(conversation?.temperature) {
-        if (conversation != null) {
-            currentTemperature = conversation.temperature
-        }
+        if (conversation != null) currentTemperature = conversation.temperature
     }
     LaunchedEffect(conversation?.maxTokens) {
-        if (conversation != null) {
-            currentMaxTokens = conversation.maxTokens
-        }
+        if (conversation != null) currentMaxTokens = conversation.maxTokens
     }
-    
-    // 获取所有可用模型（从 SettingsViewModel 获取）
+
     val userChannels = remember(settingsState.aiChannelsJson) {
         if (settingsState.aiChannelsJson.isNotBlank()) {
             try {
@@ -419,13 +416,16 @@ fun ChatScreen(
             } catch (e: Exception) { emptyList() }
         } else emptyList()
     }
-    
-    val allModels: List<ModelInfo> = remember(userChannels) { 
-        userChannels.flatMap { channel ->
-            channel.models.map { model ->
-                ModelInfo(channel.id, channel.name, model.id, model.name)
-            }
-        }
+
+    // 当前渠道（优先按 channelId 匹配，fallback 到包含当前 model 的渠道）
+    val currentChannel = remember(currentChannelId, currentModel, userChannels) {
+        userChannels.find { it.id == currentChannelId }
+            ?: userChannels.find { ch -> ch.models.any { it.id == currentModel } }
+    }
+
+    // 当前模型名称显示
+    val currentModelName = remember(currentModel, currentChannel) {
+        currentChannel?.models?.find { it.id == currentModel }?.name ?: currentModel.take(15)
     }
 
     Column(
@@ -451,7 +451,7 @@ fun ChatScreen(
                 }
             },
             actions = {
-                // 模型选择器按钮
+                // 模型选择器按钮（渠道→模型两级）
                 Box {
                     Surface(
                         onClick = { showModelSelector = true },
@@ -464,8 +464,7 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = allModels.find { it.modelId == currentModel }?.modelName 
-                                    ?: currentModel.take(15),
+                                text = currentModelName,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 maxLines = 1
@@ -478,54 +477,61 @@ fun ChatScreen(
                             )
                         }
                     }
-                    
-                    // 模型选择下拉菜单
+
+                    // 渠道→模型两级下拉
                     DropdownMenu(
                         expanded = showModelSelector,
                         onDismissRequest = { showModelSelector = false }
                     ) {
-                        if (allModels.isEmpty()) {
+                        if (userChannels.isEmpty()) {
                             DropdownMenuItem(
-                                text = { Text("未配置模型", color = MaterialTheme.colorScheme.outline) },
+                                text = { Text("未配置渠道", color = MaterialTheme.colorScheme.outline) },
                                 onClick = { showModelSelector = false }
                             )
                         } else {
-                            allModels.forEach { modelInfo ->
+                            userChannels.forEach { channel ->
+                                // 渠道标题（不可点击，作为分组标签）
                                 DropdownMenuItem(
-                                    text = { 
-                                        Column {
-                                            Text(modelInfo.modelName)
+                                    text = {
+                                        Text(
+                                            channel.name,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    },
+                                    onClick = {},
+                                    enabled = false
+                                )
+                                // 该渠道下的模型
+                                channel.models.forEach { model ->
+                                    val isSelected = model.id == currentModel && channel.id == (currentChannelId ?: currentChannel?.id)
+                                    DropdownMenuItem(
+                                        text = {
                                             Text(
-                                                modelInfo.channelName,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.outline
+                                                "  ${model.name}",
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary
+                                                        else MaterialTheme.colorScheme.onSurface
                                             )
-                                        }
-                                    },
-                                    onClick = {
-                                        currentModel = modelInfo.modelId
-                                        val convId = conversation?.id
-                                        if (convId != null) {
-                                            onUpdateSettings(
-                                                convId,
-                                                modelInfo.modelId,
-                                                currentSystemPrompt,
-                                                currentTemperature,
-                                                currentMaxTokens
-                                            )
-                                        }
-                                        showModelSelector = false
-                                    },
-                                    leadingIcon = {
-                                        if (modelInfo.modelId == currentModel) {
+                                        },
+                                        leadingIcon = if (isSelected) ({
                                             Icon(
                                                 Icons.Default.SmartToy,
                                                 contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
                                                 tint = MaterialTheme.colorScheme.primary
                                             )
+                                        }) else null,
+                                        onClick = {
+                                            currentModel = model.id
+                                            currentChannelId = channel.id
+                                            val convId = conversation?.id
+                                            if (convId != null) {
+                                                onUpdateSettings(convId, channel.id, model.id, currentSystemPrompt, currentTemperature, currentMaxTokens)
+                                            }
+                                            showModelSelector = false
                                         }
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
@@ -573,13 +579,7 @@ fun ChatScreen(
                 onSave = {
                     val convId = conversation?.id
                     if (convId != null) {
-                        onUpdateSettings(
-                            convId,
-                            currentModel,
-                            currentSystemPrompt,
-                            currentTemperature,
-                            currentMaxTokens
-                        )
+                        onUpdateSettings(convId, currentChannelId, currentModel, currentSystemPrompt, currentTemperature, currentMaxTokens)
                     }
                     showSettingsPanel = false
                 },
@@ -604,6 +604,7 @@ fun ChatScreen(
                 viewModel.sendMessageWithSettings(
                     content = message,
                     modelId = currentModel,
+                    channelId = currentChannelId ?: conversation?.channelId,
                     systemPrompt = currentSystemPrompt,
                     temperature = currentTemperature,
                     maxTokens = currentMaxTokens
@@ -1203,7 +1204,7 @@ fun DeleteConfirmDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> U
 fun CreateConversationDialog(
     channels: List<AIChannel>,
     onDismiss: () -> Unit,
-    onCreate: (String, String, String, Float, Int) -> Unit
+    onCreate: (String, String?, String, String, Float, Int) -> Unit  // title, channelId, model, systemPrompt, temperature, maxTokens
 ) {
     var title by remember { mutableStateOf("") }
     var selectedChannel by remember { mutableStateOf<AIChannel?>(null) }
@@ -1322,7 +1323,7 @@ fun CreateConversationDialog(
                 onClick = {
                     val finalModel = selectedModel?.id ?: "gpt-3.5-turbo"
                     val finalTokens = maxTokensStr.toIntOrNull() ?: 4096
-                    onCreate(title.ifBlank { "新对话" }, finalModel, systemPrompt, temperature, finalTokens)
+                    onCreate(title.ifBlank { "新对话" }, selectedChannel?.id, finalModel, systemPrompt, temperature, finalTokens)
                 },
                 enabled = selectedChannel != null && selectedModel != null
             ) {

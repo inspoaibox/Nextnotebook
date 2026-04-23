@@ -326,9 +326,9 @@ export class SyncEngine {
     let currentCursor = localCursor;
     
     // 检查游标格式是否兼容
-    // 自建服务器使用数字格式，WebDAV 使用文件名格式（包含 .json）
+    // 自建服务器使用纯数字格式（change_id），WebDAV 使用文件名格式（{timestamp}.json）
     if (currentCursor) {
-      const isWebDAVFormat = currentCursor.includes('.json');
+      const isWebDAVFormat = currentCursor.endsWith('.json');
       const isServerType = this.serverIdentifier?.type === 'server';
       
       // 如果当前是自建服务器但游标是 WebDAV 格式，清除游标
@@ -337,15 +337,24 @@ export class SyncEngine {
         this.clearServerCursor();
         currentCursor = null;
       }
-      // 如果当前是 WebDAV 但游标是数字格式（纯数字），清除游标
-      else if (!isServerType && this.serverIdentifier?.type === 'webdav' && /^\d+$/.test(currentCursor)) {
-        console.log('[SyncEngine] Detected server cursor format for WebDAV sync, clearing');
+      // 如果当前是自建服务器且游标是异常大的数字（时间戳误设为游标），清除游标
+      // change_id 是自增整数，正常不会超过 10 亿；时间戳是 13 位数字（万亿级别）
+      else if (isServerType && /^\d+$/.test(currentCursor) && parseInt(currentCursor, 10) > 1_000_000_000) {
+        console.log('[SyncEngine] Detected abnormally large cursor for server sync (likely timestamp), clearing:', currentCursor);
+        this.clearServerCursor();
+        currentCursor = null;
+      }
+      // 如果当前是 WebDAV 但游标不是 .json 格式（说明是旧的错误格式），清除游标
+      // 注意：WebDAV 游标必须是 "{timestamp}.json" 格式，纯数字是错误的历史遗留
+      else if (!isServerType && this.serverIdentifier?.type === 'webdav' && !isWebDAVFormat) {
+        console.log('[SyncEngine] Detected non-WebDAV cursor format for WebDAV sync, clearing');
         this.clearServerCursor();
         currentCursor = null;
       }
     }
 
     console.log('[SyncEngine] Pull starting with cursor:', currentCursor, 'timestamp:', localTimestamp, 'server:', this.serverIdentifier);
+    console.log('[SyncEngine] Adapter type:', this.adapter.constructor.name);
     this.reportProgress({ phase: 'pulling', message: '正在获取远端变更列表...' });
 
     // ✅ 触发全量拉取的两种情况：
@@ -446,9 +455,21 @@ export class SyncEngine {
           }
         }
 
-        // 全量拉取完成后，将游标设置为最新（用最大 change_id 或当前时间戳）
+        // 全量拉取完成后，将游标设置为服务器最新的 change_id
         // 这样后续增量同步就能正常工作
-        const newCursor = Date.now().toString();
+        let newCursor: string;
+        const serverAdapter = this.adapter as any;
+        const lastChangeId = serverAdapter.getLastFullPullChangeId ? serverAdapter.getLastFullPullChangeId() : null;
+        if (lastChangeId !== null && lastChangeId !== undefined) {
+          // 自建服务器：用数字 change_id（包括 0，表示 changes 表为空）
+          newCursor = lastChangeId.toString();
+        } else if (this.serverIdentifier?.type === 'webdav') {
+          // WebDAV：游标必须是 "{timestamp}.json" 格式，与变更文件名一致
+          // 用当前时间戳生成一个游标，确保后续增量同步能正确定位
+          newCursor = `${Date.now()}.json`;
+        } else {
+          newCursor = Date.now().toString();
+        }
         this.setServerCursor(newCursor, Date.now());
         console.log('[SyncEngine] Full pull complete, set cursor to:', newCursor);
 
@@ -465,6 +486,7 @@ export class SyncEngine {
 
     // ✅ 增量同步：有游标时走变更日志路径
     let lastSuccessfulCursor = currentCursor;  // 记录最后成功处理的游标
+    console.log('[SyncEngine] Entering incremental sync path with cursor:', currentCursor);
 
     // 循环拉取所有变更
     let hasMore = true;
@@ -563,6 +585,7 @@ export class SyncEngine {
   }> {
     // 使用包含已删除项的查询，确保能找到本地已存在的数据
     const localItem = this.itemsManager.getByIdIncludeDeleted(change.item_id);
+    console.log(`[SyncEngine] processRemoteChange: item_id=${change.item_id}, type=${change.type}, deleted=${change.deleted_time !== null}, localExists=${!!localItem}, localSyncStatus=${localItem?.sync_status}, localHash=${localItem?.content_hash?.substring(0, 8)}, remoteHash=${change.content_hash?.substring(0, 8)}`);
 
     // 简化逻辑：远端标记删除，本地直接删除
     if (change.deleted_time !== null) {

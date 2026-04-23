@@ -3,18 +3,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import {
-  List,
-  Avatar,
-  Badge,
-  Typography,
-  Space,
-  Button,
-  Tooltip,
-  Empty,
-  Tabs,
-  Tag,
-} from 'antd';
+import { List, Avatar, Badge, Typography, Space, Button, Tooltip, Empty, Tabs, Tag } from 'antd';
 import {
   DesktopOutlined,
   MobileOutlined,
@@ -53,11 +42,11 @@ export const DeviceListView: React.FC<DeviceListViewProps> = ({
   const formatTime = (timestamp: number) => {
     const now = Date.now();
     const diff = now - timestamp;
-    
+
     if (diff < 60000) return '刚刚';
     if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
-    
+
     const date = new Date(timestamp);
     return `${date.getMonth() + 1}/${date.getDate()}`;
   };
@@ -107,19 +96,22 @@ export const DeviceListView: React.FC<DeviceListViewProps> = ({
     return (
       <List
         dataSource={connectedDevices}
-        renderItem={(device) => {
+        renderItem={device => {
           // 查找与该设备的现有会话
           const deviceSessions = sessionsByDevice.get(device.id) || [];
           const activeSession = deviceSessions.find(s => !s.ended_at);
-          
+
           return (
             <List.Item
               style={{
                 padding: '12px 16px',
                 cursor: 'pointer',
-                background: activeSession?.id === selectedSessionId
-                  ? (isDarkMode ? '#177ddc20' : '#e6f7ff')
-                  : 'transparent',
+                background:
+                  activeSession?.id === selectedSessionId
+                    ? isDarkMode
+                      ? '#177ddc20'
+                      : '#e6f7ff'
+                    : 'transparent',
                 borderBottom: `1px solid ${isDarkMode ? '#303030' : '#f0f0f0'}`,
               }}
               onClick={() => {
@@ -144,7 +136,10 @@ export const DeviceListView: React.FC<DeviceListViewProps> = ({
                 title={
                   <Space>
                     <Text strong>{device.name}</Text>
-                    <Tag color={device.type === 'desktop' ? 'blue' : 'green'} style={{ fontSize: 10 }}>
+                    <Tag
+                      color={device.type === 'desktop' ? 'blue' : 'green'}
+                      style={{ fontSize: 10 }}
+                    >
                       {device.type === 'desktop' ? '桌面' : '手机'}
                     </Tag>
                   </Space>
@@ -156,11 +151,7 @@ export const DeviceListView: React.FC<DeviceListViewProps> = ({
                 }
               />
               <Tooltip title={activeSession ? '继续聊天' : '开始聊天'}>
-                <Button
-                  type="text"
-                  icon={<MessageOutlined />}
-                  size="small"
-                />
+                <Button type="text" icon={<MessageOutlined />} size="small" />
               </Tooltip>
             </List.Item>
           );
@@ -171,8 +162,8 @@ export const DeviceListView: React.FC<DeviceListViewProps> = ({
 
   // 渲染历史会话列表
   const renderHistorySessions = () => {
-    const endedSessions = sessions.filter(s => s.ended_at);
-    
+    const endedSessions = sessions;
+
     if (endedSessions.length === 0) {
       return (
         <Empty
@@ -186,22 +177,23 @@ export const DeviceListView: React.FC<DeviceListViewProps> = ({
     return (
       <List
         dataSource={endedSessions}
-        renderItem={(session) => (
+        renderItem={session => (
           <List.Item
             style={{
               padding: '12px 16px',
               cursor: 'pointer',
-              background: session.id === selectedSessionId
-                ? (isDarkMode ? '#177ddc20' : '#e6f7ff')
-                : 'transparent',
+              background:
+                session.id === selectedSessionId
+                  ? isDarkMode
+                    ? '#177ddc20'
+                    : '#e6f7ff'
+                  : 'transparent',
               borderBottom: `1px solid ${isDarkMode ? '#303030' : '#f0f0f0'}`,
             }}
             onClick={() => onSelectSession(session.id)}
           >
             <List.Item.Meta
-              avatar={
-                <Avatar icon={<UserOutlined />} />
-              }
+              avatar={<Avatar icon={<UserOutlined />} />}
               title={session.peer_device_name}
               description={
                 <Space size={4}>
@@ -222,10 +214,17 @@ export const DeviceListView: React.FC<DeviceListViewProps> = ({
   };
 
   return (
-    <div style={{ height: 'calc(100% - 140px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    <div
+      style={{
+        height: 'calc(100% - 140px)',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       <Tabs
         activeKey={activeTab}
-        onChange={(key) => setActiveTab(key as 'online' | 'history')}
+        onChange={key => setActiveTab(key as 'online' | 'history')}
         centered
         size="small"
         style={{ marginBottom: 0 }}
@@ -246,7 +245,7 @@ export const DeviceListView: React.FC<DeviceListViewProps> = ({
           },
         ]}
       />
-      
+
       <div style={{ flex: 1, overflow: 'auto' }}>
         {activeTab === 'online' ? renderOnlineDevices() : renderHistorySessions()}
       </div>

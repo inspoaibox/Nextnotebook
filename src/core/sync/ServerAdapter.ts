@@ -585,13 +585,22 @@ export class ServerAdapter implements StorageAdapter {
   // 全量拉取所有 item（新客户端首次同步使用，绕过变更日志）
   async listAllItems(): Promise<ItemBase[]> {
     try {
-      const result = await this.request<{ items: ItemBase[] }>('GET', '/api/items/all');
-      console.log(`[ServerAdapter] listAllItems: got ${result.items?.length ?? 0} items`);
+      const result = await this.request<{ items: ItemBase[]; latestChangeId?: number }>('GET', '/api/items/all');
+      console.log(`[ServerAdapter] listAllItems: got ${result.items?.length ?? 0} items, latestChangeId: ${result.latestChangeId}`);
+      // 保存 latestChangeId 供 SyncEngine 使用（注意：0 也是有效值，表示 changes 表为空）
+      this._lastFullPullChangeId = result.latestChangeId ?? null;
       return result.items || [];
     } catch (error) {
       console.error('[ServerAdapter] listAllItems failed:', error);
       return [];
     }
+  }
+
+  // 全量拉取后的最新 change_id
+  _lastFullPullChangeId: number | null = null;
+
+  getLastFullPullChangeId(): number | null {
+    return this._lastFullPullChangeId;
   }
 
   // 检查远端是否已有数据

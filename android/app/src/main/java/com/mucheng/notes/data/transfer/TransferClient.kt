@@ -385,32 +385,36 @@ class TransferClient(
         targetDeviceId: String,
         sessionId: String,
         uri: android.net.Uri,
+        fileId: String? = null,
         onProgress: ((Float) -> Unit)? = null
     ): FileTransferInfo = withContext(Dispatchers.IO) {
         val contentResolver = context.contentResolver
         
         // 获取文件信息
+        var filename = "unknown"
+        var fileSize = 0L
+        
         val cursor = contentResolver.query(uri, null, null, null, null)
-        val filename = cursor?.use {
+        cursor?.use {
             if (it.moveToFirst()) {
                 val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0) it.getString(nameIndex) else "unknown"
-            } else "unknown"
-        } ?: "unknown"
-        
-        val fileSize = cursor?.use {
-            if (it.moveToFirst()) {
+                if (nameIndex >= 0) filename = it.getString(nameIndex)
+                
                 val sizeIndex = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                if (sizeIndex >= 0) it.getLong(sizeIndex) else 0L
-            } else 0L
-        } ?: contentResolver.openInputStream(uri)?.use { it.available().toLong() } ?: 0L
+                if (sizeIndex >= 0) fileSize = it.getLong(sizeIndex)
+            }
+        }
+        
+        if (fileSize == 0L) {
+            fileSize = contentResolver.openInputStream(uri)?.use { it.available().toLong() } ?: 0L
+        }
         
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
-        val fileId = UUID.randomUUID().toString()
+        val resolvedFileId = fileId ?: UUID.randomUUID().toString()
         val totalChunks = ((fileSize + TransferConstants.CHUNK_SIZE - 1) / TransferConstants.CHUNK_SIZE).toInt()
         
         val fileInfo = FileTransferInfo(
-            id = fileId,
+            id = resolvedFileId,
             filename = filename,
             fileSize = fileSize,
             mimeType = mimeType,
@@ -431,7 +435,7 @@ class TransferClient(
                 val chunk = if (bytesRead == buffer.size) buffer else buffer.copyOf(bytesRead)
                 messageDigest.update(chunk)
                 
-                sendFileChunk(targetDeviceId, fileId, chunkIndex, chunk, totalChunks)
+                sendFileChunk(targetDeviceId, resolvedFileId, chunkIndex, chunk, totalChunks)
                 
                 chunkIndex++
                 val progress = chunkIndex.toFloat() / totalChunks
@@ -446,7 +450,7 @@ class TransferClient(
             val fileHash = hashBytes.joinToString("") { "%02x".format(it) }
             
             // 发送文件完成事件
-            completeFileTransfer(targetDeviceId, fileId, fileHash)
+            completeFileTransfer(targetDeviceId, resolvedFileId, fileHash)
         } ?: throw IllegalStateException("Cannot open file: $uri")
         
         fileInfo

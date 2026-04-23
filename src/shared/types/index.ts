@@ -521,4 +521,5 @@ export const createDefaultExcelSheet = (name: string): ExcelSheet => ({
   row_heights: [],
   frozen_rows: 0,
   frozen_columns: 0,
+  merged_cells: [],
 });

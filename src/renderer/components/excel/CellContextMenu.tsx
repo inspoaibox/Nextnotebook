@@ -2,19 +2,13 @@
  * 单元格右键菜单组件
  */
 
-import React from 'react';
-import { Dropdown } from 'antd';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Menu } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   CopyOutlined,
   ScissorOutlined,
   SnippetsOutlined,
-  InsertRowAboveOutlined,
-  InsertRowBelowOutlined,
-  DeleteRowOutlined,
-  InsertRowLeftOutlined,
-  InsertRowRightOutlined,
-  DeleteColumnOutlined,
   ClearOutlined,
   MergeCellsOutlined,
   SplitCellsOutlined,
@@ -27,12 +21,6 @@ interface CellContextMenuProps {
   onCopy: () => void;
   onCut: () => void;
   onPaste: () => void;
-  onInsertRowAbove: () => void;
-  onInsertRowBelow: () => void;
-  onDeleteRow: () => void;
-  onInsertColumnLeft: () => void;
-  onInsertColumnRight: () => void;
-  onDeleteColumn: () => void;
   onClearContent: () => void;
   onClearFormat: () => void;
   onMergeCells: () => void;
@@ -46,139 +34,103 @@ export const CellContextMenu: React.FC<CellContextMenuProps> = ({
   onCopy,
   onCut,
   onPaste,
-  onInsertRowAbove,
-  onInsertRowBelow,
-  onDeleteRow,
-  onInsertColumnLeft,
-  onInsertColumnRight,
-  onDeleteColumn,
   onClearContent,
   onClearFormat,
   onMergeCells,
   onUnmergeCells,
 }) => {
-  const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
-    switch (key) {
-      case 'copy':
-        onCopy();
-        break;
-      case 'cut':
-        onCut();
-        break;
-      case 'paste':
-        onPaste();
-        break;
-      case 'insertRowAbove':
-        onInsertRowAbove();
-        break;
-      case 'insertRowBelow':
-        onInsertRowBelow();
-        break;
-      case 'deleteRow':
-        onDeleteRow();
-        break;
-      case 'insertColumnLeft':
-        onInsertColumnLeft();
-        break;
-      case 'insertColumnRight':
-        onInsertColumnRight();
-        break;
-      case 'deleteColumn':
-        onDeleteColumn();
-        break;
-      case 'clearContent':
-        onClearContent();
-        break;
-      case 'clearFormat':
-        onClearFormat();
-        break;
-      case 'mergeCells':
-        onMergeCells();
-        break;
-      case 'unmergeCells':
-        onUnmergeCells();
-        break;
-    }
+  const [visible, setVisible] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 用 ref 存储所有回调，确保菜单点击时调用最新的
+  const cbRef = useRef({
+    onCopy, onCut, onPaste,
+    onClearContent, onClearFormat, onMergeCells, onUnmergeCells,
+  });
+  cbRef.current = {
+    onCopy, onCut, onPaste,
+    onClearContent, onClearFormat, onMergeCells, onUnmergeCells,
   };
 
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setPosition({ x: e.clientX, y: e.clientY });
+    setVisible(true);
+  }, []);
+
+  // 点击菜单外部关闭
+  useEffect(() => {
+    if (!visible) return;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setVisible(false);
+      }
+    };
+
+    // 用 setTimeout 延迟注册，避免当前右键事件立即触发关闭
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleMouseDown, true);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleMouseDown, true);
+    };
+  }, [visible]);
+
+  const handleMenuClick: MenuProps['onClick'] = useCallback(({ key }: { key: string }) => {
+    console.log('[CellContextMenu] Menu item clicked:', key);
+    setVisible(false);
+    const cb = cbRef.current;
+    switch (key) {
+      case 'copy': cb.onCopy(); break;
+      case 'cut': cb.onCut(); break;
+      case 'paste': cb.onPaste(); break;
+      case 'clearContent': cb.onClearContent(); break;
+      case 'clearFormat': cb.onClearFormat(); break;
+      case 'mergeCells': cb.onMergeCells(); break;
+      case 'unmergeCells': cb.onUnmergeCells(); break;
+    }
+  }, []);
+
   const menuItems: MenuProps['items'] = [
-    {
-      key: 'copy',
-      label: '复制',
-      icon: <CopyOutlined />,
-    },
-    {
-      key: 'cut',
-      label: '剪切',
-      icon: <ScissorOutlined />,
-    },
-    {
-      key: 'paste',
-      label: '粘贴',
-      icon: <SnippetsOutlined />,
-    },
+    { key: 'copy', label: '复制', icon: <CopyOutlined /> },
+    { key: 'cut', label: '剪切', icon: <ScissorOutlined /> },
+    { key: 'paste', label: '粘贴', icon: <SnippetsOutlined /> },
     { type: 'divider' },
-    {
-      key: 'mergeCells',
-      label: '合并单元格',
-      icon: <MergeCellsOutlined />,
-      disabled: !hasSelection || isMerged,
-    },
-    {
-      key: 'unmergeCells',
-      label: '取消合并',
-      icon: <SplitCellsOutlined />,
-      disabled: !isMerged,
-    },
+    { key: 'mergeCells', label: '合并单元格', icon: <MergeCellsOutlined />, disabled: !hasSelection || isMerged },
+    { key: 'unmergeCells', label: '取消合并', icon: <SplitCellsOutlined />, disabled: !isMerged },
     { type: 'divider' },
-    {
-      key: 'insertRowAbove',
-      label: '在上方插入行',
-      icon: <InsertRowAboveOutlined />,
-    },
-    {
-      key: 'insertRowBelow',
-      label: '在下方插入行',
-      icon: <InsertRowBelowOutlined />,
-    },
-    {
-      key: 'deleteRow',
-      label: '删除行',
-      icon: <DeleteRowOutlined />,
-      danger: true,
-    },
-    { type: 'divider' },
-    {
-      key: 'insertColumnLeft',
-      label: '在左侧插入列',
-      icon: <InsertRowLeftOutlined />,
-    },
-    {
-      key: 'insertColumnRight',
-      label: '在右侧插入列',
-      icon: <InsertRowRightOutlined />,
-    },
-    {
-      key: 'deleteColumn',
-      label: '删除列',
-      icon: <DeleteColumnOutlined />,
-      danger: true,
-    },
-    { type: 'divider' },
-    {
-      key: 'clearContent',
-      label: '清除内容',
-      icon: <ClearOutlined />,
-    },
-    {
-      key: 'clearFormat',
-      label: '清除格式',
-    },
+    { key: 'clearContent', label: '清除内容', icon: <ClearOutlined /> },
+    { key: 'clearFormat', label: '清除格式' },
   ];
 
   return (
-    <Dropdown menu={{ items: menuItems, onClick: handleMenuClick }} trigger={['contextMenu']}>
+    <div onContextMenu={handleContextMenu} style={{ display: 'contents' }}>
       {children}
-    </Dropdown>
+      {visible && (
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed',
+            left: position.x,
+            top: position.y,
+            zIndex: 9999,
+            boxShadow: '0 3px 6px -4px rgba(0,0,0,.12), 0 6px 16px 0 rgba(0,0,0,.08), 0 9px 28px 8px rgba(0,0,0,.05)',
+            borderRadius: 8,
+            background: '#fff',
+          }}
+        >
+          <Menu
+            items={menuItems}
+            onClick={handleMenuClick}
+            style={{ borderRadius: 8, border: 'none' }}
+          />
+        </div>
+      )}
+    </div>
   );
 };

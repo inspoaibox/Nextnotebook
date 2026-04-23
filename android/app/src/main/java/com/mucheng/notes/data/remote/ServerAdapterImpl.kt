@@ -617,6 +617,33 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             result.hasData || result.itemCount > 0
         } ?: false
     }
+
+    // 全量拉取后的最新 change_id
+    private var _lastFullPullChangeId: Long? = null
+
+    override suspend fun listAllItems(): List<ItemEntity> {
+        return request("GET", "/api/items/all") { responseBody ->
+            @Serializable
+            data class AllItemsResult(val items: List<ItemEntity>, val latestChangeId: Long = 0)
+            val result = json.decodeFromString<AllItemsResult>(responseBody)
+            android.util.Log.d("ServerAdapter", "listAllItems: got ${result.items.size} items, latestChangeId=${result.latestChangeId}")
+            // 保存 latestChangeId，包括 0（表示 changes 表为空，游标从 0 开始）
+            _lastFullPullChangeId = result.latestChangeId  // 不再过滤 0，让 SyncEngine 处理
+            result.items
+        } ?: emptyList()
+    }
+
+    override suspend fun isCursorExpired(cursor: String): Boolean {
+        return request("GET", "/api/changes/cursor-check?cursor=${java.net.URLEncoder.encode(cursor, "UTF-8")}") { responseBody ->
+            @Serializable
+            data class CursorCheckResult(val expired: Boolean = false)
+            json.decodeFromString<CursorCheckResult>(responseBody).expired
+        } ?: false
+    }
+
+    override fun getLastFullPullChangeId(): Long? {
+        return _lastFullPullChangeId
+    }
     
     override suspend fun getKeyFingerprint(): String? {
         return request("GET", "/api/sync/key-fingerprint") { responseBody ->

@@ -24,6 +24,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 
 /**
@@ -542,11 +545,14 @@ class NotesViewModel @Inject constructor(
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("NotesViewModel", "Failed to parse note payload: ${e.message}, type: ${this.type}, payload: ${this.payload}")
-            // 返回一个默认的笔记，避免崩溃
+            android.util.Log.e("NotesViewModel", "Failed to parse note payload: ${e.message}, type: ${this.type}")
+            val fallbackTitle = try {
+                val element = json.parseToJsonElement(this.payload)
+                element.jsonObject["title"]?.jsonPrimitive?.contentOrNull
+            } catch (_: Exception) { null }
             NoteItem(
                 id = this.id,
-                title = "解析错误",
+                title = fallbackTitle ?: "解析错误",
                 content = "",
                 folderId = null,
                 isPinned = false,

@@ -168,12 +168,25 @@ class SettingsViewModel @Inject constructor(
     }
     
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    
+
+    // 监听 SharedPreferences 变化，当 ai_channels_json 被外部（如同步）写入时自动更新 UI 状态
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == KEY_AI_CHANNELS_JSON || key == KEY_AI_DEFAULT_CHANNEL || key == KEY_AI_DEFAULT_MODEL) {
+            reloadAiConfigFromPrefs()
+        }
+    }
+
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
-    
+
     init {
         loadSettings()
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
     }
     
     private fun loadSettings() {
@@ -858,6 +871,22 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(aiDefaultModel = model) }
     }
     
+    /**
+     * 从 SharedPreferences 重新加载 AI 配置到 UI 状态
+     * 由 prefsListener 自动调用，也可手动调用
+     */
+    fun reloadAiConfigFromPrefs() {
+        val channelsJson = prefs.getString(KEY_AI_CHANNELS_JSON, "") ?: ""
+        val defaultChannel = prefs.getString(KEY_AI_DEFAULT_CHANNEL, "") ?: ""
+        val defaultModel = prefs.getString(KEY_AI_DEFAULT_MODEL, "") ?: ""
+        _uiState.update { it.copy(
+            aiChannelsJson = channelsJson,
+            aiDefaultChannel = defaultChannel,
+            aiDefaultModel = defaultModel
+        )}
+        android.util.Log.d("SettingsViewModel", "AI config reloaded from prefs, channels json length: ${channelsJson.length}")
+    }
+
     /**
      * 设置 AI 渠道配置 JSON
      * 同时保存到 SharedPreferences 和数据库（用于同步）

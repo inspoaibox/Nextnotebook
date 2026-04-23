@@ -19,6 +19,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mucheng.notes.presentation.components.SpreadsheetView
 import com.mucheng.notes.presentation.viewmodel.ExcelViewModel
 import com.mucheng.notes.presentation.viewmodel.ExcelNoteItem
+import com.mucheng.notes.presentation.viewmodel.CellPosition
 
 /**
  * Excel 笔记主屏幕
@@ -31,37 +32,124 @@ fun ExcelScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    // 错误提示
     uiState.error?.let { error ->
-        LaunchedEffect(error) {
-            // 显示错误后清除
-            viewModel.clearError()
-        }
+        LaunchedEffect(error) { viewModel.clearError() }
     }
 
-    if (uiState.selectedNote != null) {
-        // 编辑器视图
-        ExcelEditorView(
-            note = uiState.selectedNote!!,
-            selectedSheetIndex = uiState.selectedSheetIndex,
-            selectedCell = uiState.selectedCell,
-            onBack = { viewModel.backToList() },
-            onSelectSheet = { viewModel.selectSheet(it) },
-            onSelectCell = { row, col -> viewModel.selectCell(row, col) },
-            onCellChange = { row, col, value -> viewModel.updateCell(row, col, value) },
-            getCellDisplayValue = { row, col ->
-                val sheet = uiState.selectedNote?.payload?.sheets?.getOrNull(uiState.selectedSheetIndex)
-                sheet?.let { viewModel.getCellDisplayValue(it, row, col) } ?: ""
+    when {
+        uiState.selectedNote != null && uiState.isEditing -> {
+            // 编辑模式
+            ExcelEditorView(
+                note = uiState.selectedNote!!,
+                selectedSheetIndex = uiState.selectedSheetIndex,
+                selectedCell = uiState.selectedCell,
+                onBack = { viewModel.exitEditMode() },
+                onSelectSheet = { viewModel.selectSheet(it) },
+                onSelectCell = { row, col -> viewModel.selectCell(row, col) },
+                onCellChange = { row, col, value -> viewModel.updateCell(row, col, value) },
+                getCellDisplayValue = { row, col ->
+                    val sheet = uiState.selectedNote?.payload?.sheets?.getOrNull(uiState.selectedSheetIndex)
+                    sheet?.let { viewModel.getCellDisplayValue(it, row, col) } ?: ""
+                }
+            )
+        }
+        uiState.selectedNote != null -> {
+            // 预览模式
+            ExcelPreviewView(
+                note = uiState.selectedNote!!,
+                selectedSheetIndex = uiState.selectedSheetIndex,
+                onBack = { viewModel.backToList() },
+                onSelectSheet = { viewModel.selectSheet(it) },
+                onEdit = { viewModel.enterEditMode() },
+                getCellDisplayValue = { row, col ->
+                    val sheet = uiState.selectedNote?.payload?.sheets?.getOrNull(uiState.selectedSheetIndex)
+                    sheet?.let { viewModel.getCellDisplayValue(it, row, col) } ?: ""
+                }
+            )
+        }
+        else -> {
+            // 列表视图
+            ExcelListView(
+                notes = uiState.notes,
+                isLoading = uiState.isLoading,
+                onSelectNote = { viewModel.selectNote(it.id) },
+                onNavigateBack = onNavigateBack
+            )
+        }
+    }
+}
+
+/**
+ * Excel 预览视图（只读，显示实际数据）
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExcelPreviewView(
+    note: ExcelNoteItem,
+    selectedSheetIndex: Int,
+    onBack: () -> Unit,
+    onSelectSheet: (Int) -> Unit,
+    onEdit: () -> Unit,
+    getCellDisplayValue: (Int, Int) -> String
+) {
+    val currentSheet = note.payload.sheets.getOrNull(selectedSheetIndex)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(note.payload.title.ifEmpty { "未命名" }) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    // 编辑按钮
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "编辑")
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            if (note.payload.sheets.size > 1) {
+                Surface(tonalElevation = 2.dp) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        itemsIndexed(note.payload.sheets) { index, sheet ->
+                            FilterChip(
+                                selected = index == selectedSheetIndex,
+                                onClick = { onSelectSheet(index) },
+                                label = { Text(sheet.name) }
+                            )
+                        }
+                    }
+                }
             }
-        )
-    } else {
-        // 列表视图
-        ExcelListView(
-            notes = uiState.notes,
-            isLoading = uiState.isLoading,
-            onSelectNote = { viewModel.selectNote(it.id) },
-            onNavigateBack = onNavigateBack
-        )
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier.fillMaxSize().padding(paddingValues)
+        ) {
+            if (currentSheet != null) {
+                SpreadsheetView(
+                    sheet = currentSheet,
+                    selectedCell = CellPosition(-1, -1), // 预览模式无选中单元格
+                    onCellSelect = { _, _ -> },
+                    onCellChange = { _, _, _ -> },
+                    getCellDisplayValue = getCellDisplayValue,
+                    readOnly = true
+                )
+            } else {
+                Text(
+                    text = "无工作表数据",
+                    modifier = Modifier.align(Alignment.Center),
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
     }
 }
 

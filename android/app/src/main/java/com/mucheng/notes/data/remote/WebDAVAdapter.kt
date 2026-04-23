@@ -131,6 +131,22 @@ interface WebDAVAdapter {
      */
     suspend fun hasData(): Boolean
 
+    /**
+     * 全量拉取所有数据项（新客户端首次同步或游标过期时使用）
+     * @return 所有数据项列表
+     */
+    suspend fun listAllItems(): List<ItemEntity>
+
+    /**
+     * 检查游标是否已过期（对应的变更记录已被清理）
+     */
+    suspend fun isCursorExpired(cursor: String): Boolean
+
+    /**
+     * 获取全量拉取后的最新 change_id（仅自建服务器有效）
+     */
+    fun getLastFullPullChangeId(): Long?
+
     // 密钥指纹验证
 
     /**

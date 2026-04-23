@@ -1,30 +1,33 @@
 import { config } from '../config';
 import { ItemService } from './ItemService';
 import { ChangeService } from './ChangeService';
+import { TokenService } from './TokenService';
 import { log } from '../middleware/logger';
 
 export class CleanupScheduler {
   private itemService: ItemService;
   private changeService: ChangeService;
+  private tokenService: TokenService;
   private intervalId: NodeJS.Timeout | null = null;
 
   constructor() {
     this.itemService = new ItemService();
     this.changeService = new ChangeService();
+    this.tokenService = new TokenService();
   }
 
   // 启动定时清理任务
   start(): void {
     // 每 24 小时执行一次清理
     const interval = 24 * 60 * 60 * 1000;
-    
+
     this.intervalId = setInterval(() => {
       this.runCleanup();
     }, interval);
 
     // 启动时也执行一次
     this.runCleanup();
-    
+
     log('info', 'Cleanup scheduler started');
   }
 
@@ -46,7 +49,7 @@ export class CleanupScheduler {
       const changeLogRetention = config.changeLogRetentionDays * 24 * 60 * 60 * 1000;
       const changesBefore = now - changeLogRetention;
       const deletedChanges = this.changeService.cleanupBefore(changesBefore);
-      
+
       if (deletedChanges > 0) {
         log('info', 'Cleaned up change logs', { deleted: deletedChanges });
       }
@@ -55,9 +58,15 @@ export class CleanupScheduler {
       const softDeleteRetention = 30 * 24 * 60 * 60 * 1000;
       const itemsBefore = now - softDeleteRetention;
       const deletedItems = this.itemService.cleanupSoftDeleted(itemsBefore);
-      
+
       if (deletedItems > 0) {
         log('info', 'Cleaned up soft-deleted items', { deleted: deletedItems });
+      }
+
+      // 清理过期和已撤销的会话
+      const deletedSessions = this.tokenService.cleanupExpiredSessions();
+      if (deletedSessions > 0) {
+        log('info', 'Cleaned up expired sessions', { deleted: deletedSessions });
       }
     } catch (error) {
       log('error', 'Cleanup failed', { error: (error as Error).message });

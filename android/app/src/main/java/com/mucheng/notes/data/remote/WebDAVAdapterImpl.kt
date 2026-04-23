@@ -221,7 +221,13 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
             if (cursor != null) {
                 val cursorIndex = sortedFiles.indexOfFirst { it.name == cursor }
                 if (cursorIndex >= 0) {
+                    // 游标文件存在，从它的下一个开始
                     startIndex = cursorIndex + 1
+                } else {
+                    // 游标文件不存在（例如全量拉取后设置的时间点游标），
+                    // 按文件名字符串比较找到第一个比游标新的文件
+                    val firstNewerIndex = sortedFiles.indexOfFirst { it.name > cursor }
+                    startIndex = if (firstNewerIndex >= 0) firstNewerIndex else sortedFiles.size
                 }
             }
 
@@ -401,6 +407,60 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
             // 出错时假设没有数据，允许首次同步
             false
         }
+    }
+
+    override suspend fun listAllItems(): List<ItemEntity> = withContext(Dispatchers.IO) {
+        try {
+            val sardine = getSardine()
+            val itemsPath = getItemsPath()
+
+            if (!sardine.exists(itemsPath)) {
+                return@withContext emptyList()
+            }
+
+            val resources = sardine.list(itemsPath)
+            val items = mutableListOf<ItemEntity>()
+
+            for (resource in resources) {
+                if (resource.isDirectory || !resource.name.endsWith(".json")) continue
+                val id = resource.name.removeSuffix(".json")
+                try {
+                    val item = getItem(id)
+                    if (item != null) items.add(item)
+                } catch (e: Exception) {
+                    android.util.Log.w("WebDAV", "listAllItems: failed to read item $id: ${e.message}")
+                }
+            }
+
+            android.util.Log.d("WebDAV", "listAllItems: got ${items.size} items")
+            items
+        } catch (e: Exception) {
+            android.util.Log.e("WebDAV", "listAllItems failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    override suspend fun isCursorExpired(cursor: String): Boolean {
+        // WebDAV 使用文件名作为游标，检查对应的变更文件是否还存在
+        return withContext(Dispatchers.IO) {
+            try {
+                val sardine = getSardine()
+                val changesPath = getChangesPath()
+                if (!sardine.exists(changesPath)) return@withContext true
+                val resources = sardine.list(changesPath)
+                val files = resources.filter { !it.isDirectory && it.name.endsWith(".json") }.map { it.name }
+                if (files.isEmpty()) return@withContext true
+                // 如果游标文件名不在列表中且比最早的文件还早，说明已过期
+                !files.contains(cursor) && cursor < (files.minOrNull() ?: cursor)
+            } catch (e: Exception) {
+                false
+            }
+        }
+    }
+
+    override fun getLastFullPullChangeId(): Long? {
+        // WebDAV 不使用 change_id，返回 null
+        return null
     }
 
     override suspend fun getKeyFingerprint(): String? = withContext(Dispatchers.IO) {

@@ -56,10 +56,6 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
     updateCell,
     updateCellStyle,
     clearCellRange,
-    insertRow,
-    deleteRow,
-    insertColumn,
-    deleteColumn,
     setColumnWidth,
     setRowHeight,
     setSelection,
@@ -89,13 +85,20 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
   } = useExcelNotes();
 
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>({ row: 0, col: 0 });
+  const selectedCellRef = useRef(selectedCell);
+  selectedCellRef.current = selectedCell;
   const [selectedRange, setSelectedRange] = useState<{ startRow: number; startCol: number; endRow: number; endCol: number } | null>(null);
+  const selectedRangeRef = useRef(selectedRange);
+  selectedRangeRef.current = selectedRange;
   const [formulaBarValue, setFormulaBarValue] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [newNoteName, setNewNoteName] = useState('');
   const [editingTitle, setEditingTitle] = useState(''); // 本地标题编辑状态
   const [isEditingTitle, setIsEditingTitle] = useState(false); // 是否正在编辑标题
   const [showFilterButtons, setShowFilterButtons] = useState(false); // 是否显示筛选按钮
+  const [isSaving, setIsSaving] = useState(false); // 是否正在保存
+  const [lastSaved, setLastSaved] = useState<Date | null>(null); // 最后保存时间
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null); // 自动保存定时器
   
   // 对话框状态
   const [findDialogOpen, setFindDialogOpen] = useState(false);
@@ -108,6 +111,54 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
 
   const formulaEngine = useMemo(() => new FormulaEngine(), []);
   const importExportService = useMemo(() => new ImportExportService(), []);
+
+  // 手动保存函数
+  const handleSave = useCallback(async () => {
+    if (!currentNote || !currentPayload) return;
+    
+    setIsSaving(true);
+    try {
+      await updateExcelNote(currentNote.id, currentPayload);
+      setLastSaved(new Date());
+      message.success('保存成功');
+    } catch (err: any) {
+      message.error(err.message || '保存失败');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [currentNote, currentPayload, updateExcelNote]);
+
+  // 自动保存：当 payload 变化时，延迟 2 秒自动保存
+  useEffect(() => {
+    if (!currentNote || !currentPayload) return;
+
+    // 清除之前的定时器
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    // 设置新的定时器（2秒后自动保存）
+    autoSaveTimerRef.current = setTimeout(async () => {
+      console.log('[Excel] Auto-saving...');
+      setIsSaving(true);
+      try {
+        await updateExcelNote(currentNote.id, currentPayload);
+        setLastSaved(new Date());
+        console.log('[Excel] Auto-save successful');
+      } catch (err: any) {
+        console.error('[Excel] Auto-save failed:', err);
+      } finally {
+        setIsSaving(false);
+      }
+    }, 2000);
+
+    // 清理函数
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [currentPayload, currentNote, updateExcelNote]);
 
   // 当 noteId 变化时，加载对应的 Excel 笔记
   useEffect(() => {
@@ -224,50 +275,6 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
       }
     }
   }, [selectedCell, selectedRange, updateCellStyle, getMergedCellInfo]);
-
-  // 处理插入行
-  const handleInsertRow = useCallback(() => {
-    if (selectedRange) {
-      // 在选区起始行插入
-      insertRow(selectedRange.startRow);
-    } else if (selectedCell) {
-      insertRow(selectedCell.row);
-    }
-  }, [selectedCell, selectedRange, insertRow]);
-
-  // 处理删除行 - 支持多行删除
-  const handleDeleteRow = useCallback(() => {
-    if (selectedRange) {
-      // 从后往前删除，避免索引偏移问题
-      for (let r = selectedRange.endRow; r >= selectedRange.startRow; r--) {
-        deleteRow(r);
-      }
-    } else if (selectedCell) {
-      deleteRow(selectedCell.row);
-    }
-  }, [selectedCell, selectedRange, deleteRow]);
-
-  // 处理插入列
-  const handleInsertColumn = useCallback(() => {
-    if (selectedRange) {
-      // 在选区起始列插入
-      insertColumn(selectedRange.startCol);
-    } else if (selectedCell) {
-      insertColumn(selectedCell.col);
-    }
-  }, [selectedCell, selectedRange, insertColumn]);
-
-  // 处理删除列 - 支持多列删除
-  const handleDeleteColumn = useCallback(() => {
-    if (selectedRange) {
-      // 从后往前删除，避免索引偏移问题
-      for (let c = selectedRange.endCol; c >= selectedRange.startCol; c--) {
-        deleteColumn(c);
-      }
-    } else if (selectedCell) {
-      deleteColumn(selectedCell.col);
-    }
-  }, [selectedCell, selectedRange, deleteColumn]);
 
   // 处理复制
   const handleCopy = useCallback(async () => {
@@ -566,6 +573,10 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
 
       if (e.ctrlKey || e.metaKey) {
         switch (e.key.toLowerCase()) {
+          case 's':
+            e.preventDefault();
+            handleSave();
+            break;
           case 'z':
             e.preventDefault();
             if (e.shiftKey) {
@@ -614,7 +625,7 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentNote, undo, redo, handleCopy, handleCut, handlePaste, handleStyleChange, currentCellStyle]);
+  }, [currentNote, undo, redo, handleCopy, handleCut, handlePaste, handleStyleChange, currentCellStyle, handleSave]);
 
   // 上传配置
   const uploadProps: UploadProps = {
@@ -734,12 +745,6 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
         onCopy={handleCopy}
         onCut={handleCut}
         onPaste={handlePaste}
-        onInsertRowAbove={() => selectedCell && insertRow(selectedCell.row)}
-        onInsertRowBelow={() => selectedCell && insertRow(selectedCell.row + 1)}
-        onDeleteRow={handleDeleteRow}
-        onInsertColumnLeft={() => selectedCell && insertColumn(selectedCell.col)}
-        onInsertColumnRight={() => selectedCell && insertColumn(selectedCell.col + 1)}
-        onDeleteColumn={handleDeleteColumn}
         onClearContent={handleClearContent}
         onClearFormat={handleClearFormat}
         onMergeCells={handleMergeCells}
@@ -783,13 +788,12 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
             hasSelection={hasMultiCellSelection}
             isMerged={isCurrentCellMerged}
             hasActiveFilters={activeFilters.length > 0}
+            isSaving={isSaving}
+            lastSaved={lastSaved}
+            onSave={handleSave}
             onStyleChange={handleStyleChange}
             onUndo={undo}
             onRedo={redo}
-            onInsertRow={handleInsertRow}
-            onDeleteRow={handleDeleteRow}
-            onInsertColumn={handleInsertColumn}
-            onDeleteColumn={handleDeleteColumn}
             onImport={triggerFileSelect}
             onExportXlsx={handleExportXlsx}
             onExportCsv={handleExportCsv}

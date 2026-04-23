@@ -101,7 +101,8 @@ const App: React.FC = () => {
 
   const { syncConfig, updateSettings, updateSyncConfig, isDarkMode, settings } = useSettings();
   const { settings: featureSettings } = useFeatureSettings();
-  const { notes, createNote, updateNote, deleteNote, searchNotes, refresh } = useNotes(selectedFolderId);
+  const { notes, createNote, updateNote, deleteNote, searchNotes, refresh } =
+    useNotes(selectedFolderId);
   const { note: currentNote } = useNote(selectedNoteId, selectedView === 'trash');
   const { folders, createFolder, updateFolder, deleteFolder: deleteFolderApi } = useFolders();
   const { tags, createTag, deleteTag: deleteTagApi } = useTags();
@@ -135,7 +136,9 @@ const App: React.FC = () => {
           try {
             const parsed = JSON.parse(savedSettings);
             closeToTray = parsed.close_to_tray || false;
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
 
         if (closeToTray) {
@@ -215,7 +218,9 @@ const App: React.FC = () => {
             break;
           case 'prev-note':
             if (!state?.currentTool && state?.filteredNotes && state.filteredNotes.length > 0) {
-              const currentIndex = state.filteredNotes.findIndex((n: any) => n.id === state.selectedNoteId);
+              const currentIndex = state.filteredNotes.findIndex(
+                (n: any) => n.id === state.selectedNoteId
+              );
               if (currentIndex > 0) {
                 setSelectedNoteId(state.filteredNotes[currentIndex - 1].id);
               }
@@ -223,7 +228,9 @@ const App: React.FC = () => {
             break;
           case 'next-note':
             if (!state?.currentTool && state?.filteredNotes && state.filteredNotes.length > 0) {
-              const currentIndex = state.filteredNotes.findIndex((n: any) => n.id === state.selectedNoteId);
+              const currentIndex = state.filteredNotes.findIndex(
+                (n: any) => n.id === state.selectedNoteId
+              );
               if (currentIndex < state.filteredNotes.length - 1) {
                 setSelectedNoteId(state.filteredNotes[currentIndex + 1].id);
               }
@@ -323,9 +330,12 @@ const App: React.FC = () => {
           serverToken: syncConfig.server_token,
           serverRefreshToken: syncConfig.server_refresh_token,
           serverTokenExpires: syncConfig.server_token_expires,
+          serverSyncKey: syncConfig.server_sync_key,
+          serverUsername: syncConfig.server_username,
+          serverPassword: syncConfig.server_password,
           syncInterval: syncConfig.sync_interval,
           syncModules: syncConfig.sync_modules,
-          lastSyncTime: syncConfig.last_sync_time,  // 传递上次同步时间
+          lastSyncTime: syncConfig.last_sync_time, // 传递上次同步时间
         });
 
         if (success) {
@@ -348,7 +358,18 @@ const App: React.FC = () => {
       }
     };
     initSync();
-  }, [syncConfig.enabled, syncConfig.url, syncConfig.type, syncConfig.username, syncConfig.password, syncConfig.sync_path, syncConfig.sync_interval, syncConfig.api_key, syncConfig.sync_modules, syncConfig.server_token]);
+  }, [
+    syncConfig.enabled,
+    syncConfig.url,
+    syncConfig.type,
+    syncConfig.username,
+    syncConfig.password,
+    syncConfig.sync_path,
+    syncConfig.sync_interval,
+    syncConfig.api_key,
+    syncConfig.sync_modules,
+    // 注意：server_token 不在依赖里，token 刷新由 ServerAdapter 内部处理，不需要重新初始化
+  ]);
 
   // 监听同步时间更新事件，持久化到配置
   useEffect(() => {
@@ -356,8 +377,13 @@ const App: React.FC = () => {
     if (api?.sync?.onLastSyncTimeUpdated) {
       api.sync.onLastSyncTimeUpdated((lastSyncTime: number) => {
         setLastSyncTime(lastSyncTime);
-        // 持久化到 syncConfig
         updateSyncConfig({ last_sync_time: lastSyncTime });
+      });
+    }
+    if (api?.sync?.onReloginRequired) {
+      api.sync.onReloginRequired(() => {
+        setSyncStatus('error');
+        message.warning('登录已过期，请重新登录同步账号');
       });
     }
   }, [updateSyncConfig]);
@@ -385,7 +411,7 @@ const App: React.FC = () => {
     };
 
     updateSyncState();
-    const interval = setInterval(updateSyncState, 1000);  // 更频繁更新以显示进度
+    const interval = setInterval(updateSyncState, 1000); // 更频繁更新以显示进度
     return () => clearInterval(interval);
   }, [syncInitialized]);
 
@@ -417,9 +443,7 @@ const App: React.FC = () => {
         // 加载未分类笔记（没有文件夹的笔记）
         const allNotes = await notesApi.getAll();
         if (allNotes) {
-          const uncategorizedNotes = allNotes
-            .map(itemToNote)
-            .filter(note => !note.folderId);
+          const uncategorizedNotes = allNotes.map(itemToNote).filter(note => !note.folderId);
           // 置顶笔记优先
           uncategorizedNotes.sort((a, b) => {
             if (a.isPinned && !b.isPinned) return -1;
@@ -462,22 +486,28 @@ const App: React.FC = () => {
     setSelectedNoteId(null);
   }, []);
 
-  const handleCreateFolder = useCallback(async (name: string, parentId?: string | null) => {
-    await createFolder(name, parentId || null);
-  }, [createFolder]);
+  const handleCreateFolder = useCallback(
+    async (name: string, parentId?: string | null) => {
+      await createFolder(name, parentId || null);
+    },
+    [createFolder]
+  );
 
   const handleCreateNote = useCallback(async () => {
     setTemplateSelectorOpen(true);
   }, []);
 
-  const handleTemplateSelect = useCallback(async (title: string, content: string) => {
-    const newNote = await createNote(title, content);
-    if (newNote) {
-      setIsNewNote(true); // 标记为新建笔记，使用编辑模式
-      setSelectedNoteId(newNote.id);
-      message.success('笔记已创建');
-    }
-  }, [createNote]);
+  const handleTemplateSelect = useCallback(
+    async (title: string, content: string) => {
+      const newNote = await createNote(title, content);
+      if (newNote) {
+        setIsNewNote(true); // 标记为新建笔记，使用编辑模式
+        setSelectedNoteId(newNote.id);
+        message.success('笔记已创建');
+      }
+    },
+    [createNote]
+  );
 
   const handleQuickCreateNote = useCallback(async () => {
     const newNote = await createNote('新建笔记', '');
@@ -494,160 +524,185 @@ const App: React.FC = () => {
     setSelectedNoteId(noteId);
   }, []);
 
-  const handleSaveNote = useCallback(async (id: string, content: string, title: string) => {
-    await updateNote(id, { content, title });
-    // 通知同步服务有内容变更
-    if (syncInitialized) {
-      await syncApi.notifyChange();
-    }
-    setPendingChanges(prev => prev + 1);
-  }, [updateNote, syncInitialized]);
+  const handleSaveNote = useCallback(
+    async (id: string, content: string, title: string) => {
+      await updateNote(id, { content, title });
+      // 通知同步服务有内容变更
+      if (syncInitialized) {
+        await syncApi.notifyChange();
+      }
+      setPendingChanges(prev => prev + 1);
+    },
+    [updateNote, syncInitialized]
+  );
 
   // 处理图片上传
-  const handleUploadImage = useCallback(async (file: File): Promise<string | null> => {
-    if (!selectedNoteId) return null;
+  const handleUploadImage = useCallback(
+    async (file: File): Promise<string | null> => {
+      if (!selectedNoteId) return null;
 
-    try {
-      // 读取文件为 base64
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      try {
+        // 读取文件为 base64
+        const reader = new FileReader();
+        const base64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
 
-      // 上传到资源管理器
-      const url = await window.electronAPI.resource.uploadImage(
-        selectedNoteId,
-        base64,
-        file.name,
-        file.type
-      );
+        // 上传到资源管理器
+        const url = await window.electronAPI.resource.uploadImage(
+          selectedNoteId,
+          base64,
+          file.name,
+          file.type
+        );
 
-      // 通知同步服务有内容变更
-      if (syncInitialized) {
-        await syncApi.notifyChange();
+        // 通知同步服务有内容变更
+        if (syncInitialized) {
+          await syncApi.notifyChange();
+        }
+
+        return url;
+      } catch (error) {
+        console.error('Upload image failed:', error);
+        return null;
       }
-
-      return url;
-    } catch (error) {
-      console.error('Upload image failed:', error);
-      return null;
-    }
-  }, [selectedNoteId, syncInitialized]);
+    },
+    [selectedNoteId, syncInitialized]
+  );
 
   // 处理附件上传
-  const handleUploadAttachment = useCallback(async (file: File): Promise<{ url: string; name: string } | null> => {
-    if (!selectedNoteId) return null;
+  const handleUploadAttachment = useCallback(
+    async (file: File): Promise<{ url: string; name: string } | null> => {
+      if (!selectedNoteId) return null;
 
-    try {
-      // 读取文件为 base64
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      try {
+        // 读取文件为 base64
+        const reader = new FileReader();
+        const base64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
 
-      // 上传到资源管理器
-      const result = await window.electronAPI.resource.uploadAttachment(
-        selectedNoteId,
-        base64,
-        file.name,
-        file.type || 'application/octet-stream'
-      );
+        // 上传到资源管理器
+        const result = await window.electronAPI.resource.uploadAttachment(
+          selectedNoteId,
+          base64,
+          file.name,
+          file.type || 'application/octet-stream'
+        );
 
-      // 通知同步服务有内容变更
-      if (syncInitialized) {
-        await syncApi.notifyChange();
+        // 通知同步服务有内容变更
+        if (syncInitialized) {
+          await syncApi.notifyChange();
+        }
+
+        return result;
+      } catch (error) {
+        console.error('Upload attachment failed:', error);
+        return null;
+      }
+    },
+    [selectedNoteId, syncInitialized]
+  );
+
+  const handleTogglePin = useCallback(
+    async (id: string, isPinned: boolean) => {
+      await updateNote(id, { is_pinned: isPinned });
+      await refresh();
+      message.success(isPinned ? '已置顶' : '已取消置顶');
+    },
+    [updateNote, refresh]
+  );
+
+  const handleDeleteNote = useCallback(
+    async (id: string) => {
+      // 检查笔记是否加密
+      const note = filteredNotes.find(n => n.id === id);
+      if (note?.isLocked) {
+        // 获取完整笔记信息
+        const noteItem = await itemsApi.getById(id);
+        if (!noteItem) return;
+
+        const payload = parsePayload<NotePayload>(noteItem);
+        const storedHash = payload.lock_password_hash;
+
+        let password = '';
+        Modal.confirm({
+          title: '删除加密笔记',
+          content: (
+            <div>
+              <p style={{ marginBottom: 8, color: '#666' }}>此笔记已加密，删除前需要验证密码：</p>
+              <input
+                type="password"
+                placeholder="输入笔记密码"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: 4,
+                }}
+                onChange={e => {
+                  password = e.target.value;
+                }}
+              />
+            </div>
+          ),
+          okText: '确认删除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: async () => {
+            if (!password) {
+              message.error('请输入密码');
+              return Promise.reject();
+            }
+            const inputHash = await computePasswordHash(password);
+
+            if (inputHash !== storedHash) {
+              message.error('密码错误');
+              return Promise.reject();
+            }
+
+            await deleteNote(id);
+            if (selectedNoteId === id) {
+              setSelectedNoteId(null);
+            }
+            message.success('笔记已移至回收站');
+          },
+        });
+        return;
       }
 
-      return result;
-    } catch (error) {
-      console.error('Upload attachment failed:', error);
-      return null;
-    }
-  }, [selectedNoteId, syncInitialized]);
-
-  const handleTogglePin = useCallback(async (id: string, isPinned: boolean) => {
-    await updateNote(id, { is_pinned: isPinned });
-    await refresh();
-    message.success(isPinned ? '已置顶' : '已取消置顶');
-  }, [updateNote, refresh]);
-
-  const handleDeleteNote = useCallback(async (id: string) => {
-    // 检查笔记是否加密
-    const note = filteredNotes.find(n => n.id === id);
-    if (note?.isLocked) {
-      // 获取完整笔记信息
-      const noteItem = await itemsApi.getById(id);
-      if (!noteItem) return;
-
-      const payload = parsePayload<NotePayload>(noteItem);
-      const storedHash = payload.lock_password_hash;
-
-      let password = '';
-      Modal.confirm({
-        title: '删除加密笔记',
-        content: (
-          <div>
-            <p style={{ marginBottom: 8, color: '#666' }}>此笔记已加密，删除前需要验证密码：</p>
-            <input
-              type="password"
-              placeholder="输入笔记密码"
-              style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
-              onChange={(e) => { password = e.target.value; }}
-            />
-          </div>
-        ),
-        okText: '确认删除',
-        okType: 'danger',
-        cancelText: '取消',
-        onOk: async () => {
-          if (!password) {
-            message.error('请输入密码');
-            return Promise.reject();
-          }
-          const inputHash = await computePasswordHash(password);
-
-          if (inputHash !== storedHash) {
-            message.error('密码错误');
-            return Promise.reject();
-          }
-
-          await deleteNote(id);
-          if (selectedNoteId === id) {
-            setSelectedNoteId(null);
-          }
-          message.success('笔记已移至回收站');
-        },
-      });
-      return;
-    }
-
-    // 非加密笔记直接删除
-    await deleteNote(id);
-    if (selectedNoteId === id) {
-      setSelectedNoteId(null);
-    }
-    message.success('笔记已移至回收站');
-  }, [deleteNote, selectedNoteId, filteredNotes]);
-
-  // 永久删除笔记（从回收站彻底删除）
-  const handlePermanentDeleteNote = useCallback(async (id: string) => {
-    const success = await itemsApi.hardDelete(id);
-    if (success) {
-      // 刷新回收站视图
-      const deletedItems = await itemsApi.getDeleted('note');
-      if (deletedItems) {
-        setFilteredNotes(deletedItems.map(itemToNote));
-      }
+      // 非加密笔记直接删除
+      await deleteNote(id);
       if (selectedNoteId === id) {
         setSelectedNoteId(null);
       }
-      message.success('笔记已永久删除');
-    }
-  }, [selectedNoteId]);
+      message.success('笔记已移至回收站');
+    },
+    [deleteNote, selectedNoteId, filteredNotes]
+  );
+
+  // 永久删除笔记（从回收站彻底删除）
+  const handlePermanentDeleteNote = useCallback(
+    async (id: string) => {
+      const success = await itemsApi.hardDelete(id);
+      if (success) {
+        // 刷新回收站视图
+        const deletedItems = await itemsApi.getDeleted('note');
+        if (deletedItems) {
+          setFilteredNotes(deletedItems.map(itemToNote));
+        }
+        if (selectedNoteId === id) {
+          setSelectedNoteId(null);
+        }
+        message.success('笔记已永久删除');
+      }
+    },
+    [selectedNoteId]
+  );
 
   const handleRestoreNote = useCallback(async (id: string) => {
     const success = await itemsApi.restore(id);
@@ -661,21 +716,27 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const handleUpdateNoteTags = useCallback(async (noteId: string, newTags: string[]) => {
-    await updateNote(noteId, { tags: newTags });
-    message.success('标签已更新');
-  }, [updateNote]);
+  const handleUpdateNoteTags = useCallback(
+    async (noteId: string, newTags: string[]) => {
+      await updateNote(noteId, { tags: newTags });
+      message.success('标签已更新');
+    },
+    [updateNote]
+  );
 
   // 复制笔记
-  const handleDuplicateNote = useCallback(async (noteId: string) => {
-    const note = filteredNotes.find(n => n.id === noteId);
-    if (note) {
-      const newNote = await createNote(`${note.title} (副本)`, note.content);
-      if (newNote) {
-        message.success('笔记已复制');
+  const handleDuplicateNote = useCallback(
+    async (noteId: string) => {
+      const note = filteredNotes.find(n => n.id === noteId);
+      if (note) {
+        const newNote = await createNote(`${note.title} (副本)`, note.content);
+        if (newNote) {
+          message.success('笔记已复制');
+        }
       }
-    }
-  }, [filteredNotes, createNote]);
+    },
+    [filteredNotes, createNote]
+  );
 
   // 移动/复制笔记到文件夹的状态
   const [moveNoteModalOpen, setMoveNoteModalOpen] = useState(false);
@@ -736,131 +797,166 @@ const App: React.FC = () => {
   };
 
   // 锁定笔记（从 Editor 组件调用）
-  const handleLockNoteFromEditor = useCallback(async (noteId: string, passwordHash: string) => {
-    await updateNote(noteId, { is_locked: true, lock_password_hash: passwordHash });
-    await refresh();
-  }, [updateNote, refresh]);
+  const handleLockNoteFromEditor = useCallback(
+    async (noteId: string, passwordHash: string) => {
+      await updateNote(noteId, { is_locked: true, lock_password_hash: passwordHash });
+      await refresh();
+    },
+    [updateNote, refresh]
+  );
 
   // 解锁笔记（从 Editor 组件调用，移除加密）
-  const handleUnlockNoteFromEditor = useCallback(async (noteId: string) => {
-    await updateNote(noteId, { is_locked: false, lock_password_hash: null });
-    await refresh();
-  }, [updateNote, refresh]);
+  const handleUnlockNoteFromEditor = useCallback(
+    async (noteId: string) => {
+      await updateNote(noteId, { is_locked: false, lock_password_hash: null });
+      await refresh();
+    },
+    [updateNote, refresh]
+  );
 
   // 锁定笔记（从 NoteList 调用）
-  const handleLockNote = useCallback(async (noteId: string) => {
-    // 弹出密码输入框
-    let password = '';
-    Modal.confirm({
-      title: '锁定笔记',
-      content: (
-        <div>
-          <p style={{ marginBottom: 8 }}>请设置笔记密码：</p>
-          <input
-            type="password"
-            placeholder="输入密码"
-            style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
-            onChange={(e) => { password = e.target.value; }}
-          />
-        </div>
-      ),
-      okText: '锁定',
-      cancelText: '取消',
-      onOk: async () => {
-        if (!password || password.length < 4) {
-          message.error('密码至少 4 位');
-          return Promise.reject();
-        }
-        // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
-        const passwordHash = await computePasswordHash(password);
+  const handleLockNote = useCallback(
+    async (noteId: string) => {
+      // 弹出密码输入框
+      let password = '';
+      Modal.confirm({
+        title: '锁定笔记',
+        content: (
+          <div>
+            <p style={{ marginBottom: 8 }}>请设置笔记密码：</p>
+            <input
+              type="password"
+              placeholder="输入密码"
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d9d9d9',
+                borderRadius: 4,
+              }}
+              onChange={e => {
+                password = e.target.value;
+              }}
+            />
+          </div>
+        ),
+        okText: '锁定',
+        cancelText: '取消',
+        onOk: async () => {
+          if (!password || password.length < 4) {
+            message.error('密码至少 4 位');
+            return Promise.reject();
+          }
+          // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
+          const passwordHash = await computePasswordHash(password);
 
-        await updateNote(noteId, { is_locked: true, lock_password_hash: passwordHash });
-        await refresh();
-        message.success('笔记已锁定');
-      },
-    });
-  }, [updateNote, refresh]);
+          await updateNote(noteId, { is_locked: true, lock_password_hash: passwordHash });
+          await refresh();
+          message.success('笔记已锁定');
+        },
+      });
+    },
+    [updateNote, refresh]
+  );
 
   // 解锁笔记（从 NoteList 调用）
-  const handleUnlockNote = useCallback(async (noteId: string) => {
-    // 获取笔记的密码哈希
-    const note = filteredNotes.find(n => n.id === noteId);
-    if (!note) return;
+  const handleUnlockNote = useCallback(
+    async (noteId: string) => {
+      // 获取笔记的密码哈希
+      const note = filteredNotes.find(n => n.id === noteId);
+      if (!note) return;
 
-    // 从数据库获取完整笔记信息
-    const noteItem = await itemsApi.getById(noteId);
-    if (!noteItem) return;
+      // 从数据库获取完整笔记信息
+      const noteItem = await itemsApi.getById(noteId);
+      if (!noteItem) return;
 
-    const payload = parsePayload<NotePayload>(noteItem);
-    const storedHash = payload.lock_password_hash;
+      const payload = parsePayload<NotePayload>(noteItem);
+      const storedHash = payload.lock_password_hash;
 
-    let password = '';
-    Modal.confirm({
-      title: '解锁笔记',
-      content: (
-        <div>
-          <p style={{ marginBottom: 8 }}>请输入笔记密码：</p>
-          <input
-            type="password"
-            placeholder="输入密码"
-            style={{ width: '100%', padding: '8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
-            onChange={(e) => { password = e.target.value; }}
-          />
-        </div>
-      ),
-      okText: '解锁',
-      cancelText: '取消',
-      onOk: async () => {
-        if (!password) {
-          message.error('请输入密码');
-          return Promise.reject();
-        }
-        // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
-        const inputHash = await computePasswordHash(password);
+      let password = '';
+      Modal.confirm({
+        title: '解锁笔记',
+        content: (
+          <div>
+            <p style={{ marginBottom: 8 }}>请输入笔记密码：</p>
+            <input
+              type="password"
+              placeholder="输入密码"
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d9d9d9',
+                borderRadius: 4,
+              }}
+              onChange={e => {
+                password = e.target.value;
+              }}
+            />
+          </div>
+        ),
+        okText: '解锁',
+        cancelText: '取消',
+        onOk: async () => {
+          if (!password) {
+            message.error('请输入密码');
+            return Promise.reject();
+          }
+          // 计算密码哈希（纯 SHA-256，与 Android 端保持一致）
+          const inputHash = await computePasswordHash(password);
 
-        if (inputHash !== storedHash) {
-          message.error('密码错误');
-          return Promise.reject();
-        }
+          if (inputHash !== storedHash) {
+            message.error('密码错误');
+            return Promise.reject();
+          }
 
-        await updateNote(noteId, { is_locked: false, lock_password_hash: null });
-        await refresh();
-        message.success('笔记已解锁');
-      },
-    });
-  }, [filteredNotes, updateNote, refresh]);
+          await updateNote(noteId, { is_locked: false, lock_password_hash: null });
+          await refresh();
+          message.success('笔记已解锁');
+        },
+      });
+    },
+    [filteredNotes, updateNote, refresh]
+  );
 
   // 删除文件夹
-  const handleDeleteFolder = useCallback(async (folderId: string) => {
-    const success = await deleteFolderApi(folderId);
-    if (success) {
-      if (selectedFolderId === folderId) {
-        setSelectedFolderId(null);
-        setSelectedView('all');
+  const handleDeleteFolder = useCallback(
+    async (folderId: string) => {
+      const success = await deleteFolderApi(folderId);
+      if (success) {
+        if (selectedFolderId === folderId) {
+          setSelectedFolderId(null);
+          setSelectedView('all');
+        }
+        message.success('文件夹已删除');
       }
-      message.success('文件夹已删除');
-    }
-  }, [deleteFolderApi, selectedFolderId]);
+    },
+    [deleteFolderApi, selectedFolderId]
+  );
 
   // 重命名文件夹
-  const handleRenameFolder = useCallback(async (folderId: string, newName: string) => {
-    const success = await updateFolder(folderId, { name: newName });
-    if (success) {
-      message.success('文件夹已重命名');
-    }
-  }, [updateFolder]);
+  const handleRenameFolder = useCallback(
+    async (folderId: string, newName: string) => {
+      const success = await updateFolder(folderId, { name: newName });
+      if (success) {
+        message.success('文件夹已重命名');
+      }
+    },
+    [updateFolder]
+  );
 
   // 删除标签
-  const handleDeleteTag = useCallback(async (tagId: string) => {
-    const success = await deleteTagApi(tagId);
-    if (success) {
-      if (selectedTagId === tagId) {
-        setSelectedTagId(null);
-        setSelectedView('all');
+  const handleDeleteTag = useCallback(
+    async (tagId: string) => {
+      const success = await deleteTagApi(tagId);
+      if (success) {
+        if (selectedTagId === tagId) {
+          setSelectedTagId(null);
+          setSelectedView('all');
+        }
+        message.success('标签已删除');
       }
-      message.success('标签已删除');
-    }
-  }, [deleteTagApi, selectedTagId]);
+    },
+    [deleteTagApi, selectedTagId]
+  );
 
   const handleSync = useCallback(async () => {
     if (!syncConfig.enabled) {
@@ -905,27 +1001,32 @@ const App: React.FC = () => {
       const result = await syncApi.trigger();
 
       if (result) {
-        setLastSyncResult(result);  // 立即更新结果
+        setLastSyncResult(result); // 立即更新结果
         if (result.success) {
           setSyncStatus('idle');
-          setSyncProgress(null);  // 清除进度
+          setSyncProgress(null); // 清除进度
           setLastSyncTime(Date.now());
           setPendingChanges(0);
-          message.success(`同步完成: 上传 ${result.pushed} 项, 下载 ${result.pulled} 项`);
+          const summary =
+            result.pushed === 0 && result.pulled === 0
+              ? '同步完成: 数据已是最新'
+              : `同步完成: 上传 ${result.pushed} 项, 下载 ${result.pulled} 项`;
+          message.success(summary);
           // 刷新笔记列表
           await refresh();
           // 触发全局同步完成事件，通知其他组件刷新数据
           window.dispatchEvent(new Event('sync-completed'));
         } else {
           setSyncStatus('error');
-          setSyncProgress(null);  // 清除进度
+          setSyncProgress(null); // 清除进度
           // 检查是否是密钥不匹配错误
           const keyMismatchError = result.errors.find(e => e.includes('key mismatch'));
           // 检查是否是 token 过期错误
-          const tokenExpiredError = result.errors.find(e =>
-            e.includes('登录已过期') ||
-            e.includes('访问令牌无效') ||
-            e.includes('Token refresh failed')
+          const tokenExpiredError = result.errors.find(
+            e =>
+              e.includes('登录已过期') ||
+              e.includes('访问令牌无效') ||
+              e.includes('Token refresh failed')
           );
           if (keyMismatchError) {
             message.error({
@@ -942,13 +1043,14 @@ const App: React.FC = () => {
           }
         }
       } else {
-        setSyncStatus('error');
-        setSyncProgress(null);  // 清除进度
-        message.error('同步失败');
+        // result 为 null 只在离线状态下发生
+        setSyncStatus('idle');
+        setSyncProgress(null);
+        message.warning('当前处于离线状态，无法同步');
       }
     } catch (error) {
       setSyncStatus('error');
-      setSyncProgress(null);  // 清除进度
+      setSyncProgress(null); // 清除进度
       message.error('同步出错');
     }
   }, [syncConfig, syncInitialized, refresh]);
@@ -971,7 +1073,10 @@ const App: React.FC = () => {
           const result = await syncApi.forceResync();
 
           if (result.success) {
-            message.success({ content: `已标记 ${result.count} 项数据，开始同步...`, key: 'force-resync' });
+            message.success({
+              content: `已标记 ${result.count} 项数据，开始同步...`,
+              key: 'force-resync',
+            });
             // 更新待同步数量
             setPendingChanges(result.count);
             // 触发同步
@@ -987,52 +1092,57 @@ const App: React.FC = () => {
   }, [syncConfig, handleSync]);
 
   // 选择工具
-  const handleSelectTool = useCallback(async (tool: string | null) => {
-    // 处理 Excel 笔记创建
-    if (tool === 'excel-create') {
-      // 创建新的 Excel 笔记
-      try {
-        const api = getElectronAPI();
-        if (api?.items?.create) {
-          const payload = {
-            title: '新建 Excel 笔记',
-            folder_id: selectedFolderId === 'uncategorized' ? null : selectedFolderId,
-            is_pinned: false,
-            is_locked: false,
-            lock_password_hash: null,
-            tags: [],
-            sheets: [{
-              id: crypto.randomUUID(),
-              name: 'Sheet1',
-              rows: [],
-              column_widths: {},
-              row_heights: {},
-              frozen_rows: 0,
-              frozen_columns: 0,
-            }],
-            active_sheet_index: 0,
-          };
-          const newNote = await api.items.create('excel_note', payload);
-          if (newNote) {
-            setSelectedNoteId(newNote.id);
-            setCurrentTool(null);
-            await refresh();
-            message.success('Excel 笔记已创建');
+  const handleSelectTool = useCallback(
+    async (tool: string | null) => {
+      // 处理 Excel 笔记创建
+      if (tool === 'excel-create') {
+        // 创建新的 Excel 笔记
+        try {
+          const api = getElectronAPI();
+          if (api?.items?.create) {
+            const payload = {
+              title: '新建 Excel 笔记',
+              folder_id: selectedFolderId === 'uncategorized' ? null : selectedFolderId,
+              is_pinned: false,
+              is_locked: false,
+              lock_password_hash: null,
+              tags: [],
+              sheets: [
+                {
+                  id: crypto.randomUUID(),
+                  name: 'Sheet1',
+                  rows: [],
+                  column_widths: {},
+                  row_heights: {},
+                  frozen_rows: 0,
+                  frozen_columns: 0,
+                },
+              ],
+              active_sheet_index: 0,
+            };
+            const newNote = await api.items.create('excel_note', payload);
+            if (newNote) {
+              setSelectedNoteId(newNote.id);
+              setCurrentTool(null);
+              await refresh();
+              message.success('Excel 笔记已创建');
+            }
           }
+        } catch (err) {
+          console.error('Failed to create Excel note:', err);
+          message.error('创建 Excel 笔记失败');
         }
-      } catch (err) {
-        console.error('Failed to create Excel note:', err);
-        message.error('创建 Excel 笔记失败');
+        return;
       }
-      return;
-    }
-    
-    setCurrentTool(tool);
-    if (tool) {
-      // 切换到工具时清除笔记选择
-      setSelectedNoteId(null);
-    }
-  }, [selectedFolderId, refresh]);
+
+      setCurrentTool(tool);
+      if (tool) {
+        // 切换到工具时清除笔记选择
+        setSelectedNoteId(null);
+      }
+    },
+    [selectedFolderId, refresh]
+  );
 
   // 锁定应用
   const handleLockApp = useCallback(() => {
@@ -1068,34 +1178,39 @@ const App: React.FC = () => {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   };
 
-  const handleUnlockApp = useCallback(async (password: string): Promise<boolean> => {
-    const securitySettings = localStorage.getItem('mucheng-security');
-    if (securitySettings) {
-      try {
-        const settings = JSON.parse(securitySettings);
-        const hashedInput = await hashPassword(password);
-        if (hashedInput === settings.lockPassword) {
-          setIsAppLocked(false);
-          setFailedAttempts(0);
-          return true;
+  const handleUnlockApp = useCallback(
+    async (password: string): Promise<boolean> => {
+      const securitySettings = localStorage.getItem('mucheng-security');
+      if (securitySettings) {
+        try {
+          const settings = JSON.parse(securitySettings);
+          const hashedInput = await hashPassword(password);
+          if (hashedInput === settings.lockPassword) {
+            setIsAppLocked(false);
+            setFailedAttempts(0);
+            return true;
+          }
+        } catch {
+          /* ignore */
         }
-      } catch { /* ignore */ }
-    }
+      }
 
-    const newAttempts = failedAttempts + 1;
-    setFailedAttempts(newAttempts);
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
 
-    // 5次失败后锁定30秒
-    if (newAttempts >= 5) {
-      setLockedUntil(Date.now() + 30000);
-      setTimeout(() => {
-        setLockedUntil(null);
-        setFailedAttempts(0);
-      }, 30000);
-    }
+      // 5次失败后锁定30秒
+      if (newAttempts >= 5) {
+        setLockedUntil(Date.now() + 30000);
+        setTimeout(() => {
+          setLockedUntil(null);
+          setFailedAttempts(0);
+        }, 30000);
+      }
 
-    return false;
-  }, [failedAttempts]);
+      return false;
+    },
+    [failedAttempts]
+  );
 
   // 启动时检查是否需要锁定
   useEffect(() => {
@@ -1106,7 +1221,9 @@ const App: React.FC = () => {
         if (settings.appLockEnabled && settings.lockPassword) {
           setIsAppLocked(true);
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }, []);
 
@@ -1120,7 +1237,14 @@ const App: React.FC = () => {
       handleTogglePin,
       updateSettings,
     };
-  }, [handleQuickCreateNote, handleSync, handleDeleteNote, handleDuplicateNote, handleTogglePin, updateSettings]);
+  }, [
+    handleQuickCreateNote,
+    handleSync,
+    handleDeleteNote,
+    handleDuplicateNote,
+    handleTogglePin,
+    updateSettings,
+  ]);
 
   // 更新 ref 以保持最新的状态
   React.useEffect(() => {
@@ -1166,7 +1290,10 @@ const App: React.FC = () => {
       <Sider
         width={180}
         theme={isDarkMode ? 'dark' : 'light'}
-        style={{ borderRight: `1px solid ${isDarkMode ? '#303030' : '#eee'}`, background: isDarkMode ? '#141414' : '#fafafa' }}
+        style={{
+          borderRight: `1px solid ${isDarkMode ? '#303030' : '#eee'}`,
+          background: isDarkMode ? '#141414' : '#fafafa',
+        }}
       >
         <Sidebar
           selectedFolderId={selectedFolderId}
@@ -1235,13 +1362,19 @@ const App: React.FC = () => {
           </Content>
         ) : (
           <>
-            <Sider width={260} theme={isDarkMode ? 'dark' : 'light'} style={{ borderRight: `1px solid ${isDarkMode ? '#303030' : '#eee'}` }}>
+            <Sider
+              width={260}
+              theme={isDarkMode ? 'dark' : 'light'}
+              style={{ borderRight: `1px solid ${isDarkMode ? '#303030' : '#eee'}` }}
+            >
               <NoteList
                 notes={filteredNotes}
                 selectedNoteId={selectedNoteId}
                 onSelectNote={handleSelectNote}
                 onSearch={searchNotes}
-                onDeleteNote={selectedView === 'trash' ? handlePermanentDeleteNote : handleDeleteNote}
+                onDeleteNote={
+                  selectedView === 'trash' ? handlePermanentDeleteNote : handleDeleteNote
+                }
                 onRestoreNote={selectedView === 'trash' ? handleRestoreNote : undefined}
                 onToggleStar={handleTogglePin}
                 onDuplicateNote={handleDuplicateNote}
@@ -1278,14 +1411,16 @@ const App: React.FC = () => {
                   />
                 )}
               </Content>
-              <Footer style={{
-                padding: '4px 16px',
-                background: isDarkMode ? '#1f1f1f' : '#fafafa',
-                borderTop: `1px solid ${isDarkMode ? '#303030' : '#f0f0f0'}`,
-                display: 'flex',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-              }}>
+              <Footer
+                style={{
+                  padding: '4px 16px',
+                  background: isDarkMode ? '#1f1f1f' : '#fafafa',
+                  borderTop: `1px solid ${isDarkMode ? '#303030' : '#f0f0f0'}`,
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                }}
+              >
                 <SyncStatusBar
                   status={syncStatus}
                   lastSyncTime={lastSyncTime}
@@ -1302,7 +1437,11 @@ const App: React.FC = () => {
         )}
       </Layout>
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} defaultTab={settingsTab} />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        defaultTab={settingsTab}
+      />
       <TemplateSelector
         open={templateSelectorOpen}
         onClose={() => setTemplateSelectorOpen(false)}
@@ -1322,7 +1461,7 @@ const App: React.FC = () => {
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <div>
             <div style={{ marginBottom: 8, fontWeight: 500 }}>操作类型</div>
-            <Radio.Group value={moveMode} onChange={(e) => setMoveMode(e.target.value)}>
+            <Radio.Group value={moveMode} onChange={e => setMoveMode(e.target.value)}>
               <Radio value="move">移动（原位置删除）</Radio>
               <Radio value="copy">复制（保留原笔记）</Radio>
             </Radio.Group>
@@ -1337,7 +1476,10 @@ const App: React.FC = () => {
               allowClear
               options={(() => {
                 // 构建带层级的文件夹选项
-                const buildFolderOptions = (parentId: string | null, level: number): { value: string | null; label: string }[] => {
+                const buildFolderOptions = (
+                  parentId: string | null,
+                  level: number
+                ): { value: string | null; label: string }[] => {
                   const children = folders.filter(f => f.parentId === parentId);
                   const result: { value: string | null; label: string }[] = [];
                   for (const folder of children) {
@@ -1345,7 +1487,7 @@ const App: React.FC = () => {
                     const prefix = level > 0 ? '└ ' : '';
                     result.push({
                       value: folder.id,
-                      label: `${indent}${prefix}📁 ${folder.name}`
+                      label: `${indent}${prefix}📁 ${folder.name}`,
                     });
                     // 递归添加子文件夹
                     result.push(...buildFolderOptions(folder.id, level + 1));
@@ -1354,14 +1496,13 @@ const App: React.FC = () => {
                 };
                 return [
                   { value: null, label: '📁 根目录（无文件夹）' },
-                  ...buildFolderOptions(null, 0)
+                  ...buildFolderOptions(null, 0),
                 ];
               })()}
             />
           </div>
         </Space>
       </Modal>
-
     </Layout>
   );
 };

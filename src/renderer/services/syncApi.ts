@@ -16,9 +16,12 @@ export interface SyncApiConfig {
   serverToken?: string;
   serverRefreshToken?: string;
   serverTokenExpires?: number;
+  serverSyncKey?: string;
+  serverUsername?: string;   // 自建服务器用户名
+  serverPassword?: string;   // 自建服务器密码
   syncInterval: number;
   syncModules?: SyncModules;
-  lastSyncTime?: number | null;  // 上次同步时间
+  lastSyncTime?: number | null; // 上次同步时间
 }
 
 export interface SyncResult {
@@ -32,7 +35,16 @@ export interface SyncResult {
 }
 
 export interface SyncProgress {
-  phase: 'idle' | 'connecting' | 'acquiring-lock' | 'verifying-key' | 'pushing' | 'pulling' | 'committing' | 'done' | 'error';
+  phase:
+    | 'idle'
+    | 'connecting'
+    | 'acquiring-lock'
+    | 'verifying-key'
+    | 'pushing'
+    | 'pulling'
+    | 'committing'
+    | 'done'
+    | 'error';
   message: string;
   current?: number;
   total?: number;
@@ -111,9 +123,15 @@ export const syncApi = {
   },
 
   // 检查首次同步状态
-  checkFirstSync: async (): Promise<{ isFirstSync: boolean; remoteHasData: boolean; localItemCount: number }> => {
+  checkFirstSync: async (): Promise<{
+    isFirstSync: boolean;
+    remoteHasData: boolean;
+    localItemCount: number;
+  }> => {
     const api = getElectronAPI();
-    return api?.sync?.checkFirstSync() ?? { isFirstSync: false, remoteHasData: false, localItemCount: 0 };
+    return (
+      api?.sync?.checkFirstSync() ?? { isFirstSync: false, remoteHasData: false, localItemCount: 0 }
+    );
   },
 };
 

@@ -54,6 +54,8 @@ object TransferNotificationService {
         messageContent: String,
         sessionId: String
     ) {
+        createNotificationChannel(context)
+        
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("navigate_to", "transfer")
@@ -94,6 +96,8 @@ object TransferNotificationService {
         filename: String,
         sessionId: String
     ) {
+        createNotificationChannel(context)
+        
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("navigate_to", "transfer")
@@ -133,6 +137,8 @@ object TransferNotificationService {
         progress: Int,
         isUpload: Boolean
     ) {
+        createNotificationChannel(context)
+        
         val title = if (isUpload) "正在发送文件" else "正在接收文件"
         
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)

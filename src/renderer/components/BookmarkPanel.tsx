@@ -6,7 +6,7 @@ import {
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, LinkOutlined,
   FolderOutlined, FolderAddOutlined, GlobalOutlined, SearchOutlined,
-  AppstoreOutlined, RightOutlined, DownOutlined,
+  AppstoreOutlined, RightOutlined, DownOutlined, UnorderedListOutlined, TableOutlined, CopyOutlined,
 } from '@ant-design/icons';
 import { useBookmarks, useBookmarkFolders, Bookmark } from '../hooks/useBookmarks';
 
@@ -17,67 +17,129 @@ const { TextArea } = Input;
 const getFavicon = (url: string) => {
   try {
     if (!url) return null;
-    const domain = new URL(url).hostname;
-    return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+    const { hostname, protocol } = new URL(url);
+    // 优先用网站自己的 favicon.ico，比 Google API 更可靠
+    return `${protocol}//${hostname}/favicon.ico`;
   } catch {
     return null;
   }
 };
 
+// 基于字符串生成稳定的哈希色（同一域名永远同一颜色）
+const getHashColor = (str: string): { bg: string; text: string } => {
+  const PALETTES = [
+    { bg: '#4f86f7', text: '#fff' },
+    { bg: '#f7664f', text: '#fff' },
+    { bg: '#4fc98a', text: '#fff' },
+    { bg: '#f7c44f', text: '#fff' },
+    { bg: '#a04ff7', text: '#fff' },
+    { bg: '#f74fa0', text: '#fff' },
+    { bg: '#4fc9f7', text: '#fff' },
+    { bg: '#f7874f', text: '#fff' },
+    { bg: '#4ff7c4', text: '#333' },
+    { bg: '#7f4ff7', text: '#fff' },
+    { bg: '#f74f4f', text: '#fff' },
+    { bg: '#4f4ff7', text: '#fff' },
+  ];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return PALETTES[Math.abs(hash) % PALETTES.length];
+};
+
+// 获取显示文字（中文取第一个字，英文取前两个字母大写）
+const getInitial = (name: string): string => {
+  if (!name) return '?';
+  const first = name.trim()[0];
+  // 中文字符
+  if (/[\u4e00-\u9fa5]/.test(first)) return first;
+  // 英文：取前两个字母
+  const letters = name.replace(/[^a-zA-Z]/g, '');
+  return letters.slice(0, 2).toUpperCase() || first.toUpperCase();
+};
+
+// 文字头像组件（favicon 加载失败时的兜底）
+const TextAvatar: React.FC<{ name: string; domain: string; size: number }> = ({ name, domain, size }) => {
+  const { bg, text } = getHashColor(domain || name);
+  const initial = getInitial(name);
+  const fontSize = initial.length > 1 ? size * 0.38 : size * 0.46;
+  return (
+    <div style={{
+      width: size,
+      height: size,
+      borderRadius: size * 0.25,
+      background: bg,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: text,
+      fontSize,
+      fontWeight: 700,
+      letterSpacing: initial.length > 1 ? '-0.5px' : 0,
+      userSelect: 'none',
+      flexShrink: 0,
+    }}>
+      {initial}
+    </div>
+  );
+};
+
 // 渲染自定义图标（支持 URL、base64、SVG 代码）
-const renderCustomIcon = (icon: string | null | undefined, fallbackUrl: string) => {
+const renderCustomIcon = (icon: string | null | undefined, fallbackUrl: string, name: string = '', size: number = 28) => {
+  const domain = getDomain(fallbackUrl);
+
   if (!icon) {
-    // 使用 favicon
     const favicon = getFavicon(fallbackUrl);
-    return favicon ? (
-      <img
-        src={favicon}
-        alt=""
-        style={{ width: 18, height: 18, objectFit: 'contain' }}
-        onError={(e) => {
-          (e.target as HTMLImageElement).style.display = 'none';
-          (e.target as HTMLImageElement).parentElement!.innerHTML = '<span style="font-size:16px;opacity:0.6">🌍</span>';
-        }}
-      />
-    ) : <span style={{ fontSize: 16, opacity: 0.6 }}>🌍</span>;
+    if (!favicon) return <TextAvatar name={name} domain={domain} size={size} />;
+    return (
+      <FaviconWithFallback src={favicon} name={name} domain={domain} size={size} />
+    );
   }
 
   const trimmed = icon.trim();
 
-  // SVG 代码（以 <svg 开头）
   if (trimmed.startsWith('<svg') || trimmed.startsWith('<?xml')) {
     return (
-      <div
-        style={{ width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        dangerouslySetInnerHTML={{ __html: trimmed.replace(/width="[^"]*"/, 'width="18"').replace(/height="[^"]*"/, 'height="18"') }}
+      <div style={{ width: size, height: size, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        dangerouslySetInnerHTML={{ __html: trimmed.replace(/width="[^"]*"/, `width="${size}"`).replace(/height="[^"]*"/, `height="${size}"`) }}
       />
     );
   }
 
-  // base64 编码（data:image 开头）
   if (trimmed.startsWith('data:image')) {
     return (
-      <img
-        src={trimmed}
-        alt=""
-        style={{ width: 18, height: 18, objectFit: 'contain' }}
-        onError={(e) => {
-          (e.target as HTMLImageElement).style.display = 'none';
-          (e.target as HTMLImageElement).parentElement!.innerHTML = '<span style="font-size:16px;opacity:0.6">🌍</span>';
-        }}
+      <img src={trimmed} alt="" style={{ width: size, height: size, objectFit: 'contain' }}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
       />
     );
   }
 
-  // 普通 URL
+  return (
+    <img src={trimmed} alt="" style={{ width: size, height: size, objectFit: 'contain' }}
+      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+    />
+  );
+};
+
+// Favicon 加载失败时自动降级为文字头像
+// Google Favicon API 即使域名无效也会返回默认图标（不触发onError）
+// 通过检测图片 naturalWidth <= 16 来判断是否是无效的默认图标
+const FaviconWithFallback: React.FC<{ src: string; name: string; domain: string; size: number }> = ({ src, name, domain, size }) => {
+  const [failed, setFailed] = React.useState(false);
+  if (failed) return <TextAvatar name={name} domain={domain} size={size} />;
   return (
     <img
-      src={trimmed}
+      src={src}
       alt=""
-      style={{ width: 18, height: 18, objectFit: 'contain' }}
-      onError={(e) => {
-        (e.target as HTMLImageElement).style.display = 'none';
-        (e.target as HTMLImageElement).parentElement!.innerHTML = '<span style="font-size:16px;opacity:0.6">🌍</span>';
+      style={{ width: size, height: size, objectFit: 'contain' }}
+      onError={() => setFailed(true)}
+      onLoad={(e) => {
+        const img = e.target as HTMLImageElement;
+        // Google 返回默认地球图标时 naturalWidth === 16（低分辨率默认图）
+        if (img.naturalWidth <= 16 && img.naturalHeight <= 16) {
+          setFailed(true);
+        }
       }}
     />
   );
@@ -116,66 +178,68 @@ const openInBrowser = async (url: string) => {
 // 注入样式
 const styles = `
   .nav-site-container {
-    background: #f5f7fa !important;
+    background: #f5f6fa !important;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   }
   
   .nav-sider {
     background: #fff !important;
-    border-right: 1px solid rgba(0,0,0,0.03) !important;
+    border-right: 1px solid #ebebeb !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
   }
 
-  /* Compact Folder Items */
+  /* 顶部固定项（全部/未分类） */
   .nav-folder-item {
-    transition: all 0.2s ease;
-    border-radius: 4px;
-    margin: 1px 4px;
-    color: #555;
+    transition: background 0.15s ease, color 0.15s ease;
+    border-radius: 6px;
+    margin: 1px 8px;
+    color: #595959;
     white-space: nowrap;
     overflow: hidden;
+    font-size: 13px;
   }
   
   .nav-folder-item:hover {
-    background: rgba(0,0,0,0.03);
-    color: #333;
+    background: #f5f5f5;
+    color: #1a1a2e;
   }
   
   .nav-folder-item.selected {
-    background: #e6f7ff;
-    color: #1890ff;
-    font-weight: 600;
+    background: transparent;
+    color: #1677ff;
+    font-weight: 500;
   }
 
-  /* Compact Card */
+  /* 垂直卡片 */
   .nav-card {
     background: #fff;
-    border-radius: 8px;
-    border: 1px solid #f0f0f0;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 10px;
+    border: 1px solid #ebebeb;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: all 0.2s ease;
     position: relative;
     overflow: hidden;
+    cursor: pointer;
   }
   
   .nav-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    border-color: rgba(24, 144, 255, 0.2);
-    z-index: 10;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    border-color: #c9d9ff;
   }
 
   .nav-card-icon {
-    transition: transform 0.3s ease;
+    transition: transform 0.2s ease;
   }
   
   .nav-card:hover .nav-card-icon {
-    transform: scale(1.05);
+    transform: scale(1.08);
   }
 
   .nav-card-actions {
     opacity: 0;
-    transition: opacity 0.2s ease;
-    background: linear-gradient(90deg, transparent, #fff 30%);
+    transition: opacity 0.15s ease;
   }
 
   .nav-card:hover .nav-card-actions {
@@ -183,15 +247,54 @@ const styles = `
   }
   
   .bookmark-toolbar {
-    background: rgba(255,255,255,0.9);
-    backdrop-filter: blur(8px);
+    background: #f5f6fa;
     position: sticky;
     top: 0;
     z-index: 100;
+    border-bottom: 1px solid #ebebeb !important;
+  }
+
+  .nav-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #bbb;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-section-divider {
+    height: 1px;
+    background: #f0f0f0;
+    margin-bottom: 14px;
+  }
+
+  /* 列表行 */
+  .nav-list-row:hover {
+    background: #f8faff !important;
+    border-color: rgba(22,119,255,0.15) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+
+  .nav-list-row .nav-card-actions {
+    opacity: 0;
+    transition: opacity 0.18s ease;
+  }
+
+  .nav-list-row:hover .nav-card-actions {
+    opacity: 1;
+  }
+
+  /* 搜索框 */
+  .bookmark-search .ant-input {
+    background: transparent !important;
   }
 `;
 
-// 书签卡片组件
+// 书签卡片组件 - 垂直大图标样式
 const BookmarkCard: React.FC<{
   bookmark: Bookmark;
   onEdit: (bookmark: Bookmark) => void;
@@ -201,66 +304,70 @@ const BookmarkCard: React.FC<{
     <div
       onClick={() => openInBrowser(bookmark.url)}
       className="nav-card"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        padding: '16px',
-        cursor: 'pointer',
-        height: '100%',
-      }}
+      style={{ padding: '20px 16px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', minHeight: 120 }}
     >
-      {/* 图标 */}
+      {/* 大图标 */}
       <div className="nav-card-icon" style={{
-        width: 32,
-        height: 32,
-        borderRadius: 6,
-        background: '#f7f9fc',
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        background: 'linear-gradient(145deg, #f8faff, #eef2ff)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 10,
+        marginBottom: 10,
         flexShrink: 0,
-        border: '1px solid rgba(0,0,0,0.04)',
+        border: '1px solid rgba(0,0,0,0.05)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
       }}>
-        {renderCustomIcon(bookmark.icon, bookmark.url)}
+        {renderCustomIcon(bookmark.icon, bookmark.url, bookmark.name)}
       </div>
 
-      {/* 内容 */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <div style={{
-          fontWeight: 600,
-          fontSize: 15,
-          color: '#262626',
-          marginBottom: 4,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
-          {bookmark.name}
-        </div>
-        <div style={{
-          fontSize: 12,
-          color: '#8c8c8c',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
-          {bookmark.description || getDomain(bookmark.url)}
-        </div>
+      {/* 名称 */}
+      <div style={{
+        fontWeight: 600,
+        fontSize: 13,
+        color: '#1a1a2e',
+        marginBottom: 4,
+        width: '100%',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        lineHeight: 1.4,
+      }}>
+        {bookmark.name}
       </div>
 
-      {/* 操作按钮 - 悬浮显示 */}
+      {/* 域名/描述 */}
+      <div style={{
+        fontSize: 11,
+        color: '#aaa',
+        width: '100%',
+        overflow: 'hidden',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        lineHeight: 1.5,
+        minHeight: '2.2em',
+        wordBreak: 'break-all',
+      }}>
+        {bookmark.description || getDomain(bookmark.url)}
+      </div>
+
+      {/* 操作按钮 - 悬浮显示在右上角 */}
       <div
         className="nav-card-actions"
         style={{
           position: 'absolute',
-          right: 0,
-          top: 0,
-          bottom: 0,
+          right: 3,
+          top: 3,
           display: 'flex',
           alignItems: 'center',
-          paddingRight: 8,
-          paddingLeft: 24,
+          gap: 1,
+          background: 'rgba(255,255,255,0.96)',
+          borderRadius: 6,
+          padding: '1px 3px',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
         }}
         onClick={e => e.stopPropagation()}
       >
@@ -268,9 +375,18 @@ const BookmarkCard: React.FC<{
           <Button
             type="text"
             size="small"
-            icon={<EditOutlined />}
+            icon={<EditOutlined style={{ fontSize: 11 }} />}
             onClick={() => onEdit(bookmark)}
-            style={{ color: '#666' }}
+            style={{ color: '#888', width: 20, height: 20, padding: 0, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          />
+        </Tooltip>
+        <Tooltip title="复制链接">
+          <Button
+            type="text"
+            size="small"
+            icon={<CopyOutlined style={{ fontSize: 11 }} />}
+            onClick={() => { navigator.clipboard.writeText(bookmark.url); message.success('链接已复制'); }}
+            style={{ color: '#888', width: 20, height: 20, padding: 0, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           />
         </Tooltip>
         <Popconfirm
@@ -284,9 +400,117 @@ const BookmarkCard: React.FC<{
             <Button
               type="text"
               size="small"
-              icon={<DeleteOutlined />}
-              style={{ color: '#ff4d4f' }}
+              icon={<DeleteOutlined style={{ fontSize: 11 }} />}
+              style={{ color: '#ff4d4f', width: 20, height: 20, padding: 0, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             />
+          </Tooltip>
+        </Popconfirm>
+      </div>
+    </div>
+  );
+};
+
+// 书签列表行组件 - 图标左，内容右（横向卡片，自适应宽度）
+const BookmarkListRow: React.FC<{
+  bookmark: Bookmark;
+  density: number;
+  minWidth: number;
+  onEdit: (bookmark: Bookmark) => void;
+  onDelete: (id: string) => void;
+}> = ({ bookmark, density: _density, minWidth: _minWidth, onEdit, onDelete }) => {
+  const iconSize = 36;
+  const padding = '10px 12px';
+
+  return (
+    <div
+      onClick={() => openInBrowser(bookmark.url)}
+      className="nav-card"
+      style={{
+        padding,
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        textAlign: 'left',
+        minHeight: 'unset',
+        boxSizing: 'border-box' as const,
+      }}
+    >
+      {/* 图标 */}
+      <div className="nav-card-icon" style={{
+        width: iconSize,
+        height: iconSize,
+        borderRadius: 10,
+        background: 'linear-gradient(145deg, #f8faff, #eef2ff)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        border: '1px solid rgba(0,0,0,0.05)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+      }}>
+        {renderCustomIcon(bookmark.icon, bookmark.url, bookmark.name, Math.round(iconSize * 0.6))}
+      </div>
+
+      {/* 内容 */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontWeight: 600,
+          fontSize: 13,
+          color: '#1a1a2e',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          lineHeight: 1.4,
+        }}>
+          {bookmark.name}
+        </div>
+        <div style={{
+          fontSize: 11,
+          color: '#aaa',
+          overflow: 'hidden',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          lineHeight: 1.4,
+          wordBreak: 'break-all',
+        }}>
+          {bookmark.description || getDomain(bookmark.url)}
+        </div>
+      </div>
+
+      {/* 操作按钮 */}
+      <div
+        className="nav-card-actions"
+        style={{
+          position: 'absolute',
+          right: 3,
+          top: 3,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          background: 'rgba(255,255,255,0.96)',
+          borderRadius: 6,
+          padding: '1px 3px',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <Tooltip title="编辑">
+          <Button type="text" size="small" icon={<EditOutlined style={{ fontSize: 11 }} />}
+            onClick={() => onEdit(bookmark)}
+            style={{ color: '#888', width: 20, height: 20, padding: 0, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+        </Tooltip>
+        <Tooltip title="复制链接">
+          <Button type="text" size="small" icon={<CopyOutlined style={{ fontSize: 11 }} />}
+            onClick={() => { navigator.clipboard.writeText(bookmark.url); message.success('链接已复制'); }}
+            style={{ color: '#888', width: 20, height: 20, padding: 0, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+        </Tooltip>
+        <Popconfirm title="删除此书签？" onConfirm={() => onDelete(bookmark.id)}
+          placement="topRight" okText="删除" cancelText="取消">
+          <Tooltip title="删除">
+            <Button type="text" size="small" icon={<DeleteOutlined style={{ fontSize: 11 }} />}
+              style={{ color: '#ff4d4f', width: 20, height: 20, padding: 0, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
           </Tooltip>
         </Popconfirm>
       </div>
@@ -309,7 +533,10 @@ const BookmarkPanel: React.FC = () => {
     const saved = localStorage.getItem('bookmark-columns');
     return saved ? parseInt(saved) : 3;
   });
-  // 文件夹展开状态（默认全部折叠）
+  const [layout, setLayout] = useState<'grid' | 'list'>(() => {
+    return (localStorage.getItem('bookmark-layout') as 'grid' | 'list') || 'grid';
+  });
+  // 文件夹展开状态
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   // 切换文件夹展开状态
@@ -326,8 +553,6 @@ const BookmarkPanel: React.FC = () => {
     });
   };
 
-
-
   // 处理文件夹点击 - 聚合逻辑
   const handleFolderClick = (folder: { id: string, parentId: string | null }) => {
     if (folder.parentId) {
@@ -335,9 +560,20 @@ const BookmarkPanel: React.FC = () => {
       setSelectedFolderId(folder.parentId);
       setScrollTarget(folder.id);
     } else {
-      // 是根文件夹：直接进入
+      // 是根文件夹：进入并切换展开状态
       setSelectedFolderId(folder.id);
       setScrollTarget(null);
+      if (hasChildren(folder.id)) {
+        setExpandedFolders(prev => {
+          const next = new Set(prev);
+          if (next.has(folder.id)) {
+            next.delete(folder.id);
+          } else {
+            next.add(folder.id);
+          }
+          return next;
+        });
+      }
     }
   };
 
@@ -365,6 +601,16 @@ const BookmarkPanel: React.FC = () => {
   const [renamingName, setRenamingName] = useState('');
 
   const { folders, createFolder, updateFolder, deleteFolder } = useBookmarkFolders();
+
+  // folders 加载完成后，默认展开所有有子节点的文件夹
+  useEffect(() => {
+    if (folders.length > 0) {
+      const withChildren = new Set(
+        folders.filter(f => folders.some(c => c.parentId === f.id)).map(f => f.id)
+      );
+      setExpandedFolders(withChildren);
+    }
+  }, [folders.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const { bookmarks, createBookmark, updateBookmark, deleteBookmark, loading: bookmarksLoading } = useBookmarks(
     selectedFolderId === 'all' ? undefined : selectedFolderId,
     folders  // 传入 folders 以支持递归获取子文件夹书签
@@ -417,7 +663,6 @@ const BookmarkPanel: React.FC = () => {
     return childFolders.flatMap(folder => {
       const isExpanded = expandedFolders.has(folder.id);
       const hasChildFolders = hasChildren(folder.id);
-      const indent = level * 16;
       const isRenaming = renamingFolderId === folder.id;
 
       return [
@@ -427,23 +672,38 @@ const BookmarkPanel: React.FC = () => {
           onContextMenu={(e) => handleFolderContextMenu(e, folder.id)}
           className={`nav-folder-item ${selectedFolderId === folder.id || scrollTarget === folder.id ? 'selected' : ''}`}
           style={{
-            padding: '8px 10px',
-            paddingLeft: collapsed ? 10 : 10 + indent,
+            padding: '5px 10px 5px 0',
+            paddingLeft: collapsed ? 10 : (12 + level * 14),
             fontSize: 13,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            position: 'relative' // For context menu positioning rely on fixed/absolute global
+            position: 'relative',
+            borderLeft: !collapsed && (selectedFolderId === folder.id || scrollTarget === folder.id)
+              ? '2px solid #1677ff'
+              : '2px solid transparent',
+            borderRadius: 0,
+            margin: '1px 0',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-            <FolderOutlined style={{
-              color: selectedFolderId === folder.id || scrollTarget === folder.id ? '#1890ff' : '#ffc66d',
-              fontSize: 16,
-              flexShrink: 0,
-            }} />
-
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+            {!collapsed && (
+              <span
+                onClick={hasChildFolders ? (e) => toggleFolderExpand(folder.id, e) : undefined}
+                style={{
+                  cursor: hasChildFolders ? 'pointer' : 'default',
+                  display: 'flex',
+                  alignItems: 'center',
+                  width: 12,
+                  justifyContent: 'center',
+                  color: hasChildFolders ? '#bbb' : 'transparent',
+                  fontSize: 9,
+                  flexShrink: 0,
+                }}
+              >
+                {isExpanded ? <DownOutlined /> : <RightOutlined />}
+              </span>
+            )}
             {isRenaming && !collapsed ? (
               <Input
                 value={renamingName}
@@ -464,38 +724,14 @@ const BookmarkPanel: React.FC = () => {
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                   flex: 1,
-                  userSelect: 'none'
+                  userSelect: 'none',
+                  color: selectedFolderId === folder.id || scrollTarget === folder.id ? '#1677ff' : '#444',
                 }}>
                   {folder.name}
                 </span>
               )
             )}
-
-            {/* 展开/折叠按钮 */}
-            {!collapsed && hasChildFolders ? (
-              <span
-                onClick={(e) => toggleFolderExpand(folder.id, e)}
-                style={{
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  width: 16,
-                  justifyContent: 'center',
-                  color: '#999',
-                  fontSize: 10,
-                  flexShrink: 0,
-                }}
-              >
-                {isExpanded ? <DownOutlined /> : <RightOutlined />}
-              </span>
-            ) : null}
           </div>
-
-          {!collapsed && !isRenaming && (
-            <Space size={0} className="folder-actions" style={{ opacity: selectedFolderId === folder.id ? 1 : 0.4, flexShrink: 0 }}>
-              {/* Actions are now mainly in context menu, but keep hover optional if desired. Removing to clean up UI as requested context menu focus */}
-            </Space>
-          )}
         </div>,
         ...(isExpanded ? buildFolderTree(folder.id, level + 1) : []),
       ];
@@ -605,7 +841,9 @@ const BookmarkPanel: React.FC = () => {
     setFormUrl('');
     setFormDescription('');
     setFormIcon('');
-    setFormFolderId(selectedFolderId === 'all' ? null : selectedFolderId);
+    // 如果当前是通过子分类滚动定位的，优先用子分类 ID；否则用当前选中的文件夹
+    const defaultFolderId = scrollTarget || (selectedFolderId === 'all' ? null : selectedFolderId);
+    setFormFolderId(defaultFolderId);
     setEditModalOpen(true);
   };
 
@@ -671,29 +909,58 @@ const BookmarkPanel: React.FC = () => {
     localStorage.setItem('bookmark-columns', String(value));
   };
 
+  // 切换布局
+  const handleLayoutChange = (value: 'grid' | 'list') => {
+    setLayout(value);
+    localStorage.setItem('bookmark-layout', value);
+  };
+
   // 根据列数计算网格样式
   const getGridStyle = () => {
-    const minWidth = columns === 2 ? '400px' : columns === 4 ? '220px' : '280px';
     return {
       display: 'grid',
       gridTemplateColumns: `repeat(${columns}, 1fr)`,
-      gap: 12,
+      gap: 10,
     };
   };
 
-  // 渲染书签网格
-  const renderBookmarkGrid = (items: Bookmark[]) => (
-    <div style={getGridStyle()}>
-      {items.map(bookmark => (
-        <BookmarkCard
-          key={bookmark.id}
-          bookmark={bookmark}
-          onEdit={handleEditBookmark}
-          onDelete={handleDeleteBookmark}
-        />
-      ))}
-    </div>
-  );
+  // 渲染书签网格或列表
+  const renderBookmarkGrid = (items: Bookmark[]) => {
+    if (layout === 'list') {
+      // 左右布局：和上下一样用 grid 固定列数，只是卡片方向不同
+      return (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${columns}, 1fr)`,
+          gap: 8,
+        }}>
+          {items.map(bookmark => (
+            <BookmarkListRow
+              key={bookmark.id}
+              bookmark={bookmark}
+              density={columns}
+              minWidth={0}
+              onEdit={handleEditBookmark}
+              onDelete={handleDeleteBookmark}
+            />
+          ))}
+        </div>
+      );
+    }
+    // 网格模式：图标上，内容下，固定列数
+    return (
+      <div style={getGridStyle()}>
+        {items.map(bookmark => (
+          <BookmarkCard
+            key={bookmark.id}
+            bookmark={bookmark}
+            onEdit={handleEditBookmark}
+            onDelete={handleDeleteBookmark}
+          />
+        ))}
+      </div>
+    );
+  };
 
   return (
     <Layout style={{ height: '100%' }} className="nav-site-container">
@@ -811,63 +1078,76 @@ const BookmarkPanel: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {/* Logo / Header */}
           <div style={{
-            padding: collapsed ? '16px 0' : '16px 16px 12px',
+            padding: collapsed ? '14px 0' : '14px 16px 10px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: collapsed ? 'center' : 'flex-start',
-            gap: 10,
+            gap: 8,
+            borderBottom: '1px solid #f5f5f5',
           }}>
             <div style={{
-              width: 28, height: 28,
-              background: 'linear-gradient(135deg, #1890ff 0%, #36cfc9 100%)',
+              width: 24, height: 24,
+              background: 'linear-gradient(135deg, #1677ff 0%, #36cfc9 100%)',
               borderRadius: 6,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 2px 6px rgba(24, 144, 255, 0.2)'
+              flexShrink: 0,
             }}>
-              <GlobalOutlined style={{ fontSize: 16, color: '#fff' }} />
+              <GlobalOutlined style={{ fontSize: 13, color: '#fff' }} />
             </div>
-            {!collapsed && <span style={{ fontWeight: 700, fontSize: 15, color: '#333', letterSpacing: 0.5 }}>书签导航</span>}
+            {!collapsed && <span style={{ fontWeight: 600, fontSize: 14, color: '#1a1a2e' }}>书签导航</span>}
           </div>
 
-          <div style={{ flex: 1, overflow: 'auto', padding: '0 4px 10px' }}>
+          <div style={{ flex: 1, overflow: 'auto', padding: '8px 0 10px' }}>
+            {/* 全部书签 */}
             <div
               onClick={() => setSelectedFolderId('all')}
               className={`nav-folder-item ${selectedFolderId === 'all' ? 'selected' : ''}`}
               style={{
-                padding: '8px 10px',
+                padding: '6px 10px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: collapsed ? 'center' : 'flex-start',
-                gap: 10,
+                gap: 8,
               }}
             >
-              <AppstoreOutlined style={{ color: selectedFolderId === 'all' ? '#1890ff' : '#bbb', fontSize: 16 }} />
+              <AppstoreOutlined style={{ color: selectedFolderId === 'all' ? '#1677ff' : '#c0c0c0', fontSize: 14, flexShrink: 0 }} />
               {!collapsed && <span>全部书签</span>}
             </div>
+            {/* 未分类 */}
             <div
               onClick={() => setSelectedFolderId(null)}
               className={`nav-folder-item ${selectedFolderId === null ? 'selected' : ''}`}
               style={{
-                padding: '8px 10px',
+                padding: '6px 10px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: collapsed ? 'center' : 'flex-start',
-                gap: 10,
+                gap: 8,
               }}
             >
-              <FolderOutlined style={{ color: selectedFolderId === null ? '#1890ff' : '#bbb', fontSize: 16 }} />
+              <FolderOutlined style={{ color: selectedFolderId === null ? '#1677ff' : '#c0c0c0', fontSize: 14, flexShrink: 0 }} />
               {!collapsed && <span>未分类</span>}
             </div>
 
-            <Divider style={{ margin: '8px 6px', borderColor: 'rgba(0,0,0,0.04)' }} />
-
+            {/* FOLDERS 标签 */}
             {!collapsed && (
-              <div style={{ padding: '0 8px 4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 11, color: '#999', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Folders</span>
+              <div style={{
+                padding: '12px 16px 4px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <span style={{ fontSize: 10, color: '#c0c0c0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8 }}>文件夹</span>
                 <Tooltip title="新建文件夹">
-                  <Button type="text" size="small" icon={<PlusOutlined />} onClick={() => { setNewFolderParentId(null); setFolderModalOpen(true); }} style={{ color: '#888' }} />
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<PlusOutlined style={{ fontSize: 11 }} />}
+                    onClick={() => { setNewFolderParentId(null); setFolderModalOpen(true); }}
+                    style={{ color: '#c0c0c0', width: 20, height: 20, padding: 0, minWidth: 0 }}
+                  />
                 </Tooltip>
               </div>
             )}
@@ -884,36 +1164,74 @@ const BookmarkPanel: React.FC = () => {
         {/* 工具栏 */}
         <div className="bookmark-toolbar" style={{
           padding: '10px 20px',
-          borderBottom: '1px solid rgba(0,0,0,0.03)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: 12,
         }}>
-          <Input
-            placeholder="搜索您的书签..."
-            prefix={<SearchOutlined style={{ color: '#bbb', fontSize: 16, marginRight: 4 }} />}
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            allowClear
-            bordered={false}
-            style={{
-              width: 320,
-              background: '#f0f2f5',
-              padding: '8px 16px',
-              borderRadius: 20
-            }}
-          />
+          {/* 左侧：面包屑 + 搜索 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+            {/* 面包屑导航 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#888', flexShrink: 0 }}>
+              <span
+                style={{ cursor: 'pointer', color: selectedFolderId === 'all' ? '#1677ff' : '#888' }}
+                onClick={() => setSelectedFolderId('all')}
+              >
+                全部书签
+              </span>
+              {currentFolder && (
+                <>
+                  <RightOutlined style={{ fontSize: 10, color: '#ccc' }} />
+                  <span style={{ color: '#333', fontWeight: 500 }}>{currentFolder.name}</span>
+                </>
+              )}
+              {selectedFolderId === null && (
+                <>
+                  <RightOutlined style={{ fontSize: 10, color: '#ccc' }} />
+                  <span style={{ color: '#333', fontWeight: 500 }}>未分类</span>
+                </>
+              )}
+            </div>
 
-          <Space size={16}>
+            <Input
+              className="bookmark-search"
+              placeholder="搜索书签..."
+              prefix={<SearchOutlined style={{ color: '#bbb', fontSize: 14 }} />}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              allowClear
+              bordered={false}
+              style={{
+                maxWidth: 260,
+                background: 'rgba(0,0,0,0.05)',
+                borderRadius: 20,
+                padding: '6px 14px',
+              }}
+            />
+          </div>
+
+          <Space size={12}>
+            {/* 布局切换 */}
+            <Segmented
+              value={layout}
+              onChange={(v) => handleLayoutChange(v as 'grid' | 'list')}
+              options={[
+                { value: 'grid', icon: <TableOutlined />, label: '上下' },
+                { value: 'list', icon: <UnorderedListOutlined />, label: '左右' },
+              ]}
+              size="small"
+            />
+            {/* 紧密度（网格/列表通用） */}
             <Segmented
               value={columns}
               onChange={(v) => handleColumnsChange(v as number)}
               options={[
-                { value: 2, icon: <AppstoreOutlined />, label: '宽屏' },
-                { value: 3, icon: <AppstoreOutlined />, label: '标准' },
-                { value: 4, icon: <AppstoreOutlined />, label: '紧凑' },
+                { value: 3, label: '3个' },
+                { value: 4, label: '4个' },
+                { value: 5, label: '5个' },
+                { value: 6, label: '6个' },
               ]}
-              size="middle"
+              size="small"
             />
             <Button
               type="primary"
@@ -921,7 +1239,7 @@ const BookmarkPanel: React.FC = () => {
               onClick={handleCreateBookmark}
               shape="round"
               size="middle"
-              style={{ boxShadow: '0 4px 10px rgba(24, 144, 255, 0.3)', paddingLeft: 20, paddingRight: 20 }}
+              style={{ boxShadow: '0 4px 12px rgba(22,119,255,0.28)', paddingLeft: 18, paddingRight: 18 }}
             >
               添加书签
             </Button>
@@ -938,14 +1256,21 @@ const BookmarkPanel: React.FC = () => {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#999'
+              color: '#999',
+              gap: 12,
             }}>
-              <Empty
-                description={false}
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
-              <div style={{ marginTop: 16 }}>还没有书签，去添加一个吧</div>
-              <Button type="dashed" onClick={handleCreateBookmark} style={{ marginTop: 16 }}>
+              <div style={{
+                width: 72, height: 72,
+                borderRadius: 20,
+                background: 'linear-gradient(145deg, #f0f4ff, #e8f0fe)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 4px 16px rgba(22,119,255,0.1)',
+              }}>
+                <GlobalOutlined style={{ fontSize: 32, color: '#93b4f5' }} />
+              </div>
+              <div style={{ fontSize: 15, color: '#bbb', fontWeight: 500 }}>还没有书签</div>
+              <div style={{ fontSize: 13, color: '#ccc' }}>右键文件夹或点击下方按钮添加</div>
+              <Button type="primary" ghost shape="round" onClick={handleCreateBookmark} style={{ marginTop: 4 }}>
                 立即添加
               </Button>
             </div>
@@ -959,24 +1284,29 @@ const BookmarkPanel: React.FC = () => {
                   {groupedBookmarks.uncategorized.length > 0 && (
                     <div style={{ marginBottom: 32 }}>
                       <div style={{
-                        fontSize: 18,
+                        fontSize: 13,
                         fontWeight: 600,
-                        color: '#333',
-                        marginBottom: 16,
+                        color: '#888',
+                        marginBottom: 12,
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.8,
                       }} className="nav-section-title">
                         未分类
                         <span style={{
-                          fontSize: 13,
+                          fontSize: 11,
                           color: '#bbb',
-                          background: '#f5f5f5',
-                          padding: '1px 8px',
+                          background: 'rgba(0,0,0,0.05)',
+                          padding: '1px 7px',
                           borderRadius: 10,
-                          fontWeight: 400
+                          fontWeight: 400,
+                          textTransform: 'none',
+                          letterSpacing: 0,
                         }}>{groupedBookmarks.uncategorized.length}</span>
                       </div>
+                      <div className="nav-section-divider" />
                       {renderBookmarkGrid(groupedBookmarks.uncategorized)}
                     </div>
                   )}
@@ -1004,28 +1334,31 @@ const BookmarkPanel: React.FC = () => {
                         return (
                           <div key={group.folder.id} style={{ marginBottom: level === 0 ? 32 : 24 }}>
                             <div style={{
-                              fontSize: level === 0 ? 18 : 16,
+                              fontSize: 13,
                               fontWeight: 600,
-                              color: level === 0 ? '#333' : '#555',
-                              marginBottom: 16,
+                              color: level === 0 ? '#666' : '#888',
+                              marginBottom: 12,
                               paddingLeft: level * 24,
                               display: 'flex',
                               alignItems: 'center',
                               gap: 8,
-                              borderBottom: level === 0 ? '1px solid #f0f0f0' : 'none',
-                              paddingBottom: level === 0 ? 8 : 0,
+                              textTransform: 'uppercase',
+                              letterSpacing: 0.8,
                             }} className="nav-section-title">
-                              <FolderOutlined style={{ color: '#ffc66d', fontSize: level === 0 ? 18 : 16 }} />
+                              <FolderOutlined style={{ color: '#ffc66d', fontSize: 14 }} />
                               {group.folder.name}
                               <span style={{
-                                fontSize: 12,
+                                fontSize: 11,
                                 color: '#bbb',
-                                background: '#f5f5f5',
-                                padding: '1px 8px',
+                                background: 'rgba(0,0,0,0.05)',
+                                padding: '1px 7px',
                                 borderRadius: 10,
-                                fontWeight: 400
+                                fontWeight: 400,
+                                textTransform: 'none',
+                                letterSpacing: 0,
                               }}>{totalBookmarks}</span>
                             </div>
+                            {level === 0 && <div className="nav-section-divider" style={{ paddingLeft: level * 24 }} />}
                             
                             {/* 该文件夹直接的书签 */}
                             {group.bookmarks.length > 0 && (
@@ -1051,22 +1384,24 @@ const BookmarkPanel: React.FC = () => {
                   {groupedBookmarks.groups['root'] && groupedBookmarks.groups['root'].length > 0 && (
                     <div style={{ marginBottom: 32 }}>
                       <div style={{
-                        fontSize: 18,
+                        fontSize: 13,
                         fontWeight: 600,
-                        color: '#333',
-                        marginBottom: 16,
-                        paddingBottom: 8,
-                        borderBottom: '1px solid #f0f0f0',
+                        color: '#666',
+                        marginBottom: 12,
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 8
+                        gap: 8,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.8,
                       }}>
                         {currentFolder?.name || '通用'}
                         <span style={{
-                          fontSize: 12, color: '#bbb', background: '#f5f5f5',
-                          padding: '2px 8px', borderRadius: 10, fontWeight: 400
+                          fontSize: 11, color: '#bbb', background: 'rgba(0,0,0,0.05)',
+                          padding: '1px 7px', borderRadius: 10, fontWeight: 400,
+                          textTransform: 'none', letterSpacing: 0,
                         }}>{groupedBookmarks.groups['root'].length}</span>
                       </div>
+                      <div className="nav-section-divider" />
                       {renderBookmarkGrid(groupedBookmarks.groups['root'])}
                     </div>
                   )}
@@ -1082,22 +1417,25 @@ const BookmarkPanel: React.FC = () => {
                         style={{ marginBottom: 32, scrollMarginTop: 80, transition: 'background 0.5s' }}
                       >
                         <div style={{
-                          fontSize: 18,
+                          fontSize: 13,
                           fontWeight: 600,
-                          color: '#333',
-                          marginBottom: 16,
-                          paddingBottom: 8,
-                          borderBottom: '1px solid #f0f0f0',
+                          color: '#666',
+                          marginBottom: 12,
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 8
+                          gap: 8,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.8,
                         }}>
+                          <FolderOutlined style={{ color: '#ffc66d', fontSize: 14 }} />
                           {sf.name}
                           <span style={{
-                            fontSize: 12, color: '#bbb', background: '#f5f5f5',
-                            padding: '2px 8px', borderRadius: 10, fontWeight: 400
+                            fontSize: 11, color: '#bbb', background: 'rgba(0,0,0,0.05)',
+                            padding: '1px 7px', borderRadius: 10, fontWeight: 400,
+                            textTransform: 'none', letterSpacing: 0,
                           }}>{items.length}</span>
                         </div>
+                        <div className="nav-section-divider" />
                         {renderBookmarkGrid(items)}
                       </div>
                     );

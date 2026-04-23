@@ -2,13 +2,19 @@ package com.mucheng.notes.domain.model.payload
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Excel 笔记 Payload - 与桌面端 ExcelNotePayload 完全一致
  */
 @Serializable
 data class ExcelNotePayload(
-    val title: String,
+    val title: String = "",
     val description: String = "",
     @SerialName("folder_id") val folderId: String? = null,
     @SerialName("is_pinned") val isPinned: Boolean = false,
@@ -24,25 +30,34 @@ data class ExcelNotePayload(
  */
 @Serializable
 data class ExcelSheet(
-    val id: String,
-    val name: String,
+    val id: String = "",
+    val name: String = "",
     val rows: List<ExcelRow> = emptyList(),
-    @SerialName("column_widths") val columnWidths: List<Int> = emptyList(),
-    @SerialName("row_heights") val rowHeights: List<Int> = emptyList(),
+    // 用 JsonElement 兼容桌面端整数/浮点数混用（如 100 和 120.5）
+    @SerialName("column_widths") val columnWidths: List<JsonElement> = emptyList(),
+    @SerialName("row_heights") val rowHeights: List<JsonElement> = emptyList(),
     @SerialName("frozen_rows") val frozenRows: Int = 0,
     @SerialName("frozen_columns") val frozenColumns: Int = 0,
     @SerialName("merged_cells") val mergedCells: List<MergedCell> = emptyList()
-)
+) {
+    /** 获取列宽（Double），兼容整数和浮点数 */
+    fun getColumnWidth(index: Int): Double =
+        columnWidths.getOrNull(index)?.jsonPrimitive?.doubleOrNull ?: 100.0
+
+    /** 获取行高（Double），兼容整数和浮点数 */
+    fun getRowHeight(index: Int): Double =
+        rowHeights.getOrNull(index)?.jsonPrimitive?.doubleOrNull ?: 25.0
+}
 
 /**
  * 合并单元格区域
  */
 @Serializable
 data class MergedCell(
-    @SerialName("start_row") val startRow: Int,
-    @SerialName("start_col") val startCol: Int,
-    @SerialName("end_row") val endRow: Int,
-    @SerialName("end_col") val endCol: Int
+    @SerialName("start_row") val startRow: Int = 0,
+    @SerialName("start_col") val startCol: Int = 0,
+    @SerialName("end_row") val endRow: Int = 0,
+    @SerialName("end_col") val endCol: Int = 0
 )
 
 /**
@@ -50,7 +65,7 @@ data class MergedCell(
  */
 @Serializable
 data class ExcelRow(
-    @SerialName("row_index") val rowIndex: Int,
+    @SerialName("row_index") val rowIndex: Int = 0,
     val cells: List<ExcelCell> = emptyList()
 )
 
@@ -59,48 +74,10 @@ data class ExcelRow(
  */
 @Serializable
 data class ExcelCell(
-    @SerialName("column_index") val columnIndex: Int,
-    val value: kotlinx.serialization.json.JsonElement? = null,  // 直接使用 JsonElement 以兼容桌面端的 string | number | boolean | null
+    @SerialName("column_index") val columnIndex: Int = 0,
+    // JsonElement 兼容 string | number | boolean | null
+    val value: JsonElement? = null,
     val formula: String? = null,
-    val style: CellStyle? = null
+    // CellStyle 用 JsonElement 避免 NumberFormat sealed class 解析问题
+    val style: JsonElement? = null
 )
-
-/**
- * 单元格样式
- */
-@Serializable
-data class CellStyle(
-    @SerialName("font_bold") val fontBold: Boolean = false,
-    @SerialName("font_italic") val fontItalic: Boolean = false,
-    @SerialName("font_color") val fontColor: String? = null,
-    @SerialName("background_color") val backgroundColor: String? = null,
-    @SerialName("text_align") val textAlign: String = "left",
-    @SerialName("vertical_align") val verticalAlign: String = "middle",
-    @SerialName("number_format") val numberFormat: NumberFormat? = null
-)
-
-/**
- * 数字格式
- */
-@Serializable
-sealed class NumberFormat {
-    @Serializable
-    @SerialName("general")
-    object General : NumberFormat()
-    
-    @Serializable
-    @SerialName("number")
-    data class Number(val decimals: Int = 2) : NumberFormat()
-    
-    @Serializable
-    @SerialName("percentage")
-    data class Percentage(val decimals: Int = 2) : NumberFormat()
-    
-    @Serializable
-    @SerialName("currency")
-    data class Currency(val symbol: String = "¥", val decimals: Int = 2) : NumberFormat()
-    
-    @Serializable
-    @SerialName("date")
-    data class Date(val pattern: String = "YYYY-MM-DD") : NumberFormat()
-}

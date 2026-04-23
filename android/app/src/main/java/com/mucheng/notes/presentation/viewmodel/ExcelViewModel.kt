@@ -31,7 +31,11 @@ class ExcelViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ExcelUiState())
     val uiState: StateFlow<ExcelUiState> = _uiState.asStateFlow()
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+    }
 
     init {
         loadExcelNotes()
@@ -48,12 +52,33 @@ class ExcelViewModel @Inject constructor(
                 val notes = items.mapNotNull { item ->
                     try {
                         val payload = json.decodeFromString<ExcelNotePayload>(item.payload)
+                        
+                        // 修复：如果 sheets 为空，创建默认工作表
+                        val fixedPayload = if (payload.sheets.isEmpty()) {
+                            android.util.Log.w("ExcelViewModel", "Note ${item.id} has empty sheets, creating default")
+                            payload.copy(
+                                sheets = listOf(
+                                    ExcelSheet(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        name = "Sheet1",
+                                        rows = emptyList(),
+                                        columnWidths = emptyList(),
+                                        rowHeights = emptyList()
+                                    )
+                                ),
+                                activeSheetIndex = 0
+                            )
+                        } else {
+                            payload
+                        }
+                        
                         ExcelNoteItem(
                             id = item.id,
-                            payload = payload,
+                            payload = fixedPayload,
                             updatedAt = item.updatedTime
                         )
                     } catch (e: Exception) {
+                        android.util.Log.e("ExcelViewModel", "Failed to parse note ${item.id}: ${e.message}")
                         null
                     }
                 }
@@ -71,22 +96,37 @@ class ExcelViewModel @Inject constructor(
     }
 
     /**
-     * 选择笔记
+     * 选择笔记（进入预览模式）
      */
     fun selectNote(noteId: String) {
         val note = _uiState.value.notes.find { it.id == noteId }
         _uiState.value = _uiState.value.copy(
             selectedNote = note,
             selectedSheetIndex = note?.payload?.activeSheetIndex ?: 0,
-            selectedCell = CellPosition(0, 0)
+            selectedCell = CellPosition(0, 0),
+            isEditing = false  // 默认进入预览模式
         )
+    }
+
+    /**
+     * 进入编辑模式
+     */
+    fun enterEditMode() {
+        _uiState.value = _uiState.value.copy(isEditing = true)
+    }
+
+    /**
+     * 退出编辑模式（回到预览）
+     */
+    fun exitEditMode() {
+        _uiState.value = _uiState.value.copy(isEditing = false)
     }
 
     /**
      * 返回列表
      */
     fun backToList() {
-        _uiState.value = _uiState.value.copy(selectedNote = null)
+        _uiState.value = _uiState.value.copy(selectedNote = null, isEditing = false)
     }
 
     /**
@@ -213,6 +253,7 @@ data class ExcelUiState(
     val selectedNote: ExcelNoteItem? = null,
     val selectedSheetIndex: Int = 0,
     val selectedCell: CellPosition = CellPosition(0, 0),
+    val isEditing: Boolean = false,  // false=预览模式，true=编辑模式
     val error: String? = null
 )
 

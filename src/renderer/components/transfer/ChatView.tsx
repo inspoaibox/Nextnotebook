@@ -13,6 +13,7 @@ import {
   Upload,
   Progress,
   Tooltip,
+  Modal,
   message,
   Spin,
 } from 'antd';
@@ -25,11 +26,18 @@ import {
   FileZipOutlined,
   CloseOutlined,
   DownloadOutlined,
+  FolderOpenOutlined,
+  EyeOutlined,
   CheckCircleOutlined,
   UserOutlined,
   DesktopOutlined,
 } from '@ant-design/icons';
-import { transferClient, TransferSession, TransferMessage, TransferFile } from '../../services/transferClient';
+import {
+  transferClient,
+  TransferSession,
+  TransferMessage,
+  TransferFile,
+} from '../../services/transferClient';
 import { useSettings } from '../../contexts/SettingsContext';
 
 const { Header, Content, Footer } = Layout;
@@ -48,9 +56,39 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 加载消息和文件
+  const electronAPI = (window as any).electronAPI;
+
+  const handleOpenFile = useCallback(
+    async (filePath: string) => {
+      if (!filePath || !electronAPI?.openPath) return;
+      try {
+        await electronAPI.openPath(filePath);
+      } catch (e) {
+        console.error('[ChatView] Failed to open file:', e);
+        message.error('打开文件失败');
+      }
+    },
+    [electronAPI]
+  );
+
+  const handleOpenFolder = useCallback(
+    async (filePath: string) => {
+      if (!filePath || !electronAPI?.openPath) return;
+      try {
+        const lastSep = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+        const folder = lastSep >= 0 ? filePath.substring(0, lastSep) : filePath;
+        await electronAPI.openPath(folder);
+      } catch (e) {
+        console.error('[ChatView] Failed to open folder:', e);
+        message.error('打开文件夹失败');
+      }
+    },
+    [electronAPI]
+  );
+
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -61,8 +99,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         ]);
         setMessages(msgs);
         setFiles(fls);
-
-        // 标记消息为已读
         await transferClient.markSessionMessagesAsRead(session.id);
       } catch (error) {
         console.error('Failed to load messages:', error);
@@ -70,17 +106,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         setLoading(false);
       }
     };
-
     loadData();
   }, [session.id]);
 
-  // 监听新消息
   useEffect(() => {
-    const unsubMessage = transferClient.onMessageReceived((data) => {
-      // 通过 senderId 匹配会话，而不是 sessionId（因为两端的 sessionId 不同）
-      console.log('[ChatView] Message received:', data);
-      console.log('[ChatView] Current session peer_device_id:', session.peer_device_id);
-      
+    const unsubMessage = transferClient.onMessageReceived(data => {
       if (data.senderId === session.peer_device_id) {
         const newMessage: TransferMessage = {
           id: data.message?.id || transferClient.generateMessageId(),
@@ -93,18 +123,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
           read_at: Date.now(),
         };
         setMessages(prev => [...prev, newMessage]);
-
-        // 注意：消息已在 main.ts 中保存到数据库，这里不需要重复保存
-        
-        // 发送已读回执
         transferClient.sendMessageReadReceipt(data.senderId, [newMessage.id]);
       }
     });
 
-    const unsubFileIncoming = transferClient.onFileIncoming((data) => {
-      // 通过 senderId 匹配会话
-      console.log('[ChatView] File incoming:', data);
-      
+    const unsubFileIncoming = transferClient.onFileIncoming(data => {
       if (data.senderId === session.peer_device_id) {
         const newFile: TransferFile = {
           id: data.fileInfo.id,
@@ -121,42 +144,43 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
           completed_at: null,
         };
         setFiles(prev => [...prev, newFile]);
-        // 注意：文件记录已在 main.ts 中保存到数据库，这里不需要重复保存
       }
     });
 
-    const unsubFileChunk = transferClient.onFileChunk((data) => {
-      // 文件分块不需要匹配 session，直接通过 fileId 更新
-      setFiles(prev => prev.map(f =>
-        f.id === data.fileId
-          ? { ...f, progress: (data.chunkIndex / data.totalChunks) * 100, status: 'transferring' }
-          : f
-      ));
+    const unsubFileChunk = transferClient.onFileChunk(data => {
+      setFiles(prev =>
+        prev.map(f =>
+          f.id === data.fileId
+            ? {
+                ...f,
+                progress: ((data.chunkIndex + 1) / data.totalChunks) * 100,
+                status: 'transferring',
+              }
+            : f
+        )
+      );
     });
 
-    const unsubFileComplete = transferClient.onFileComplete((data) => {
-      // 文件完成不需要匹配 session，直接通过 fileId 更新
-      setFiles(prev => prev.map(f =>
-        f.id === data.fileId
-          ? { 
-              ...f, 
-              progress: 100, 
-              status: 'completed', 
-              completed_at: Date.now(),
-              local_path: data.localPath || f.local_path 
-            }
-          : f
-      ));
-      
-      // 更新数据库，使用服务器返回的本地路径
+    const unsubFileComplete = transferClient.onFileComplete(data => {
+      setFiles(prev =>
+        prev.map(f =>
+          f.id === data.fileId
+            ? {
+                ...f,
+                progress: 100,
+                status: 'completed',
+                completed_at: Date.now(),
+                local_path: data.localPath || f.local_path,
+              }
+            : f
+        )
+      );
       transferClient.completeFileTransfer(data.fileId, data.localPath || '', data.fileHash);
     });
 
-    // 监听来自中继模式的消息刷新事件
     const handleRelayRefresh = async (event: Event) => {
       const customEvent = event as CustomEvent<{ sessionId: string }>;
       if (customEvent.detail.sessionId === session.id) {
-        // 重新加载消息
         try {
           const msgs = await transferClient.getMessagesBySession(session.id);
           setMessages(msgs);
@@ -174,20 +198,16 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
       unsubFileComplete();
       window.removeEventListener('transfer:refresh-messages', handleRelayRefresh);
     };
-  }, [session.id]);
+  }, [session.id, session.peer_device_id]);
 
-  // 滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, files]);
 
-  // 发送消息
   const handleSend = useCallback(async () => {
     if (!inputValue.trim()) return;
-
     try {
       setSending(true);
-
       const newMessage: TransferMessage = {
         id: transferClient.generateMessageId(),
         session_id: session.id,
@@ -198,40 +218,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         created_at: Date.now(),
         read_at: null,
       };
-
-      // 先添加到本地
       setMessages(prev => [...prev, newMessage]);
       setInputValue('');
 
-      // 保存到数据库
-      await transferClient.createMessage(newMessage);
-
-      // 根据连接类型选择发送方式
-      if (session.connection_type === 'relay') {
-        // 中继模式：使用 relay API
-        const transferApi = (window as any).electronAPI?.transfer;
-        if (transferApi?.relay) {
-          await transferApi.relay.sendMessage(
-            session.peer_device_id,
-            session.id,
-            {
-              id: newMessage.id,
-              type: 'text',
-              content: newMessage.content,
-            }
-          );
-        } else {
-          throw new Error('中继 API 不可用');
-        }
-      } else {
-        // 局域网模式：使用原有 API
-        await transferClient.sendTextMessage(
-          session.peer_device_id,
-          session.id,
-          newMessage.content
-        );
-      }
-
+      await transferClient.sendTextMessage(session.peer_device_id, session.id, newMessage.content);
     } catch (error) {
       message.error('发送失败');
     } finally {
@@ -239,7 +229,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
     }
   }, [inputValue, session.id, session.peer_device_id, session.connection_type]);
 
-  // 处理按键
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -247,24 +236,24 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
     }
   };
 
-  // 获取文件图标
   const getFileIcon = (mimeType: string) => {
-    if (mimeType.startsWith('image/')) return <FileImageOutlined />;
+    if (mimeType?.startsWith('image/')) return <FileImageOutlined />;
     if (mimeType === 'application/pdf') return <FilePdfOutlined />;
-    if (mimeType.includes('zip') || mimeType.includes('rar')) return <FileZipOutlined />;
+    if (mimeType?.includes('zip') || mimeType?.includes('rar')) return <FileZipOutlined />;
     return <FileOutlined />;
   };
 
-  // 格式化时间
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp);
     return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
   };
 
-  // 渲染消息项
+  const isImageFile = (file: TransferFile) => {
+    return file.mime_type?.startsWith('image/') && file.local_path && file.status === 'completed';
+  };
+
   const renderMessageItem = (msg: TransferMessage) => {
     const isSent = msg.direction === 'sent';
-
     return (
       <div
         key={msg.id}
@@ -276,20 +265,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         }}
       >
         {!isSent && (
-          <Avatar
-            size="small"
-            icon={<UserOutlined />}
-            style={{ marginRight: 8, flexShrink: 0 }}
-          />
+          <Avatar size="small" icon={<UserOutlined />} style={{ marginRight: 8, flexShrink: 0 }} />
         )}
         <div
           style={{
             maxWidth: '70%',
             padding: '8px 12px',
             borderRadius: isSent ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
-            background: isSent
-              ? '#1890ff'
-              : (isDarkMode ? '#303030' : '#f0f0f0'),
+            background: isSent ? '#1890ff' : isDarkMode ? '#303030' : '#f0f0f0',
             color: isSent ? '#fff' : undefined,
           }}
         >
@@ -298,16 +281,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
           </Text>
           <div style={{ textAlign: 'right', marginTop: 4 }}>
             <Text
-              style={{
-                fontSize: 10,
-                color: isSent ? 'rgba(255,255,255,0.7)' : undefined,
-              }}
+              style={{ fontSize: 10, color: isSent ? 'rgba(255,255,255,0.7)' : undefined }}
               type={isSent ? undefined : 'secondary'}
             >
               {formatTime(msg.created_at)}
-              {isSent && msg.read_at && (
-                <CheckCircleOutlined style={{ marginLeft: 4 }} />
-              )}
+              {isSent && msg.read_at && <CheckCircleOutlined style={{ marginLeft: 4 }} />}
             </Text>
           </div>
         </div>
@@ -322,10 +300,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
     );
   };
 
-  // 渲染文件项
   const renderFileItem = (file: TransferFile) => {
     const isSent = file.direction === 'sent';
-
+    const isImage = isImageFile(file);
     return (
       <div
         key={file.id}
@@ -337,11 +314,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         }}
       >
         {!isSent && (
-          <Avatar
-            size="small"
-            icon={<UserOutlined />}
-            style={{ marginRight: 8, flexShrink: 0 }}
-          />
+          <Avatar size="small" icon={<UserOutlined />} style={{ marginRight: 8, flexShrink: 0 }} />
         )}
         <div
           style={{
@@ -352,13 +325,27 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
             border: `1px solid ${isDarkMode ? '#434343' : '#e8e8e8'}`,
           }}
         >
+          {isImage && (
+            <div
+              style={{ marginBottom: 8, cursor: 'pointer' }}
+              onClick={() => setPreviewImage(file.local_path!)}
+            >
+              <img
+                src={file.local_path || ''}
+                alt={file.filename}
+                style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 4, display: 'block' }}
+              />
+            </div>
+          )}
           <Space>
-            <Avatar
-              shape="square"
-              size={40}
-              icon={getFileIcon(file.mime_type)}
-              style={{ background: '#1890ff' }}
-            />
+            {!isImage && (
+              <Avatar
+                shape="square"
+                size={40}
+                icon={getFileIcon(file.mime_type)}
+                style={{ background: '#1890ff' }}
+              />
+            )}
             <div>
               <Text strong ellipsis style={{ maxWidth: 150, display: 'block' }}>
                 {file.filename}
@@ -370,32 +357,51 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
           </Space>
 
           {file.status === 'transferring' && (
-            <Progress
-              percent={Math.round(file.progress)}
-              size="small"
-              style={{ marginTop: 8 }}
-            />
+            <Progress percent={Math.round(file.progress)} size="small" style={{ marginTop: 8 }} />
           )}
 
-          {file.status === 'completed' && file.direction === 'received' && (
-            <Button
-              type="link"
-              size="small"
-              icon={<DownloadOutlined />}
-              style={{ marginTop: 4, padding: 0 }}
-            >
-              打开文件
-            </Button>
+          {file.status === 'completed' && (
+            <div style={{ marginTop: 4 }}>
+              <Space size="small">
+                {isImage && (
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<EyeOutlined />}
+                    style={{ padding: 0 }}
+                    onClick={() => setPreviewImage(file.local_path!)}
+                  >
+                    查看
+                  </Button>
+                )}
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<DownloadOutlined />}
+                  style={{ padding: 0 }}
+                  onClick={() => handleOpenFile(file.local_path || '')}
+                >
+                  打开文件
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<FolderOpenOutlined />}
+                  style={{ padding: 0 }}
+                  onClick={() => handleOpenFolder(file.local_path || '')}
+                >
+                  打开文件夹
+                </Button>
+              </Space>
+            </div>
           )}
 
           {file.status === 'pending' && file.direction === 'received' && (
-            <Button
-              type="primary"
-              size="small"
-              style={{ marginTop: 8 }}
-            >
-              接收文件
-            </Button>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                等待接收...
+              </Text>
+            </div>
           )}
 
           <div style={{ textAlign: 'right', marginTop: 4 }}>
@@ -415,12 +421,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
     );
   };
 
-  // 合并消息和文件并按时间排序
   const allItems = [...messages, ...files].sort((a, b) => a.created_at - b.created_at);
 
   return (
     <Layout style={{ height: '100%', background: 'transparent' }}>
-      {/* 头部 */}
       <Header
         style={{
           background: isDarkMode ? '#1f1f1f' : '#fff',
@@ -448,7 +452,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         </Tooltip>
       </Header>
 
-      {/* 消息列表 */}
       <Content
         style={{
           overflow: 'auto',
@@ -476,7 +479,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         )}
       </Content>
 
-      {/* 输入区域 */}
       <Footer
         style={{
           background: isDarkMode ? '#1f1f1f' : '#fff',
@@ -487,44 +489,20 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
         <Space.Compact style={{ width: '100%' }}>
           <Upload
             showUploadList={false}
-            beforeUpload={async (file) => {
+            beforeUpload={async file => {
               try {
-                // 获取文件路径（Electron 环境下可以直接获取）
                 const filePath = (file as any).path;
                 if (!filePath) {
                   message.error('无法获取文件路径');
                   return false;
                 }
 
-                console.log('[ChatView] Sending file:', filePath);
+                const result = await transferClient.sendFile(
+                  session.peer_device_id,
+                  session.id,
+                  filePath
+                );
 
-                let result: { id: string; filename: string; fileSize: number; mimeType: string };
-
-                // 根据连接类型选择发送方式
-                if (session.connection_type === 'relay') {
-                  // 中继模式：使用 relay API
-                  const transferApi = (window as any).electronAPI?.transfer;
-                  if (transferApi?.relay) {
-                    result = await transferApi.relay.sendFile(
-                      session.peer_device_id,
-                      session.id,
-                      filePath
-                    );
-                  } else {
-                    throw new Error('中继 API 不可用');
-                  }
-                } else {
-                  // 局域网模式：使用原有 API
-                  result = await transferClient.sendFile(
-                    session.peer_device_id,
-                    session.id,
-                    filePath
-                  );
-                }
-
-                console.log('[ChatView] File sent:', result);
-
-                // 创建文件记录用于 UI 显示（数据库已在 sendFile 中保存）
                 const newFile: TransferFile = {
                   id: result.id,
                   session_id: session.id,
@@ -539,41 +517,21 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
                   created_at: Date.now(),
                   completed_at: Date.now(),
                 };
-
-                // 更新 UI
                 setFiles(prev => [...prev, newFile]);
-
-                // 中继模式下需要手动保存文件记录到数据库
-                if (session.connection_type === 'relay') {
-                  await transferClient.createFileTransfer(newFile);
-                  // 创建文件消息
-                  const messageId = transferClient.generateMessageId();
-                  const fileMessage: TransferMessage = {
-                    id: messageId,
-                    session_id: session.id,
-                    direction: 'sent',
-                    type: 'file',
-                    content: result.filename,
-                    file_id: result.id,
-                    created_at: Date.now(),
-                    read_at: null,
-                  };
-                  await transferClient.createMessage(fileMessage);
-                }
 
                 message.success(`文件 ${result.filename} 已发送`);
               } catch (error: any) {
                 console.error('[ChatView] Failed to send file:', error);
                 message.error(error.message || '文件发送失败');
               }
-              return false; // 阻止默认上传行为
+              return false;
             }}
           >
             <Button icon={<PaperClipOutlined />} />
           </Upload>
           <TextArea
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="输入消息..."
             autoSize={{ minRows: 1, maxRows: 4 }}
@@ -588,6 +546,21 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
           />
         </Space.Compact>
       </Footer>
+
+      <Modal
+        open={!!previewImage}
+        footer={null}
+        onCancel={() => setPreviewImage(null)}
+        width="auto"
+        style={{ maxWidth: '90vw' }}
+        centered
+      >
+        <img
+          src={previewImage || ''}
+          alt="preview"
+          style={{ maxWidth: '100%', maxHeight: '80vh', display: 'block', margin: '0 auto' }}
+        />
+      </Modal>
     </Layout>
   );
 };

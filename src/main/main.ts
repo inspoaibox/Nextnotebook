@@ -4,8 +4,17 @@ import * as fs from 'fs';
 import { initializeDatabase, closeDatabase, getItemsManager } from './services/DatabaseService';
 import { registerSyncIpcHandlers } from './services/SyncService';
 import { imageService, ProcessOptions } from './services/ImageService';
-import { pdfService, WatermarkOptions as PDFWatermarkOptions, SecurityOptions as PDFSecurityOptions, ImageToPdfOptions as PDFImageToPdfOptions } from './services/PDFService';
-import { ghostscriptService, ToImageOptions as GSToImageOptions, CompressLevel } from './services/GhostscriptService';
+import {
+  pdfService,
+  WatermarkOptions as PDFWatermarkOptions,
+  SecurityOptions as PDFSecurityOptions,
+  ImageToPdfOptions as PDFImageToPdfOptions,
+} from './services/PDFService';
+import {
+  ghostscriptService,
+  ToImageOptions as GSToImageOptions,
+  CompressLevel,
+} from './services/GhostscriptService';
 import { clipperService } from './services/ClipperService';
 import { initializeTransferService } from './services/TransferService';
 import { mcpService } from './services/McpService';
@@ -26,7 +35,10 @@ function initLogFile() {
     const userDataPath = app.getPath('userData');
     logFilePath = path.join(userDataPath, 'main-process.log');
     // 清空旧日志
-    fs.writeFileSync(logFilePath, `=== 暮城笔记 主进程日志 ===\n启动时间: ${new Date().toISOString()}\n\n`);
+    fs.writeFileSync(
+      logFilePath,
+      `=== 暮城笔记 主进程日志 ===\n启动时间: ${new Date().toISOString()}\n\n`
+    );
   } catch (e) {
     console.error('Failed to init log file:', e);
   }
@@ -51,17 +63,23 @@ const originalConsoleWarn = console.warn;
 
 console.log = (...args: any[]) => {
   originalConsoleLog.apply(console, args);
-  writeLog('[LOG] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+  writeLog(
+    '[LOG] ' + args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+  );
 };
 
 console.error = (...args: any[]) => {
   originalConsoleError.apply(console, args);
-  writeLog('[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+  writeLog(
+    '[ERROR] ' + args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+  );
 };
 
 console.warn = (...args: any[]) => {
   originalConsoleWarn.apply(console, args);
-  writeLog('[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+  writeLog(
+    '[WARN] ' + args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
+  );
 };
 
 // 获取用户设置文件路径
@@ -190,7 +208,7 @@ function createWindow(): void {
   });
 
   // 窗口关闭按钮处理
-  mainWindow.on('close', (event) => {
+  mainWindow.on('close', event => {
     if (!isQuitting) {
       event.preventDefault();
       // 通知渲染进程检查设置
@@ -287,8 +305,16 @@ function createMenu(): void {
     {
       label: '文件',
       submenu: [
-        { label: '新建笔记', accelerator: 'CmdOrCtrl+N', click: () => sendToRenderer('menu-action', 'quick-new-note') },
-        { label: '从模板新建', accelerator: 'CmdOrCtrl+Shift+N', click: () => sendToRenderer('menu-action', 'new-note') },
+        {
+          label: '新建笔记',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => sendToRenderer('menu-action', 'quick-new-note'),
+        },
+        {
+          label: '从模板新建',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => sendToRenderer('menu-action', 'new-note'),
+        },
         { label: '新建目录', click: () => sendToRenderer('menu-action', 'new-folder') },
         { type: 'separator' },
         { label: '导入', click: () => sendToRenderer('import') },
@@ -331,7 +357,11 @@ function createMenu(): void {
         { label: '深色主题', click: () => sendToRenderer('menu-action', 'theme-dark') },
         { label: '跟随系统', click: () => sendToRenderer('menu-action', 'theme-system') },
         { type: 'separator' },
-        { label: '锁定应用', accelerator: 'CmdOrCtrl+L', click: () => sendToRenderer('menu-action', 'lock-app') },
+        {
+          label: '锁定应用',
+          accelerator: 'CmdOrCtrl+L',
+          click: () => sendToRenderer('menu-action', 'lock-app'),
+        },
         { type: 'separator' },
         { label: '开发者工具', accelerator: 'F12', role: 'toggleDevTools' },
       ],
@@ -339,7 +369,11 @@ function createMenu(): void {
     {
       label: '同步',
       submenu: [
-        { label: '立即同步', accelerator: 'CmdOrCtrl+Shift+S', click: () => sendToRenderer('menu-action', 'sync-now') },
+        {
+          label: '立即同步',
+          accelerator: 'CmdOrCtrl+Shift+S',
+          click: () => sendToRenderer('menu-action', 'sync-now'),
+        },
         { label: '同步设置', click: () => sendToRenderer('menu-action', 'settings-sync') },
       ],
     },
@@ -348,12 +382,12 @@ function createMenu(): void {
       submenu: [
         { label: '关于暮城笔记', click: () => sendToRenderer('menu-action', 'settings-about') },
         { type: 'separator' },
-        { 
-          label: '开发者工具', 
-          accelerator: 'F12', 
+        {
+          label: '开发者工具',
+          accelerator: 'F12',
           click: () => {
             mainWindow?.webContents.toggleDevTools();
-          }
+          },
         },
       ],
     },
@@ -379,7 +413,7 @@ function createTray(): void {
       click: () => {
         mainWindow?.show();
         mainWindow?.focus();
-      }
+      },
     },
     { type: 'separator' },
     {
@@ -387,7 +421,7 @@ function createTray(): void {
       click: () => {
         isQuitting = true;
         app.quit();
-      }
+      },
     },
   ]);
 
@@ -618,16 +652,22 @@ ipcMain.handle('pdf:getInfo', async (_event, file: string) => {
 });
 
 // 合并 PDF
-ipcMain.handle('pdf:merge', async (_event, options: { files: string[]; pageSelections?: { fileIndex: number; pages: number[] }[] }) => {
-  try {
-    const buffers = options.files.map(f => base64ToBuffer(f));
-    const result = await pdfService.merge(buffers, options.pageSelections);
-    return bufferToBase64(result);
-  } catch (error) {
-    console.error('pdf:merge error:', error);
-    throw error;
+ipcMain.handle(
+  'pdf:merge',
+  async (
+    _event,
+    options: { files: string[]; pageSelections?: { fileIndex: number; pages: number[] }[] }
+  ) => {
+    try {
+      const buffers = options.files.map(f => base64ToBuffer(f));
+      const result = await pdfService.merge(buffers, options.pageSelections);
+      return bufferToBase64(result);
+    } catch (error) {
+      console.error('pdf:merge error:', error);
+      throw error;
+    }
   }
-});
+);
 
 // 拆分 PDF
 ipcMain.handle('pdf:split', async (_event, options: { file: string; ranges: string }) => {
@@ -642,21 +682,27 @@ ipcMain.handle('pdf:split', async (_event, options: { file: string; ranges: stri
 });
 
 // PDF 转图片
-ipcMain.handle('pdf:toImage', async (_event, options: { file: string; pages?: number[]; format: 'png' | 'jpg'; dpi: number }) => {
-  try {
-    const buffer = base64ToBuffer(options.file);
-    const gsOptions: GSToImageOptions = {
-      format: options.format,
-      dpi: options.dpi,
-      pages: options.pages,
-    };
-    const results = await ghostscriptService.toImage(buffer, gsOptions);
-    return results.map(r => bufferToBase64(r));
-  } catch (error) {
-    console.error('pdf:toImage error:', error);
-    throw error;
+ipcMain.handle(
+  'pdf:toImage',
+  async (
+    _event,
+    options: { file: string; pages?: number[]; format: 'png' | 'jpg'; dpi: number }
+  ) => {
+    try {
+      const buffer = base64ToBuffer(options.file);
+      const gsOptions: GSToImageOptions = {
+        format: options.format,
+        dpi: options.dpi,
+        pages: options.pages,
+      };
+      const results = await ghostscriptService.toImage(buffer, gsOptions);
+      return results.map(r => bufferToBase64(r));
+    } catch (error) {
+      console.error('pdf:toImage error:', error);
+      throw error;
+    }
   }
-});
+);
 
 // 压缩 PDF
 ipcMain.handle('pdf:compress', async (_event, options: { file: string; level: CompressLevel }) => {
@@ -676,50 +722,59 @@ ipcMain.handle('pdf:compress', async (_event, options: { file: string; level: Co
 });
 
 // 添加水印
-ipcMain.handle('pdf:addWatermark', async (_event, options: {
-  file: string;
-  type: 'text' | 'image';
-  text?: string;
-  imageData?: string;
-  fontSize?: number;
-  color?: string;
-  opacity: number;
-  rotation: number;
-  position: 'center' | 'tile' | { x: number; y: number };
-  pages?: number[];
-}) => {
-  try {
-    const buffer = base64ToBuffer(options.file);
-    const watermarkOptions: PDFWatermarkOptions = {
-      type: options.type,
-      text: options.text,
-      imageData: options.imageData ? base64ToBuffer(options.imageData) : undefined,
-      fontSize: options.fontSize,
-      color: options.color,
-      opacity: options.opacity,
-      rotation: options.rotation,
-      position: options.position,
-      pages: options.pages,
-    };
-    const result = await pdfService.addWatermark(buffer, watermarkOptions);
-    return bufferToBase64(result);
-  } catch (error) {
-    console.error('pdf:addWatermark error:', error);
-    throw error;
+ipcMain.handle(
+  'pdf:addWatermark',
+  async (
+    _event,
+    options: {
+      file: string;
+      type: 'text' | 'image';
+      text?: string;
+      imageData?: string;
+      fontSize?: number;
+      color?: string;
+      opacity: number;
+      rotation: number;
+      position: 'center' | 'tile' | { x: number; y: number };
+      pages?: number[];
+    }
+  ) => {
+    try {
+      const buffer = base64ToBuffer(options.file);
+      const watermarkOptions: PDFWatermarkOptions = {
+        type: options.type,
+        text: options.text,
+        imageData: options.imageData ? base64ToBuffer(options.imageData) : undefined,
+        fontSize: options.fontSize,
+        color: options.color,
+        opacity: options.opacity,
+        rotation: options.rotation,
+        position: options.position,
+        pages: options.pages,
+      };
+      const result = await pdfService.addWatermark(buffer, watermarkOptions);
+      return bufferToBase64(result);
+    } catch (error) {
+      console.error('pdf:addWatermark error:', error);
+      throw error;
+    }
   }
-});
+);
 
 // 旋转页面
-ipcMain.handle('pdf:rotate', async (_event, options: { file: string; pages: number[]; angle: number }) => {
-  try {
-    const buffer = base64ToBuffer(options.file);
-    const result = await pdfService.rotate(buffer, options.pages, options.angle);
-    return bufferToBase64(result);
-  } catch (error) {
-    console.error('pdf:rotate error:', error);
-    throw error;
+ipcMain.handle(
+  'pdf:rotate',
+  async (_event, options: { file: string; pages: number[]; angle: number }) => {
+    try {
+      const buffer = base64ToBuffer(options.file);
+      const result = await pdfService.rotate(buffer, options.pages, options.angle);
+      return bufferToBase64(result);
+    } catch (error) {
+      console.error('pdf:rotate error:', error);
+      throw error;
+    }
   }
-});
+);
 
 // 重排页面
 ipcMain.handle('pdf:reorder', async (_event, options: { file: string; newOrder: number[] }) => {
@@ -758,26 +813,32 @@ ipcMain.handle('pdf:extractPages', async (_event, options: { file: string; pages
 });
 
 // 设置安全选项
-ipcMain.handle('pdf:setSecurity', async (_event, options: {
-  file: string;
-  userPassword?: string;
-  ownerPassword?: string;
-  permissions?: { printing: boolean; copying: boolean; modifying: boolean };
-}) => {
-  try {
-    const buffer = base64ToBuffer(options.file);
-    const securityOptions: PDFSecurityOptions = {
-      userPassword: options.userPassword,
-      ownerPassword: options.ownerPassword,
-      permissions: options.permissions,
-    };
-    const result = await pdfService.setSecurity(buffer, securityOptions);
-    return bufferToBase64(result);
-  } catch (error) {
-    console.error('pdf:setSecurity error:', error);
-    throw error;
+ipcMain.handle(
+  'pdf:setSecurity',
+  async (
+    _event,
+    options: {
+      file: string;
+      userPassword?: string;
+      ownerPassword?: string;
+      permissions?: { printing: boolean; copying: boolean; modifying: boolean };
+    }
+  ) => {
+    try {
+      const buffer = base64ToBuffer(options.file);
+      const securityOptions: PDFSecurityOptions = {
+        userPassword: options.userPassword,
+        ownerPassword: options.ownerPassword,
+        permissions: options.permissions,
+      };
+      const result = await pdfService.setSecurity(buffer, securityOptions);
+      return bufferToBase64(result);
+    } catch (error) {
+      console.error('pdf:setSecurity error:', error);
+      throw error;
+    }
   }
-});
+);
 
 // 移除安全选项
 ipcMain.handle('pdf:removeSecurity', async (_event, file: string, password: string) => {
@@ -803,47 +864,59 @@ ipcMain.handle('pdf:getMetadata', async (_event, file: string) => {
 });
 
 // 设置元数据
-ipcMain.handle('pdf:setMetadata', async (_event, options: {
-  file: string;
-  title?: string;
-  author?: string;
-  subject?: string;
-  keywords?: string;
-}) => {
-  try {
-    const buffer = base64ToBuffer(options.file);
-    const result = await pdfService.setMetadata(buffer, {
-      title: options.title,
-      author: options.author,
-      subject: options.subject,
-      keywords: options.keywords,
-    });
-    return bufferToBase64(result);
-  } catch (error) {
-    console.error('pdf:setMetadata error:', error);
-    throw error;
+ipcMain.handle(
+  'pdf:setMetadata',
+  async (
+    _event,
+    options: {
+      file: string;
+      title?: string;
+      author?: string;
+      subject?: string;
+      keywords?: string;
+    }
+  ) => {
+    try {
+      const buffer = base64ToBuffer(options.file);
+      const result = await pdfService.setMetadata(buffer, {
+        title: options.title,
+        author: options.author,
+        subject: options.subject,
+        keywords: options.keywords,
+      });
+      return bufferToBase64(result);
+    } catch (error) {
+      console.error('pdf:setMetadata error:', error);
+      throw error;
+    }
   }
-});
+);
 
 // 图片转 PDF
-ipcMain.handle('pdf:imagesToPdf', async (_event, options: {
-  images: string[];
-  pageSize: 'fit' | 'a4' | 'letter';
-  placement: 'center' | 'stretch' | 'fit';
-}) => {
-  try {
-    const buffers = options.images.map(img => base64ToBuffer(img));
-    const pdfOptions: PDFImageToPdfOptions = {
-      pageSize: options.pageSize,
-      placement: options.placement,
-    };
-    const result = await pdfService.imagesToPdf(buffers, pdfOptions);
-    return bufferToBase64(result);
-  } catch (error) {
-    console.error('pdf:imagesToPdf error:', error);
-    throw error;
+ipcMain.handle(
+  'pdf:imagesToPdf',
+  async (
+    _event,
+    options: {
+      images: string[];
+      pageSize: 'fit' | 'a4' | 'letter';
+      placement: 'center' | 'stretch' | 'fit';
+    }
+  ) => {
+    try {
+      const buffers = options.images.map(img => base64ToBuffer(img));
+      const pdfOptions: PDFImageToPdfOptions = {
+        pageSize: options.pageSize,
+        placement: options.placement,
+      };
+      const result = await pdfService.imagesToPdf(buffers, pdfOptions);
+      return bufferToBase64(result);
+    } catch (error) {
+      console.error('pdf:imagesToPdf error:', error);
+      throw error;
+    }
   }
-});
+);
 
 // 获取表单字段
 ipcMain.handle('pdf:getFormFields', async (_event, file: string) => {
@@ -895,20 +968,23 @@ ipcMain.handle('pdf:toGrayscale', async (_event, file: string) => {
 });
 
 // PDF/A 转换
-ipcMain.handle('pdf:toPDFA', async (_event, options: { file: string; level: '1b' | '2b' | '3b' }) => {
-  try {
-    const buffer = base64ToBuffer(options.file);
-    const result = await ghostscriptService.toPDFA(buffer, options.level);
-    return {
-      data: bufferToBase64(result.data),
-      originalSize: result.originalSize,
-      convertedSize: result.convertedSize,
-    };
-  } catch (error) {
-    console.error('pdf:toPDFA error:', error);
-    throw error;
+ipcMain.handle(
+  'pdf:toPDFA',
+  async (_event, options: { file: string; level: '1b' | '2b' | '3b' }) => {
+    try {
+      const buffer = base64ToBuffer(options.file);
+      const result = await ghostscriptService.toPDFA(buffer, options.level);
+      return {
+        data: bufferToBase64(result.data),
+        originalSize: result.originalSize,
+        convertedSize: result.convertedSize,
+      };
+    } catch (error) {
+      console.error('pdf:toPDFA error:', error);
+      throw error;
+    }
   }
-});
+);
 
 // PDF 修复
 ipcMain.handle('pdf:repair', async (_event, file: string) => {
@@ -927,20 +1003,23 @@ ipcMain.handle('pdf:repair', async (_event, file: string) => {
 });
 
 // PDF 版本转换
-ipcMain.handle('pdf:convertVersion', async (_event, options: { file: string; version: '1.4' | '1.5' | '1.6' | '1.7' | '2.0' }) => {
-  try {
-    const buffer = base64ToBuffer(options.file);
-    const result = await ghostscriptService.convertVersion(buffer, options.version);
-    return {
-      data: bufferToBase64(result.data),
-      originalSize: result.originalSize,
-      convertedSize: result.convertedSize,
-    };
-  } catch (error) {
-    console.error('pdf:convertVersion error:', error);
-    throw error;
+ipcMain.handle(
+  'pdf:convertVersion',
+  async (_event, options: { file: string; version: '1.4' | '1.5' | '1.6' | '1.7' | '2.0' }) => {
+    try {
+      const buffer = base64ToBuffer(options.file);
+      const result = await ghostscriptService.convertVersion(buffer, options.version);
+      return {
+        data: bufferToBase64(result.data),
+        originalSize: result.originalSize,
+        convertedSize: result.convertedSize,
+      };
+    } catch (error) {
+      console.error('pdf:convertVersion error:', error);
+      throw error;
+    }
   }
-});
+);
 
 // PDF 线性化（Web 优化）
 ipcMain.handle('pdf:linearize', async (_event, file: string) => {
@@ -1001,102 +1080,108 @@ function computeFileHash(buffer: Buffer): string {
 }
 
 // 上传图片
-ipcMain.handle('resource:uploadImage', async (_event, noteId: string, data: string, filename: string, mimeType: string) => {
-  try {
-    const { v4: uuidv4 } = require('uuid');
-    const resourceId = uuidv4();
+ipcMain.handle(
+  'resource:uploadImage',
+  async (_event, noteId: string, data: string, filename: string, mimeType: string) => {
+    try {
+      const { v4: uuidv4 } = require('uuid');
+      const resourceId = uuidv4();
 
-    // 解析 base64 数据
-    let buffer: Buffer;
-    if (data.startsWith('data:')) {
-      const base64Data = data.split(',')[1];
-      buffer = Buffer.from(base64Data, 'base64');
-    } else {
-      buffer = Buffer.from(data, 'base64');
+      // 解析 base64 数据
+      let buffer: Buffer;
+      if (data.startsWith('data:')) {
+        const base64Data = data.split(',')[1];
+        buffer = Buffer.from(base64Data, 'base64');
+      } else {
+        buffer = Buffer.from(data, 'base64');
+      }
+
+      // 获取扩展名
+      const ext = path.extname(filename).toLowerCase() || '.png';
+      const resourceFilename = `${resourceId}${ext}`;
+      const resourcePath = path.join(getResourcesDir(), resourceFilename);
+
+      // 写入文件
+      fs.writeFileSync(resourcePath, buffer);
+
+      // 创建资源记录（使用 _id 确保数据库 ID 与文件名一致）
+      const { getItemsManager } = require('./services/DatabaseService');
+      const itemsManager = getItemsManager();
+
+      const payload = {
+        _id: resourceId, // 使用 resourceId 作为数据库记录 ID
+        filename,
+        mime_type: mimeType,
+        size: buffer.length,
+        note_id: noteId,
+        file_hash: computeFileHash(buffer),
+      };
+
+      itemsManager.create('resource', payload);
+
+      // 返回资源引用 URL
+      const resourceUrl = `resource://${resourceId}${ext}`;
+      console.log('Resource uploaded:', resourceUrl);
+
+      return resourceUrl;
+    } catch (error) {
+      console.error('resource:uploadImage error:', error);
+      throw error;
     }
-
-    // 获取扩展名
-    const ext = path.extname(filename).toLowerCase() || '.png';
-    const resourceFilename = `${resourceId}${ext}`;
-    const resourcePath = path.join(getResourcesDir(), resourceFilename);
-
-    // 写入文件
-    fs.writeFileSync(resourcePath, buffer);
-
-    // 创建资源记录（使用 _id 确保数据库 ID 与文件名一致）
-    const { getItemsManager } = require('./services/DatabaseService');
-    const itemsManager = getItemsManager();
-
-    const payload = {
-      _id: resourceId,  // 使用 resourceId 作为数据库记录 ID
-      filename,
-      mime_type: mimeType,
-      size: buffer.length,
-      note_id: noteId,
-      file_hash: computeFileHash(buffer),
-    };
-
-    itemsManager.create('resource', payload);
-
-    // 返回资源引用 URL
-    const resourceUrl = `resource://${resourceId}${ext}`;
-    console.log('Resource uploaded:', resourceUrl);
-
-    return resourceUrl;
-  } catch (error) {
-    console.error('resource:uploadImage error:', error);
-    throw error;
   }
-});
+);
 
 // 上传附件
-ipcMain.handle('resource:uploadAttachment', async (_event, noteId: string, data: string, filename: string, mimeType: string) => {
-  try {
-    const { v4: uuidv4 } = require('uuid');
-    const resourceId = uuidv4();
+ipcMain.handle(
+  'resource:uploadAttachment',
+  async (_event, noteId: string, data: string, filename: string, mimeType: string) => {
+    try {
+      const { v4: uuidv4 } = require('uuid');
+      const resourceId = uuidv4();
 
-    // 解析 base64 数据
-    let buffer: Buffer;
-    if (data.startsWith('data:')) {
-      const base64Data = data.split(',')[1];
-      buffer = Buffer.from(base64Data, 'base64');
-    } else {
-      buffer = Buffer.from(data, 'base64');
+      // 解析 base64 数据
+      let buffer: Buffer;
+      if (data.startsWith('data:')) {
+        const base64Data = data.split(',')[1];
+        buffer = Buffer.from(base64Data, 'base64');
+      } else {
+        buffer = Buffer.from(data, 'base64');
+      }
+
+      // 获取扩展名
+      const ext = path.extname(filename).toLowerCase() || '';
+      const resourceFilename = `${resourceId}${ext}`;
+      const resourcePath = path.join(getResourcesDir(), resourceFilename);
+
+      // 写入文件
+      fs.writeFileSync(resourcePath, buffer);
+
+      // 创建资源记录（使用 _id 确保数据库 ID 与文件名一致）
+      const { getItemsManager } = require('./services/DatabaseService');
+      const itemsManager = getItemsManager();
+
+      const payload = {
+        _id: resourceId, // 使用 resourceId 作为数据库记录 ID
+        filename,
+        mime_type: mimeType,
+        size: buffer.length,
+        note_id: noteId,
+        file_hash: computeFileHash(buffer),
+      };
+
+      itemsManager.create('resource', payload);
+
+      // 返回资源信息
+      const resourceUrl = `resource://${resourceId}${ext}`;
+      console.log('Attachment uploaded:', resourceUrl);
+
+      return { url: resourceUrl, name: filename };
+    } catch (error) {
+      console.error('resource:uploadAttachment error:', error);
+      throw error;
     }
-
-    // 获取扩展名
-    const ext = path.extname(filename).toLowerCase() || '';
-    const resourceFilename = `${resourceId}${ext}`;
-    const resourcePath = path.join(getResourcesDir(), resourceFilename);
-
-    // 写入文件
-    fs.writeFileSync(resourcePath, buffer);
-
-    // 创建资源记录（使用 _id 确保数据库 ID 与文件名一致）
-    const { getItemsManager } = require('./services/DatabaseService');
-    const itemsManager = getItemsManager();
-
-    const payload = {
-      _id: resourceId,  // 使用 resourceId 作为数据库记录 ID
-      filename,
-      mime_type: mimeType,
-      size: buffer.length,
-      note_id: noteId,
-      file_hash: computeFileHash(buffer),
-    };
-
-    itemsManager.create('resource', payload);
-
-    // 返回资源信息
-    const resourceUrl = `resource://${resourceId}${ext}`;
-    console.log('Attachment uploaded:', resourceUrl);
-
-    return { url: resourceUrl, name: filename };
-  } catch (error) {
-    console.error('resource:uploadAttachment error:', error);
-    throw error;
   }
-});
+);
 
 // 获取资源文件路径
 ipcMain.handle('resource:getPath', async (_event, resourceId: string, ext: string) => {
@@ -1167,666 +1252,15 @@ ipcMain.handle('resource:getNoteResources', async (_event, noteId: string) => {
   }
 });
 
-// ============ Transfer API IPC Handlers ============
+// ============ Transfer API - All handled by TransferService.ts ============
+// TransferService.ts registers all IPC handlers and event listeners.
+// Only app lifecycle cleanup remains here.
 
-import { TransferServer, ServerStatus, ConnectedDevice } from './services/TransferServer';
-import { TransferDatabase, TransferDevice, TransferSession, TransferMessage, TransferFile } from '../core/transfer/TransferDatabase';
-import { v4 as uuidv4 } from 'uuid';
-
-let transferServer: TransferServer | null = null;
-let transferDatabase: TransferDatabase | null = null;
-
-// 获取或创建设备 ID
-function getOrCreateDeviceId(): string {
-  const deviceIdPath = path.join(app.getPath('userData'), 'transfer-device-id.txt');
-  if (fs.existsSync(deviceIdPath)) {
-    return fs.readFileSync(deviceIdPath, 'utf8').trim();
-  }
-  const newId = uuidv4();
-  fs.writeFileSync(deviceIdPath, newId, 'utf8');
-  return newId;
-}
-
-// 获取设备名称
-function getDeviceName(): string {
-  const os = require('os');
-  return os.hostname() || 'Desktop';
-}
-
-// 初始化传输数据库
-function initTransferDatabase(): TransferDatabase {
-  if (!transferDatabase) {
-    transferDatabase = new TransferDatabase(app.getPath('userData'));
-    transferDatabase.initialize();
-  }
-  return transferDatabase;
-}
-
-// 启动传输服务器
-ipcMain.handle('transfer:startServer', async (_event, port?: number) => {
-  try {
-    if (transferServer) {
-      return transferServer.getStatus();
-    }
-
-    const deviceId = getOrCreateDeviceId();
-    const deviceName = getDeviceName();
-
-    transferServer = new TransferServer(deviceId, deviceName);
-
-    // 设置事件监听
-    transferServer.on('device:connected', (device) => {
-      console.log('[Transfer] Device connected event:', device);
-      mainWindow?.webContents.send('transfer:device-connected', device);
-    });
-
-    transferServer.on('device:disconnected', (deviceId) => {
-      console.log('[Transfer] Device disconnected event:', deviceId);
-      mainWindow?.webContents.send('transfer:device-disconnected', deviceId);
-    });
-
-    transferServer.on('device:list-updated', (devices) => {
-      console.log('[Transfer] Device list updated event:', devices.length, 'devices');
-      mainWindow?.webContents.send('transfer:device-list-updated', devices);
-    });
-
-    // 处理自动配对创建的会话
-    transferServer.on('session:created', (data) => {
-      console.log('[Transfer] Session created event:', data);
-      const db = initTransferDatabase();
-      const { sessionId, peerDeviceId, peerDeviceName } = data;
-      
-      // 获取设备信息
-      const device = transferServer?.getConnectedDevices().find(d => d.id === peerDeviceId);
-      
-      // 创建设备记录（如果不存在）
-      try {
-        db.createDevice({
-          id: peerDeviceId,
-          name: peerDeviceName,
-          type: device?.type || 'android',
-          last_ip: device?.ip || '',
-          last_port: 0,
-          last_seen: Date.now(),
-          is_favorite: 0,
-        });
-        console.log('[Transfer] Created device record for:', peerDeviceName);
-      } catch (e) {
-        // 设备可能已存在，忽略错误
-        console.log('[Transfer] Device already exists or error:', e);
-      }
-      
-      // 创建会话记录
-      try {
-        db.createSession({
-          id: sessionId,
-          peer_device_id: peerDeviceId,
-          peer_device_name: peerDeviceName,
-          connection_type: 'lan',
-          started_at: Date.now(),
-          ended_at: null,
-        });
-        console.log('[Transfer] Created session record:', sessionId);
-      } catch (e) {
-        // 会话可能已存在，忽略错误
-        console.log('[Transfer] Session already exists or error:', e);
-      }
-      
-      // 通知渲染进程会话已创建
-      mainWindow?.webContents.send('transfer:session-created', {
-        sessionId,
-        peerDeviceId,
-        peerDeviceName,
-      });
-    });
-
-    transferServer.on('message:received', (data) => {
-      console.log('[Transfer] Message received event:', data);
-      
-      // Save message to database
-      const db = initTransferDatabase();
-      const { senderId, sessionId, message } = data;
-      
-      // Find session for this device (by peer_device_id)
-      const sessions = db.getSessionsByDevice(senderId);
-      let targetSessionId: string;
-      
-      if (sessions.length > 0) {
-        // 使用已存在的会话
-        targetSessionId = sessions[0].id;
-        console.log('[Transfer] Found existing session:', targetSessionId);
-      } else {
-        // 没有会话，需要创建一个新会话
-        // 先获取设备信息
-        const device = transferServer?.getConnectedDevices().find(d => d.id === senderId);
-        if (device) {
-          // 创建设备记录
-          try {
-            db.createDevice({
-              id: device.id,
-              name: device.name,
-              type: device.type,
-              last_ip: device.ip,
-              last_port: 0,
-              last_seen: Date.now(),
-              is_favorite: 0,
-            });
-          } catch (e) {
-            // 设备可能已存在，忽略错误
-          }
-          
-          // 创建会话
-          targetSessionId = uuidv4();
-          db.createSession({
-            id: targetSessionId,
-            peer_device_id: device.id,
-            peer_device_name: device.name,
-            connection_type: 'lan',
-            started_at: Date.now(),
-            ended_at: null,
-          });
-          console.log('[Transfer] Created new session:', targetSessionId, 'for device:', device.name);
-        } else {
-          // 设备不在连接列表中，使用原始 sessionId
-          targetSessionId = sessionId;
-          console.log('[Transfer] Device not found, using original sessionId:', sessionId);
-        }
-      }
-      
-      if (message && message.id) {
-        db.createMessage({
-          id: message.id,
-          session_id: targetSessionId,
-          direction: 'received',
-          type: message.type || 'text',
-          content: message.content || '',
-          file_id: message.fileId || null,
-          created_at: Date.now(),
-          read_at: null,
-        });
-        console.log('[Transfer] Message saved to session:', targetSessionId);
-      }
-      
-      // 发送到渲染进程，包含正确的 sessionId
-      mainWindow?.webContents.send('transfer:message-received', {
-        ...data,
-        desktopSessionId: targetSessionId, // 添加桌面端的会话 ID
-      });
-    });
-
-    transferServer.on('file:incoming', (data) => {
-      console.log('[Transfer] File incoming event:', data);
-      
-      // Save file record to database
-      const db = initTransferDatabase();
-      const { senderId, fileInfo, sessionId: incomingSessionId } = data;
-      
-      // Find session for this device (by peer_device_id)
-      const sessions = db.getSessionsByDevice(senderId);
-      let targetSessionId: string;
-      
-      if (sessions.length > 0) {
-        // 使用已存在的会话
-        targetSessionId = sessions[0].id;
-        console.log('[Transfer] Found existing session for file:', targetSessionId);
-      } else {
-        // 没有会话，需要创建一个新会话
-        const device = transferServer?.getConnectedDevices().find(d => d.id === senderId);
-        if (device) {
-          // 创建设备记录
-          try {
-            db.createDevice({
-              id: device.id,
-              name: device.name,
-              type: device.type,
-              last_ip: device.ip,
-              last_port: 0,
-              last_seen: Date.now(),
-              is_favorite: 0,
-            });
-          } catch (e) {
-            // 设备可能已存在，忽略错误
-          }
-          
-          // 创建会话
-          targetSessionId = uuidv4();
-          db.createSession({
-            id: targetSessionId,
-            peer_device_id: device.id,
-            peer_device_name: device.name,
-            connection_type: 'lan',
-            started_at: Date.now(),
-            ended_at: null,
-          });
-          console.log('[Transfer] Created new session for file:', targetSessionId, 'for device:', device.name);
-        } else {
-          // 设备不在连接列表中，使用 unknown
-          targetSessionId = 'unknown';
-          console.log('[Transfer] Device not found for file, using unknown session');
-        }
-      }
-      
-      console.log('[Transfer] File incoming - incomingSessionId:', incomingSessionId, 'targetSessionId:', targetSessionId);
-      
-      if (fileInfo && fileInfo.id) {
-        db.createFileTransfer({
-          id: fileInfo.id,
-          session_id: targetSessionId,
-          filename: fileInfo.filename,
-          file_size: fileInfo.fileSize,
-          mime_type: fileInfo.mimeType,
-          local_path: null, // Will be set when complete
-          direction: 'received',
-          status: 'transferring',
-          progress: 0,
-          file_hash: null,
-          created_at: Date.now(),
-          completed_at: null,
-        });
-        console.log('[Transfer] File record saved to session:', targetSessionId);
-      }
-      
-      // 发送到渲染进程，包含正确的 sessionId
-      mainWindow?.webContents.send('transfer:file-incoming', {
-        ...data,
-        desktopSessionId: targetSessionId,
-      });
-    });
-
-    transferServer.on('file:chunk', (data) => {
-      // Update progress in database
-      const db = initTransferDatabase();
-      const { fileId, chunkIndex, totalChunks } = data;
-      if (fileId && totalChunks > 0) {
-        const progress = ((chunkIndex + 1) / totalChunks) * 100;
-        db.updateFileProgress(fileId, progress);
-      }
-      
-      mainWindow?.webContents.send('transfer:file-chunk', data);
-    });
-
-    transferServer.on('file:complete', (data) => {
-      // Update file record in database
-      const db = initTransferDatabase();
-      const { fileId, fileHash, localPath } = data;
-      
-      if (fileId) {
-        db.completeFileTransfer(fileId, localPath || '', fileHash || null);
-      }
-      
-      mainWindow?.webContents.send('transfer:file-complete', data);
-    });
-
-    const status = await transferServer.start(port);
-    console.log('[Transfer] Server started:', status);
-    return status;
-  } catch (error) {
-    console.error('transfer:startServer error:', error);
-    throw error;
-  }
-});
-
-// 停止传输服务器
-ipcMain.handle('transfer:stopServer', async () => {
-  try {
-    if (transferServer) {
-      await transferServer.stop();
-      transferServer = null;
-    }
-    return true;
-  } catch (error) {
-    console.error('transfer:stopServer error:', error);
-    throw error;
-  }
-});
-
-// 获取服务器状态
-ipcMain.handle('transfer:getServerStatus', () => {
-  if (transferServer) {
-    return transferServer.getStatus();
-  }
-  return {
-    running: false,
-    port: null,
-    ip: null,
-    connectedDevices: 0,
-    startedAt: null,
-  };
-});
-
-// 获取连接的设备列表
-ipcMain.handle('transfer:getConnectedDevices', () => {
-  if (transferServer) {
-    return transferServer.getConnectedDevices();
-  }
-  return [];
-});
-
-// 生成配对二维码数据
-ipcMain.handle('transfer:generateQRData', () => {
-  if (transferServer) {
-    return transferServer.generatePairingQRData();
-  }
-  return null;
-});
-
-// 获取本机设备信息
-ipcMain.handle('transfer:getDeviceInfo', () => {
-  return {
-    deviceId: getOrCreateDeviceId(),
-    deviceName: getDeviceName(),
-    deviceType: 'desktop',
-  };
-});
-
-// 发送消息
-ipcMain.handle('transfer:sendMessage', async (_event, targetDeviceId: string, sessionId: string, message: { id: string; type: string; content: string }) => {
-  if (!transferServer) {
-    throw new Error('Transfer server not running');
-  }
-  return transferServer.sendMessage(targetDeviceId, sessionId, message);
-});
-
-// 发送文件
-ipcMain.handle('transfer:sendFile', async (_event, targetDeviceId: string, sessionId: string, filePath: string) => {
-  if (!transferServer) {
-    throw new Error('Transfer server not running');
-  }
-  return transferServer.sendFile(targetDeviceId, sessionId, filePath);
-});
-
-// 发送消息已读回执
-ipcMain.handle('transfer:sendMessageRead', async (_event, targetDeviceId: string, messageIds: string[]) => {
-  if (!transferServer) {
-    throw new Error('Transfer server not running');
-  }
-  return transferServer.sendMessageRead(targetDeviceId, messageIds);
-});
-
-// ============ Transfer Database IPC Handlers ============
-
-// 设备操作
-ipcMain.handle('transfer:db:createDevice', (_event, device: Omit<TransferDevice, 'created_at'>) => {
-  const db = initTransferDatabase();
-  return db.createDevice(device);
-});
-
-ipcMain.handle('transfer:db:getDevice', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.getDeviceById(id);
-});
-
-ipcMain.handle('transfer:db:getAllDevices', () => {
-  const db = initTransferDatabase();
-  return db.getAllDevices();
-});
-
-ipcMain.handle('transfer:db:updateDevice', (_event, id: string, updates: Partial<TransferDevice>) => {
-  const db = initTransferDatabase();
-  return db.updateDevice(id, updates);
-});
-
-ipcMain.handle('transfer:db:deleteDevice', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.deleteDevice(id);
-});
-
-// 会话操作
-ipcMain.handle('transfer:db:createSession', (_event, session: TransferSession) => {
-  const db = initTransferDatabase();
-  return db.createSession(session);
-});
-
-ipcMain.handle('transfer:db:getSession', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.getSessionById(id);
-});
-
-ipcMain.handle('transfer:db:getAllSessions', () => {
-  const db = initTransferDatabase();
-  return db.getAllSessions();
-});
-
-ipcMain.handle('transfer:db:getSessionsByDevice', (_event, deviceId: string) => {
-  const db = initTransferDatabase();
-  return db.getSessionsByDevice(deviceId);
-});
-
-ipcMain.handle('transfer:db:endSession', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.endSession(id);
-});
-
-ipcMain.handle('transfer:db:deleteSession', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.deleteSession(id);
-});
-
-// 消息操作
-ipcMain.handle('transfer:db:createMessage', (_event, message: TransferMessage) => {
-  const db = initTransferDatabase();
-  return db.createMessage(message);
-});
-
-ipcMain.handle('transfer:db:getMessage', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.getMessageById(id);
-});
-
-ipcMain.handle('transfer:db:getMessagesBySession', (_event, sessionId: string, limit?: number, offset?: number) => {
-  const db = initTransferDatabase();
-  return db.getMessagesBySession(sessionId, limit, offset);
-});
-
-ipcMain.handle('transfer:db:markMessageAsRead', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.markMessageAsRead(id);
-});
-
-ipcMain.handle('transfer:db:markSessionMessagesAsRead', (_event, sessionId: string) => {
-  const db = initTransferDatabase();
-  return db.markSessionMessagesAsRead(sessionId);
-});
-
-ipcMain.handle('transfer:db:deleteMessage', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.deleteMessage(id);
-});
-
-// 文件传输操作
-ipcMain.handle('transfer:db:createFileTransfer', (_event, file: TransferFile) => {
-  const db = initTransferDatabase();
-  return db.createFileTransfer(file);
-});
-
-ipcMain.handle('transfer:db:getFile', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.getFileById(id);
-});
-
-ipcMain.handle('transfer:db:getFilesBySession', (_event, sessionId: string) => {
-  const db = initTransferDatabase();
-  return db.getFilesBySession(sessionId);
-});
-
-ipcMain.handle('transfer:db:updateFileProgress', (_event, id: string, progress: number) => {
-  const db = initTransferDatabase();
-  return db.updateFileProgress(id, progress);
-});
-
-ipcMain.handle('transfer:db:completeFileTransfer', (_event, id: string, localPath: string, fileHash?: string) => {
-  const db = initTransferDatabase();
-  return db.completeFileTransfer(id, localPath, fileHash);
-});
-
-ipcMain.handle('transfer:db:failFileTransfer', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.failFileTransfer(id);
-});
-
-ipcMain.handle('transfer:db:cancelFileTransfer', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.cancelFileTransfer(id);
-});
-
-ipcMain.handle('transfer:db:deleteFile', (_event, id: string) => {
-  const db = initTransferDatabase();
-  return db.deleteFile(id);
-});
-
-// 清理和统计
-ipcMain.handle('transfer:db:cleanupOldSessions', (_event, daysOld: number) => {
-  const db = initTransferDatabase();
-  return db.cleanupOldSessions(daysOld);
-});
-
-ipcMain.handle('transfer:db:cleanupFailedTransfers', () => {
-  const db = initTransferDatabase();
-  return db.cleanupFailedTransfers();
-});
-
-ipcMain.handle('transfer:db:getStats', () => {
-  const db = initTransferDatabase();
-  return db.getStats();
-});
-
-// ============ Transfer Relay IPC Handlers ============
-
-import { relayClient } from './services/RelayClient';
-
-// 连接中继服务器
-ipcMain.handle('transfer:relay:connect', async (_event, serverUrl: string, relayKey: string) => {
-  try {
-    // 注入数据库实例，确保为了保存消息和文件
-    const db = initTransferDatabase();
-    relayClient.setDatabase(db);
-
-    const deviceId = getOrCreateDeviceId();
-    const deviceName = getDeviceName();
-
-    await relayClient.connect({
-      serverUrl,
-      relayKey,
-      deviceId,
-      deviceName,
-    });
-
-    // 设置事件监听
-    relayClient.on('connected', () => {
-      mainWindow?.webContents.send('transfer:relay:connected');
-    });
-
-    relayClient.on('disconnected', (reason) => {
-      mainWindow?.webContents.send('transfer:relay:disconnected', reason);
-    });
-
-    relayClient.on('error', (error) => {
-      mainWindow?.webContents.send('transfer:relay:error', error);
-    });
-
-    relayClient.on('device:list', (devices) => {
-      mainWindow?.webContents.send('transfer:relay:device-list', devices);
-    });
-
-    relayClient.on('device:online', () => {
-      mainWindow?.webContents.send('transfer:relay:device-list', relayClient.getConnectedDevices());
-    });
-
-    relayClient.on('device:offline', () => {
-      mainWindow?.webContents.send('transfer:relay:device-list', relayClient.getConnectedDevices());
-    });
-
-    relayClient.on('message:received', (data) => {
-      mainWindow?.webContents.send('transfer:relay:message-received', data);
-    });
-
-    relayClient.on('file:incoming', (data) => {
-      mainWindow?.webContents.send('transfer:relay:file-incoming', data);
-    });
-
-    relayClient.on('file:chunk', (data) => {
-      mainWindow?.webContents.send('transfer:relay:file-chunk', data);
-    });
-
-    relayClient.on('file:complete', (data) => {
-      mainWindow?.webContents.send('transfer:relay:file-complete', data);
-    });
-
-    relayClient.on('pair:request', (data) => {
-      // 自动接受配对请求（简化流程）
-      const sessionId = relayClient.acceptPairRequest(data.requesterId);
-      console.log(`[Relay] Auto accepted pair request from ${data.requesterName}, sessionId: ${sessionId}`);
-    });
-
-    relayClient.on('pair:success', (data) => {
-      console.log(`[Relay] Pair success with ${data.peerName}, sessionId: ${data.sessionId}`);
-      // 可以在这里通知前端配对成功
-    });
-
-    return true;
-  } catch (error) {
-    console.error('transfer:relay:connect error:', error);
-    throw error;
-  }
-});
-
-// 断开中继连接
-ipcMain.handle('transfer:relay:disconnect', async () => {
-  try {
-    relayClient.disconnect();
-    return true;
-  } catch (error) {
-    console.error('transfer:relay:disconnect error:', error);
-    throw error;
-  }
-});
-
-// 获取中继状态
-ipcMain.handle('transfer:relay:getStatus', () => {
-  return relayClient.getStatus();
-});
-
-// 获取中继在线设备
-ipcMain.handle('transfer:relay:getConnectedDevices', () => {
-  return relayClient.getConnectedDevices();
-});
-
-// 中继发送消息
-ipcMain.handle('transfer:relay:sendMessage', async (_event, targetDeviceId: string, sessionId: string, message: any) => {
-  try {
-    return relayClient.sendMessage(targetDeviceId, sessionId, message);
-  } catch (error) {
-    console.error('transfer:relay:sendMessage error:', error);
-    throw error;
-  }
-});
-
-// 中继发送文件
-ipcMain.handle('transfer:relay:sendFile', async (_event, targetDeviceId: string, sessionId: string, filePath: string) => {
-  try {
-    return await relayClient.sendFile(targetDeviceId, sessionId, filePath);
-  } catch (error) {
-    console.error('transfer:relay:sendFile error:', error);
-    throw error;
-  }
-});
-
-// 关闭传输数据库（在应用退出时调用）
 app.on('will-quit', () => {
-  if (transferDatabase) {
-    transferDatabase.close();
-    transferDatabase = null;
-  }
-  if (transferServer) {
-    transferServer.stop();
-    transferServer = null;
-  }
-  // 断开中继连接
-  relayClient.disconnect();
-  // 停止 MCP 服务
+  const { transferService } = require('./services/TransferService');
+  transferService.destroy();
   mcpService.dispose();
 });
-
 
 // ============ MCP API IPC Handlers ============
 
@@ -1871,4 +1305,3 @@ ipcMain.handle('mcp:callTool', async (_event, serverId: string, toolName: string
     throw error;
   }
 });
-

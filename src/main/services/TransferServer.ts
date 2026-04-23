@@ -1,6 +1,6 @@
 /**
  * LAN Transfer Assistant - 桌面端内置服务器
- * 
+ *
  * 使用 Socket.IO 实现局域网设备发现和数据传输
  */
 
@@ -59,11 +59,16 @@ export interface TransferServerEvents {
   'device:disconnected': (deviceId: string) => void;
   'device:list-updated': (devices: ConnectedDevice[]) => void;
   'pair:request': (data: { requesterId: string; requesterName: string }) => void;
-  'session:created': (data: { sessionId: string; peerDeviceId: string; peerDeviceName: string }) => void;
+  'session:created': (data: {
+    sessionId: string;
+    peerDeviceId: string;
+    peerDeviceName: string;
+  }) => void;
   'message:received': (data: any) => void;
   'file:incoming': (data: any) => void;
   'file:chunk': (data: any) => void;
   'file:complete': (data: any) => void;
+  'pair:success': (data: { sessionId: string; peerId: string; peerName: string }) => void;
 }
 
 type EventCallback<T> = (data: T) => void;
@@ -93,7 +98,8 @@ export class TransferServer {
 
   // 文件接收相关
   private fileStreams: Map<string, fs.WriteStream> = new Map();
-  private fileInfoCache: Map<string, { filename: string; localPath: string; sessionId?: string }> = new Map();
+  private fileInfoCache: Map<string, { filename: string; localPath: string; sessionId?: string }> =
+    new Map();
 
   constructor(deviceId: string, deviceName: string) {
     this.deviceId = deviceId;
@@ -104,20 +110,14 @@ export class TransferServer {
   // 事件系统
   // ============================================
 
-  on<K extends keyof TransferServerEvents>(
-    event: K,
-    callback: TransferServerEvents[K]
-  ): void {
+  on<K extends keyof TransferServerEvents>(event: K, callback: TransferServerEvents[K]): void {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, new Set());
     }
     this.eventListeners.get(event)!.add(callback as EventCallback<any>);
   }
 
-  off<K extends keyof TransferServerEvents>(
-    event: K,
-    callback: TransferServerEvents[K]
-  ): void {
+  off<K extends keyof TransferServerEvents>(event: K, callback: TransferServerEvents[K]): void {
     const listeners = this.eventListeners.get(event);
     if (listeners) {
       listeners.delete(callback as EventCallback<any>);
@@ -223,7 +223,7 @@ export class TransferServer {
       // 通知所有连接的设备
       this.io.emit(SOCKET_EVENTS.DEVICE_OFFLINE, { deviceId: this.deviceId });
 
-      await new Promise<void>((resolve) => {
+      await new Promise<void>(resolve => {
         this.io!.close(() => {
           resolve();
         });
@@ -232,7 +232,7 @@ export class TransferServer {
     }
 
     if (this.httpServer) {
-      await new Promise<void>((resolve) => {
+      await new Promise<void>(resolve => {
         this.httpServer!.close(() => {
           resolve();
         });
@@ -322,62 +322,59 @@ export class TransferServer {
       throw createTransferError(TransferErrorCode.SESSION_NOT_FOUND);
     }
 
-    // 读取文件信息
     const stats = fs.statSync(filePath);
     const filename = path.basename(filePath);
     const fileId = uuidv4();
     const fileSize = stats.size;
     const totalChunks = Math.ceil(fileSize / TRANSFER_CONSTANTS.CHUNK_SIZE);
 
-    // 获取 MIME 类型
     const ext = path.extname(filename).toLowerCase().slice(1);
     const mimeTypes: Record<string, string> = {
-      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
-      pdf: 'application/pdf', doc: 'application/msword', txt: 'text/plain',
-      zip: 'application/zip', mp3: 'audio/mpeg', mp4: 'video/mp4',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      pdf: 'application/pdf',
+      doc: 'application/msword',
+      txt: 'text/plain',
+      zip: 'application/zip',
+      mp3: 'audio/mpeg',
+      mp4: 'video/mp4',
     };
     const mimeType = mimeTypes[ext] || 'application/octet-stream';
 
-    // 发送文件开始事件
     targetSocket.emit(SOCKET_EVENTS.FILE_INCOMING, {
       senderId: this.deviceId,
-      fileInfo: {
-        id: fileId,
-        filename,
-        fileSize,
-        mimeType,
-        totalChunks,
-      },
+      fileInfo: { id: fileId, filename, fileSize, mimeType, totalChunks },
     });
 
-    // 读取并发送文件分块
     const fileBuffer = fs.readFileSync(filePath);
     const hash = crypto.createHash('sha256');
     hash.update(fileBuffer);
     const fileHash = hash.digest('hex');
 
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * TRANSFER_CONSTANTS.CHUNK_SIZE;
-      const end = Math.min(start + TRANSFER_CONSTANTS.CHUNK_SIZE, fileSize);
-      const chunk = fileBuffer.slice(start, end);
-
-      targetSocket.emit(SOCKET_EVENTS.FILE_CHUNK, {
+    (async () => {
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * TRANSFER_CONSTANTS.CHUNK_SIZE;
+        const end = Math.min(start + TRANSFER_CONSTANTS.CHUNK_SIZE, fileSize);
+        const chunk = fileBuffer.slice(start, end);
+        targetSocket.emit(SOCKET_EVENTS.FILE_CHUNK, {
+          senderId: this.deviceId,
+          fileId,
+          chunkIndex: i,
+          chunk: chunk.toString('base64'),
+          totalChunks,
+        });
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      targetSocket.emit(SOCKET_EVENTS.FILE_COMPLETE, {
         senderId: this.deviceId,
         fileId,
-        chunkIndex: i,
-        chunk: chunk.toString('base64'),
-        totalChunks,
+        fileHash,
       });
-
-      // 小延迟防止阻塞
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-
-    // 发送文件完成事件
-    targetSocket.emit(SOCKET_EVENTS.FILE_COMPLETE, {
-      senderId: this.deviceId,
-      fileId,
-      fileHash,
+      console.log(`[TransferServer] File transfer to ${targetDeviceId} completed: ${fileId}`);
+    })().catch(err => {
+      console.error('[TransferServer] Background file send failed:', err);
     });
 
     return { id: fileId, filename, fileSize, mimeType };
@@ -412,12 +409,7 @@ export class TransferServer {
     if (!this.localIp || !this.port) {
       return null;
     }
-    return createPairingQRData(
-      this.deviceId,
-      this.deviceName,
-      this.localIp,
-      this.port
-    );
+    return createPairingQRData(this.deviceId, this.deviceName, this.localIp, this.port);
   }
 
   // ============================================
@@ -432,32 +424,25 @@ export class TransferServer {
       const clientIp = socket.handshake.address;
 
       // 设备注册
-      socket.on(SOCKET_EVENTS.DEVICE_REGISTER, (data: {
-        deviceId: string;
-        deviceName: string;
-        deviceType: DeviceType;
-      }) => {
-        this.handleDeviceRegister(socket, data, clientIp);
-      });
+      socket.on(
+        SOCKET_EVENTS.DEVICE_REGISTER,
+        (data: { deviceId: string; deviceName: string; deviceType: DeviceType }) => {
+          this.handleDeviceRegister(socket, data, clientIp);
+        }
+      );
 
       // 配对请求
-      socket.on(SOCKET_EVENTS.PAIR_REQUEST, (data: {
-        targetDeviceId: string;
-      }) => {
+      socket.on(SOCKET_EVENTS.PAIR_REQUEST, (data: { targetDeviceId: string }) => {
         this.handlePairRequest(socket, data);
       });
 
       // 配对接受
-      socket.on(SOCKET_EVENTS.PAIR_ACCEPT, (data: {
-        requesterId: string;
-      }) => {
+      socket.on(SOCKET_EVENTS.PAIR_ACCEPT, (data: { requesterId: string }) => {
         this.handlePairAccept(socket, data);
       });
 
       // 配对拒绝
-      socket.on(SOCKET_EVENTS.PAIR_REJECT, (data: {
-        requesterId: string;
-      }) => {
+      socket.on(SOCKET_EVENTS.PAIR_REJECT, (data: { requesterId: string }) => {
         this.handlePairReject(socket, data);
       });
 
@@ -647,6 +632,18 @@ export class TransferServer {
       peerId: data.requesterId,
       peerName: requester.name,
     });
+
+    this.emit('session:created', {
+      sessionId,
+      peerDeviceId: data.requesterId,
+      peerDeviceName: requester.name,
+    });
+
+    this.emit('pair:success', {
+      sessionId,
+      peerId: data.requesterId,
+      peerName: requester.name,
+    });
   }
 
   private handlePairReject(socket: Socket, data: { requesterId: string }): void {
@@ -660,7 +657,10 @@ export class TransferServer {
     if (requester) {
       const requesterSocket = this.io?.sockets.sockets.get(requester.socketId);
       if (requesterSocket) {
-        requesterSocket.emit(SOCKET_EVENTS.ERROR, createTransferError(TransferErrorCode.PAIRING_REJECTED));
+        requesterSocket.emit(
+          SOCKET_EVENTS.ERROR,
+          createTransferError(TransferErrorCode.PAIRING_REJECTED)
+        );
       }
     }
   }
@@ -673,14 +673,17 @@ export class TransferServer {
     }
 
     const { targetDeviceId, sessionId, message } = data;
-    console.log(`[TransferServer] handleMessageSend: from=${senderId}, to=${targetDeviceId}, sessionId=${sessionId}`);
+    console.log(
+      `[TransferServer] handleMessageSend: from=${senderId}, to=${targetDeviceId}, sessionId=${sessionId}`
+    );
     console.log(`[TransferServer] handleMessageSend: this.deviceId=${this.deviceId}`);
-    console.log(`[TransferServer] handleMessageSend: targetDeviceId === this.deviceId: ${targetDeviceId === this.deviceId}`);
+    console.log(
+      `[TransferServer] handleMessageSend: targetDeviceId === this.deviceId: ${targetDeviceId === this.deviceId}`
+    );
     console.log(`[TransferServer] handleMessageSend: message=`, message);
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
-      // 消息发给桌面端自己，直接发出事件
       console.log(`[TransferServer] Message received for desktop from ${senderId}`);
       this.updateSessionActivity(sessionId, [senderId, targetDeviceId]);
       this.emit('message:received', { senderId, sessionId, message });
@@ -691,7 +694,9 @@ export class TransferServer {
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (!target) {
-      console.log(`[TransferServer] Target device ${targetDeviceId} not found in connected devices`);
+      console.log(
+        `[TransferServer] Target device ${targetDeviceId} not found in connected devices`
+      );
       console.log(`[TransferServer] Connected devices:`, Array.from(this.connectedDevices.keys()));
       socket.emit(SOCKET_EVENTS.ERROR, createTransferError(TransferErrorCode.SESSION_NOT_FOUND));
       return;
@@ -712,7 +717,8 @@ export class TransferServer {
       console.warn(`[TransferServer] Target socket not found for device ${targetDeviceId}`);
     }
 
-    this.emit('message:received', { senderId, sessionId, message });
+    // Do NOT emit 'message:received' for forwarded messages
+    // Only desktop-targeted messages should be saved to desktop's own history
   }
 
   private handleMessageRead(socket: Socket, data: any): void {
@@ -743,14 +749,18 @@ export class TransferServer {
     const { targetDeviceId, fileInfo, sessionId } = data;
     console.log(`[TransferServer] handleFileStart: from=${senderId}, to=${targetDeviceId}`);
     console.log(`[TransferServer] handleFileStart: this.deviceId=${this.deviceId}`);
-    console.log(`[TransferServer] handleFileStart: targetDeviceId === this.deviceId: ${targetDeviceId === this.deviceId}`);
+    console.log(
+      `[TransferServer] handleFileStart: targetDeviceId === this.deviceId: ${targetDeviceId === this.deviceId}`
+    );
     console.log(`[TransferServer] handleFileStart: fileInfo=`, fileInfo);
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
       // 文件发给桌面端自己，创建写入流并保存文件
-      console.log(`[TransferServer] File incoming for desktop from ${senderId}: ${fileInfo?.filename}`);
-      
+      console.log(
+        `[TransferServer] File incoming for desktop from ${senderId}: ${fileInfo?.filename}`
+      );
+
       try {
         // 创建下载目录
         const downloadPath = app.getPath('downloads');
@@ -758,7 +768,7 @@ export class TransferServer {
         if (!fs.existsSync(targetDir)) {
           fs.mkdirSync(targetDir, { recursive: true });
         }
-        
+
         // 创建目标文件路径（处理文件名冲突）
         let targetPath = path.join(targetDir, path.basename(fileInfo.filename));
         let counter = 1;
@@ -768,21 +778,21 @@ export class TransferServer {
           targetPath = path.join(targetDir, `${baseName}_${counter}${ext}`);
           counter++;
         }
-        
+
         // 创建写入流
         const stream = fs.createWriteStream(targetPath);
         this.fileStreams.set(fileInfo.id, stream);
-        this.fileInfoCache.set(fileInfo.id, { 
-          filename: fileInfo.filename, 
+        this.fileInfoCache.set(fileInfo.id, {
+          filename: fileInfo.filename,
           localPath: targetPath,
-          sessionId: sessionId 
+          sessionId: sessionId,
         });
-        
+
         console.log(`[TransferServer] Created write stream for file: ${targetPath}`);
       } catch (error) {
         console.error('[TransferServer] Failed to create write stream:', error);
       }
-      
+
       this.emit('file:incoming', { senderId, fileInfo, sessionId });
       return;
     }
@@ -805,7 +815,8 @@ export class TransferServer {
       });
     }
 
-    this.emit('file:incoming', { senderId, fileInfo });
+    // Forward only; do NOT emit 'file:incoming' to desktop for relayed files
+    // The desktop handler only cares about files addressed to itself
   }
 
   private handleFileChunk(socket: Socket, data: any): void {
@@ -845,8 +856,6 @@ export class TransferServer {
         totalChunks,
       });
     }
-
-    this.emit('file:chunk', { senderId, fileId, chunkIndex, totalChunks });
   }
 
   private handleFileComplete(socket: Socket, data: any): void {
@@ -859,26 +868,26 @@ export class TransferServer {
     if (targetDeviceId === this.deviceId) {
       // 文件完成发给桌面端自己，关闭写入流
       console.log(`[TransferServer] File complete for desktop from ${senderId}`);
-      
+
       const stream = this.fileStreams.get(fileId);
       const fileInfo = this.fileInfoCache.get(fileId);
-      
+
       if (stream) {
         stream.end();
         this.fileStreams.delete(fileId);
         console.log(`[TransferServer] Closed write stream for file: ${fileInfo?.localPath}`);
       }
-      
+
       // 发出事件，包含本地路径和 sessionId
-      this.emit('file:complete', { 
-        senderId, 
-        fileId, 
+      this.emit('file:complete', {
+        senderId,
+        fileId,
         fileHash,
         localPath: fileInfo?.localPath,
         filename: fileInfo?.filename,
-        sessionId: fileInfo?.sessionId
+        sessionId: fileInfo?.sessionId,
       });
-      
+
       this.fileInfoCache.delete(fileId);
       return;
     }
@@ -895,8 +904,6 @@ export class TransferServer {
         fileHash,
       });
     }
-
-    this.emit('file:complete', { senderId, fileId, fileHash });
   }
 
   private handleFileCancel(socket: Socket, data: any): void {
@@ -910,11 +917,11 @@ export class TransferServer {
       // 取消文件传输，清理写入流和临时文件
       const stream = this.fileStreams.get(fileId);
       const fileInfo = this.fileInfoCache.get(fileId);
-      
+
       if (stream) {
         stream.end();
         this.fileStreams.delete(fileId);
-        
+
         // 删除未完成的文件
         if (fileInfo?.localPath && fs.existsSync(fileInfo.localPath)) {
           try {
@@ -925,7 +932,7 @@ export class TransferServer {
           }
         }
       }
-      
+
       this.fileInfoCache.delete(fileId);
       return;
     }
@@ -963,6 +970,29 @@ export class TransferServer {
 
       this.connectedDevices.delete(deviceId);
       this.socketToDevice.delete(socket.id);
+
+      // 清理该设备的所有进行中文件传输
+      for (const [fileId, info] of this.fileInfoCache) {
+        if (info.sessionId) {
+          const stream = this.fileStreams.get(fileId);
+          if (stream) {
+            try {
+              stream.end();
+            } catch (e) {
+              /* ignore */
+            }
+            this.fileStreams.delete(fileId);
+          }
+          if (info.localPath && fs.existsSync(info.localPath)) {
+            try {
+              fs.unlinkSync(info.localPath);
+            } catch (e) {
+              /* ignore */
+            }
+          }
+          this.fileInfoCache.delete(fileId);
+        }
+      }
 
       // 广播设备下线
       this.io?.emit(SOCKET_EVENTS.DEVICE_OFFLINE, { deviceId });
@@ -1086,10 +1116,15 @@ export class TransferServer {
         if (info.internal || info.family !== 'IPv4') continue;
 
         // 优先返回常见的局域网地址
-        if (info.address.startsWith('192.168.') ||
-          info.address.startsWith('10.') ||
-          info.address.startsWith('172.')) {
+        if (info.address.startsWith('192.168.') || info.address.startsWith('10.')) {
           return info.address;
+        }
+        const match = info.address.match(/^172\.(\d+)\./);
+        if (match) {
+          const secondOctet = parseInt(match[1], 10);
+          if (secondOctet >= 16 && secondOctet <= 31) {
+            return info.address;
+          }
         }
       }
     }
@@ -1114,7 +1149,7 @@ export class TransferServer {
   }
 
   private isPortAvailable(port: number): Promise<boolean> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       const server = createServer();
       server.once('error', () => resolve(false));
       server.once('listening', () => {

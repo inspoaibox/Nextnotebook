@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "MuchengNotes"
 include(":app")
+include(":app")

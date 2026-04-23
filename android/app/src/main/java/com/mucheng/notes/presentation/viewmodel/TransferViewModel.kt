@@ -12,9 +12,12 @@ import com.mucheng.notes.data.transfer.*
 import com.mucheng.notes.service.TransferNotificationService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -51,6 +54,10 @@ class TransferViewModel @Inject constructor(
     // 文件写入流管理
     private val fileStreams = mutableMapOf<String, FileOutputStream>()
     private val filePaths = mutableMapOf<String, String>()
+    
+    private var messageCollectionJob: Job? = null
+    private var fileCollectionJob: Job? = null
+    private val sessionMutex = Mutex()
 
     private val _uiState = MutableStateFlow(TransferUiState())
     val uiState: StateFlow<TransferUiState> = _uiState.asStateFlow()
@@ -101,7 +108,9 @@ class TransferViewModel @Inject constructor(
         // 监听配对请求
         viewModelScope.launch {
             transferClient.pairRequest.collect { event ->
-                // TODO: 显示配对请求对话框
+                val sessionId = UUID.randomUUID().toString()
+                transferClient.acceptPairRequest(event.requesterId, sessionId)
+                android.util.Log.d("TransferViewModel", "Auto accepted pair from ${event.requesterName}")
             }
         }
 
@@ -194,6 +203,14 @@ class TransferViewModel @Inject constructor(
         loadSessionFiles(sessionId)
         markSessionAsRead(sessionId)
     }
+    
+    fun deselectSession() {
+        messageCollectionJob?.cancel()
+        fileCollectionJob?.cancel()
+        messageCollectionJob = null
+        fileCollectionJob = null
+        _uiState.update { it.copy(selectedSessionId = null, messages = emptyList(), files = emptyList()) }
+    }
 
     /**
      * 创建新会话
@@ -271,7 +288,8 @@ class TransferViewModel @Inject constructor(
      * 加载会话消息
      */
     private fun loadSessionMessages(sessionId: String) {
-        viewModelScope.launch {
+        messageCollectionJob?.cancel()
+        messageCollectionJob = viewModelScope.launch {
             messageDao.observeMessagesBySession(sessionId).collect { messages ->
                 _uiState.update { it.copy(messages = messages) }
             }
@@ -357,16 +375,20 @@ class TransferViewModel @Inject constructor(
             }
             
             try {
+                val preFileId = UUID.randomUUID().toString()
+                
                 val sentFileInfo = transferClient.sendFileFromUri(
                     targetDeviceId = session!!.peerDeviceId,
                     sessionId = sessionId,
                     uri = uri,
+                    fileId = preFileId,
                     onProgress = { progress ->
-                        // 更新进度 - 使用局部变量
+                        viewModelScope.launch {
+                            fileDao.updateProgress(preFileId, progress * 100)
+                        }
                     }
                 )
                 
-                // 保存文件记录到本地
                 val fileEntity = TransferFileEntity(
                     id = sentFileInfo.id,
                     sessionId = sessionId,
@@ -487,7 +509,8 @@ class TransferViewModel @Inject constructor(
      * 加载会话文件
      */
     private fun loadSessionFiles(sessionId: String) {
-        viewModelScope.launch {
+        fileCollectionJob?.cancel()
+        fileCollectionJob = viewModelScope.launch {
             fileDao.getFilesBySession(sessionId).collect { files ->
                 _uiState.update { it.copy(files = files) }
             }
@@ -563,7 +586,7 @@ class TransferViewModel @Inject constructor(
                     }
                 }
                 
-                val progress = (event.chunkIndex.toFloat() / event.totalChunks) * 100
+                val progress = ((event.chunkIndex + 1).toFloat() / event.totalChunks) * 100
                 // 为减少数据库压力，可以节流更新，这里简化
                 fileDao.updateProgress(event.fileId, progress)
             } catch (e: Exception) {
@@ -579,29 +602,42 @@ class TransferViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 android.util.Log.d("TransferViewModel", "handleFileComplete: fileId=${event.fileId}, hash=${event.fileHash}")
-                
-                // 关闭流
+
                 val stream = fileStreams[event.fileId]
-                stream?.close()
-                fileStreams.remove(event.fileId)
-                
-                val path = filePaths[event.fileId] ?: ""
-                filePaths.remove(event.fileId)
-                
+                if (stream != null) {
+                    withContext(Dispatchers.IO) {
+                        stream.flush()
+                        stream.close()
+                    }
+                    fileStreams.remove(event.fileId)
+                }
+
+                val localPath = filePaths.remove(event.fileId)
                 fileDao.completeTransfer(
                     id = event.fileId,
-                    localPath = path,
+                    localPath = localPath ?: "",
                     fileHash = event.fileHash,
                     completedAt = System.currentTimeMillis()
                 )
-                
-                // 手动刷新文件列表（确保 UI 更新）
-                val sessionId = _uiState.value.selectedSessionId
-                if (sessionId != null) {
-                    loadSessionFiles(sessionId)
+
+                val fileEntity = fileDao.getById(event.fileId)
+                if (fileEntity != null) {
+                    val sessionId = findOrCreateSessionForDevice(event.senderId)
+                    val messageId = UUID.randomUUID().toString()
+                    messageDao.insert(TransferMessageEntity(
+                        id = messageId,
+                        sessionId = sessionId,
+                        direction = MessageDirection.RECEIVED.value,
+                        type = "file",
+                        content = fileEntity.filename,
+                        fileId = fileEntity.id,
+                        createdAt = System.currentTimeMillis(),
+                        readAt = null
+                    ))
+                    android.util.Log.d("TransferViewModel", "Created file message: ${fileEntity.filename}")
                 }
             } catch (e: Exception) {
-                 android.util.Log.e("TransferViewModel", "Failed to complete file", e)
+                android.util.Log.e("TransferViewModel", "Failed to complete file", e)
             }
         }
     }
@@ -609,7 +645,7 @@ class TransferViewModel @Inject constructor(
     /**
      * 查找或创建设备的会话
      */
-    private suspend fun findOrCreateSessionForDevice(deviceId: String): String {
+    private suspend fun findOrCreateSessionForDevice(deviceId: String): String = sessionMutex.withLock {
         // 先检查是否有活跃的会话
         val existingSession = _uiState.value.sessions.find { 
             it.peerDeviceId == deviceId && it.endedAt == null 
@@ -705,11 +741,15 @@ class TransferViewModel @Inject constructor(
             }
             
             // 创建会话
+            val connectionType = when (val state = _uiState.value.connectionState) {
+                is ConnectionState.Connected -> state.mode.value
+                else -> ConnectionMode.LAN.value
+            }
             val session = TransferSessionEntity(
                 id = event.sessionId,
                 peerDeviceId = event.peerId,
                 peerDeviceName = event.peerName,
-                connectionType = ConnectionMode.LAN.value,
+                connectionType = connectionType,
                 startedAt = System.currentTimeMillis(),
                 endedAt = null
             )
@@ -733,6 +773,91 @@ class TransferViewModel @Inject constructor(
 
     fun clearScanError() {
         _uiState.update { it.copy(scanError = null) }
+    }
+
+    fun openFile(fileId: String) {
+        viewModelScope.launch {
+            val file = fileDao.getById(fileId) ?: return@launch
+            val localPath = file.localPath ?: return@launch
+
+            try {
+                val context = getApplication<Application>()
+
+                if (localPath.startsWith("content://")) {
+                    val uri = android.net.Uri.parse(localPath)
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, file.mimeType ?: "application/octet-stream")
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
+                    return@launch
+                }
+
+                val javaFile = java.io.File(localPath)
+                if (!javaFile.exists()) {
+                    android.widget.Toast.makeText(context, "文件不存在", android.widget.Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    javaFile
+                )
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, file.mimeType ?: "application/octet-stream")
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
+            } catch (e: Exception) {
+                android.util.Log.e("TransferViewModel", "Failed to open file", e)
+            }
+        }
+    }
+
+    fun openFileFolder(fileId: String) {
+        viewModelScope.launch {
+            val file = fileDao.getById(fileId) ?: return@launch
+            val localPath = file.localPath ?: return@launch
+
+            try {
+                val context = getApplication<Application>()
+
+                if (localPath.startsWith("content://")) {
+                    val uri = android.net.Uri.parse(localPath)
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, file.mimeType ?: "application/octet-stream")
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
+                    return@launch
+                }
+
+                val javaFile = java.io.File(localPath)
+                val parent = javaFile.parentFile
+
+                if (parent != null && parent.exists()) {
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        parent
+                    )
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "*/*")
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(intent, "打开文件夹"))
+                } else {
+                    android.widget.Toast.makeText(context, "文件夹不存在", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("TransferViewModel", "Failed to open folder", e)
+            }
+        }
     }
 
     // ============================================

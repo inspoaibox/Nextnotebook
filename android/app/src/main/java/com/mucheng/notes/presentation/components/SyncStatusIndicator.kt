@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -196,14 +197,5 @@ fun SyncProgressBar(
  * 扩展函数：填充指定比例
  */
 private fun Modifier.fillMaxFraction(fraction: Float): Modifier {
-    return this.then(
-        Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f))
-    )
-}
-
-/**
- * 扩展函数：填充宽度
- */
-private fun Modifier.fillMaxWidth(fraction: Float): Modifier {
-    return this // 简化实现，实际应使用 fillMaxWidth(fraction)
+    return this.fillMaxWidth(fraction.coerceIn(0f, 1f))
 }

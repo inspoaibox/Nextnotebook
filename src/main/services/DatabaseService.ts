@@ -34,6 +34,8 @@ interface ExportData {
     filename: string;
     data: string; // base64
   }>;
+  syncConfig?: object | null;
+  aiSettings?: string | null; // localStorage JSON string
 }
 
 export function initializeDatabase(): void {
@@ -145,6 +147,20 @@ function registerIpcHandlers(): void {
       
       // 获取所有数据
       const items = dbManager!.query<any>('SELECT * FROM items');
+
+      // 读取同步配置
+      let syncConfig: object | null = null;
+      const syncConfigPath = path.join(userDataPath, 'sync-config.json');
+      if (fs.existsSync(syncConfigPath)) {
+        try { syncConfig = JSON.parse(fs.readFileSync(syncConfigPath, 'utf8')); } catch {}
+      }
+
+      // 读取 AI 设置（从数据库中的 ai-config-singleton 条目）
+      let aiSettings: string | null = null;
+      const aiConfigItem = dbManager!.get<{ payload: string }>('SELECT payload FROM items WHERE id = ?', ['ai-config-singleton']);
+      if (aiConfigItem) {
+        aiSettings = aiConfigItem.payload;
+      }
       
       // 准备导出数据
       const exportData: ExportData = {
@@ -153,7 +169,9 @@ function registerIpcHandlers(): void {
         appVersion: app.getVersion(),
         checksum: '',
         items: items,
-        resources: []
+        resources: [],
+        syncConfig,
+        aiSettings,
       };
 
       // 导出资源文件
@@ -295,13 +313,24 @@ function registerIpcHandlers(): void {
         }
       }
 
+      // 还原同步配置
+      if (importData.syncConfig) {
+        const syncConfigPath = path.join(userDataPath, 'sync-config.json');
+        // 合并模式下不覆盖已有同步配置
+        if (options.mode === 'replace' || !fs.existsSync(syncConfigPath)) {
+          fs.writeFileSync(syncConfigPath, JSON.stringify(importData.syncConfig, null, 2), 'utf8');
+        }
+      }
+
       return {
         success: true,
         itemsImported,
         itemsSkipped,
         resourcesImported,
         totalItems: importData.items.length,
-        totalResources: importData.resources?.length || 0
+        totalResources: importData.resources?.length || 0,
+        syncConfigImported: !!importData.syncConfig,
+        aiSettingsImported: !!importData.aiSettings,
       };
     } catch (error) {
       console.error('Import failed:', error);

@@ -76,18 +76,20 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   const [selectionStart, setSelectionStart] = useState<{ row: number; col: number } | null>(null);
   const [resizingCol, setResizingCol] = useState<number | null>(null);
   const [resizingRow, setResizingRow] = useState<number | null>(null);
-  // 用 ref 存储拖拽中间状态，避免 useEffect 依赖变化导致事件监听反复重建
+  // 用 ref 存储拖拽中间状态
   const resizingColRef = useRef<number | null>(null);
   const resizingRowRef = useRef<number | null>(null);
-  const resizeStartXRef = useRef(0);
-  const resizeStartYRef = useRef(0);
-  const resizeStartWidthRef = useRef(0);
-  const resizeStartHeightRef = useRef(0);
   // 本地临时宽度/高度，用于拖拽时的实时显示
   const [tempColWidths, setTempColWidths] = useState<Record<number, number>>({});
   const [tempRowHeights, setTempRowHeights] = useState<Record<number, number>>({});
   const tempColWidthsRef = useRef<Record<number, number>>({});
   const tempRowHeightsRef = useRef<Record<number, number>>({});
+
+  // 用 ref 包装回调，避免闭包捕获旧引用
+  const onColumnWidthChangeRef = useRef(onColumnWidthChange);
+  const onRowHeightChangeRef = useRef(onRowHeightChange);
+  useEffect(() => { onColumnWidthChangeRef.current = onColumnWidthChange; }, [onColumnWidthChange]);
+  useEffect(() => { onRowHeightChangeRef.current = onRowHeightChange; }, [onRowHeightChange]);
   
   // 行/列头拖拽选择状态
   const [isSelectingRows, setIsSelectingRows] = useState(false);
@@ -415,6 +417,9 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
 
   // 处理鼠标移动（选择范围或自动填充）
   const handleMouseMove = useCallback((row: number, col: number) => {
+    // 如果正在 resize，不处理单元格选择
+    if (resizingColRef.current !== null || resizingRowRef.current !== null) return;
+
     if (isAutoFilling) {
       // 自动填充拖拽时更新目标位置
       setAutoFillTarget({ row, col });
@@ -430,6 +435,9 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
 
   // 处理鼠标释放
   const handleMouseUp = useCallback(() => {
+    // 如果正在 resize，交给 document mouseup 处理，这里不干预
+    if (resizingColRef.current !== null || resizingRowRef.current !== null) return;
+
     // 处理自动填充完成
     if (isAutoFilling && autoFillTarget && onAutoFill) {
       const sourceRange = selectedRange || (selectedCell ? {
@@ -685,74 +693,67 @@ export const SpreadsheetGrid: React.FC<SpreadsheetGridProps> = ({
   const handleColResizeStart = useCallback((col: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    resizingColRef.current = col;
-    resizeStartXRef.current = e.clientX;
-    const currentWidth = sheet.column_widths[col] || DEFAULT_COL_WIDTH;
-    resizeStartWidthRef.current = currentWidth;
+    
+    const startX = e.clientX;
+    const startWidth = sheet.column_widths[col] || DEFAULT_COL_WIDTH;
+
+    const onMove = (ev: MouseEvent) => {
+      ev.preventDefault();
+      const delta = ev.clientX - startX;
+      const newWidth = Math.max(30, startWidth + delta);
+      tempColWidthsRef.current = { [col]: newWidth };
+      setTempColWidths({ [col]: newWidth });
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove, true);
+      window.removeEventListener('mouseup', onUp, true);
+      const w = tempColWidthsRef.current[col];
+      if (w !== undefined) {
+        onColumnWidthChangeRef.current(col, w);
+      }
+      tempColWidthsRef.current = {};
+      setTempColWidths({});
+      setResizingCol(null);
+    };
+
     setResizingCol(col);
+    window.addEventListener('mousemove', onMove, true);
+    window.addEventListener('mouseup', onUp, true);
   }, [sheet.column_widths]);
 
   // 开始调整行高
   const handleRowResizeStart = useCallback((row: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    resizingRowRef.current = row;
-    resizeStartYRef.current = e.clientY;
-    const currentHeight = sheet.row_heights[row] || DEFAULT_ROW_HEIGHT;
-    resizeStartHeightRef.current = currentHeight;
+
+    const startY = e.clientY;
+    const startHeight = sheet.row_heights[row] || DEFAULT_ROW_HEIGHT;
+
+    const onMove = (ev: MouseEvent) => {
+      ev.preventDefault();
+      const delta = ev.clientY - startY;
+      const newHeight = Math.max(20, startHeight + delta);
+      tempRowHeightsRef.current = { [row]: newHeight };
+      setTempRowHeights({ [row]: newHeight });
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove, true);
+      window.removeEventListener('mouseup', onUp, true);
+      const h = tempRowHeightsRef.current[row];
+      if (h !== undefined) {
+        onRowHeightChangeRef.current(row, h);
+      }
+      tempRowHeightsRef.current = {};
+      setTempRowHeights({});
+      setResizingRow(null);
+    };
+
     setResizingRow(row);
+    window.addEventListener('mousemove', onMove, true);
+    window.addEventListener('mouseup', onUp, true);
   }, [sheet.row_heights]);
-
-  // 处理调整大小的鼠标移动
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (resizingColRef.current !== null) {
-        const delta = e.clientX - resizeStartXRef.current;
-        const newWidth = Math.max(30, resizeStartWidthRef.current + delta);
-        tempColWidthsRef.current = { ...tempColWidthsRef.current, [resizingColRef.current]: newWidth };
-        setTempColWidths({ ...tempColWidthsRef.current });
-      }
-      if (resizingRowRef.current !== null) {
-        const delta = e.clientY - resizeStartYRef.current;
-        const newHeight = Math.max(20, resizeStartHeightRef.current + delta);
-        tempRowHeightsRef.current = { ...tempRowHeightsRef.current, [resizingRowRef.current]: newHeight };
-        setTempRowHeights({ ...tempRowHeightsRef.current });
-      }
-    };
-
-    const handleMouseUp = () => {
-      if (resizingColRef.current !== null) {
-        const col = resizingColRef.current;
-        const w = tempColWidthsRef.current[col];
-        if (w !== undefined) {
-          onColumnWidthChange(col, w);
-          delete tempColWidthsRef.current[col];
-          setTempColWidths({ ...tempColWidthsRef.current });
-        }
-        resizingColRef.current = null;
-        setResizingCol(null);
-      }
-      if (resizingRowRef.current !== null) {
-        const row = resizingRowRef.current;
-        const h = tempRowHeightsRef.current[row];
-        if (h !== undefined) {
-          onRowHeightChange(row, h);
-          delete tempRowHeightsRef.current[row];
-          setTempRowHeights({ ...tempRowHeightsRef.current });
-        }
-        resizingRowRef.current = null;
-        setResizingRow(null);
-      }
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [onColumnWidthChange, onRowHeightChange]);
 
   return (
     <div

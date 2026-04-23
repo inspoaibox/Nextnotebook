@@ -18,8 +18,6 @@ import {
   VerticalAlignBottomOutlined,
   BgColorsOutlined,
   FontColorsOutlined,
-  PlusOutlined,
-  MinusOutlined,
   ImportOutlined,
   ExportOutlined,
   MergeCellsOutlined,
@@ -39,13 +37,12 @@ interface ExcelToolbarProps {
   isMerged: boolean;
   hasActiveFilters: boolean;
   showFilterButtons: boolean;
+  isSaving?: boolean;
+  lastSaved?: Date | null;
+  onSave?: () => void;
   onStyleChange: (style: Partial<CellStyle>) => void;
   onUndo: () => void;
   onRedo: () => void;
-  onInsertRow: () => void;
-  onDeleteRow: () => void;
-  onInsertColumn: () => void;
-  onDeleteColumn: () => void;
   onImport: () => void;
   onExportXlsx: () => void;
   onExportCsv: () => void;
@@ -99,13 +96,12 @@ export const ExcelToolbar: React.FC<ExcelToolbarProps> = ({
   isMerged,
   hasActiveFilters,
   showFilterButtons,
+  isSaving = false,
+  lastSaved = null,
+  onSave,
   onStyleChange,
   onUndo,
   onRedo,
-  onInsertRow,
-  onDeleteRow,
-  onInsertColumn,
-  onDeleteColumn,
   onImport,
   onExportXlsx,
   onExportCsv,
@@ -128,6 +124,34 @@ export const ExcelToolbar: React.FC<ExcelToolbarProps> = ({
       background: '#fafafa',
       flexWrap: 'wrap',
     }}>
+      {/* 保存按钮和状态 */}
+      {onSave && (
+        <>
+          <Tooltip title={isSaving ? '保存中...' : '保存 (Ctrl+S)'}>
+            <Button 
+              type="primary"
+              loading={isSaving}
+              onClick={onSave}
+              size="small"
+            >
+              {isSaving ? '保存中' : '保存'}
+            </Button>
+          </Tooltip>
+          {lastSaved && !isSaving && (
+            <span style={{ fontSize: 12, color: '#999', marginLeft: 4 }}>
+              {(() => {
+                const now = new Date();
+                const diff = Math.floor((now.getTime() - lastSaved.getTime()) / 1000);
+                if (diff < 60) return '刚刚保存';
+                if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前保存`;
+                return lastSaved.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+              })()}
+            </span>
+          )}
+          <Divider type="vertical" />
+        </>
+      )}
+
       {/* 撤销重做 */}
       <Tooltip title="撤销 (Ctrl+Z)">
         <Button 
@@ -254,46 +278,6 @@ export const ExcelToolbar: React.FC<ExcelToolbarProps> = ({
         size="small"
         style={{ width: 100 }}
       />
-
-      <Divider type="vertical" />
-
-      {/* 行列操作 */}
-      <Tooltip title="插入行">
-        <Button 
-          icon={<PlusOutlined />}
-          onClick={onInsertRow}
-          size="small"
-        >
-          行
-        </Button>
-      </Tooltip>
-      <Tooltip title="删除行">
-        <Button 
-          icon={<MinusOutlined />}
-          onClick={onDeleteRow}
-          size="small"
-        >
-          行
-        </Button>
-      </Tooltip>
-      <Tooltip title="插入列">
-        <Button 
-          icon={<PlusOutlined />}
-          onClick={onInsertColumn}
-          size="small"
-        >
-          列
-        </Button>
-      </Tooltip>
-      <Tooltip title="删除列">
-        <Button 
-          icon={<MinusOutlined />}
-          onClick={onDeleteColumn}
-          size="small"
-        >
-          列
-        </Button>
-      </Tooltip>
 
       <Divider type="vertical" />
 

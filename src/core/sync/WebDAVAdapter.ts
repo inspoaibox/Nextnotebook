@@ -336,7 +336,14 @@ export class WebDAVAdapter implements StorageAdapter {
       if (cursor) {
         const cursorIndex = sortedFiles.findIndex(f => f.basename === cursor);
         if (cursorIndex >= 0) {
+          // 游标文件存在，从它的下一个开始
           startIndex = cursorIndex + 1;
+        } else {
+          // 游标文件不存在（例如全量拉取后设置的时间点游标），
+          // 按文件名字符串比较找到第一个比游标新的文件
+          // 文件名格式为 "{timestamp}.json"，字符串排序等价于时间戳排序
+          const firstNewerIndex = sortedFiles.findIndex(f => f.basename > cursor);
+          startIndex = firstNewerIndex >= 0 ? firstNewerIndex : sortedFiles.length;
         }
       }
 

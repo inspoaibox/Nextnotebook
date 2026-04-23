@@ -18,17 +18,19 @@ export interface SyncServiceConfig {
   enabled: boolean;
   type: 'webdav' | 'server';
   url: string;
-  syncPath?: string;  // 同步目录路径
+  syncPath?: string;
   username?: string;
   password?: string;
   apiKey?: string;
-  // 服务器认证字段
   serverToken?: string;
   serverRefreshToken?: string;
   serverTokenExpires?: number;
+  serverSyncKey?: string;
+  serverUsername?: string;   // 自建服务器用户名
+  serverPassword?: string;   // 自建服务器密码
   syncInterval: number;
-  syncModules?: SyncModules;  // 同步模块配置
-  lastSyncTime?: number | null;  // 上次同步时间（从持久化存储加载）
+  syncModules?: SyncModules;
+  lastSyncTime?: number | null;
 }
 
 // 首次同步检测结果
@@ -65,15 +67,17 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       // 移除 URL 末尾斜杠
       const baseUrl = config.url.replace(/\/+$/, '');
       // 确保 syncPath 以 / 开头
-      const syncPath = config.syncPath 
-        ? (config.syncPath.startsWith('/') ? config.syncPath : '/' + config.syncPath)
+      const syncPath = config.syncPath
+        ? config.syncPath.startsWith('/')
+          ? config.syncPath
+          : '/' + config.syncPath
         : '/mucheng-notes';
-      
+
       const webdavConfig: WebDAVConfig = {
         url: baseUrl,
         username: config.username || '',
         password: config.password || '',
-        basePath: syncPath,  // 将 syncPath 作为 basePath 传递
+        basePath: syncPath, // 将 syncPath 作为 basePath 传递
       };
       currentAdapter = new WebDAVAdapter(webdavConfig);
     } else {
@@ -83,7 +87,7 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
         token: config.serverToken,
       };
       const serverAdapter = new ServerAdapter(serverConfig);
-      
+
       // 设置认证信息
       if (config.serverToken) {
         serverAdapter.setAuth(
@@ -92,7 +96,23 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
           config.serverTokenExpires
         );
       }
-      
+
+      // 保存凭据用于自动重新登录（refresh token 过期时）
+      // 自建服务器用 serverUsername/serverPassword，WebDAV 用 username/password
+      const credUsername = config.serverUsername || config.username;
+      const credPassword = config.serverPassword || config.password;
+      if (credUsername && credPassword && config.serverSyncKey) {
+        serverAdapter.saveCredentials(credUsername, credPassword, config.serverSyncKey);
+      }
+
+      // 设置重新登录回调（通知渲染进程）
+      serverAdapter.setReloginRequiredCallback(() => {
+        console.warn('[SyncService] Session expired, user needs to re-login');
+        BrowserWindow.getAllWindows().forEach(win => {
+          win.webContents.send('sync:reloginRequired');
+        });
+      });
+
       // 设置 token 刷新回调
       serverAdapter.setTokenRefreshCallback((token, refreshToken, expiresIn) => {
         // 保存新 token 到配置文件（确保持久化）
@@ -113,30 +133,32 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
         } catch (e) {
           console.error('[SyncService] Failed to save refreshed token to config:', e);
         }
-        
+
         // 通知渲染进程更新 token
         const windows = BrowserWindow.getAllWindows();
         windows.forEach(win => {
           win.webContents.send('sync:tokenRefreshed', { token, refreshToken, expiresIn });
         });
       });
-      
+
       // 检查 token 是否已过期或即将过期，主动刷新
       if (config.serverRefreshToken) {
         const tokenExpired = config.serverTokenExpires && config.serverTokenExpires < Date.now();
-        const tokenExpiringSoon = config.serverTokenExpires && (config.serverTokenExpires - Date.now() < 5 * 60 * 1000);
-        
+        const tokenExpiringSoon =
+          config.serverTokenExpires && config.serverTokenExpires - Date.now() < 5 * 60 * 1000;
+
         if (tokenExpired || tokenExpiringSoon) {
           console.log('[SyncService] Token expired or expiring soon, refreshing...');
           const refreshed = await serverAdapter.refreshAccessToken();
           if (!refreshed) {
-            console.warn('[SyncService] Failed to refresh token, sync may fail');
+            console.warn('[SyncService] Failed to refresh token, sync will not start');
+            return false;
           } else {
             console.log('[SyncService] Token refreshed successfully');
           }
         }
       }
-      
+
       currentAdapter = serverAdapter;
     }
 
@@ -159,8 +181,8 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
     const syncOptions: Partial<SyncOptions> = {
       conflictStrategy: 'create-copy',
       syncModules: config.syncModules || DEFAULT_SYNC_MODULES,
-      serverIdentifier: currentServerIdentifier,  // 传递服务器标识
-      resourcesDir,  // 传递资源目录路径
+      serverIdentifier: currentServerIdentifier, // 传递服务器标识
+      resourcesDir, // 传递资源目录路径
     };
     syncEngine = new SyncEngine(currentAdapter, itemsManager, syncOptions);
 
@@ -170,13 +192,13 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       const remoteMeta = await currentAdapter.getRemoteMeta();
       const syncCursor = await currentAdapter.getSyncCursor();
       const remoteHasData = await syncEngine.checkRemoteHasData();
-      
+
       // 如果远端没有上次同步时间，说明是首次同步到这个服务器
       if (!remoteMeta.last_sync_time && !syncCursor) {
         console.log('First sync detected, marking all local data for sync...');
         const count = syncEngine.resetSyncStatus();
         console.log(`Marked ${count} items for sync`);
-        
+
         // 如果远端已有数据，记录警告（可能会产生冲突）
         if (remoteHasData) {
           console.warn('Remote server already has data. Conflicts may occur during first sync.');
@@ -190,11 +212,11 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
     // 启动时不自动同步，只按时间间隔定时同步，用户可手动触发同步
     // syncOnChange 设为 false，不在内容变更时触发同步，只按时间间隔同步
     syncScheduler = new SyncScheduler(syncEngine, {
-      autoSyncOnStart: false,  // 启动时不自动同步，避免网络问题导致卡顿
+      autoSyncOnStart: false, // 启动时不自动同步，避免网络问题导致卡顿
       syncInterval: config.syncInterval,
-      syncOnChange: false,  // 不在内容变更时触发同步
+      syncOnChange: false, // 不在内容变更时触发同步
       changeDebounce: 30,
-      initialLastSyncTime: config.lastSyncTime,  // 从配置加载上次同步时间
+      initialLastSyncTime: config.lastSyncTime, // 从配置加载上次同步时间
       onSyncComplete: (lastSyncTime: number) => {
         // 同步完成后通知渲染进程更新持久化存储
         const windows = BrowserWindow.getAllWindows();
@@ -230,7 +252,7 @@ export async function triggerSync(): Promise<SyncResult | null> {
   if (!syncScheduler) {
     return null;
   }
-  return syncScheduler.triggerSync();
+  return syncScheduler.triggerSync(true);
 }
 
 // 获取同步状态
@@ -271,7 +293,9 @@ export async function testSyncConnection(config: SyncServiceConfig): Promise<boo
       const baseUrl = config.url.replace(/\/+$/, '');
       // 确保 syncPath 以 / 开头
       const syncPath = config.syncPath
-        ? (config.syncPath.startsWith('/') ? config.syncPath : '/' + config.syncPath)
+        ? config.syncPath.startsWith('/')
+          ? config.syncPath
+          : '/' + config.syncPath
         : '/mucheng-notes';
 
       console.log('[SyncService] Creating WebDAV adapter with:', {
@@ -287,7 +311,7 @@ export async function testSyncConnection(config: SyncServiceConfig): Promise<boo
         password: config.password || '',
         basePath: syncPath,
       };
-      
+
       console.log('[SyncService] WebDAV config created, creating adapter...');
       adapter = new WebDAVAdapter(webdavConfig);
       console.log('[SyncService] WebDAV adapter created successfully');
@@ -298,7 +322,7 @@ export async function testSyncConnection(config: SyncServiceConfig): Promise<boo
         token: config.serverToken,
       };
       const serverAdapter = new ServerAdapter(serverConfig);
-      
+
       // 设置认证信息
       if (config.serverToken) {
         serverAdapter.setAuth(
@@ -307,7 +331,7 @@ export async function testSyncConnection(config: SyncServiceConfig): Promise<boo
           config.serverTokenExpires
         );
       }
-      
+
       adapter = serverAdapter;
     }
 
@@ -335,9 +359,12 @@ export async function testSyncConnection(config: SyncServiceConfig): Promise<boo
 // 注册 IPC handlers
 export function registerSyncIpcHandlers(): void {
   // 初始化同步
-  ipcMain.handle('sync:initialize', async (_event: IpcMainInvokeEvent, config: SyncServiceConfig) => {
-    return initializeSyncService(config);
-  });
+  ipcMain.handle(
+    'sync:initialize',
+    async (_event: IpcMainInvokeEvent, config: SyncServiceConfig) => {
+      return initializeSyncService(config);
+    }
+  );
 
   // 启动同步调度
   ipcMain.handle('sync:start', () => {
@@ -368,23 +395,26 @@ export function registerSyncIpcHandlers(): void {
   });
 
   // 测试连接
-  ipcMain.handle('sync:testConnection', async (_event: IpcMainInvokeEvent, config: SyncServiceConfig) => {
-    try {
-      console.log('[SyncService IPC] Received testConnection request:', {
-        type: config.type,
-        url: config.url,
-        syncPath: config.syncPath,
-        username: config.username,
-        passwordLength: config.password?.length || 0,
-      });
-      const result = await testSyncConnection(config);
-      console.log('[SyncService IPC] testConnection result:', result);
-      return result;
-    } catch (error) {
-      console.error('[SyncService IPC] testConnection error:', error);
-      return false;
+  ipcMain.handle(
+    'sync:testConnection',
+    async (_event: IpcMainInvokeEvent, config: SyncServiceConfig) => {
+      try {
+        console.log('[SyncService IPC] Received testConnection request:', {
+          type: config.type,
+          url: config.url,
+          syncPath: config.syncPath,
+          username: config.username,
+          passwordLength: config.password?.length || 0,
+        });
+        const result = await testSyncConnection(config);
+        console.log('[SyncService IPC] testConnection result:', result);
+        return result;
+      } catch (error) {
+        console.error('[SyncService IPC] testConnection error:', error);
+        return false;
+      }
     }
-  });
+  );
 
   // 强制重新同步（标记所有数据为待同步）
   ipcMain.handle('sync:forceResync', async () => {
@@ -413,26 +443,32 @@ export function registerSyncIpcHandlers(): void {
   });
 
   // 获取本地同步游标（调试用）
-  ipcMain.handle('sync:getLocalCursor', async (_event: IpcMainInvokeEvent, serverType?: string, serverUrl?: string) => {
-    const itemsManager = getItemsManager();
-    // 如果没有提供服务器信息，使用当前配置的服务器
-    const type = serverType || currentServerIdentifier?.type;
-    const url = serverUrl || currentServerIdentifier?.url;
-    const cursor = itemsManager.getLocalSyncCursor(type, url);
-    console.log('[SyncService] Local sync cursor for', type, url, ':', cursor);
-    return cursor;
-  });
+  ipcMain.handle(
+    'sync:getLocalCursor',
+    async (_event: IpcMainInvokeEvent, serverType?: string, serverUrl?: string) => {
+      const itemsManager = getItemsManager();
+      // 如果没有提供服务器信息，使用当前配置的服务器
+      const type = serverType || currentServerIdentifier?.type;
+      const url = serverUrl || currentServerIdentifier?.url;
+      const cursor = itemsManager.getLocalSyncCursor(type, url);
+      console.log('[SyncService] Local sync cursor for', type, url, ':', cursor);
+      return cursor;
+    }
+  );
 
   // 清除本地同步游标（强制重新拉取所有变更）
-  ipcMain.handle('sync:clearLocalCursor', async (_event: IpcMainInvokeEvent, serverType?: string, serverUrl?: string) => {
-    const itemsManager = getItemsManager();
-    // 如果没有提供服务器信息，使用当前配置的服务器
-    const type = serverType || currentServerIdentifier?.type;
-    const url = serverUrl || currentServerIdentifier?.url;
-    const success = itemsManager.clearLocalSyncCursor(type, url);
-    console.log('[SyncService] Cleared local sync cursor for', type, url, ', success:', success);
-    return { success };
-  });
+  ipcMain.handle(
+    'sync:clearLocalCursor',
+    async (_event: IpcMainInvokeEvent, serverType?: string, serverUrl?: string) => {
+      const itemsManager = getItemsManager();
+      // 如果没有提供服务器信息，使用当前配置的服务器
+      const type = serverType || currentServerIdentifier?.type;
+      const url = serverUrl || currentServerIdentifier?.url;
+      const success = itemsManager.clearLocalSyncCursor(type, url);
+      console.log('[SyncService] Cleared local sync cursor for', type, url, ', success:', success);
+      return { success };
+    }
+  );
 
   // 检查首次同步状态
   ipcMain.handle('sync:checkFirstSync', async () => {

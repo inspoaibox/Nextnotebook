@@ -79,8 +79,20 @@ export class SyncScheduler {
   }
 
   // 手动触发同步
-  async triggerSync(): Promise<SyncResult | null> {
+  async triggerSync(force = false): Promise<SyncResult | null> {
     if (this.state.status === 'syncing') {
+      if (force) {
+        // 手动触发时等待当前同步完成后再执行
+        console.log('Sync in progress, waiting to re-trigger after completion');
+        return new Promise((resolve) => {
+          const unsub = this.subscribe((state) => {
+            if (state.status !== 'syncing') {
+              unsub();
+              resolve(this.triggerSync(false));
+            }
+          });
+        });
+      }
       console.log('Sync already in progress');
       return null;
     }
@@ -89,6 +101,9 @@ export class SyncScheduler {
       console.log('Offline, skipping sync');
       return null;
     }
+
+    // 取消任何待执行的防抖自动同步，避免重复触发
+    this.cancelDebounce();
 
     this.updateState({ status: 'syncing', progress: { phase: 'connecting', message: '正在连接服务器...' } });
 
@@ -135,7 +150,7 @@ export class SyncScheduler {
 
     this.cancelDebounce();
     this.debounceId = setTimeout(() => {
-      this.triggerSync();
+      this.triggerSync(false);
     }, this.options.changeDebounce * 1000);
   }
 
@@ -193,7 +208,7 @@ export class SyncScheduler {
   private handleOnline(): void {
     this.updateState({ isOnline: true, status: 'idle' });
     // 上线后立即同步
-    this.triggerSync();
+    this.triggerSync(false);
   }
 
   // 处理离线

@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 data class AIConversationPayload(
     val title: String,
     val model: String,
+    @SerialName("channel_id") val channelId: String? = null,  // 渠道 ID，用于精确匹配
     @SerialName("system_prompt") val systemPrompt: String = "",
     val temperature: Float = 0.7f,
     @SerialName("max_tokens") val maxTokens: Int = 4096,
