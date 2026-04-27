@@ -178,7 +178,7 @@ const openInBrowser = async (url: string) => {
 // 注入样式
 const styles = `
   .nav-site-container {
-    background: #f5f6fa !important;
+    background: #f7f8fa !important;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   }
   
@@ -191,24 +191,33 @@ const styles = `
 
   /* 顶部固定项（全部/未分类） */
   .nav-folder-item {
-    transition: background 0.15s ease, color 0.15s ease;
-    border-radius: 6px;
-    margin: 1px 8px;
-    color: #595959;
+    transition: background 0.12s ease, color 0.12s ease;
+    border-radius: 5px;
+    margin: 0 6px;
+    color: #6b7280;
     white-space: nowrap;
     overflow: hidden;
     font-size: 13px;
   }
   
   .nav-folder-item:hover {
-    background: #f5f5f5;
-    color: #1a1a2e;
+    background: #f3f4f6;
+    color: #111827;
   }
   
   .nav-folder-item.selected {
-    background: transparent;
-    color: #1677ff;
-    font-weight: 500;
+    background: #eff6ff;
+    color: #2563eb;
+  }
+
+  /* 主菜单节点 hover */
+  .nav-tree-root:hover {
+    background: #eef2ff;
+  }
+
+  /* 子菜单节点 hover */
+  .nav-tree-child:hover {
+    background: #f3f4f6;
   }
 
   /* 垂直卡片 */
@@ -670,68 +679,93 @@ const BookmarkPanel: React.FC = () => {
           key={folder.id}
           onClick={() => !isRenaming && handleFolderClick(folder)}
           onContextMenu={(e) => handleFolderContextMenu(e, folder.id)}
-          className={`nav-folder-item ${selectedFolderId === folder.id || scrollTarget === folder.id ? 'selected' : ''}`}
           style={{
-            padding: '5px 10px 5px 0',
-            paddingLeft: collapsed ? 10 : (12 + level * 14),
-            fontSize: 13,
             cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
+            userSelect: 'none' as const,
             position: 'relative',
-            borderLeft: !collapsed && (selectedFolderId === folder.id || scrollTarget === folder.id)
-              ? '2px solid #1677ff'
-              : '2px solid transparent',
-            borderRadius: 0,
-            margin: '1px 0',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-            {!collapsed && (
+          {level === 0 ? (
+            // 主菜单：圆角背景块，选中时蓝色背景
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 10px',
+              margin: '2px 6px',
+              borderRadius: 8,
+              background: selectedFolderId === folder.id || scrollTarget === folder.id
+                ? '#eff6ff' : 'transparent',
+              transition: 'background 0.12s',
+            }}
+              className={selectedFolderId === folder.id || scrollTarget === folder.id ? '' : 'nav-tree-root'}
+            >
+              {/* 展开箭头 */}
               <span
                 onClick={hasChildFolders ? (e) => toggleFolderExpand(folder.id, e) : undefined}
                 style={{
-                  cursor: hasChildFolders ? 'pointer' : 'default',
-                  display: 'flex',
-                  alignItems: 'center',
-                  width: 12,
-                  justifyContent: 'center',
-                  color: hasChildFolders ? '#bbb' : 'transparent',
+                  width: 14, height: 14,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: hasChildFolders
+                    ? (selectedFolderId === folder.id ? '#2563eb' : '#9ca3af')
+                    : 'transparent',
                   fontSize: 9,
                   flexShrink: 0,
+                  transition: 'color 0.12s',
                 }}
               >
                 {isExpanded ? <DownOutlined /> : <RightOutlined />}
               </span>
-            )}
-            {isRenaming && !collapsed ? (
-              <Input
-                value={renamingName}
-                onChange={e => setRenamingName(e.target.value)}
-                onBlur={submitRename}
-                onPressEnter={submitRename}
-                autoFocus
-                size="small"
-                onClick={e => e.stopPropagation()}
-                style={{ flex: 1, height: 24, fontSize: 13 }}
-              />
-            ) : (
-              !collapsed && (
+              {isRenaming && !collapsed ? (
+                <Input value={renamingName} onChange={e => setRenamingName(e.target.value)}
+                  onBlur={submitRename} onPressEnter={submitRename} autoFocus size="small"
+                  onClick={e => e.stopPropagation()} style={{ flex: 1, height: 22, fontSize: 13 }} />
+              ) : !collapsed && (
                 <span style={{
-                  fontWeight: selectedFolderId === folder.id || scrollTarget === folder.id ? 500 : 400,
                   fontSize: 13,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  flex: 1,
-                  userSelect: 'none',
-                  color: selectedFolderId === folder.id || scrollTarget === folder.id ? '#1677ff' : '#444',
+                  fontWeight: selectedFolderId === folder.id || scrollTarget === folder.id ? 600 : 500,
+                  color: selectedFolderId === folder.id || scrollTarget === folder.id ? '#2563eb' : '#374151',
+                  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  letterSpacing: '-0.1px',
                 }}>
                   {folder.name}
                 </span>
-              )
-            )}
-          </div>
+              )}
+            </div>
+          ) : (
+            // 子菜单：左侧竖线 + 缩进，更轻量
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0,
+              padding: '7px 10px 7px 0',
+              paddingLeft: 30,
+              margin: '1px 6px',
+              borderRadius: 7,
+              background: selectedFolderId === folder.id || scrollTarget === folder.id
+                ? '#eff6ff' : 'transparent',
+              transition: 'background 0.12s',
+              borderLeft: selectedFolderId === folder.id || scrollTarget === folder.id
+                ? '2px solid #2563eb' : '2px solid transparent',
+            }}
+              className={selectedFolderId === folder.id || scrollTarget === folder.id ? '' : 'nav-tree-child'}
+            >
+              {isRenaming && !collapsed ? (
+                <Input value={renamingName} onChange={e => setRenamingName(e.target.value)}
+                  onBlur={submitRename} onPressEnter={submitRename} autoFocus size="small"
+                  onClick={e => e.stopPropagation()} style={{ flex: 1, height: 20, fontSize: 12 }} />
+              ) : !collapsed && (
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: selectedFolderId === folder.id || scrollTarget === folder.id ? 500 : 400,
+                  color: selectedFolderId === folder.id || scrollTarget === folder.id ? '#2563eb' : '#6b7280',
+                  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {folder.name}
+                </span>
+              )}
+            </div>
+          )}
         </div>,
         ...(isExpanded ? buildFolderTree(folder.id, level + 1) : []),
       ];
@@ -1101,40 +1135,56 @@ const BookmarkPanel: React.FC = () => {
             {/* 全部书签 */}
             <div
               onClick={() => setSelectedFolderId('all')}
-              className={`nav-folder-item ${selectedFolderId === 'all' ? 'selected' : ''}`}
               style={{
-                padding: '6px 10px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
+                display: 'flex', alignItems: 'center',
+                gap: 8, padding: '8px 10px', margin: '2px 6px', borderRadius: 8,
+                cursor: 'pointer', userSelect: 'none' as const,
+                background: selectedFolderId === 'all' ? '#eff6ff' : 'transparent',
+                transition: 'background 0.12s',
                 justifyContent: collapsed ? 'center' : 'flex-start',
-                gap: 8,
               }}
+              className={selectedFolderId === 'all' ? '' : 'nav-tree-root'}
             >
-              <AppstoreOutlined style={{ color: selectedFolderId === 'all' ? '#1677ff' : '#c0c0c0', fontSize: 14, flexShrink: 0 }} />
-              {!collapsed && <span>全部书签</span>}
+              <AppstoreOutlined style={{
+                color: selectedFolderId === 'all' ? '#2563eb' : '#9ca3af',
+                fontSize: 13, flexShrink: 0,
+              }} />
+              {!collapsed && (
+                <span style={{
+                  fontSize: 13, fontWeight: selectedFolderId === 'all' ? 600 : 500,
+                  color: selectedFolderId === 'all' ? '#2563eb' : '#374151',
+                }}>全部书签</span>
+              )}
             </div>
             {/* 未分类 */}
             <div
               onClick={() => setSelectedFolderId(null)}
-              className={`nav-folder-item ${selectedFolderId === null ? 'selected' : ''}`}
               style={{
-                padding: '6px 10px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
+                display: 'flex', alignItems: 'center',
+                gap: 8, padding: '8px 10px', margin: '2px 6px', borderRadius: 8,
+                cursor: 'pointer', userSelect: 'none' as const,
+                background: selectedFolderId === null ? '#eff6ff' : 'transparent',
+                transition: 'background 0.12s',
                 justifyContent: collapsed ? 'center' : 'flex-start',
-                gap: 8,
               }}
+              className={selectedFolderId === null ? '' : 'nav-tree-root'}
             >
-              <FolderOutlined style={{ color: selectedFolderId === null ? '#1677ff' : '#c0c0c0', fontSize: 14, flexShrink: 0 }} />
-              {!collapsed && <span>未分类</span>}
+              <FolderOutlined style={{
+                color: selectedFolderId === null ? '#2563eb' : '#9ca3af',
+                fontSize: 13, flexShrink: 0,
+              }} />
+              {!collapsed && (
+                <span style={{
+                  fontSize: 13, fontWeight: selectedFolderId === null ? 600 : 500,
+                  color: selectedFolderId === null ? '#2563eb' : '#374151',
+                }}>未分类</span>
+              )}
             </div>
 
             {/* FOLDERS 标签 */}
             {!collapsed && (
               <div style={{
-                padding: '12px 16px 4px',
+                padding: '14px 16px 4px',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
