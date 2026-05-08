@@ -13,6 +13,7 @@ import com.mucheng.notes.domain.model.payload.NotePayload
 import com.mucheng.notes.domain.repository.ItemRepository
 import com.mucheng.notes.domain.repository.SyncRepository
 import com.mucheng.notes.security.CryptoEngine
+import com.mucheng.notes.security.SecureSyncStorage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,6 +69,10 @@ class NotesViewModel @Inject constructor(
     
     private val _selectedFolderId = MutableStateFlow<String?>(null)
     val selectedFolderId: StateFlow<String?> = _selectedFolderId.asStateFlow()
+
+    private fun isServerLoggedIn(): Boolean {
+        return SecureSyncStorage.getString(context, "server_token") != null
+    }
     
     init {
         // 加载上次同步时间
@@ -81,7 +86,7 @@ class NotesViewModel @Inject constructor(
         
         // 自建服务器还需要检查是否已登录
         val serverLoggedIn = if (syncType == "server") {
-            prefs.getString("server_token", null) != null
+            isServerLoggedIn()
         } else true
         
         val syncConfigured = syncEnabled && syncUrl.isNotBlank() && 
@@ -214,7 +219,7 @@ class NotesViewModel @Inject constructor(
             }
             
             // 自建服务器需要先登录
-            if (syncType == "server" && prefs.getString("server_token", null) == null) {
+            if (syncType == "server" && !isServerLoggedIn()) {
                 _uiState.value = _uiState.value.copy(
                     error = "请先在设置中登录服务器",
                     syncStatus = SyncStatus.OFFLINE
@@ -406,7 +411,7 @@ class NotesViewModel @Inject constructor(
         
         // 自建服务器还需要检查是否已登录
         val serverLoggedIn = if (syncType == "server") {
-            prefs.getString("server_token", null) != null
+            isServerLoggedIn()
         } else true
         
         val syncConfigured = syncEnabled && syncUrl.isNotBlank() && 

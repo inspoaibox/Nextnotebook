@@ -29,6 +29,8 @@ object TransferConstants {
     const val PORT_RETRY_ATTEMPTS = 3             // 端口冲突重试次数
     const val PORT_RANGE_START = 45000            // 随机端口范围起始
     const val PORT_RANGE_END = 50000              // 随机端口范围结束
+    const val QR_PROTOCOL_SOCKET_IO = "socketio"  // 桌面端 Socket.IO 局域网协议
+    const val QR_PROTOCOL_ANDROID_TCP = "android-tcp" // Android 直连 TCP 协议
     
     // 临时文件
     const val TEMP_FILE_CLEANUP_DELAY = 5000L     // 5 秒后清理临时文件
@@ -187,7 +189,9 @@ data class PairingQRData(
     val serverPort: Int,
     val timestamp: Long,
     val expiresAt: Long,
-    val version: String = "1.0"
+    val version: String = "1.0",
+    val platform: String = DeviceType.DESKTOP.value,
+    val protocol: String = TransferConstants.QR_PROTOCOL_SOCKET_IO
 ) {
     /**
      * 检查二维码是否过期
@@ -202,7 +206,9 @@ data class PairingQRData(
             deviceId: String,
             deviceName: String,
             serverIp: String,
-            serverPort: Int
+            serverPort: Int,
+            platform: String = DeviceType.DESKTOP.value,
+            protocol: String = TransferConstants.QR_PROTOCOL_SOCKET_IO
         ): PairingQRData {
             val now = System.currentTimeMillis()
             return PairingQRData(
@@ -211,7 +217,9 @@ data class PairingQRData(
                 serverIp = serverIp,
                 serverPort = serverPort,
                 timestamp = now,
-                expiresAt = now + TransferConstants.QR_CODE_EXPIRY
+                expiresAt = now + TransferConstants.QR_CODE_EXPIRY,
+                platform = platform,
+                protocol = protocol
             )
         }
     }

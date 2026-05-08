@@ -7,6 +7,7 @@ import com.mucheng.notes.domain.model.SyncModules
 import com.mucheng.notes.domain.model.SyncResult
 import com.mucheng.notes.domain.model.SyncStatus
 import com.mucheng.notes.domain.repository.SyncRepository
+import com.mucheng.notes.security.SecureSyncStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,16 +86,16 @@ class SyncRepositoryImpl @Inject constructor(
             url = webdavUrl,
             syncPath = prefs.getString("sync_path", "/mucheng-notes") ?: "/mucheng-notes",
             username = prefs.getString("username", null),
-            password = prefs.getString("password", null),
+            password = SecureSyncStorage.getString(context, "password"),
             apiKey = prefs.getString("api_key", null),
             syncModules = syncModules,
             // 自建服务器认证信息
             serverUsername = prefs.getString("server_username", null),
-            serverPassword = prefs.getString("server_password", null),
-            serverSyncKey = prefs.getString("server_sync_key", null),
-            serverToken = prefs.getString("server_token", null),
-            serverRefreshToken = prefs.getString("server_refresh_token", null),
-            serverTokenExpires = prefs.getLong("server_token_expires", 0).takeIf { it > 0 }
+            serverPassword = SecureSyncStorage.getString(context, "server_password"),
+            serverSyncKey = SecureSyncStorage.getString(context, "server_sync_key"),
+            serverToken = SecureSyncStorage.getString(context, "server_token"),
+            serverRefreshToken = SecureSyncStorage.getString(context, "server_refresh_token"),
+            serverTokenExpires = SecureSyncStorage.getLong(context, "server_token_expires")?.takeIf { it > 0 }
         )
     }
     

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authService, AuthErrorCodes } from '../services/AuthService';
 import { auditService } from '../services/AuditService';
+import { authMiddleware } from '../middleware/auth';
 import { loginRateLimiter, registerRateLimiter, recordFailure, resetCounter, getClientIp } from '../middleware/rateLimiter';
 
 const router = Router();
@@ -188,7 +189,7 @@ router.post('/refresh', (req: Request, res: Response) => {
 /**
  * POST /api/auth/logout - 登出
  */
-router.post('/logout', (req: Request, res: Response) => {
+router.post('/logout', authMiddleware, (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const userAgent = req.headers['user-agent'];
 
@@ -233,7 +234,7 @@ router.post('/logout', (req: Request, res: Response) => {
 /**
  * POST /api/auth/logout-all - 登出所有设备
  */
-router.post('/logout-all', (req: Request, res: Response) => {
+router.post('/logout-all', authMiddleware, (req: Request, res: Response) => {
   const ip = getClientIp(req);
   const userAgent = req.headers['user-agent'];
 

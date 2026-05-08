@@ -53,13 +53,18 @@ function parseCorsOrigins(value: string | undefined): string[] {
   return value.split(',').map(o => o.trim()).filter(o => o.length > 0);
 }
 
-// 生成安全的随机密钥（如果未配置）
-function getOrGenerateSecret(envValue: string | undefined, defaultValue: string): string {
+// 获取 JWT 密钥。
+// 生产环境必须显式配置；开发环境使用进程级随机值，避免固定已知后备密钥。
+function getRequiredSecret(envValue: string | undefined, envName: string): string {
   if (envValue && envValue.length >= 32) {
     return envValue;
   }
-  // 如果没有配置或太短，使用默认值但输出警告
-  return defaultValue;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`${envName} must be set to a value with at least 32 characters`);
+  }
+
+  return crypto.randomBytes(32).toString('hex');
 }
 
 export const config: Config = {
@@ -72,8 +77,8 @@ export const config: Config = {
   changeLogRetentionDays: parseInt(process.env.CHANGE_LOG_RETENTION_DAYS || '90', 10),
   corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
   // JWT 配置
-  jwtSecret: getOrGenerateSecret(process.env.JWT_SECRET, 'mucheng-sync-server-jwt-secret-change-in-production'),
-  jwtRefreshSecret: getOrGenerateSecret(process.env.JWT_REFRESH_SECRET, 'mucheng-sync-server-refresh-secret-change-in-production'),
+  jwtSecret: getRequiredSecret(process.env.JWT_SECRET, 'JWT_SECRET'),
+  jwtRefreshSecret: getRequiredSecret(process.env.JWT_REFRESH_SECRET, 'JWT_REFRESH_SECRET'),
   accessTokenExpiresIn: parseInt(process.env.ACCESS_TOKEN_EXPIRES_IN || '3600', 10), // 1小时
   refreshTokenExpiresIn: parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN || '2592000', 10), // 30天（原7天太短）
   // 频率限制配置

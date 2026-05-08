@@ -161,6 +161,48 @@ class TransferService {
     return sessionId;
   }
 
+  private createOrUpdateRelaySession(data: {
+    sessionId: string;
+    peerId: string;
+    peerName: string;
+  }): void {
+    if (!this.db || !data.sessionId || !data.peerId) return;
+
+    const relayDevice = this.relay.getConnectedDevices().find(d => d.id === data.peerId);
+    const deviceType = relayDevice?.type || 'android';
+
+    const existingDevice = this.db.getDeviceById(data.peerId);
+    if (existingDevice) {
+      this.db.updateDevice(data.peerId, {
+        name: data.peerName,
+        type: deviceType,
+        last_seen: Date.now(),
+      });
+    } else {
+      this.db.createDevice({
+        id: data.peerId,
+        name: data.peerName,
+        type: deviceType,
+        last_ip: '',
+        last_port: 0,
+        last_seen: Date.now(),
+        is_favorite: 0,
+      });
+    }
+
+    const existingSession = this.db.getSessionById(data.sessionId);
+    if (!existingSession) {
+      this.db.createSession({
+        id: data.sessionId,
+        peer_device_id: data.peerId,
+        peer_device_name: data.peerName,
+        connection_type: 'relay',
+        started_at: Date.now(),
+        ended_at: null,
+      });
+    }
+  }
+
   private setupServerListeners() {
     if (!this.server) return;
 
@@ -304,9 +346,18 @@ class TransferService {
       const { fileId, fileHash } = data;
       if (!fileId) return;
 
-      this.handleFileComplete(fileId, fileHash);
+      const completeInfo = this.handleFileComplete(fileId, fileHash);
 
-      this.broadcast('transfer:file-complete', data);
+      this.broadcast('transfer:file-complete', { ...data, ...completeInfo });
+    });
+
+    this.server.on('file:cancel', data => {
+      const { fileId } = data;
+      if (!fileId) return;
+
+      this.cleanupFileStream(fileId);
+      this.db?.cancelFileTransfer(fileId);
+      this.broadcast('transfer:file-cancel', data);
     });
   }
 
@@ -369,7 +420,34 @@ class TransferService {
     }
   }
 
-  private handleFileComplete(fileId: string, fileHash?: string) {
+  private cleanupFileStream(fileId: string): void {
+    const stream = this.fileStreams.get(fileId);
+    const localPath = this.filePaths.get(fileId);
+
+    if (stream) {
+      try {
+        stream.end();
+      } catch (e) {
+        console.error('[TransferService] Error closing stream:', e);
+      }
+      this.fileStreams.delete(fileId);
+    }
+
+    if (localPath && fs.existsSync(localPath)) {
+      try {
+        fs.unlinkSync(localPath);
+      } catch (e) {
+        console.error('[TransferService] Failed to delete cancelled file:', e);
+      }
+    }
+
+    this.filePaths.delete(fileId);
+  }
+
+  private handleFileComplete(
+    fileId: string,
+    fileHash?: string
+  ): { localPath?: string; fileHash?: string } {
     const stream = this.fileStreams.get(fileId);
     const localPath = this.filePaths.get(fileId);
 
@@ -401,7 +479,10 @@ class TransferService {
       }
       this.db.completeFileTransfer(fileId, localPath, verifiedHash);
       console.log('[TransferService] File transfer completed:', localPath);
+      return { localPath, fileHash: verifiedHash };
     }
+
+    return { localPath: localPath || undefined, fileHash: fileHash || undefined };
   }
 
   private cleanupDeviceFileStreams(deviceId: string) {
@@ -450,6 +531,12 @@ class TransferService {
     on('disconnected', (reason: string) => this.broadcast('transfer:relay:disconnected', reason));
     on('error', (err: any) => this.broadcast('transfer:relay:error', err));
     on('device:list', (devices: any) => this.broadcast('transfer:relay:device-list', devices));
+    on('device:online', () =>
+      this.broadcast('transfer:relay:device-list', this.relay.getConnectedDevices())
+    );
+    on('device:offline', () =>
+      this.broadcast('transfer:relay:device-list', this.relay.getConnectedDevices())
+    );
 
     on('message:received', (data: any) => {
       const { senderId, sessionId, message } = data;
@@ -513,11 +600,13 @@ class TransferService {
 
     on('file:complete', (data: any) => {
       const { fileId } = data;
+      let completeInfo: { localPath?: string; fileHash?: string } = {};
       if (fileId) {
-        this.handleFileComplete(fileId, data.fileHash);
+        completeInfo = this.handleFileComplete(fileId, data.fileHash);
       }
-      this.broadcast('transfer:relay:file-complete', data);
-      this.broadcast('transfer:file-complete', data);
+      const payload = { ...data, ...completeInfo };
+      this.broadcast('transfer:relay:file-complete', payload);
+      this.broadcast('transfer:file-complete', payload);
     });
 
     on('pair:request', (data: any) => {
@@ -529,6 +618,7 @@ class TransferService {
 
     on('pair:success', (data: any) => {
       console.log(`[TransferService] Relay pair success with ${data.peerName}`);
+      this.createOrUpdateRelaySession(data);
       this.broadcast('transfer:relay:pair-success', data);
       this.broadcast('transfer:session-created', {
         sessionId: data.sessionId,
@@ -606,11 +696,14 @@ class TransferService {
     });
 
     ipcMain.handle('transfer:sendFile', async (_, targetDeviceId, sessionId, filePath) => {
-      try {
-        return await this.server?.sendFile(targetDeviceId, sessionId, filePath);
-      } catch (e) {
-        return await this.relay.sendFile(targetDeviceId, sessionId, filePath);
+      if (this.server) {
+        try {
+          return await this.server.sendFile(targetDeviceId, sessionId, filePath);
+        } catch (e) {
+          console.warn('[TransferService] LAN file send failed, trying relay:', e);
+        }
       }
+      return await this.relay.sendFile(targetDeviceId, sessionId, filePath);
     });
 
     ipcMain.handle('transfer:sendMessageRead', (_, targetDeviceId, messageIds) => {
@@ -690,6 +783,10 @@ class TransferService {
     });
     ipcMain.handle('transfer:relay:sendFile', async (_, targetDeviceId, sessionId, filePath) => {
       return await this.relay.sendFile(targetDeviceId, sessionId, filePath);
+    });
+    ipcMain.handle('transfer:relay:sendPairRequest', (_, targetDeviceId) => {
+      this.relay.sendPairRequest(targetDeviceId);
+      return true;
     });
   }
 }

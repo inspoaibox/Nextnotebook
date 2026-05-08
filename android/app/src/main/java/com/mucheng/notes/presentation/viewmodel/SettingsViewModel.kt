@@ -14,6 +14,7 @@ import com.mucheng.notes.security.BiometricManager
 import com.mucheng.notes.security.BiometricManagerImpl
 import com.mucheng.notes.security.BiometricStatus
 import com.mucheng.notes.security.LockType
+import com.mucheng.notes.security.SecureSyncStorage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -218,7 +219,7 @@ class SettingsViewModel @Inject constructor(
                 syncType = prefs.getString(KEY_SYNC_TYPE, "webdav") ?: "webdav",
                 webdavUrl = prefs.getString(KEY_WEBDAV_URL, "") ?: "",
                 username = prefs.getString(KEY_USERNAME, "") ?: "",
-                password = prefs.getString(KEY_PASSWORD, "") ?: "",
+                password = SecureSyncStorage.getString(context, KEY_PASSWORD) ?: "",
                 syncPath = prefs.getString(KEY_SYNC_PATH, "/mucheng-notes") ?: "/mucheng-notes",
                 apiKey = prefs.getString(KEY_API_KEY, "") ?: "",
                 syncInterval = syncInterval,
@@ -255,12 +256,12 @@ class SettingsViewModel @Inject constructor(
                 
                 // 自建服务器认证
                 serverUsername = prefs.getString(KEY_SERVER_USERNAME, "") ?: "",
-                serverPassword = prefs.getString(KEY_SERVER_PASSWORD, "") ?: "",
-                serverSyncKey = prefs.getString(KEY_SERVER_SYNC_KEY, "") ?: "",
-                serverToken = prefs.getString(KEY_SERVER_TOKEN, null),
-                serverRefreshToken = prefs.getString(KEY_SERVER_REFRESH_TOKEN, null),
-                serverTokenExpires = prefs.getLong(KEY_SERVER_TOKEN_EXPIRES, 0).takeIf { it > 0 },
-                serverLoggedIn = prefs.getString(KEY_SERVER_TOKEN, null) != null,
+                serverPassword = SecureSyncStorage.getString(context, KEY_SERVER_PASSWORD) ?: "",
+                serverSyncKey = SecureSyncStorage.getString(context, KEY_SERVER_SYNC_KEY) ?: "",
+                serverToken = SecureSyncStorage.getString(context, KEY_SERVER_TOKEN),
+                serverRefreshToken = SecureSyncStorage.getString(context, KEY_SERVER_REFRESH_TOKEN),
+                serverTokenExpires = SecureSyncStorage.getLong(context, KEY_SERVER_TOKEN_EXPIRES)?.takeIf { it > 0 },
+                serverLoggedIn = SecureSyncStorage.getString(context, KEY_SERVER_TOKEN) != null,
                 serverLoginUser = prefs.getString(KEY_SERVER_USERNAME, null)
             )
         }
@@ -314,7 +315,7 @@ class SettingsViewModel @Inject constructor(
     }
     
     fun setPassword(password: String) {
-        prefs.edit().putString(KEY_PASSWORD, password).apply()
+        SecureSyncStorage.putString(context, KEY_PASSWORD, password)
         _uiState.update { it.copy(password = password) }
     }
     
@@ -335,12 +336,12 @@ class SettingsViewModel @Inject constructor(
     }
     
     fun setServerPassword(password: String) {
-        prefs.edit().putString(KEY_SERVER_PASSWORD, password).apply()
+        SecureSyncStorage.putString(context, KEY_SERVER_PASSWORD, password)
         _uiState.update { it.copy(serverPassword = password) }
     }
     
     fun setServerSyncKey(syncKey: String) {
-        prefs.edit().putString(KEY_SERVER_SYNC_KEY, syncKey).apply()
+        SecureSyncStorage.putString(context, KEY_SERVER_SYNC_KEY, syncKey)
         _uiState.update { it.copy(serverSyncKey = syncKey) }
     }
     
@@ -372,27 +373,16 @@ class SettingsViewModel @Inject constructor(
             }
             
             if (result.success && result.accessToken != null) {
-                // 保存 token 到 app_settings（与 loadSettings 一致）
                 prefs.edit()
-                    .putString(KEY_SERVER_TOKEN, result.accessToken)
-                    .putString(KEY_SERVER_REFRESH_TOKEN, result.refreshToken)
-                    .putLong(KEY_SERVER_TOKEN_EXPIRES, System.currentTimeMillis() + (result.expiresIn ?: 3600) * 1000L)
-                    // 保存凭据用于自动重新登录
                     .putString(KEY_SERVER_USERNAME, username)
-                    .putString(KEY_SERVER_PASSWORD, password)
-                    .putString(KEY_SERVER_SYNC_KEY, syncKey)
                     .apply()
-                
-                // 同时保存到 sync_config（供 SyncEngine 读取）
-                val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
-                syncPrefs.edit()
-                    .putString("server_token", result.accessToken)
-                    .putString("server_refresh_token", result.refreshToken)
-                    .putLong("server_token_expires", System.currentTimeMillis() + (result.expiresIn ?: 3600) * 1000L)
-                    .putString("server_username", username)
-                    .putString("server_password", password)
-                    .putString("server_sync_key", syncKey)
-                    .apply()
+
+                val expiresAt = System.currentTimeMillis() + (result.expiresIn ?: 3600) * 1000L
+                SecureSyncStorage.putString(context, KEY_SERVER_TOKEN, result.accessToken)
+                SecureSyncStorage.putString(context, KEY_SERVER_REFRESH_TOKEN, result.refreshToken)
+                SecureSyncStorage.putLong(context, KEY_SERVER_TOKEN_EXPIRES, expiresAt)
+                SecureSyncStorage.putString(context, KEY_SERVER_PASSWORD, password)
+                SecureSyncStorage.putString(context, KEY_SERVER_SYNC_KEY, syncKey)
                 
                 _uiState.update { it.copy(
                     serverLoggingIn = false,
@@ -400,7 +390,7 @@ class SettingsViewModel @Inject constructor(
                     serverLoginUser = result.user?.username ?: username,
                     serverToken = result.accessToken,
                     serverRefreshToken = result.refreshToken,
-                    serverTokenExpires = System.currentTimeMillis() + (result.expiresIn ?: 3600) * 1000L,
+                    serverTokenExpires = expiresAt,
                     message = "登录成功"
                 ) }
             } else {
@@ -472,26 +462,18 @@ class SettingsViewModel @Inject constructor(
                 }
             }
             
-            // 清除本地 token 和保存的凭据（app_settings）
+            // 清除本地 token 和保存的凭据
             prefs.edit()
-                .remove(KEY_SERVER_TOKEN)
-                .remove(KEY_SERVER_REFRESH_TOKEN)
-                .remove(KEY_SERVER_TOKEN_EXPIRES)
                 .remove(KEY_SERVER_USERNAME)
-                .remove(KEY_SERVER_PASSWORD)
-                .remove(KEY_SERVER_SYNC_KEY)
                 .apply()
-            
-            // 同时清除 sync_config 中的凭据
-            val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
-            syncPrefs.edit()
-                .remove("server_token")
-                .remove("server_refresh_token")
-                .remove("server_token_expires")
-                .remove("server_username")
-                .remove("server_password")
-                .remove("server_sync_key")
-                .apply()
+            SecureSyncStorage.remove(
+                context,
+                KEY_SERVER_TOKEN,
+                KEY_SERVER_REFRESH_TOKEN,
+                KEY_SERVER_TOKEN_EXPIRES,
+                KEY_SERVER_PASSWORD,
+                KEY_SERVER_SYNC_KEY
+            )
             
             _uiState.update { it.copy(
                 serverLoggedIn = false,

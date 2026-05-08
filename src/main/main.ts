@@ -18,6 +18,7 @@ import {
 import { clipperService } from './services/ClipperService';
 import { initializeTransferService } from './services/TransferService';
 import { mcpService } from './services/McpService';
+import { loadSyncConfig, saveSyncConfig } from './services/SyncConfigStorage';
 import { McpServerConfig } from '../shared/types';
 
 let mainWindow: BrowserWindow | null = null;
@@ -531,10 +532,9 @@ ipcMain.handle('save-theme-settings', (_event, settings: { theme: string }) => {
 // 保存同步配置到文件系统（确保持久化）
 ipcMain.handle('save-sync-config', (_event, config: object) => {
   try {
-    const syncConfigPath = path.join(app.getPath('userData'), 'sync-config.json');
-    fs.writeFileSync(syncConfigPath, JSON.stringify(config, null, 2), 'utf8');
-    console.log('[Main] Saved sync config to:', syncConfigPath);
-    return true;
+    const saved = saveSyncConfig(config as Record<string, any>);
+    console.log('[Main] Saved sync config');
+    return saved;
   } catch (e) {
     console.error('Failed to save sync config:', e);
     return false;
@@ -544,13 +544,11 @@ ipcMain.handle('save-sync-config', (_event, config: object) => {
 // 加载同步配置
 ipcMain.handle('load-sync-config', () => {
   try {
-    const syncConfigPath = path.join(app.getPath('userData'), 'sync-config.json');
-    if (fs.existsSync(syncConfigPath)) {
-      const content = fs.readFileSync(syncConfigPath, 'utf8');
-      console.log('[Main] Loaded sync config from:', syncConfigPath);
-      return JSON.parse(content);
+    const config = loadSyncConfig();
+    if (config) {
+      console.log('[Main] Loaded sync config');
     }
-    return null;
+    return config;
   } catch (e) {
     console.error('Failed to load sync config:', e);
     return null;

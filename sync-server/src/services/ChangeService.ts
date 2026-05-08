@@ -1,5 +1,6 @@
 import { getDatabase } from '../database';
 import { RemoteChange, ChangeListResult, ItemType } from '../types';
+import { userService } from './UserService';
 
 export interface ChangeInput {
   item_id: string;
@@ -33,6 +34,7 @@ export class ChangeService {
 
   // 获取变更列表
   listChanges(cursor?: string, limit: number = 100, userId?: string): ChangeListResult {
+    userService.claimLegacyDataForSingleUser(userId);
     const db = getDatabase();
     const cursorNum = cursor ? parseInt(cursor, 10) : 0;
 
@@ -40,7 +42,7 @@ export class ChangeService {
 
     // 构建用户过滤条件
     const userFilter = userId 
-      ? 'AND (user_id = ? OR user_id IS NULL)' 
+      ? 'AND user_id = ?' 
       : '';
     const userParams = userId ? [userId] : [];
 
@@ -79,11 +81,12 @@ export class ChangeService {
 
   // 检查游标是否已过期（游标对应的变更记录已被清理）
   isCursorExpired(cursor: string, userId?: string): boolean {
+    userService.claimLegacyDataForSingleUser(userId);
     const db = getDatabase();
     const cursorNum = parseInt(cursor, 10);
     if (isNaN(cursorNum)) return false;
 
-    const userFilter = userId ? 'AND (user_id = ? OR user_id IS NULL)' : '';
+    const userFilter = userId ? 'AND user_id = ?' : '';
     const userParams = userId ? [userId] : [];
 
     // 查找比游标更新的最早一条变更
@@ -100,10 +103,13 @@ export class ChangeService {
   }
 
   // 清理过期变更
-  cleanupBefore(timestamp: number): number {
+  cleanupBefore(timestamp: number, userId?: string): number {
+    userService.claimLegacyDataForSingleUser(userId);
     const db = getDatabase();
-    const stmt = db.prepare('DELETE FROM changes WHERE created_at < ?');
-    const result = stmt.run(timestamp);
+    const stmt = userId
+      ? db.prepare('DELETE FROM changes WHERE created_at < ? AND user_id = ?')
+      : db.prepare('DELETE FROM changes WHERE created_at < ?');
+    const result = userId ? stmt.run(timestamp, userId) : stmt.run(timestamp);
     return result.changes;
   }
 }

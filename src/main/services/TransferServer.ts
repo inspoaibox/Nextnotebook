@@ -7,9 +7,6 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { createServer, Server as HttpServer } from 'http';
 import * as os from 'os';
-import * as fs from 'fs';
-import * as path from 'path';
-import { app } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import {
   TRANSFER_CONSTANTS,
@@ -68,6 +65,7 @@ export interface TransferServerEvents {
   'file:incoming': (data: any) => void;
   'file:chunk': (data: any) => void;
   'file:complete': (data: any) => void;
+  'file:cancel': (data: any) => void;
   'pair:success': (data: { sessionId: string; peerId: string; peerName: string }) => void;
 }
 
@@ -95,11 +93,6 @@ export class TransferServer {
 
   private deviceId: string;
   private deviceName: string;
-
-  // 文件接收相关
-  private fileStreams: Map<string, fs.WriteStream> = new Map();
-  private fileInfoCache: Map<string, { filename: string; localPath: string; sessionId?: string }> =
-    new Map();
 
   constructor(deviceId: string, deviceName: string) {
     this.deviceId = deviceId;
@@ -203,21 +196,6 @@ export class TransferServer {
       clearInterval(this.sessionTimeoutInterval);
       this.sessionTimeoutInterval = null;
     }
-
-    // 清理所有未完成的文件流
-    for (const [fileId, stream] of this.fileStreams) {
-      try {
-        stream.end();
-        const fileInfo = this.fileInfoCache.get(fileId);
-        if (fileInfo?.localPath && fs.existsSync(fileInfo.localPath)) {
-          fs.unlinkSync(fileInfo.localPath);
-        }
-      } catch (error) {
-        console.error('[TransferServer] Failed to cleanup file stream:', error);
-      }
-    }
-    this.fileStreams.clear();
-    this.fileInfoCache.clear();
 
     if (this.io) {
       // 通知所有连接的设备
@@ -756,43 +734,9 @@ export class TransferServer {
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
-      // 文件发给桌面端自己，创建写入流并保存文件
       console.log(
         `[TransferServer] File incoming for desktop from ${senderId}: ${fileInfo?.filename}`
       );
-
-      try {
-        // 创建下载目录
-        const downloadPath = app.getPath('downloads');
-        const targetDir = path.join(downloadPath, 'NextNotebook');
-        if (!fs.existsSync(targetDir)) {
-          fs.mkdirSync(targetDir, { recursive: true });
-        }
-
-        // 创建目标文件路径（处理文件名冲突）
-        let targetPath = path.join(targetDir, path.basename(fileInfo.filename));
-        let counter = 1;
-        const ext = path.extname(fileInfo.filename);
-        const baseName = path.basename(fileInfo.filename, ext);
-        while (fs.existsSync(targetPath)) {
-          targetPath = path.join(targetDir, `${baseName}_${counter}${ext}`);
-          counter++;
-        }
-
-        // 创建写入流
-        const stream = fs.createWriteStream(targetPath);
-        this.fileStreams.set(fileInfo.id, stream);
-        this.fileInfoCache.set(fileInfo.id, {
-          filename: fileInfo.filename,
-          localPath: targetPath,
-          sessionId: sessionId,
-        });
-
-        console.log(`[TransferServer] Created write stream for file: ${targetPath}`);
-      } catch (error) {
-        console.error('[TransferServer] Failed to create write stream:', error);
-      }
-
       this.emit('file:incoming', { senderId, fileInfo, sessionId });
       return;
     }
@@ -827,17 +771,6 @@ export class TransferServer {
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
-      // 文件块发给桌面端自己，写入文件
-      const stream = this.fileStreams.get(fileId);
-      if (stream) {
-        try {
-          // chunk 是 base64 编码的字符串，需要解码
-          const buffer = Buffer.from(chunk, 'base64');
-          stream.write(buffer);
-        } catch (error) {
-          console.error('[TransferServer] Failed to write chunk:', error);
-        }
-      }
       this.emit('file:chunk', { senderId, fileId, chunkIndex, chunk, totalChunks });
       return;
     }
@@ -866,29 +799,8 @@ export class TransferServer {
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
-      // 文件完成发给桌面端自己，关闭写入流
       console.log(`[TransferServer] File complete for desktop from ${senderId}`);
-
-      const stream = this.fileStreams.get(fileId);
-      const fileInfo = this.fileInfoCache.get(fileId);
-
-      if (stream) {
-        stream.end();
-        this.fileStreams.delete(fileId);
-        console.log(`[TransferServer] Closed write stream for file: ${fileInfo?.localPath}`);
-      }
-
-      // 发出事件，包含本地路径和 sessionId
-      this.emit('file:complete', {
-        senderId,
-        fileId,
-        fileHash,
-        localPath: fileInfo?.localPath,
-        filename: fileInfo?.filename,
-        sessionId: fileInfo?.sessionId,
-      });
-
-      this.fileInfoCache.delete(fileId);
+      this.emit('file:complete', { senderId, fileId, fileHash });
       return;
     }
 
@@ -914,26 +826,7 @@ export class TransferServer {
 
     // 检查目标是否是桌面端自己
     if (targetDeviceId === this.deviceId) {
-      // 取消文件传输，清理写入流和临时文件
-      const stream = this.fileStreams.get(fileId);
-      const fileInfo = this.fileInfoCache.get(fileId);
-
-      if (stream) {
-        stream.end();
-        this.fileStreams.delete(fileId);
-
-        // 删除未完成的文件
-        if (fileInfo?.localPath && fs.existsSync(fileInfo.localPath)) {
-          try {
-            fs.unlinkSync(fileInfo.localPath);
-            console.log(`[TransferServer] Deleted incomplete file: ${fileInfo.localPath}`);
-          } catch (error) {
-            console.error('[TransferServer] Failed to delete incomplete file:', error);
-          }
-        }
-      }
-
-      this.fileInfoCache.delete(fileId);
+      this.emit('file:cancel', { senderId, fileId });
       return;
     }
 
@@ -970,29 +863,6 @@ export class TransferServer {
 
       this.connectedDevices.delete(deviceId);
       this.socketToDevice.delete(socket.id);
-
-      // 清理该设备的所有进行中文件传输
-      for (const [fileId, info] of this.fileInfoCache) {
-        if (info.sessionId) {
-          const stream = this.fileStreams.get(fileId);
-          if (stream) {
-            try {
-              stream.end();
-            } catch (e) {
-              /* ignore */
-            }
-            this.fileStreams.delete(fileId);
-          }
-          if (info.localPath && fs.existsSync(info.localPath)) {
-            try {
-              fs.unlinkSync(info.localPath);
-            } catch (e) {
-              /* ignore */
-            }
-          }
-          this.fileInfoCache.delete(fileId);
-        }
-      }
 
       // 广播设备下线
       this.io?.emit(SOCKET_EVENTS.DEVICE_OFFLINE, { deviceId });

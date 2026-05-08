@@ -33,6 +33,7 @@ data class TransferUiState(
     val selectedSessionId: String? = null,
     val messages: List<TransferMessageEntity> = emptyList(),
     val files: List<TransferFileEntity> = emptyList(),
+    val lanServerStatus: LanServerStatus = LanServerStatus(),
     val unreadCount: Int = 0,
     val isScanning: Boolean = false,
     val scanError: String? = null
@@ -74,6 +75,13 @@ class TransferViewModel @Inject constructor(
         viewModelScope.launch {
             transferClient.onlineDevices.collect { devices ->
                 _uiState.update { it.copy(onlineDevices = devices) }
+            }
+        }
+
+        // 监听 Android 本机局域网接收端状态
+        viewModelScope.launch {
+            transferClient.lanServerStatus.collect { status ->
+                _uiState.update { it.copy(lanServerStatus = status) }
             }
         }
 
@@ -136,7 +144,21 @@ class TransferViewModel @Inject constructor(
         try {
             val data = parseQRCode(qrData)
             if (data != null) {
-                transferClient.connectFromQRData(data)
+                if (data.protocol == TransferConstants.QR_PROTOCOL_ANDROID_TCP) {
+                    transferClient.connectFromQRData(data)
+                    return
+                }
+
+                val prefs = getApplication<Application>()
+                    .getSharedPreferences("transfer_relay", android.content.Context.MODE_PRIVATE)
+                val relayServerUrl = prefs.getString("server_url", "") ?: ""
+                val relayKey = prefs.getString("relay_key", "") ?: ""
+                transferClient.connectWithFallback(
+                    lanIp = data.serverIp,
+                    lanPort = data.serverPort,
+                    relayServerUrl = relayServerUrl.takeIf { it.isNotBlank() },
+                    relayKey = relayKey.takeIf { it.isNotBlank() }
+                )
             } else {
                 _uiState.update { it.copy(scanError = "无效的二维码") }
             }
@@ -172,11 +194,27 @@ class TransferViewModel @Inject constructor(
                 serverPort = json.getInt("serverPort"),
                 timestamp = json.getLong("timestamp"),
                 expiresAt = json.getLong("expiresAt"),
-                version = json.optString("version", "1.0")
+                version = json.optString("version", "1.0"),
+                platform = json.optString("platform", DeviceType.DESKTOP.value),
+                protocol = json.optString("protocol", TransferConstants.QR_PROTOCOL_SOCKET_IO)
             )
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * 启动本机 Android 局域网接收端
+     */
+    fun startLanServer() {
+        transferClient.startLanServer()
+    }
+
+    /**
+     * 停止本机 Android 局域网接收端
+     */
+    fun stopLanServer() {
+        transferClient.stopLanServer()
     }
 
     // ============================================
@@ -216,14 +254,18 @@ class TransferViewModel @Inject constructor(
      * 创建新会话
      */
     fun createSession(device: OnlineDevice): String {
-        val sessionId = UUID.randomUUID().toString()
-        
-        // 根据当前连接状态确定连接类型
         val currentConnectionType = when (val state = _uiState.value.connectionState) {
             is ConnectionState.Connected -> state.mode.value
             else -> ConnectionMode.LAN.value
         }
-        
+
+        if (currentConnectionType == ConnectionMode.RELAY.value) {
+            transferClient.sendPairRequest(device.id)
+            return ""
+        }
+
+        val sessionId = UUID.randomUUID().toString()
+
         val session = TransferSessionEntity(
             id = sessionId,
             peerDeviceId = device.id,
@@ -681,7 +723,7 @@ class TransferViewModel @Inject constructor(
                 deviceDao.insert(TransferDeviceEntity(
                     id = deviceId,
                     name = deviceName,
-                    type = DeviceType.DESKTOP.value,
+                    type = (device?.type ?: DeviceType.DESKTOP).value,
                     lastIp = null,
                     lastPort = null,
                     lastSeen = System.currentTimeMillis(),
@@ -715,14 +757,15 @@ class TransferViewModel @Inject constructor(
     private fun handlePairSuccess(event: PairSuccessEvent) {
         viewModelScope.launch {
             android.util.Log.d("TransferViewModel", "handlePairSuccess: sessionId=${event.sessionId}, peerId=${event.peerId}, peerName=${event.peerName}")
-            
+            val peerType = _uiState.value.onlineDevices.find { it.id == event.peerId }?.type ?: DeviceType.DESKTOP
+
             // 保存设备信息
             val existingDevice = deviceDao.getById(event.peerId)
             if (existingDevice == null) {
                 deviceDao.insert(TransferDeviceEntity(
                     id = event.peerId,
                     name = event.peerName,
-                    type = DeviceType.DESKTOP.value,
+                    type = peerType.value,
                     lastIp = null,
                     lastPort = null,
                     lastSeen = System.currentTimeMillis(),

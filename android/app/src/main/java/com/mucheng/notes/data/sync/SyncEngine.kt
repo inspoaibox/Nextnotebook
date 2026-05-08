@@ -14,6 +14,7 @@ import com.mucheng.notes.domain.model.SyncConfig
 import com.mucheng.notes.domain.model.SyncModuleTypes
 import com.mucheng.notes.domain.model.SyncResult
 import com.mucheng.notes.domain.model.payload.ResourcePayload
+import com.mucheng.notes.security.SecureSyncStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -120,39 +121,21 @@ class SyncEngine @Inject constructor(
                 // 设置 token 刷新回调，用于持久化新 token
                 onTokenRefresh = { newToken, newRefreshToken, expiresIn ->
                     android.util.Log.d("SyncEngine", "Token refreshed, saving to preferences")
-                    // 保存新 token 到 SharedPreferences（同时保存到两个位置）
-                    val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
-                    syncPrefs.edit()
-                        .putString("server_token", newToken)
-                        .putString("server_refresh_token", newRefreshToken)
-                        .putLong("server_token_expires", System.currentTimeMillis() + expiresIn * 1000L)
-                        .apply()
-                    
-                    val appPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-                    appPrefs.edit()
-                        .putString("server_token", newToken)
-                        .putString("server_refresh_token", newRefreshToken)
-                        .putLong("server_token_expires", System.currentTimeMillis() + expiresIn * 1000L)
-                        .apply()
+                    val expiresAt = System.currentTimeMillis() + expiresIn * 1000L
+                    SecureSyncStorage.putString(context, "server_token", newToken)
+                    SecureSyncStorage.putString(context, "server_refresh_token", newRefreshToken)
+                    SecureSyncStorage.putLong(context, "server_token_expires", expiresAt)
                 }
                 
                 // 设置重新登录回调
                 onReloginRequired = {
                     android.util.Log.w("SyncEngine", "Relogin required - token refresh failed")
-                    // 清除保存的 token，下次同步时会提示用户重新登录
-                    val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
-                    syncPrefs.edit()
-                        .remove("server_token")
-                        .remove("server_refresh_token")
-                        .remove("server_token_expires")
-                        .apply()
-                    
-                    val appPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-                    appPrefs.edit()
-                        .remove("server_token")
-                        .remove("server_refresh_token")
-                        .remove("server_token_expires")
-                        .apply()
+                    SecureSyncStorage.remove(
+                        context,
+                        "server_token",
+                        "server_refresh_token",
+                        "server_token_expires"
+                    )
                 }
                 
                 // 优先从 SyncConfig 获取凭据（由 SettingsViewModel 传入）
@@ -165,28 +148,17 @@ class SyncEngine @Inject constructor(
                     android.util.Log.d("SyncEngine", "Using credentials from SyncConfig")
                     saveCredentials(username, password, syncKey)
                 } else {
-                    // 否则尝试从 SharedPreferences 读取
-                    val syncPrefs = context.getSharedPreferences("sync_config", Context.MODE_PRIVATE)
+                    // 否则尝试从安全存储读取
+                    val syncPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
                     val savedUsername = syncPrefs.getString("server_username", null)
-                    val savedPassword = syncPrefs.getString("server_password", null)
-                    val savedSyncKey = syncPrefs.getString("server_sync_key", null)
+                    val savedPassword = SecureSyncStorage.getString(context, "server_password")
+                    val savedSyncKey = SecureSyncStorage.getString(context, "server_sync_key")
                     
                     if (savedUsername != null && savedPassword != null && savedSyncKey != null) {
-                        android.util.Log.d("SyncEngine", "Using credentials from sync_config prefs")
+                        android.util.Log.d("SyncEngine", "Using credentials from secure storage")
                         saveCredentials(savedUsername, savedPassword, savedSyncKey)
                     } else {
-                        // 最后尝试从 app_settings 读取
-                        val appPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-                        val appUsername = appPrefs.getString("server_username", null)
-                        val appPassword = appPrefs.getString("server_password", null)
-                        val appSyncKey = appPrefs.getString("server_sync_key", null)
-                        
-                        if (appUsername != null && appPassword != null && appSyncKey != null) {
-                            android.util.Log.d("SyncEngine", "Using credentials from app_settings prefs")
-                            saveCredentials(appUsername, appPassword, appSyncKey)
-                        } else {
-                            android.util.Log.w("SyncEngine", "No credentials found for auto-relogin")
-                        }
+                        android.util.Log.w("SyncEngine", "No credentials found for auto-relogin")
                     }
                 }
                 
@@ -232,6 +204,7 @@ class SyncEngine @Inject constructor(
         var pushed = 0
         var pulled = 0
         var conflicts = 0
+        val errors = mutableListOf<String>()
         
         try {
             android.util.Log.d("SyncEngine", "Starting sync...")
@@ -239,6 +212,7 @@ class SyncEngine @Inject constructor(
             // 1. Push 本地变更
             val pushResult = pushChanges(cfg)
             pushed = pushResult.count
+            errors.addAll(pushResult.errors)
             
             // 2. Pull 远端变更
             val pullResult = pullChanges(cfg)
@@ -248,10 +222,11 @@ class SyncEngine @Inject constructor(
             android.util.Log.d("SyncEngine", "Sync completed: pushed=$pushed, pulled=$pulled, conflicts=$conflicts")
             
             SyncResult(
-                success = true,
+                success = errors.isEmpty(),
                 pushed = pushed,
                 pulled = pulled,
                 conflicts = conflicts,
+                error = errors.firstOrNull(),
                 duration = System.currentTimeMillis() - startTime
             )
         } catch (e: Exception) {
@@ -274,6 +249,7 @@ class SyncEngine @Inject constructor(
             .filter { it.type in enabledTypes }
         
         var count = 0
+        val errors = mutableListOf<String>()
         for (item in pendingItems) {
             // 明文同步：确保 encryptionApplied = 0
             val itemToUpload = item.copy(encryptionApplied = 0)
@@ -298,6 +274,8 @@ class SyncEngine @Inject constructor(
                 // 上传项目
                 val result = adapter.putItem(itemToUpload)
                 if (result.isSuccess) {
+                    var resourceUploadFailed = false
+
                     // 如果是资源类型，同时上传资源文件
                     if (item.type == "resource") {
                         try {
@@ -315,22 +293,37 @@ class SyncEngine @Inject constructor(
                                     if (uploadResult.isSuccess) {
                                         android.util.Log.d("SyncEngine", "Uploaded resource file: $resourceId")
                                     } else {
+                                        resourceUploadFailed = true
                                         android.util.Log.w("SyncEngine", "Failed to upload resource file: $resourceId")
                                     }
+                                } else {
+                                    resourceUploadFailed = true
+                                    android.util.Log.w("SyncEngine", "Resource file not found: ${localFile.absolutePath}")
                                 }
+                            } else {
+                                resourceUploadFailed = true
+                                android.util.Log.w("SyncEngine", "No local cache found for resource item: ${item.id}")
                             }
                         } catch (e: Exception) {
+                            resourceUploadFailed = true
                             android.util.Log.w("SyncEngine", "Failed to upload resource file: ${e.message}")
                         }
+                    }
+
+                    if (resourceUploadFailed) {
+                        errors.add("Failed to upload resource file for item ${item.id}")
+                        continue
                     }
                     
                     itemDao.markSynced(item.id, result.getOrThrow())
                     count++
+                } else {
+                    errors.add("Failed to upload item ${item.id}: ${result.exceptionOrNull()?.message ?: "unknown error"}")
                 }
             }
         }
         
-        return PushResult(count)
+        return PushResult(count, errors)
     }
     
     /**
@@ -599,5 +592,5 @@ class SyncEngine @Inject constructor(
 
 }
 
-private data class PushResult(val count: Int)
+private data class PushResult(val count: Int, val errors: List<String> = emptyList())
 private data class PullResult(val count: Int, val conflicts: Int)

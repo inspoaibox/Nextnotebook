@@ -1,6 +1,7 @@
 import { getDatabase } from '../database';
 import { ItemBase, CountResult } from '../types';
 import { ChangeService } from './ChangeService';
+import { userService } from './UserService';
 
 export class ItemService {
   private changeService: ChangeService;
@@ -11,15 +12,20 @@ export class ItemService {
     this.userId = userId;
   }
 
+  private prepareUserScope(): void {
+    userService.claimLegacyDataForSingleUser(this.userId);
+  }
+
   // 获取单个数据项
   getItem(id: string): ItemBase | null {
+    this.prepareUserScope();
     const db = getDatabase();
     let stmt;
     let row;
 
     if (this.userId) {
       // 用户隔离：只能获取自己的数据
-      stmt = db.prepare('SELECT * FROM items WHERE id = ? AND (user_id = ? OR user_id IS NULL)');
+      stmt = db.prepare('SELECT * FROM items WHERE id = ? AND user_id = ?');
       row = stmt.get(id, this.userId) as ItemBase | undefined;
     } else {
       // 向后兼容：无用户隔离
@@ -32,6 +38,7 @@ export class ItemService {
 
   // 创建或更新数据项
   putItem(item: Partial<ItemBase> & { id: string; type: string; payload: string; content_hash: string }): { remoteRev: string } {
+    this.prepareUserScope();
     const db = getDatabase();
     const now = Date.now();
     const remoteRev = now.toString();
@@ -111,6 +118,7 @@ export class ItemService {
 
   // 硬删除数据项
   deleteItem(id: string): boolean {
+    this.prepareUserScope();
     const db = getDatabase();
     const existing = this.getItem(id);
     
@@ -120,7 +128,7 @@ export class ItemService {
 
     let stmt;
     if (this.userId) {
-      stmt = db.prepare('DELETE FROM items WHERE id = ? AND (user_id = ? OR user_id IS NULL)');
+      stmt = db.prepare('DELETE FROM items WHERE id = ? AND user_id = ?');
       stmt.run(id, this.userId);
     } else {
       stmt = db.prepare('DELETE FROM items WHERE id = ?');
@@ -159,11 +167,12 @@ export class ItemService {
 
   // 获取数据项计数
   getCount(type?: string): CountResult {
+    this.prepareUserScope();
     const db = getDatabase();
 
     // 构建用户过滤条件
     const userFilter = this.userId 
-      ? 'AND (user_id = ? OR user_id IS NULL)' 
+      ? 'AND user_id = ?' 
       : '';
     const userParams = this.userId ? [this.userId] : [];
 
@@ -200,13 +209,14 @@ export class ItemService {
 
   // 清理软删除的数据项
   cleanupSoftDeleted(before: number): number {
+    this.prepareUserScope();
     const db = getDatabase();
     
     let stmt;
     if (this.userId) {
       stmt = db.prepare(`
         DELETE FROM items 
-        WHERE deleted_time IS NOT NULL AND deleted_time < ? AND (user_id = ? OR user_id IS NULL)
+        WHERE deleted_time IS NOT NULL AND deleted_time < ? AND user_id = ?
       `);
       const result = stmt.run(before, this.userId);
       return result.changes;

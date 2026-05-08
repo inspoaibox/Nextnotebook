@@ -58,7 +58,7 @@ router.delete('/', (req, res, next) => {
     }
 
     const changeService = new ChangeService();
-    const deleted = changeService.cleanupBefore(parseInt(before, 10));
+    const deleted = changeService.cleanupBefore(parseInt(before, 10), req.userId);
     res.json({ deleted });
   } catch (error) {
     next(error);

@@ -183,41 +183,311 @@ const styles = `
   }
   
   .nav-sider {
-    background: #fff !important;
-    border-right: 1px solid #ebebeb !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
+    background: linear-gradient(180deg, #fafbfd 0%, #f3f5f9 100%) !important;
+    border-right: 1px solid #e7ecf4 !important;
+    box-shadow: inset -1px 0 0 rgba(255,255,255,0.8) !important;
+    backdrop-filter: blur(10px) !important;
+  }
+
+  .nav-sidebar-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 8px 6px 10px;
+  }
+
+  .nav-sidebar-header {
+    margin: 0 4px 6px;
+    padding: 6px 8px;
+    border-radius: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-sidebar-header--collapsed {
+    padding: 10px 0;
+    display: flex;
+    justify-content: center;
+  }
+
+  .nav-sidebar-header-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #1677ff 0%, #36cfc9 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .nav-sidebar-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1c2740;
+    letter-spacing: -0.2px;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .nav-sidebar-subtitle {
+    display: none;
+  }
+
+  .nav-sidebar-scroll {
+    flex: 1;
+    overflow: auto;
+    padding: 0 0 8px;
+  }
+
+  .nav-sidebar-panel {
+    margin: 0 4px 8px;
+    padding: 2px 0 4px;
+    border-radius: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .nav-sidebar-section {
+    margin-bottom: 14px;
+  }
+
+  .nav-sidebar-section-label {
+    padding: 6px 14px 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    gap: 8px;
+  }
+
+  .nav-sidebar-section-label span {
+    font-size: 10px;
+    color: #93a0b5;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+  }
+
+  .nav-sidebar-section-label::after {
+    content: '';
+    height: 1px;
+    flex: 1;
+    background: linear-gradient(90deg, rgba(147,160,181,0.2) 0%, rgba(147,160,181,0.04) 100%);
+  }
+
+  .nav-sidebar-add-btn {
+    color: #9aa7bc !important;
+    width: 22px !important;
+    height: 22px !important;
+    border-radius: 999px !important;
+  }
+
+  .nav-sidebar-add-btn:hover {
+    background: rgba(37,99,235,0.08) !important;
+    color: #2563eb !important;
   }
 
   /* 顶部固定项（全部/未分类） */
   .nav-folder-item {
-    transition: background 0.12s ease, color 0.12s ease;
-    border-radius: 5px;
-    margin: 0 6px;
-    color: #6b7280;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 2px 8px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    color: #5c6780;
     white-space: nowrap;
     overflow: hidden;
     font-size: 13px;
+    transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
   }
   
   .nav-folder-item:hover {
-    background: #f3f4f6;
-    color: #111827;
+    background: rgba(22,119,255,0.06);
+    border-color: transparent;
+    color: #14213d;
+    transform: none;
   }
   
   .nav-folder-item.selected {
-    background: #eff6ff;
+    background: rgba(22,119,255,0.1);
+    border-color: transparent;
+    color: #1d4ed8;
+    box-shadow: none;
+    position: relative;
+  }
+
+  .nav-folder-item.selected::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 3px;
+    border-radius: 0 999px 999px 0;
+    background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
+  }
+
+  .nav-folder-item__icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #eef2f8;
+    color: #8191a8;
+    flex-shrink: 0;
+    transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+    box-shadow: none;
+  }
+
+  .nav-folder-item.selected .nav-folder-item__icon {
+    background: rgba(37,99,235,0.12);
     color: #2563eb;
+    transform: scale(1.03);
+  }
+
+  .nav-folder-item__label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+    letter-spacing: -0.1px;
+  }
+
+  .nav-folder-item__meta {
+    display: none;
+  }
+
+  .nav-folder-item.selected .nav-folder-item__meta {
+    background: rgba(37,99,235,0.12);
+    color: #1d4ed8;
   }
 
   /* 主菜单节点 hover */
-  .nav-tree-root:hover {
-    background: #eef2ff;
+  .nav-folder-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 2px 8px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    transition: background 0.16s ease, color 0.16s ease;
   }
 
-  /* 子菜单节点 hover */
-  .nav-tree-child:hover {
-    background: #f3f4f6;
+  .nav-folder-row:hover {
+    background: rgba(22,119,255,0.06);
+    border-color: transparent;
+  }
+
+  .nav-folder-row.is-selected {
+    background: rgba(22,119,255,0.1);
+    border-color: transparent;
+    position: relative;
+  }
+
+  .nav-folder-row.is-selected::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 9px;
+    bottom: 9px;
+    width: 3px;
+    border-radius: 0 999px 999px 0;
+    background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
+  }
+
+  .nav-folder-row.is-child {
+    padding-left: 28px;
+  }
+
+  .nav-folder-chevron {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8b99ad;
+    background: rgba(148,163,184,0.1);
+    flex-shrink: 0;
+    font-size: 9px;
+    transition: background 0.16s ease, color 0.16s ease;
+  }
+
+  .nav-folder-chevron--trailing {
+    margin-left: auto;
+  }
+
+  .nav-folder-row.is-selected .nav-folder-chevron {
+    background: rgba(37,99,235,0.12);
+    color: #2563eb;
+  }
+
+  .nav-folder-root-badge {
+    width: 18px;
+    height: 18px;
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: #d48806;
+    flex-shrink: 0;
+  }
+
+  .nav-folder-dot {
+    display: none;
+  }
+
+  .nav-folder-row.is-selected .nav-folder-dot {
+    background: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37,99,235,0.14);
+  }
+
+  .nav-folder-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #334155;
+  }
+
+  .nav-folder-row.is-root .nav-folder-name {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.1px;
+  }
+
+  .nav-folder-row.is-child .nav-folder-name {
+    font-size: 12px;
+    font-weight: 400;
+    color: #5f6b81;
+  }
+
+  .nav-folder-row.is-selected .nav-folder-name {
+    color: #1d4ed8;
+  }
+
+  .nav-folder-count {
+    display: none;
+  }
+
+  .folder-tree-container {
+    padding-bottom: 6px;
   }
 
   /* 垂直卡片 */
@@ -611,15 +881,6 @@ const BookmarkPanel: React.FC = () => {
 
   const { folders, createFolder, updateFolder, deleteFolder } = useBookmarkFolders();
 
-  // folders 加载完成后，默认展开所有有子节点的文件夹
-  useEffect(() => {
-    if (folders.length > 0) {
-      const withChildren = new Set(
-        folders.filter(f => folders.some(c => c.parentId === f.id)).map(f => f.id)
-      );
-      setExpandedFolders(withChildren);
-    }
-  }, [folders.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const { bookmarks, createBookmark, updateBookmark, deleteBookmark, loading: bookmarksLoading } = useBookmarks(
     selectedFolderId === 'all' ? undefined : selectedFolderId,
     folders  // 传入 folders 以支持递归获取子文件夹书签
@@ -662,8 +923,12 @@ const BookmarkPanel: React.FC = () => {
 
   // 排序文件夹 (字母顺序)
   const sortedFolders = React.useMemo(() => {
-    return [...folders].sort((a, b) => a.name.localeCompare(b.name));
+    return [...folders].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
   }, [folders]);
+
+  const rootFolderCount = React.useMemo(() => {
+    return sortedFolders.filter(folder => folder.parentId === null).length;
+  }, [sortedFolders]);
 
   // 构建文件夹树
   const buildFolderTree = (parentId: string | null = null, level: number = 0): React.ReactNode[] => {
@@ -673,6 +938,7 @@ const BookmarkPanel: React.FC = () => {
       const isExpanded = expandedFolders.has(folder.id);
       const hasChildFolders = hasChildren(folder.id);
       const isRenaming = renamingFolderId === folder.id;
+      const isSelected = selectedFolderId === folder.id || scrollTarget === folder.id;
 
       return [
         <div
@@ -686,82 +952,57 @@ const BookmarkPanel: React.FC = () => {
           }}
         >
           {level === 0 ? (
-            // 主菜单：圆角背景块，选中时蓝色背景
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '8px 10px',
-              margin: '2px 6px',
-              borderRadius: 8,
-              background: selectedFolderId === folder.id || scrollTarget === folder.id
-                ? '#eff6ff' : 'transparent',
-              transition: 'background 0.12s',
-            }}
-              className={selectedFolderId === folder.id || scrollTarget === folder.id ? '' : 'nav-tree-root'}
+            <div
+              className={`nav-folder-row is-root${isSelected ? ' is-selected' : ''}`}
             >
-              {/* 展开箭头 */}
-              <span
-                onClick={hasChildFolders ? (e) => toggleFolderExpand(folder.id, e) : undefined}
-                style={{
-                  width: 14, height: 14,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: hasChildFolders
-                    ? (selectedFolderId === folder.id ? '#2563eb' : '#9ca3af')
-                    : 'transparent',
-                  fontSize: 9,
-                  flexShrink: 0,
-                  transition: 'color 0.12s',
-                }}
-              >
-                {isExpanded ? <DownOutlined /> : <RightOutlined />}
-              </span>
+              {!collapsed && (
+                <span className="nav-folder-root-badge">
+                  <FolderOutlined style={{ fontSize: 13 }} />
+                </span>
+              )}
               {isRenaming && !collapsed ? (
                 <Input value={renamingName} onChange={e => setRenamingName(e.target.value)}
                   onBlur={submitRename} onPressEnter={submitRename} autoFocus size="small"
                   onClick={e => e.stopPropagation()} style={{ flex: 1, height: 22, fontSize: 13 }} />
               ) : !collapsed && (
-                <span style={{
-                  fontSize: 13,
-                  fontWeight: selectedFolderId === folder.id || scrollTarget === folder.id ? 600 : 500,
-                  color: selectedFolderId === folder.id || scrollTarget === folder.id ? '#2563eb' : '#374151',
-                  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  letterSpacing: '-0.1px',
-                }}>
+                <span className="nav-folder-name">
                   {folder.name}
+                </span>
+              )}
+              {!collapsed && hasChildFolders && (
+                <span
+                  onClick={(e) => toggleFolderExpand(folder.id, e)}
+                  className="nav-folder-chevron nav-folder-chevron--trailing"
+                >
+                  {isExpanded ? <DownOutlined /> : <RightOutlined />}
                 </span>
               )}
             </div>
           ) : (
-            // 子菜单：左侧竖线 + 缩进，更轻量
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0,
-              padding: '7px 10px 7px 0',
-              paddingLeft: 30,
-              margin: '1px 6px',
-              borderRadius: 7,
-              background: selectedFolderId === folder.id || scrollTarget === folder.id
-                ? '#eff6ff' : 'transparent',
-              transition: 'background 0.12s',
-              borderLeft: selectedFolderId === folder.id || scrollTarget === folder.id
-                ? '2px solid #2563eb' : '2px solid transparent',
-            }}
-              className={selectedFolderId === folder.id || scrollTarget === folder.id ? '' : 'nav-tree-child'}
+            <div
+              className={`nav-folder-row is-child${isSelected ? ' is-selected' : ''}`}
+              style={{ marginLeft: collapsed ? 0 : Math.max(0, (level - 1) * 14) }}
             >
+              {!collapsed && (
+                <span className="nav-folder-root-badge">
+                  <FolderOutlined style={{ fontSize: 12 }} />
+                </span>
+              )}
               {isRenaming && !collapsed ? (
                 <Input value={renamingName} onChange={e => setRenamingName(e.target.value)}
                   onBlur={submitRename} onPressEnter={submitRename} autoFocus size="small"
                   onClick={e => e.stopPropagation()} style={{ flex: 1, height: 20, fontSize: 12 }} />
               ) : !collapsed && (
-                <span style={{
-                  fontSize: 12,
-                  fontWeight: selectedFolderId === folder.id || scrollTarget === folder.id ? 500 : 400,
-                  color: selectedFolderId === folder.id || scrollTarget === folder.id ? '#2563eb' : '#6b7280',
-                  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
+                <span className="nav-folder-name">
                   {folder.name}
+                </span>
+              )}
+              {!collapsed && hasChildFolders && (
+                <span
+                  onClick={(e) => toggleFolderExpand(folder.id, e)}
+                  className="nav-folder-chevron nav-folder-chevron--trailing"
+                >
+                  {isExpanded ? <DownOutlined /> : <RightOutlined />}
                 </span>
               )}
             </div>
@@ -1109,101 +1350,82 @@ const BookmarkPanel: React.FC = () => {
         collapsedWidth={60}
         onContextMenu={(e) => handleFolderContextMenu(e, null)} // Root context menu
       >
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div className="nav-sidebar-shell">
           {/* Logo / Header */}
-          <div style={{
-            padding: collapsed ? '14px 0' : '14px 16px 10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            gap: 8,
-            borderBottom: '1px solid #f5f5f5',
-          }}>
-            <div style={{
-              width: 24, height: 24,
-              background: 'linear-gradient(135deg, #1677ff 0%, #36cfc9 100%)',
-              borderRadius: 6,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}>
+          <div className={`nav-sidebar-header${collapsed ? ' nav-sidebar-header--collapsed' : ''}`}>
+            <div className="nav-sidebar-header-mark">
               <GlobalOutlined style={{ fontSize: 13, color: '#fff' }} />
             </div>
-            {!collapsed && <span style={{ fontWeight: 600, fontSize: 14, color: '#1a1a2e' }}>书签导航</span>}
-          </div>
-
-          <div style={{ flex: 1, overflow: 'auto', padding: '8px 0 10px' }}>
-            {/* 全部书签 */}
-            <div
-              onClick={() => setSelectedFolderId('all')}
-              style={{
-                display: 'flex', alignItems: 'center',
-                gap: 8, padding: '8px 10px', margin: '2px 6px', borderRadius: 8,
-                cursor: 'pointer', userSelect: 'none' as const,
-                background: selectedFolderId === 'all' ? '#eff6ff' : 'transparent',
-                transition: 'background 0.12s',
-                justifyContent: collapsed ? 'center' : 'flex-start',
-              }}
-              className={selectedFolderId === 'all' ? '' : 'nav-tree-root'}
-            >
-              <AppstoreOutlined style={{
-                color: selectedFolderId === 'all' ? '#2563eb' : '#9ca3af',
-                fontSize: 13, flexShrink: 0,
-              }} />
-              {!collapsed && (
-                <span style={{
-                  fontSize: 13, fontWeight: selectedFolderId === 'all' ? 600 : 500,
-                  color: selectedFolderId === 'all' ? '#2563eb' : '#374151',
-                }}>全部书签</span>
-              )}
-            </div>
-            {/* 未分类 */}
-            <div
-              onClick={() => setSelectedFolderId(null)}
-              style={{
-                display: 'flex', alignItems: 'center',
-                gap: 8, padding: '8px 10px', margin: '2px 6px', borderRadius: 8,
-                cursor: 'pointer', userSelect: 'none' as const,
-                background: selectedFolderId === null ? '#eff6ff' : 'transparent',
-                transition: 'background 0.12s',
-                justifyContent: collapsed ? 'center' : 'flex-start',
-              }}
-              className={selectedFolderId === null ? '' : 'nav-tree-root'}
-            >
-              <FolderOutlined style={{
-                color: selectedFolderId === null ? '#2563eb' : '#9ca3af',
-                fontSize: 13, flexShrink: 0,
-              }} />
-              {!collapsed && (
-                <span style={{
-                  fontSize: 13, fontWeight: selectedFolderId === null ? 600 : 500,
-                  color: selectedFolderId === null ? '#2563eb' : '#374151',
-                }}>未分类</span>
-              )}
-            </div>
-
-            {/* FOLDERS 标签 */}
             {!collapsed && (
-              <div style={{
-                padding: '14px 16px 4px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}>
-                <span style={{ fontSize: 10, color: '#c0c0c0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8 }}>文件夹</span>
-                <Tooltip title="新建文件夹">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<PlusOutlined style={{ fontSize: 11 }} />}
-                    onClick={() => { setNewFolderParentId(null); setFolderModalOpen(true); }}
-                    style={{ color: '#c0c0c0', width: 20, height: 20, padding: 0, minWidth: 0 }}
-                  />
-                </Tooltip>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="nav-sidebar-title">书签导航</div>
+                <div className="nav-sidebar-subtitle">总览、分类与待整理入口</div>
               </div>
             )}
+          </div>
 
-            <div className="folder-tree-container">
-              {buildFolderTree(null)}
+          <div className="nav-sidebar-scroll">
+            <div className="nav-sidebar-panel">
+              {!collapsed && (
+                <div className="nav-sidebar-section-label">
+                  <span>快捷入口</span>
+                </div>
+              )}
+
+              {/* 全部书签 */}
+              <div
+                onClick={() => setSelectedFolderId('all')}
+                style={{ cursor: 'pointer', userSelect: 'none' as const, justifyContent: collapsed ? 'center' : 'flex-start' }}
+                className={`nav-folder-item${selectedFolderId === 'all' ? ' selected' : ''}`}
+              >
+                <span className="nav-folder-item__icon">
+                  <AppstoreOutlined style={{ fontSize: 14 }} />
+                </span>
+                {!collapsed && (
+                  <>
+                    <span className="nav-folder-item__label">全部书签</span>
+                    <span className="nav-folder-item__meta">总览</span>
+                  </>
+                )}
+              </div>
+              {/* 未分类 */}
+              <div
+                onClick={() => setSelectedFolderId(null)}
+                style={{ cursor: 'pointer', userSelect: 'none' as const, justifyContent: collapsed ? 'center' : 'flex-start' }}
+                className={`nav-folder-item${selectedFolderId === null ? ' selected' : ''}`}
+              >
+                <span className="nav-folder-item__icon">
+                  <FolderOutlined style={{ fontSize: 14 }} />
+                </span>
+                {!collapsed && (
+                  <>
+                    <span className="nav-folder-item__label">未分类</span>
+                    <span className="nav-folder-item__meta">待整理</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="nav-sidebar-panel">
+              {/* FOLDERS 标签 */}
+              {!collapsed && (
+                <div className="nav-sidebar-section-label">
+                  <span>分类目录 {rootFolderCount > 0 ? `(${rootFolderCount})` : ''}</span>
+                  <Tooltip title="新建文件夹">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<PlusOutlined style={{ fontSize: 11 }} />}
+                      onClick={() => { setNewFolderParentId(null); setFolderModalOpen(true); }}
+                      className="nav-sidebar-add-btn"
+                    />
+                  </Tooltip>
+                </div>
+              )}
+
+              <div className="folder-tree-container">
+                {buildFolderTree(null)}
+              </div>
             </div>
           </div>
         </div>

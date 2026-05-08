@@ -109,6 +109,29 @@ export class RelayClient {
   getConnectedDevices() {
     return this.onlineDevices;
   }
+
+  private resolveRelayEndpoint(serverUrl: string): { url: string; path: string } {
+    const trimmedUrl = serverUrl.trim();
+    try {
+      const parsed = new URL(trimmedUrl);
+      const relayPath =
+        parsed.pathname && parsed.pathname !== '/'
+          ? parsed.pathname.replace(/\/$/, '') || '/transfer'
+          : '/transfer';
+      parsed.pathname = '';
+      parsed.search = '';
+      parsed.hash = '';
+      return {
+        url: parsed.toString().replace(/\/$/, ''),
+        path: relayPath,
+      };
+    } catch {
+      return {
+        url: trimmedUrl.replace(/\/$/, ''),
+        path: '/transfer',
+      };
+    }
+  }
   // ============================================
 
   /**
@@ -131,10 +154,10 @@ export class RelayClient {
     return new Promise((resolve, reject) => {
       try {
         // 构建连接 URL
-        const url = config.serverUrl.replace(/\/$/, '');
+        const endpoint = this.resolveRelayEndpoint(config.serverUrl);
 
-        this.socket = io(url, {
-          path: '/transfer',
+        this.socket = io(endpoint.url, {
+          path: endpoint.path,
           auth: {
             relayKey: config.relayKey,
           },
@@ -406,6 +429,7 @@ export class RelayClient {
     // 发送文件开始事件
     this.socket.emit(SOCKET_EVENTS.FILE_START, {
       targetDeviceId,
+      sessionId,
       fileInfo: {
         id: fileId,
         filename,
@@ -428,6 +452,7 @@ export class RelayClient {
 
         this.socket!.emit(SOCKET_EVENTS.FILE_CHUNK, {
           targetDeviceId,
+          sessionId,
           fileId,
           chunkIndex: i,
           chunk: chunk.toString('base64'),
@@ -439,6 +464,7 @@ export class RelayClient {
 
       this.socket!.emit(SOCKET_EVENTS.FILE_COMPLETE, {
         targetDeviceId,
+        sessionId,
         fileId,
         fileHash,
       });

@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config';
+import { getDatabase } from '../database';
+import { userService } from './UserService';
 
 export class ResourceService {
   private resourceDir: string;
@@ -37,8 +39,26 @@ export class ResourceService {
     return path.join(dir, id);
   }
 
+  private canAccessResource(id: string): boolean {
+    if (!this.userId) {
+      return true;
+    }
+
+    userService.claimLegacyDataForSingleUser(this.userId);
+    const db = getDatabase();
+    const row = db
+      .prepare('SELECT id FROM items WHERE id = ? AND type = ? AND user_id = ?')
+      .get(id, 'resource', this.userId) as { id: string } | undefined;
+
+    return !!row;
+  }
+
   // 获取资源文件（支持向后兼容）
   getResource(id: string): Buffer | null {
+    if (!this.canAccessResource(id)) {
+      return null;
+    }
+
     // 首先尝试用户目录
     const userPath = this.getResourcePath(id);
     if (fs.existsSync(userPath)) {
@@ -63,6 +83,10 @@ export class ResourceService {
 
   // 保存资源文件
   putResource(id: string, data: Buffer): boolean {
+    if (!this.canAccessResource(id)) {
+      return false;
+    }
+
     const filePath = this.getResourcePath(id);
     fs.writeFileSync(filePath, data);
     return true;
@@ -70,6 +94,10 @@ export class ResourceService {
 
   // 删除资源文件
   deleteResource(id: string): boolean {
+    if (!this.canAccessResource(id)) {
+      return false;
+    }
+
     // 首先尝试用户目录
     const userPath = this.getResourcePath(id);
     if (fs.existsSync(userPath)) {

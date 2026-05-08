@@ -388,6 +388,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('transfer:relay:file-complete', handler);
         return () => ipcRenderer.removeListener('transfer:relay:file-complete', handler);
       },
+      onPairSuccess: (callback: (data: object) => void) => {
+        const handler = (_event: any, data: object) => callback(data);
+        ipcRenderer.on('transfer:relay:pair-success', handler);
+        return () => ipcRenderer.removeListener('transfer:relay:pair-success', handler);
+      },
     },
   },
 

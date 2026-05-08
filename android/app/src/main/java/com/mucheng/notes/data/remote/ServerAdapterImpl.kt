@@ -190,6 +190,14 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             AuthResponse(success = false, message = e.message ?: "网络错误")
         }
     }
+
+    private fun persistTokenState(
+        accessToken: String,
+        refreshToken: String?,
+        expiresIn: Int
+    ) {
+        onTokenRefresh?.invoke(accessToken, refreshToken ?: "", expiresIn)
+    }
     
     /**
      * 注册
@@ -260,18 +268,25 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
                     tokenExpires = System.currentTimeMillis() + expiresIn * 1000L
                     
                     // 通知外部保存新 token
-                    onTokenRefresh?.invoke(authResponse.accessToken, authResponse.refreshToken ?: "", expiresIn)
+                    persistTokenState(authResponse.accessToken, authResponse.refreshToken, expiresIn)
                     return@withContext true
                 }
             }
-            
-            // refresh token 无效或过期，尝试自动重新登录
-            android.util.Log.w("ServerAdapter", "Refresh token invalid, trying auto relogin...")
-            return@withContext tryAutoRelogin()
+
+            if (response.code == 401 || response.code == 403) {
+                // refresh token 无效或过期，尝试自动重新登录
+                android.util.Log.w("ServerAdapter", "Refresh token rejected, trying auto relogin...")
+                return@withContext tryAutoRelogin()
+            }
+
+            android.util.Log.w(
+                "ServerAdapter",
+                "Token refresh request failed: HTTP ${response.code} ${response.message}"
+            )
+            return@withContext false
         } catch (e: Exception) {
             android.util.Log.e("ServerAdapter", "Token refresh failed: ${e.message}")
-            // 尝试自动重新登录
-            return@withContext tryAutoRelogin()
+            return@withContext false
         }
     }
     
@@ -327,18 +342,20 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             val (username, password, syncKey) = credentials
             val result = login(username, password, syncKey)
             
-            if (result.success) {
+            if (result.success && result.accessToken != null) {
+                persistTokenState(result.accessToken, result.refreshToken, result.expiresIn ?: 3600)
                 android.util.Log.i("ServerAdapter", "Auto relogin successful")
                 true
             } else {
                 android.util.Log.e("ServerAdapter", "Auto relogin failed: ${result.message}")
-                // 登录失败，通知需要重新登录
-                onReloginRequired?.invoke()
+                if (result.error?.code != null) {
+                    // 仅在服务端明确判定认证失效时清理本地登录态
+                    onReloginRequired?.invoke()
+                }
                 false
             }
         } catch (e: Exception) {
             android.util.Log.e("ServerAdapter", "Auto relogin error: ${e.message}")
-            onReloginRequired?.invoke()
             false
         }
     }

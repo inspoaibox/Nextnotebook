@@ -11,11 +11,20 @@ import android.os.Build
 import android.util.Log
 import io.socket.client.IO
 import io.socket.client.Socket
-import io.socket.emitter.Emitter
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.BufferedWriter
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.Inet4Address
+import java.net.InetSocketAddress
+import java.net.NetworkInterface
+import java.net.ServerSocket
+import java.net.Socket as JavaSocket
+import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
 
 /**
@@ -38,6 +47,17 @@ data class OnlineDevice(
 )
 
 /**
+ * Android 局域网接收端状态
+ */
+data class LanServerStatus(
+    val running: Boolean = false,
+    val ip: String? = null,
+    val port: Int? = null,
+    val qrData: String? = null,
+    val connectedDevices: Int = 0
+)
+
+/**
  * 传输客户端
  */
 class TransferClient(
@@ -47,8 +67,32 @@ class TransferClient(
         private const val TAG = "TransferClient"
     }
 
+    private data class RelayEndpoint(
+        val url: String,
+        val path: String
+    )
+
+    private data class LanPeer(
+        val deviceId: String,
+        val deviceName: String,
+        val deviceType: DeviceType,
+        val socket: JavaSocket,
+        val writer: BufferedWriter
+    )
+
+    private enum class LanTransport {
+        SOCKET_IO,
+        ANDROID_TCP
+    }
+
     private var socket: Socket? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var serverSocket: ServerSocket? = null
+    private var lanServerJob: Job? = null
+    private var lanServerQrRefreshJob: Job? = null
+    private val lanPeers = ConcurrentHashMap<String, LanPeer>()
+    private var socketOnlineDevices: List<OnlineDevice> = emptyList()
+    private var currentLanTransport: LanTransport? = null
     
     // 设备信息
     private val deviceId: String by lazy { getOrCreateDeviceId() }
@@ -60,6 +104,9 @@ class TransferClient(
     
     private val _onlineDevices = MutableStateFlow<List<OnlineDevice>>(emptyList())
     val onlineDevices: StateFlow<List<OnlineDevice>> = _onlineDevices.asStateFlow()
+
+    private val _lanServerStatus = MutableStateFlow(LanServerStatus())
+    val lanServerStatus: StateFlow<LanServerStatus> = _lanServerStatus.asStateFlow()
     
     // 事件回调
     private val _messageReceived = MutableSharedFlow<MessageReceivedEvent>()
@@ -93,10 +140,16 @@ class TransferClient(
         
         scope.launch {
             try {
+                val endpoint = if (mode == ConnectionMode.RELAY) {
+                    resolveRelayEndpoint(serverIp)
+                } else {
+                    null
+                }
+
                 val url = if (mode == ConnectionMode.LAN) {
                     "http://$serverIp:$serverPort"
                 } else {
-                    serverIp // 中继服务器 URL
+                    endpoint?.url ?: serverIp
                 }
                 
                 Log.d(TAG, "Connecting to $url (mode: $mode)")
@@ -107,7 +160,7 @@ class TransferClient(
                     reconnectionAttempts = TransferConstants.MAX_RETRY
                     reconnectionDelay = TransferConstants.RETRY_INTERVAL
                     timeout = TransferConstants.SESSION_TIMEOUT
-                    path = if (mode == ConnectionMode.RELAY) "/transfer" else "/socket.io"
+                    path = if (mode == ConnectionMode.RELAY) endpoint?.path ?: "/transfer" else "/socket.io"
                     // 中继模式需要密钥认证
                     if (mode == ConnectionMode.RELAY && !relayKey.isNullOrEmpty()) {
                         auth = mapOf("relayKey" to relayKey)
@@ -137,7 +190,127 @@ class TransferClient(
             )
             return
         }
+        if (qrData.protocol == TransferConstants.QR_PROTOCOL_ANDROID_TCP) {
+            connectToAndroidLanServer(qrData)
+            return
+        }
         connect(qrData.serverIp, qrData.serverPort, ConnectionMode.LAN)
+    }
+
+    /**
+     * 启动 Android 局域网接收端，供另一台手机扫码直连
+     */
+    fun startLanServer() {
+        if (_lanServerStatus.value.running) {
+            Log.w(TAG, "Android LAN server already running")
+            return
+        }
+
+        scope.launch {
+            try {
+                val ip = findLocalIPv4Address()
+                if (ip == null) {
+                    _connectionState.value = ConnectionState.Error(
+                        TransferError(TransferErrorCode.NETWORK_UNAVAILABLE, details = "No local IPv4 address")
+                    )
+                    return@launch
+                }
+
+                val server = openAvailableServerSocket()
+                serverSocket = server
+                val port = server.localPort
+                val qrData = buildAndroidLanQRData(ip, port)
+
+                _lanServerStatus.value = LanServerStatus(
+                    running = true,
+                    ip = ip,
+                    port = port,
+                    qrData = qrData,
+                    connectedDevices = lanPeers.size
+                )
+
+                lanServerJob = launch {
+                    acceptLanClients(server)
+                }
+                startLanServerQrRefresh(ip, port)
+
+                Log.d(TAG, "Android LAN server started at $ip:$port")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start Android LAN server", e)
+                _connectionState.value = ConnectionState.Error(
+                    TransferError(TransferErrorCode.SERVER_START_FAILED, details = e.message)
+                )
+                _lanServerStatus.value = LanServerStatus()
+            }
+        }
+    }
+
+    /**
+     * 停止 Android 局域网接收端
+     */
+    fun stopLanServer() {
+        lanServerJob?.cancel()
+        lanServerJob = null
+        lanServerQrRefreshJob?.cancel()
+        lanServerQrRefreshJob = null
+        runCatching { serverSocket?.close() }
+        serverSocket = null
+        closeLanPeers()
+        _lanServerStatus.value = LanServerStatus()
+        if (socket == null) {
+            _connectionState.value = ConnectionState.Disconnected
+        }
+        Log.d(TAG, "Android LAN server stopped")
+    }
+
+    /**
+     * 连接另一台 Android 的轻量 TCP 接收端
+     */
+    private fun connectToAndroidLanServer(qrData: PairingQRData) {
+        if (_connectionState.value is ConnectionState.Connected) {
+            Log.w(TAG, "Already connected")
+            return
+        }
+
+        _connectionState.value = ConnectionState.Connecting
+
+        scope.launch {
+            try {
+                val javaSocket = JavaSocket()
+                javaSocket.connect(InetSocketAddress(qrData.serverIp, qrData.serverPort), TransferConstants.RETRY_INTERVAL.toInt())
+                val writer = BufferedWriter(OutputStreamWriter(javaSocket.getOutputStream(), Charsets.UTF_8))
+                val peer = LanPeer(
+                    deviceId = qrData.deviceId,
+                    deviceName = qrData.deviceName,
+                    deviceType = DeviceType.ANDROID,
+                    socket = javaSocket,
+                    writer = writer
+                )
+
+                lanPeers[peer.deviceId] = peer
+                currentLanTransport = LanTransport.ANDROID_TCP
+                updateLanPeerList()
+                _connectionState.value = ConnectionState.Connected(ConnectionMode.LAN)
+
+                sendLanPacket(
+                    peer = peer,
+                    event = SocketEvents.DEVICE_REGISTER,
+                    payload = JSONObject().apply {
+                        put("deviceId", deviceId)
+                        put("deviceName", deviceName)
+                        put("deviceType", DeviceType.ANDROID.value)
+                    }
+                )
+
+                launch { listenToLanPeer(peer) }
+                Log.d(TAG, "Connected to Android LAN server ${qrData.serverIp}:${qrData.serverPort}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Android LAN connection failed", e)
+                _connectionState.value = ConnectionState.Error(
+                    TransferError(TransferErrorCode.CONNECTION_FAILED, details = e.message)
+                )
+            }
+        }
     }
 
     /**
@@ -233,10 +406,16 @@ class TransferClient(
      * 内部连接方法
      */
     private fun connectInternal(serverIp: String, serverPort: Int, mode: ConnectionMode, relayKey: String?) {
+        val endpoint = if (mode == ConnectionMode.RELAY) {
+            resolveRelayEndpoint(serverIp)
+        } else {
+            null
+        }
+
         val url = if (mode == ConnectionMode.LAN) {
             "http://$serverIp:$serverPort"
         } else {
-            serverIp
+            endpoint?.url ?: serverIp
         }
         
         Log.d(TAG, "Connecting to $url (mode: $mode)")
@@ -245,7 +424,7 @@ class TransferClient(
             forceNew = true
             reconnection = false // 手动处理重连
             timeout = TransferConstants.RETRY_INTERVAL
-            path = if (mode == ConnectionMode.RELAY) "/transfer" else "/socket.io"
+            path = if (mode == ConnectionMode.RELAY) endpoint?.path ?: "/transfer" else "/socket.io"
             // 中继模式需要密钥认证
             if (mode == ConnectionMode.RELAY && !relayKey.isNullOrEmpty()) {
                 auth = mapOf("relayKey" to relayKey)
@@ -268,6 +447,9 @@ class TransferClient(
         socket?.disconnect()
         socket?.off()
         socket = null
+        closeLanPeers()
+        currentLanTransport = null
+        socketOnlineDevices = emptyList()
         _connectionState.value = ConnectionState.Disconnected
         _onlineDevices.value = emptyList()
         Log.d(TAG, "Disconnected")
@@ -277,35 +459,50 @@ class TransferClient(
      * 发送配对请求
      */
     fun sendPairRequest(targetDeviceId: String) {
-        socket?.emit(SocketEvents.PAIR_REQUEST, JSONObject().apply {
+        val payload = JSONObject().apply {
             put("targetDeviceId", targetDeviceId)
-        })
+            put("requesterId", deviceId)
+            put("requesterName", deviceName)
+        }
+        if (sendViaAndroidLan(targetDeviceId, SocketEvents.PAIR_REQUEST, payload)) return
+        socket?.emit(SocketEvents.PAIR_REQUEST, payload)
     }
 
     /**
      * 接受配对请求
      */
     fun acceptPairRequest(requesterId: String, sessionId: String) {
-        socket?.emit(SocketEvents.PAIR_ACCEPT, JSONObject().apply {
+        val payload = JSONObject().apply {
             put("requesterId", requesterId)
             put("sessionId", sessionId)
-        })
+        }
+        val peer = lanPeers[requesterId]
+        if (peer != null) {
+            sendLanPacket(peer, SocketEvents.PAIR_ACCEPT, payload)
+            scope.launch {
+                _pairSuccess.emit(PairSuccessEvent(sessionId, peer.deviceId, peer.deviceName))
+            }
+            return
+        }
+        socket?.emit(SocketEvents.PAIR_ACCEPT, payload)
     }
 
     /**
      * 拒绝配对请求
      */
     fun rejectPairRequest(requesterId: String) {
-        socket?.emit(SocketEvents.PAIR_REJECT, JSONObject().apply {
+        val payload = JSONObject().apply {
             put("requesterId", requesterId)
-        })
+        }
+        if (sendViaAndroidLan(requesterId, SocketEvents.PAIR_REJECT, payload)) return
+        socket?.emit(SocketEvents.PAIR_REJECT, payload)
     }
 
     /**
      * 发送文本消息
      */
     fun sendMessage(targetDeviceId: String, sessionId: String, message: TransferMessageData) {
-        socket?.emit(SocketEvents.MESSAGE_SEND, JSONObject().apply {
+        val payload = JSONObject().apply {
             put("targetDeviceId", targetDeviceId)
             put("sessionId", sessionId)
             put("message", JSONObject().apply {
@@ -314,24 +511,28 @@ class TransferClient(
                 put("content", message.content)
                 message.fileId?.let { put("fileId", it) }
             })
-        })
+        }
+        if (sendViaAndroidLan(targetDeviceId, SocketEvents.MESSAGE_SEND, payload)) return
+        socket?.emit(SocketEvents.MESSAGE_SEND, payload)
     }
 
     /**
      * 发送消息已读回执
      */
     fun sendMessageRead(targetDeviceId: String, messageIds: List<String>) {
-        socket?.emit(SocketEvents.MESSAGE_READ, JSONObject().apply {
+        val payload = JSONObject().apply {
             put("targetDeviceId", targetDeviceId)
             put("messageIds", JSONArray(messageIds))
-        })
+        }
+        if (sendViaAndroidLan(targetDeviceId, SocketEvents.MESSAGE_READ, payload)) return
+        socket?.emit(SocketEvents.MESSAGE_READ, payload)
     }
 
     /**
      * 开始文件传输
      */
     fun startFileTransfer(targetDeviceId: String, sessionId: String, fileInfo: FileTransferInfo) {
-        socket?.emit(SocketEvents.FILE_START, JSONObject().apply {
+        val payload = JSONObject().apply {
             put("targetDeviceId", targetDeviceId)
             put("sessionId", sessionId)
             put("fileInfo", JSONObject().apply {
@@ -341,41 +542,52 @@ class TransferClient(
                 put("mimeType", fileInfo.mimeType)
                 put("totalChunks", fileInfo.totalChunks)
             })
-        })
+        }
+        if (sendViaAndroidLan(targetDeviceId, SocketEvents.FILE_START, payload)) return
+        socket?.emit(SocketEvents.FILE_START, payload)
     }
 
     /**
      * 发送文件分块
      */
-    fun sendFileChunk(targetDeviceId: String, fileId: String, chunkIndex: Int, chunk: ByteArray, totalChunks: Int) {
-        socket?.emit(SocketEvents.FILE_CHUNK, JSONObject().apply {
+    fun sendFileChunk(targetDeviceId: String, sessionId: String, fileId: String, chunkIndex: Int, chunk: ByteArray, totalChunks: Int) {
+        val payload = JSONObject().apply {
             put("targetDeviceId", targetDeviceId)
+            put("sessionId", sessionId)
             put("fileId", fileId)
             put("chunkIndex", chunkIndex)
             put("chunk", android.util.Base64.encodeToString(chunk, android.util.Base64.NO_WRAP))
             put("totalChunks", totalChunks)
-        })
+        }
+        if (sendViaAndroidLan(targetDeviceId, SocketEvents.FILE_CHUNK, payload)) return
+        socket?.emit(SocketEvents.FILE_CHUNK, payload)
     }
 
     /**
      * 完成文件传输
      */
-    fun completeFileTransfer(targetDeviceId: String, fileId: String, fileHash: String?) {
-        socket?.emit(SocketEvents.FILE_COMPLETE, JSONObject().apply {
+    fun completeFileTransfer(targetDeviceId: String, sessionId: String, fileId: String, fileHash: String?) {
+        val payload = JSONObject().apply {
             put("targetDeviceId", targetDeviceId)
+            put("sessionId", sessionId)
             put("fileId", fileId)
             fileHash?.let { put("fileHash", it) }
-        })
+        }
+        if (sendViaAndroidLan(targetDeviceId, SocketEvents.FILE_COMPLETE, payload)) return
+        socket?.emit(SocketEvents.FILE_COMPLETE, payload)
     }
 
     /**
      * 取消文件传输
      */
-    fun cancelFileTransfer(targetDeviceId: String, fileId: String) {
-        socket?.emit(SocketEvents.FILE_CANCEL, JSONObject().apply {
+    fun cancelFileTransfer(targetDeviceId: String, sessionId: String, fileId: String) {
+        val payload = JSONObject().apply {
             put("targetDeviceId", targetDeviceId)
+            put("sessionId", sessionId)
             put("fileId", fileId)
-        })
+        }
+        if (sendViaAndroidLan(targetDeviceId, SocketEvents.FILE_CANCEL, payload)) return
+        socket?.emit(SocketEvents.FILE_CANCEL, payload)
     }
 
     /**
@@ -435,7 +647,7 @@ class TransferClient(
                 val chunk = if (bytesRead == buffer.size) buffer else buffer.copyOf(bytesRead)
                 messageDigest.update(chunk)
                 
-                sendFileChunk(targetDeviceId, resolvedFileId, chunkIndex, chunk, totalChunks)
+                sendFileChunk(targetDeviceId, sessionId, resolvedFileId, chunkIndex, chunk, totalChunks)
                 
                 chunkIndex++
                 val progress = chunkIndex.toFloat() / totalChunks
@@ -450,7 +662,7 @@ class TransferClient(
             val fileHash = hashBytes.joinToString("") { "%02x".format(it) }
             
             // 发送文件完成事件
-            completeFileTransfer(targetDeviceId, resolvedFileId, fileHash)
+            completeFileTransfer(targetDeviceId, sessionId, resolvedFileId, fileHash)
         } ?: throw IllegalStateException("Cannot open file: $uri")
         
         fileInfo
@@ -470,6 +682,7 @@ class TransferClient(
     private fun Socket.setupEventListeners(mode: ConnectionMode) {
         on(Socket.EVENT_CONNECT) {
             Log.d(TAG, "Socket connected")
+            currentLanTransport = LanTransport.SOCKET_IO
             // 注册设备
             emit(SocketEvents.DEVICE_REGISTER, JSONObject().apply {
                 put("deviceId", deviceId)
@@ -482,7 +695,9 @@ class TransferClient(
 
         on(Socket.EVENT_DISCONNECT) {
             Log.d(TAG, "Socket disconnected")
+            currentLanTransport = null
             _connectionState.value = ConnectionState.Disconnected
+            socketOnlineDevices = emptyList()
             _onlineDevices.value = emptyList()
             stopHeartbeatTimer()
         }
@@ -497,7 +712,8 @@ class TransferClient(
 
         on(SocketEvents.DEVICE_LIST) { args ->
             val devices = parseDeviceList(args.firstOrNull() as? JSONArray)
-            _onlineDevices.value = devices
+            socketOnlineDevices = devices
+            updateCombinedOnlineDevices()
             Log.d(TAG, "Device list updated: ${devices.size} devices")
         }
 
@@ -506,7 +722,8 @@ class TransferClient(
             val deviceJson = json.optJSONObject("device") ?: return@on
             val device = parseDevice(deviceJson)
             if (device != null) {
-                _onlineDevices.value = _onlineDevices.value + device
+                socketOnlineDevices = (socketOnlineDevices.filter { it.id != device.id } + device)
+                updateCombinedOnlineDevices()
                 Log.d(TAG, "Device online: ${device.name}")
             }
         }
@@ -514,7 +731,8 @@ class TransferClient(
         on(SocketEvents.DEVICE_OFFLINE) { args ->
             val json = args.firstOrNull() as? JSONObject ?: return@on
             val offlineDeviceId = json.optString("deviceId")
-            _onlineDevices.value = _onlineDevices.value.filter { it.id != offlineDeviceId }
+            socketOnlineDevices = socketOnlineDevices.filter { it.id != offlineDeviceId }
+            updateCombinedOnlineDevices()
             Log.d(TAG, "Device offline: $offlineDeviceId")
         }
 
@@ -611,6 +829,489 @@ class TransferClient(
     }
 
     // ============================================
+    // Android 局域网 TCP 直连
+    // ============================================
+
+    private suspend fun acceptLanClients(server: ServerSocket) {
+        while (scope.isActive && !server.isClosed) {
+            try {
+                val client = server.accept()
+                scope.launch { handleIncomingLanSocket(client) }
+            } catch (e: Exception) {
+                if (scope.isActive && !server.isClosed) {
+                    Log.e(TAG, "Failed to accept Android LAN client", e)
+                }
+            }
+        }
+    }
+
+    private suspend fun handleIncomingLanSocket(javaSocket: JavaSocket) {
+        var peer: LanPeer? = null
+        try {
+            val reader = BufferedReader(InputStreamReader(javaSocket.getInputStream(), Charsets.UTF_8))
+            val writer = BufferedWriter(OutputStreamWriter(javaSocket.getOutputStream(), Charsets.UTF_8))
+            val firstLine = reader.readLine() ?: return
+            val firstPacket = JSONObject(firstLine)
+            if (firstPacket.optString("event") != SocketEvents.DEVICE_REGISTER) {
+                Log.w(TAG, "Android LAN client did not register first")
+                sendLanError(writer, TransferErrorCode.SESSION_INVALID)
+                return
+            }
+
+            peer = registerIncomingLanPeer(
+                javaSocket = javaSocket,
+                writer = writer,
+                payload = firstPacket.optJSONObject("payload") ?: JSONObject()
+            )
+
+            while (scope.isActive && !javaSocket.isClosed) {
+                val line = reader.readLine() ?: break
+                handleLanPacket(peer, line)
+            }
+        } catch (e: Exception) {
+            if (scope.isActive) {
+                Log.e(TAG, "Android LAN peer connection failed", e)
+            }
+        } finally {
+            peer?.let { removeLanPeer(it.deviceId) } ?: runCatching { javaSocket.close() }
+        }
+    }
+
+    private suspend fun listenToLanPeer(peer: LanPeer) {
+        try {
+            val reader = BufferedReader(InputStreamReader(peer.socket.getInputStream(), Charsets.UTF_8))
+            while (scope.isActive && !peer.socket.isClosed) {
+                val line = reader.readLine() ?: break
+                handleLanPacket(peer, line)
+            }
+        } catch (e: Exception) {
+            if (scope.isActive) {
+                Log.e(TAG, "Android LAN peer listener failed", e)
+            }
+        } finally {
+            removeLanPeer(peer.deviceId)
+        }
+    }
+
+    private suspend fun registerIncomingLanPeer(
+        javaSocket: JavaSocket,
+        writer: BufferedWriter,
+        payload: JSONObject
+    ): LanPeer {
+        val peerId = payload.optString("deviceId")
+        if (peerId.isBlank()) {
+            sendLanError(writer, TransferErrorCode.SESSION_INVALID)
+            throw IllegalArgumentException("Android LAN peer missing deviceId")
+        }
+        if (peerId == deviceId) {
+            sendLanError(writer, TransferErrorCode.DEVICE_ID_CONFLICT)
+            throw IllegalArgumentException("Android LAN peer has the same deviceId")
+        }
+        if (lanPeers.size >= TransferConstants.MAX_CONNECTIONS && !lanPeers.containsKey(peerId)) {
+            sendLanError(writer, TransferErrorCode.SERVER_FULL)
+            throw IllegalStateException("Android LAN server full")
+        }
+        lanPeers.remove(peerId)?.let { oldPeer ->
+            runCatching { oldPeer.socket.close() }
+        }
+
+        val peer = LanPeer(
+            deviceId = peerId,
+            deviceName = payload.optString("deviceName", "Android Device"),
+            deviceType = DeviceType.entries.find { it.value == payload.optString("deviceType") } ?: DeviceType.ANDROID,
+            socket = javaSocket,
+            writer = writer
+        )
+
+        lanPeers[peer.deviceId] = peer
+        currentLanTransport = LanTransport.ANDROID_TCP
+        updateLanPeerList()
+        _connectionState.value = ConnectionState.Connected(ConnectionMode.LAN)
+
+        val sessionId = UUID.randomUUID().toString()
+        _pairSuccess.emit(PairSuccessEvent(sessionId, peer.deviceId, peer.deviceName))
+        sendLanPacket(
+            peer = peer,
+            event = SocketEvents.PAIR_SUCCESS,
+            payload = JSONObject().apply {
+                put("sessionId", sessionId)
+                put("peerId", deviceId)
+                put("peerName", deviceName)
+            }
+        )
+
+        Log.d(TAG, "Android LAN peer registered: ${peer.deviceName}")
+        return peer
+    }
+
+    private suspend fun handleLanPacket(peer: LanPeer, line: String) {
+        val packet = JSONObject(line)
+        val event = packet.optString("event")
+        val payload = packet.optJSONObject("payload") ?: JSONObject()
+
+        when (event) {
+            SocketEvents.DEVICE_REGISTER -> Unit
+            SocketEvents.PAIR_REQUEST -> {
+                _pairRequest.emit(
+                    PairRequestEvent(
+                        requesterId = payload.optString("requesterId", peer.deviceId),
+                        requesterName = payload.optString("requesterName", peer.deviceName)
+                    )
+                )
+            }
+            SocketEvents.PAIR_ACCEPT -> {
+                val sessionId = payload.optString("sessionId").ifBlank { UUID.randomUUID().toString() }
+                _pairSuccess.emit(PairSuccessEvent(sessionId, peer.deviceId, peer.deviceName))
+                sendLanPacket(
+                    peer = peer,
+                    event = SocketEvents.PAIR_SUCCESS,
+                    payload = JSONObject().apply {
+                        put("sessionId", sessionId)
+                        put("peerId", deviceId)
+                        put("peerName", deviceName)
+                    }
+                )
+            }
+            SocketEvents.PAIR_SUCCESS -> {
+                _pairSuccess.emit(
+                    PairSuccessEvent(
+                        sessionId = payload.optString("sessionId"),
+                        peerId = payload.optString("peerId", peer.deviceId),
+                        peerName = payload.optString("peerName", peer.deviceName)
+                    )
+                )
+            }
+            SocketEvents.PAIR_REJECT -> Log.d(TAG, "Android LAN pair rejected by ${peer.deviceName}")
+            SocketEvents.ERROR -> {
+                val errorCode = TransferErrorCode.fromCode(payload.optString("code"))
+                Log.e(TAG, "Android LAN peer error: ${errorCode.message}")
+                _connectionState.value = ConnectionState.Error(
+                    TransferError(errorCode, details = payload.optString("message"))
+                )
+            }
+            SocketEvents.MESSAGE_SEND -> handleLanMessageSend(peer, payload)
+            SocketEvents.MESSAGE_RECEIVE -> emitLanMessageReceived(peer, payload)
+            SocketEvents.MESSAGE_READ -> Log.d(TAG, "Android LAN message read: ${payload.optJSONArray("messageIds")}")
+            SocketEvents.FILE_START -> handleLanFileStart(peer, payload)
+            SocketEvents.FILE_INCOMING -> emitLanFileIncoming(peer, payload)
+            SocketEvents.FILE_CHUNK -> handleLanFileChunk(peer, payload)
+            SocketEvents.FILE_COMPLETE -> handleLanFileComplete(peer, payload)
+            SocketEvents.FILE_CANCEL -> Log.d(TAG, "Android LAN file cancelled: ${payload.optString("fileId")}")
+            SocketEvents.HEARTBEAT -> Unit
+            else -> Log.w(TAG, "Unknown Android LAN event: $event")
+        }
+    }
+
+    private suspend fun handleLanMessageSend(peer: LanPeer, payload: JSONObject) {
+        val targetDeviceId = payload.optString("targetDeviceId")
+        if (targetDeviceId == deviceId || targetDeviceId.isBlank()) {
+            emitLanMessageReceived(
+                peer = peer,
+                payload = JSONObject().apply {
+                    put("senderId", peer.deviceId)
+                    put("sessionId", payload.optString("sessionId"))
+                    put("message", payload.optJSONObject("message"))
+                }
+            )
+            return
+        }
+
+        val targetPeer = lanPeers[targetDeviceId] ?: return
+        sendLanPacket(
+            peer = targetPeer,
+            event = SocketEvents.MESSAGE_RECEIVE,
+            payload = JSONObject().apply {
+                put("senderId", peer.deviceId)
+                put("sessionId", payload.optString("sessionId"))
+                put("message", payload.optJSONObject("message"))
+            }
+        )
+    }
+
+    private suspend fun emitLanMessageReceived(peer: LanPeer, payload: JSONObject) {
+        val messageJson = payload.optJSONObject("message") ?: return
+        _messageReceived.emit(
+            MessageReceivedEvent(
+                senderId = payload.optString("senderId", peer.deviceId),
+                sessionId = payload.optString("sessionId"),
+                message = TransferMessageData(
+                    id = messageJson.optString("id"),
+                    type = MessageType.entries.find { it.value == messageJson.optString("type") } ?: MessageType.TEXT,
+                    content = messageJson.optString("content"),
+                    fileId = messageJson.optString("fileId").takeIf { it.isNotEmpty() }
+                )
+            )
+        )
+    }
+
+    private suspend fun handleLanFileStart(peer: LanPeer, payload: JSONObject) {
+        val targetDeviceId = payload.optString("targetDeviceId")
+        if (targetDeviceId == deviceId || targetDeviceId.isBlank()) {
+            emitLanFileIncoming(
+                peer = peer,
+                payload = JSONObject().apply {
+                    put("senderId", peer.deviceId)
+                    put("sessionId", payload.optString("sessionId"))
+                    put("fileInfo", payload.optJSONObject("fileInfo"))
+                }
+            )
+            return
+        }
+
+        val targetPeer = lanPeers[targetDeviceId] ?: return
+        sendLanPacket(
+            peer = targetPeer,
+            event = SocketEvents.FILE_INCOMING,
+            payload = JSONObject().apply {
+                put("senderId", peer.deviceId)
+                put("sessionId", payload.optString("sessionId"))
+                put("fileInfo", payload.optJSONObject("fileInfo"))
+            }
+        )
+    }
+
+    private suspend fun emitLanFileIncoming(peer: LanPeer, payload: JSONObject) {
+        val fileInfoJson = payload.optJSONObject("fileInfo") ?: return
+        _fileIncoming.emit(
+            FileIncomingEvent(
+                senderId = payload.optString("senderId", peer.deviceId),
+                fileInfo = parseFileInfo(fileInfoJson)
+            )
+        )
+    }
+
+    private suspend fun handleLanFileChunk(peer: LanPeer, payload: JSONObject) {
+        val targetDeviceId = payload.optString("targetDeviceId")
+        if (targetDeviceId == deviceId || targetDeviceId.isBlank()) {
+            _fileChunk.emit(
+                FileChunkEvent(
+                    senderId = payload.optString("senderId", peer.deviceId),
+                    fileId = payload.optString("fileId"),
+                    chunkIndex = payload.optInt("chunkIndex"),
+                    chunk = android.util.Base64.decode(payload.optString("chunk"), android.util.Base64.NO_WRAP),
+                    totalChunks = payload.optInt("totalChunks")
+                )
+            )
+            return
+        }
+
+        val targetPeer = lanPeers[targetDeviceId] ?: return
+        sendLanPacket(
+            peer = targetPeer,
+            event = SocketEvents.FILE_CHUNK,
+            payload = JSONObject(payload.toString()).apply {
+                put("senderId", peer.deviceId)
+            }
+        )
+    }
+
+    private suspend fun handleLanFileComplete(peer: LanPeer, payload: JSONObject) {
+        val targetDeviceId = payload.optString("targetDeviceId")
+        if (targetDeviceId == deviceId || targetDeviceId.isBlank()) {
+            _fileComplete.emit(
+                FileCompleteEvent(
+                    senderId = payload.optString("senderId", peer.deviceId),
+                    fileId = payload.optString("fileId"),
+                    fileHash = payload.optString("fileHash").takeIf { it.isNotEmpty() }
+                )
+            )
+            return
+        }
+
+        val targetPeer = lanPeers[targetDeviceId] ?: return
+        sendLanPacket(
+            peer = targetPeer,
+            event = SocketEvents.FILE_COMPLETE,
+            payload = JSONObject(payload.toString()).apply {
+                put("senderId", peer.deviceId)
+            }
+        )
+    }
+
+    private fun parseFileInfo(fileInfoJson: JSONObject): FileTransferInfo {
+        return FileTransferInfo(
+            id = fileInfoJson.optString("id"),
+            filename = fileInfoJson.optString("filename"),
+            fileSize = fileInfoJson.optLong("fileSize"),
+            mimeType = fileInfoJson.optString("mimeType"),
+            totalChunks = fileInfoJson.optInt("totalChunks")
+        )
+    }
+
+    private fun sendViaAndroidLan(targetDeviceId: String, event: String, payload: JSONObject): Boolean {
+        val peer = lanPeers[targetDeviceId] ?: return false
+        sendLanPacket(peer, event, payload)
+        return true
+    }
+
+    private fun sendLanPacket(peer: LanPeer, event: String, payload: JSONObject) {
+        try {
+            val packet = JSONObject().apply {
+                put("event", event)
+                put("payload", payload)
+            }
+            synchronized(peer.writer) {
+                peer.writer.write(packet.toString())
+                peer.writer.newLine()
+                peer.writer.flush()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send Android LAN packet: $event", e)
+            removeLanPeer(peer.deviceId)
+        }
+    }
+
+    private fun sendLanError(writer: BufferedWriter, errorCode: TransferErrorCode) {
+        try {
+            val packet = JSONObject().apply {
+                put("event", SocketEvents.ERROR)
+                put("payload", JSONObject().apply {
+                    put("code", errorCode.code)
+                    put("message", errorCode.message)
+                })
+            }
+            synchronized(writer) {
+                writer.write(packet.toString())
+                writer.newLine()
+                writer.flush()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send Android LAN error", e)
+        }
+    }
+
+    private fun removeLanPeer(peerId: String) {
+        val peer = lanPeers.remove(peerId) ?: return
+        runCatching { peer.socket.close() }
+        updateLanPeerList()
+        if (lanPeers.isEmpty() && currentLanTransport == LanTransport.ANDROID_TCP) {
+            currentLanTransport = null
+            if (socket == null) {
+                _connectionState.value = ConnectionState.Disconnected
+            }
+        }
+        Log.d(TAG, "Android LAN peer removed: ${peer.deviceName}")
+    }
+
+    private fun closeLanPeers() {
+        val peers = lanPeers.values.toList()
+        lanPeers.clear()
+        peers.forEach { peer ->
+            runCatching { peer.socket.close() }
+        }
+        updateLanPeerList()
+    }
+
+    private fun updateLanPeerList() {
+        updateCombinedOnlineDevices()
+        _lanServerStatus.update { status ->
+            if (status.running) {
+                status.copy(connectedDevices = lanPeers.size)
+            } else {
+                status
+            }
+        }
+    }
+
+    private fun updateCombinedOnlineDevices() {
+        val androidLanDevices = lanPeers.values.map { peer ->
+            OnlineDevice(
+                id = peer.deviceId,
+                name = peer.deviceName,
+                type = peer.deviceType
+            )
+        }
+
+        val byId = LinkedHashMap<String, OnlineDevice>()
+        socketOnlineDevices.forEach { device ->
+            byId[device.id] = device
+        }
+        androidLanDevices.forEach { device ->
+            byId[device.id] = device
+        }
+        _onlineDevices.value = byId.values.toList()
+    }
+
+    private fun openAvailableServerSocket(): ServerSocket {
+        for (port in TransferConstants.PORT_RANGE_START..TransferConstants.PORT_RANGE_END) {
+            try {
+                return ServerSocket(port)
+            } catch (_: Exception) {
+                // Try the next port in the configured range.
+            }
+        }
+        throw IllegalStateException("No available transfer port")
+    }
+
+    private fun startLanServerQrRefresh(ip: String, port: Int) {
+        lanServerQrRefreshJob?.cancel()
+        lanServerQrRefreshJob = scope.launch {
+            while (isActive) {
+                delay(TransferConstants.QR_CODE_EXPIRY / 2)
+                _lanServerStatus.update { status ->
+                    if (status.running && status.ip == ip && status.port == port) {
+                        status.copy(qrData = buildAndroidLanQRData(ip, port))
+                    } else {
+                        status
+                    }
+                }
+            }
+        }
+    }
+
+    private fun findLocalIPv4Address(): String? {
+        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+        while (interfaces.hasMoreElements()) {
+            val networkInterface = interfaces.nextElement()
+            if (!networkInterface.isUp || networkInterface.isLoopback) continue
+
+            val addresses = networkInterface.inetAddresses
+            while (addresses.hasMoreElements()) {
+                val address = addresses.nextElement()
+                if (address is Inet4Address && !address.isLoopbackAddress) {
+                    val hostAddress = address.hostAddress ?: continue
+                    if (hostAddress.startsWith("192.168.") ||
+                        hostAddress.startsWith("10.") ||
+                        isPrivate172Address(hostAddress)
+                    ) {
+                        return hostAddress
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun isPrivate172Address(hostAddress: String): Boolean {
+        val parts = hostAddress.split(".")
+        if (parts.size < 2 || parts[0] != "172") return false
+        val second = parts[1].toIntOrNull() ?: return false
+        return second in 16..31
+    }
+
+    private fun buildAndroidLanQRData(ip: String, port: Int): String {
+        val qrData = PairingQRData.create(
+            deviceId = deviceId,
+            deviceName = deviceName,
+            serverIp = ip,
+            serverPort = port,
+            platform = DeviceType.ANDROID.value,
+            protocol = TransferConstants.QR_PROTOCOL_ANDROID_TCP
+        )
+        return JSONObject().apply {
+            put("deviceId", qrData.deviceId)
+            put("deviceName", qrData.deviceName)
+            put("serverIp", qrData.serverIp)
+            put("serverPort", qrData.serverPort)
+            put("timestamp", qrData.timestamp)
+            put("expiresAt", qrData.expiresAt)
+            put("version", qrData.version)
+            put("platform", qrData.platform)
+            put("protocol", qrData.protocol)
+        }.toString()
+    }
+
+    // ============================================
     // 心跳定时器
     // ============================================
 
@@ -667,6 +1368,26 @@ class TransferClient(
 
     fun getCurrentDeviceId(): String = deviceId
     fun getCurrentDeviceName(): String = deviceName
+
+    private fun resolveRelayEndpoint(serverUrl: String): RelayEndpoint {
+        return try {
+            val uri = android.net.Uri.parse(serverUrl.trim())
+            val path = uri.encodedPath
+                ?.takeIf { it.isNotBlank() && it != "/" }
+                ?.trimEnd('/')
+                ?: "/transfer"
+            val baseUrl = uri.buildUpon()
+                .path("")
+                .query(null)
+                .fragment(null)
+                .build()
+                .toString()
+                .trimEnd('/')
+            RelayEndpoint(baseUrl, path)
+        } catch (e: Exception) {
+            RelayEndpoint(serverUrl.trim().trimEnd('/'), "/transfer")
+        }
+    }
 
     /**
      * 清理资源

@@ -2,18 +2,20 @@ import { Router } from 'express';
 import { ItemService } from '../services/ItemService';
 import { createError } from '../middleware/errorHandler';
 import { getDatabase } from '../database';
+import { userService } from '../services/UserService';
 
 const router = Router();
 
 // GET /api/items/all - 全量拉取所有数据项（新客户端首次同步使用）
 router.get('/all', (req, res, next) => {
   try {
+    userService.claimLegacyDataForSingleUser(req.userId);
     const db = getDatabase();
     let sql = 'SELECT * FROM items';
     const params: (string | number)[] = [];
 
     if (req.userId) {
-      sql += ' WHERE (user_id = ? OR user_id IS NULL)';
+      sql += ' WHERE user_id = ?';
       params.push(req.userId);
     }
 
@@ -25,7 +27,7 @@ router.get('/all', (req, res, next) => {
     let maxChangeSql = 'SELECT MAX(change_id) as max_id FROM changes';
     const maxChangeParams: (string | number)[] = [];
     if (req.userId) {
-      maxChangeSql += ' WHERE (user_id = ? OR user_id IS NULL)';
+      maxChangeSql += ' WHERE user_id = ?';
       maxChangeParams.push(req.userId);
     }
     const maxChange = db.prepare(maxChangeSql).get(...maxChangeParams) as { max_id: number | null };
@@ -52,6 +54,7 @@ router.get('/count', (req, res, next) => {
 // GET /api/items/list - 获取数据项列表（管理界面用）
 router.get('/list', (req, res, next) => {
   try {
+    userService.claimLegacyDataForSingleUser(req.userId);
     const db = getDatabase();
     const type = req.query.type as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
@@ -62,7 +65,7 @@ router.get('/list', (req, res, next) => {
     const params: (string | number)[] = [];
     
     if (req.userId) {
-      sql += ' AND (user_id = ? OR user_id IS NULL)';
+      sql += ' AND user_id = ?';
       params.push(req.userId);
     }
     

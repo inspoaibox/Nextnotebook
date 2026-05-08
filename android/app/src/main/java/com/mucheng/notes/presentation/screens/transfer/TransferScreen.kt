@@ -11,10 +11,15 @@ package com.mucheng.notes.presentation.screens.transfer
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -33,7 +39,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -50,6 +59,8 @@ import com.mucheng.notes.data.transfer.*
 import com.mucheng.notes.presentation.components.QRScannerDialog
 import com.mucheng.notes.presentation.viewmodel.TransferUiState
 import com.mucheng.notes.presentation.viewmodel.TransferViewModel
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -176,6 +187,8 @@ fun TransferScreen(
                                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                             },
                             onScanQR = { viewModel.setScanning(true) },
+                            onStartLanServer = { viewModel.startLanServer() },
+                            onStopLanServer = { viewModel.stopLanServer() },
                             onSelectDevice = { device ->
                                 viewModel.createSession(device)
                             },
@@ -271,6 +284,8 @@ private fun LANModeContent(
     hasCameraPermission: Boolean,
     onRequestCameraPermission: () -> Unit,
     onScanQR: () -> Unit,
+    onStartLanServer: () -> Unit,
+    onStopLanServer: () -> Unit,
     onSelectDevice: (OnlineDevice) -> Unit,
     onSelectSession: (TransferSessionEntity) -> Unit,
     onDisconnect: () -> Unit,
@@ -298,12 +313,12 @@ private fun LANModeContent(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "扫描桌面端二维码连接",
+                                text = "扫描电脑或手机二维码连接",
                                 style = MaterialTheme.typography.bodyLarge,
                                 textAlign = TextAlign.Center
                             )
                             Text(
-                                text = "确保手机和电脑在同一局域网内",
+                                text = "确保设备在同一局域网内",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 textAlign = TextAlign.Center
@@ -369,7 +384,80 @@ private fun LANModeContent(
                 }
             }
         }
-        
+
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val serverStatus = uiState.lanServerStatus
+                    if (serverStatus.running) {
+                        Icon(
+                            Icons.Default.PhoneAndroid,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "本机接收已开启",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "${serverStatus.ip}:${serverStatus.port} · ${serverStatus.connectedDevices} 个设备已连接",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            textAlign = TextAlign.Center
+                        )
+                        serverStatus.qrData?.let { qrData ->
+                            Spacer(modifier = Modifier.height(12.dp))
+                            QrCodeImage(
+                                value = qrData,
+                                modifier = Modifier.size(180.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = onStopLanServer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Stop, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("停止接收")
+                        }
+                    } else {
+                        Icon(
+                            Icons.Default.PhoneAndroid,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "允许其他手机扫码连接",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "开启后会生成本机二维码，用于 Android-to-Android 局域网直连",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = onStartLanServer,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.QrCode, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("启动本机接收")
+                        }
+                    }
+                }
+            }
+        }
+
         // 在线设备列表
         if (uiState.connectionState is ConnectionState.Connected && uiState.onlineDevices.isNotEmpty()) {
             item {
@@ -397,6 +485,54 @@ private fun LANModeContent(
             }
             items(lanSessions) { session ->
                 SessionItem(session = session, onClick = { onSelectSession(session) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun QrCodeImage(
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    val bitmap = remember(value) {
+        runCatching {
+            val matrix = QRCodeWriter().encode(value, BarcodeFormat.QR_CODE, 512, 512)
+            Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.ARGB_8888).apply {
+                for (x in 0 until matrix.width) {
+                    for (y in 0 until matrix.height) {
+                        setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+                    }
+                }
+            }
+        }.getOrNull()
+    }
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        modifier = modifier
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+        ) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "连接二维码",
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(
+                    text = "二维码生成失败",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -711,7 +847,7 @@ private fun ChatView(
                     .padding(8.dp)
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -831,6 +967,7 @@ private fun ChatView(
 /**
  * 消息气泡
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: TransferMessageEntity,
@@ -842,46 +979,85 @@ private fun MessageBubble(
     val isFileMessage = message.type == "file" || message.type == "image"
     val dateFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val context = LocalContext.current
-    
+    val clipboardManager = LocalClipboardManager.current
+    var showMenu by remember { mutableStateOf(false) }
+    val canOpenFile = fileEntity?.localPath != null
+    val copyText = message.content.ifBlank { if (isFileMessage) "文件" else "" }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isSent) Arrangement.End else Arrangement.Start
     ) {
-        Surface(
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (isSent) 16.dp else 4.dp,
-                bottomEnd = if (isSent) 4.dp else 16.dp
-            ),
-            color = if (isSent) 
-                MaterialTheme.colorScheme.primary 
-            else 
-                MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.widthIn(max = 280.dp)
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                if (isFileMessage) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .clickable(enabled = fileEntity != null) {
+        Box {
+            Surface(
+                shape = RoundedCornerShape(
+                    topStart = 16.dp,
+                    topEnd = 16.dp,
+                    bottomStart = if (isSent) 16.dp else 4.dp,
+                    bottomEnd = if (isSent) 4.dp else 16.dp
+                ),
+                color = if (isSent)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .combinedClickable(
+                        onClick = {
+                            if (isFileMessage && canOpenFile) {
                                 fileEntity?.let { onOpenFile(it.id) }
                             }
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (message.type == "image") Icons.Filled.Image else Icons.Filled.AttachFile,
-                            contentDescription = "File",
-                            modifier = Modifier.size(20.dp),
-                            tint = if (isSent)
-                                MaterialTheme.colorScheme.onPrimary
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        },
+                        onLongClick = { showMenu = true }
+                    )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    if (isFileMessage) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (message.type == "image") Icons.Filled.Image else Icons.Filled.AttachFile,
+                                contentDescription = "File",
+                                modifier = Modifier.size(20.dp),
+                                tint = if (isSent)
+                                    MaterialTheme.colorScheme.onPrimary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = message.content.ifBlank { "文件" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isSent)
+                                    MaterialTheme.colorScheme.onPrimary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (canOpenFile) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(top = 4.dp)
+                            ) {
+                                TextButton(
+                                    onClick = { fileEntity?.let { onOpenFile(it.id) } },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                ) {
+                                    Text("打开", style = MaterialTheme.typography.labelSmall)
+                                }
+                                TextButton(
+                                    onClick = { fileEntity?.let { onOpenFolder(it.id) } },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                ) {
+                                    Text("打开文件夹", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    } else {
                         Text(
-                            text = message.content.ifBlank { "文件" },
+                            text = message.content,
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (isSent)
                                 MaterialTheme.colorScheme.onPrimary
@@ -889,44 +1065,47 @@ private fun MessageBubble(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (fileEntity != null && fileEntity.localPath != null) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
-                            TextButton(
-                                onClick = { onOpenFile(fileEntity.id) },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                            ) {
-                                Text("打开", style = MaterialTheme.typography.labelSmall)
-                            }
-                            TextButton(
-                                onClick = { onOpenFolder(fileEntity.id) },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                            ) {
-                                Text("打开文件夹", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                } else {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = message.content,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isSent) 
-                            MaterialTheme.colorScheme.onPrimary 
-                        else 
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                        text = dateFormat.format(Date(message.createdAt)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSent)
+                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                        else
+                            MaterialTheme.colorScheme.outline
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = dateFormat.format(Date(message.createdAt)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isSent) 
-                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f) 
-                    else 
-                        MaterialTheme.colorScheme.outline
+            }
+
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(if (isFileMessage) "复制文件名" else "复制消息") },
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(copyText))
+                        showMenu = false
+                        Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                    },
+                    enabled = copyText.isNotBlank()
                 )
+                if (isFileMessage && canOpenFile) {
+                    DropdownMenuItem(
+                        text = { Text("打开") },
+                        onClick = {
+                            fileEntity?.let { onOpenFile(it.id) }
+                            showMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("打开文件夹") },
+                        onClick = {
+                            fileEntity?.let { onOpenFolder(it.id) }
+                            showMenu = false
+                        }
+                    )
+                }
             }
         }
     }

@@ -64,6 +64,20 @@ interface RateLimitInfo {
   fileTransferCount: number;
 }
 
+interface PairSession {
+  sessionId: string;
+  deviceIds: [string, string];
+  createdAt: number;
+}
+
+interface FileTransferSession {
+  fileId: string;
+  sessionId: string;
+  senderId: string;
+  targetDeviceId: string;
+  createdAt: number;
+}
+
 // ============================================
 // TransferRelayServer 类
 // ============================================
@@ -73,6 +87,8 @@ export class TransferRelayServer {
   private connectedDevices: Map<string, ConnectedDevice> = new Map();
   private socketToDevice: Map<string, string> = new Map();
   private rateLimits: Map<string, RateLimitInfo> = new Map();
+  private pairSessions: Map<string, PairSession> = new Map();
+  private fileTransfers: Map<string, FileTransferSession> = new Map();
 
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -101,7 +117,7 @@ export class TransferRelayServer {
    */
   initialize(httpServer: HttpServer): void {
     this.io = new SocketIOServer(httpServer, {
-      path: '/transfer',
+      path: config.transferRelayPath,
       cors: {
         origin: '*',
         methods: ['GET', 'POST'],
@@ -113,7 +129,7 @@ export class TransferRelayServer {
     this.startHeartbeatCheck();
     this.startCleanupTask();
 
-    console.log('[TransferRelay] Initialized on path /transfer');
+    console.log(`[TransferRelay] Initialized on path ${config.transferRelayPath}`);
   }
 
   /**
@@ -138,6 +154,8 @@ export class TransferRelayServer {
     this.connectedDevices.clear();
     this.socketToDevice.clear();
     this.rateLimits.clear();
+    this.pairSessions.clear();
+    this.fileTransfers.clear();
 
     console.log('[TransferRelay] Closed');
   }
@@ -166,12 +184,9 @@ export class TransferRelayServer {
     this.io.use((socket, next) => {
       const relayKey = socket.handshake.auth?.relayKey || socket.handshake.query?.relayKey;
 
-      // 如果服务器配置了密钥，则必须验证
-      if (this.relayKey) {
-        if (!relayKey || relayKey !== this.relayKey) {
-          console.log(`[TransferRelay] Connection rejected: invalid relay key from ${socket.id}`);
-          return next(new Error('INVALID_RELAY_KEY'));
-        }
+      if (!this.relayKey || !relayKey || relayKey !== this.relayKey) {
+        console.log(`[TransferRelay] Connection rejected: invalid relay key from ${socket.id}`);
+        return next(new Error('INVALID_RELAY_KEY'));
       }
 
       next();
@@ -339,6 +354,12 @@ export class TransferRelayServer {
 
     if (!requester || !accepter) return;
 
+    this.pairSessions.set(data.sessionId, {
+      sessionId: data.sessionId,
+      deviceIds: [data.requesterId, accepterId],
+      createdAt: Date.now(),
+    });
+
     // 通知请求方配对成功
     const requesterSocket = this.io?.sockets.sockets.get(requester.socketId);
     if (requesterSocket) {
@@ -390,6 +411,14 @@ export class TransferRelayServer {
     }
 
     const { targetDeviceId, sessionId, message } = data;
+    if (!this.isValidPairSession(sessionId, senderId, targetDeviceId)) {
+      socket.emit(SOCKET_EVENTS.ERROR, {
+        code: 'E304',
+        message: '无效的配对会话',
+      });
+      return;
+    }
+
     console.log(`[TransferRelay] Looking for target device: ${targetDeviceId}`);
     console.log(`[TransferRelay] Connected devices:`, Array.from(this.connectedDevices.keys()));
 
@@ -452,7 +481,27 @@ export class TransferRelayServer {
       return;
     }
 
-    const { targetDeviceId, fileInfo } = data;
+    const { targetDeviceId, sessionId, fileInfo } = data;
+    if (!this.isValidPairSession(sessionId, senderId, targetDeviceId)) {
+      socket.emit(SOCKET_EVENTS.ERROR, {
+        code: 'E304',
+        message: '无效的配对会话',
+      });
+      return;
+    }
+
+    if (
+      config.transferMaxFileSize > 0 &&
+      typeof fileInfo?.fileSize === 'number' &&
+      fileInfo.fileSize > config.transferMaxFileSize
+    ) {
+      socket.emit(SOCKET_EVENTS.ERROR, {
+        code: 'E201',
+        message: '文件过大',
+      });
+      return;
+    }
+
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (!target) {
@@ -466,8 +515,17 @@ export class TransferRelayServer {
     // 转发文件开始事件
     const targetSocket = this.io?.sockets.sockets.get(target.socketId);
     if (targetSocket) {
+      this.fileTransfers.set(fileInfo.id, {
+        fileId: fileInfo.id,
+        sessionId,
+        senderId,
+        targetDeviceId,
+        createdAt: Date.now(),
+      });
+
       targetSocket.emit(SOCKET_EVENTS.FILE_INCOMING, {
         senderId,
+        sessionId,
         fileInfo,
       });
     }
@@ -479,14 +537,23 @@ export class TransferRelayServer {
 
     const { targetDeviceId, fileId, chunkIndex, chunk, totalChunks } = data;
     const target = this.connectedDevices.get(targetDeviceId);
+    const transfer = this.fileTransfers.get(fileId);
 
-    if (!target) return;
+    if (!target || !transfer) return;
+    if (transfer.senderId !== senderId || transfer.targetDeviceId !== targetDeviceId) {
+      socket.emit(SOCKET_EVENTS.ERROR, {
+        code: 'E304',
+        message: '无效的文件传输会话',
+      });
+      return;
+    }
 
     // 直接转发文件分块（不存储）
     const targetSocket = this.io?.sockets.sockets.get(target.socketId);
     if (targetSocket) {
       targetSocket.emit(SOCKET_EVENTS.FILE_CHUNK, {
         senderId,
+        sessionId: transfer.sessionId,
         fileId,
         chunkIndex,
         chunk,
@@ -501,17 +568,27 @@ export class TransferRelayServer {
 
     const { targetDeviceId, fileId, fileHash } = data;
     const target = this.connectedDevices.get(targetDeviceId);
+    const transfer = this.fileTransfers.get(fileId);
 
-    if (!target) return;
+    if (!target || !transfer) return;
+    if (transfer.senderId !== senderId || transfer.targetDeviceId !== targetDeviceId) {
+      socket.emit(SOCKET_EVENTS.ERROR, {
+        code: 'E304',
+        message: '无效的文件传输会话',
+      });
+      return;
+    }
 
     const targetSocket = this.io?.sockets.sockets.get(target.socketId);
     if (targetSocket) {
       targetSocket.emit(SOCKET_EVENTS.FILE_COMPLETE, {
         senderId,
+        sessionId: transfer.sessionId,
         fileId,
         fileHash,
       });
     }
+    this.fileTransfers.delete(fileId);
   }
 
   private handleFileCancel(_socket: Socket, data: any): void {
@@ -522,16 +599,30 @@ export class TransferRelayServer {
     if (!senderId) return;
 
     const target = this.connectedDevices.get(targetDeviceId);
+    const transfer = this.fileTransfers.get(fileId);
+
+    if (!transfer) {
+      return;
+    }
+    if (transfer.senderId !== senderId || transfer.targetDeviceId !== targetDeviceId) {
+      _socket.emit(SOCKET_EVENTS.ERROR, {
+        code: 'E304',
+        message: '无效的文件传输会话',
+      });
+      return;
+    }
 
     if (target) {
       const targetSocket = this.io?.sockets.sockets.get(target.socketId);
       if (targetSocket) {
         targetSocket.emit(SOCKET_EVENTS.FILE_CANCEL, {
           senderId,
+          sessionId: transfer.sessionId,
           fileId,
         });
       }
     }
+    this.fileTransfers.delete(fileId);
   }
 
   private handleHeartbeat(socket: Socket): void {
@@ -555,6 +646,16 @@ export class TransferRelayServer {
       this.connectedDevices.delete(deviceId);
       this.socketToDevice.delete(socket.id);
       this.rateLimits.delete(deviceId);
+      for (const [sessionId, session] of this.pairSessions) {
+        if (session.deviceIds.includes(deviceId)) {
+          this.pairSessions.delete(sessionId);
+        }
+      }
+      for (const [fileId, transfer] of this.fileTransfers) {
+        if (transfer.senderId === deviceId || transfer.targetDeviceId === deviceId) {
+          this.fileTransfers.delete(fileId);
+        }
+      }
 
       // 广播设备下线
       this.io?.emit(SOCKET_EVENTS.DEVICE_OFFLINE, { deviceId });
@@ -607,6 +708,24 @@ export class TransferRelayServer {
     return true;
   }
 
+  private isValidPairSession(
+    sessionId: string | undefined,
+    senderId: string,
+    targetDeviceId: string
+  ): boolean {
+    if (!sessionId) {
+      return false;
+    }
+
+    const session = this.pairSessions.get(sessionId);
+    if (!session) {
+      return false;
+    }
+
+    const devices = new Set(session.deviceIds);
+    return devices.has(senderId) && devices.has(targetDeviceId);
+  }
+
   private startHeartbeatCheck(): void {
     this.heartbeatInterval = setInterval(() => {
       const now = Date.now();
@@ -630,6 +749,18 @@ export class TransferRelayServer {
       for (const [deviceId, limit] of this.rateLimits) {
         if (!this.connectedDevices.has(deviceId) && now - limit.lastReset > 3600000) {
           this.rateLimits.delete(deviceId);
+        }
+      }
+
+      for (const [sessionId, session] of this.pairSessions) {
+        if (now - session.createdAt > this.sessionTimeout) {
+          this.pairSessions.delete(sessionId);
+        }
+      }
+
+      for (const [fileId, transfer] of this.fileTransfers) {
+        if (now - transfer.createdAt > this.sessionTimeout) {
+          this.fileTransfers.delete(fileId);
         }
       }
     }, 3600000);

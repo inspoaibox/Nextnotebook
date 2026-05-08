@@ -34,6 +34,19 @@ const DEFAULT_SYNC_CONFIG: SyncConfig = {
   sync_modules: DEFAULT_SYNC_MODULES,
 };
 
+function getSyncConfigBackup(config: SyncConfig): Partial<SyncConfig> {
+  return {
+    ...config,
+    password: undefined,
+    api_key: undefined,
+    server_password: undefined,
+    server_sync_key: undefined,
+    server_token: undefined,
+    server_refresh_token: undefined,
+    server_token_expires: undefined,
+  };
+}
+
 interface SettingsContextType {
   settings: AppSettings;
   syncConfig: SyncConfig;
@@ -109,8 +122,8 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
       console.error('Failed to save sync config to main process');
     }
 
-    // 同时保存到 localStorage 作为备份
-    localStorage.setItem('mucheng-sync-config', JSON.stringify(newConfig));
+    // localStorage 仅保存非敏感字段作为兜底备份
+    localStorage.setItem('mucheng-sync-config', JSON.stringify(getSyncConfigBackup(newConfig)));
   }, []);
 
   // 从主进程加载同步配置

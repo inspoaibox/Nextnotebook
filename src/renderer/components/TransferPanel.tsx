@@ -281,6 +281,23 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
         // 刷新文件列表（如果需要）
         message.success(`文件 ${data.filename || '传输'} 已完成`);
       });
+
+      const unsubRelayPairSuccess = transferApi.relay.onPairSuccess?.(async (data: any) => {
+        console.log('[TransferPanel] Relay pair success:', data);
+        try {
+          const allSessions = await transferClient.getAllSessions();
+          setSessions(allSessions);
+          setSelectedSessionId(data.sessionId);
+        } catch (error) {
+          console.error('[TransferPanel] Failed to reload sessions after relay pairing:', error);
+        }
+      }) || (() => { });
+
+      const originalCleanup = unsubRelayFileComplete;
+      unsubRelayFileComplete = () => {
+        originalCleanup();
+        unsubRelayPairSuccess();
+      };
     }
 
     // ======== 通用消息事件 (LAN) ========
@@ -638,6 +655,16 @@ export const TransferPanel: React.FC<TransferPanelProps> = ({ visible = true }) 
   // 创建新会话
   const handleCreateSession = useCallback(async (device: ConnectedDevice) => {
     try {
+      if (activeMode === 'relay') {
+        const transferApi = (window as any).electronAPI?.transfer;
+        if (!transferApi?.relay?.sendPairRequest) {
+          throw new Error('中继配对功能不可用');
+        }
+        await transferApi.relay.sendPairRequest(device.id);
+        message.loading({ content: `正在与 ${device.name} 建立中继会话...`, key: 'relay-pair' });
+        return;
+      }
+
       // 先保存设备信息
       const existingDevice = await transferClient.getDevice(device.id);
       if (!existingDevice) {

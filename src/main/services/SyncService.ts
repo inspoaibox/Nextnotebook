@@ -6,6 +6,7 @@ import { ServerAdapter } from '@core/sync/ServerAdapter';
 import { StorageAdapter, WebDAVConfig, ServerConfig } from '@core/sync/StorageAdapter';
 import { SyncModules, DEFAULT_SYNC_MODULES } from '@shared/types';
 import { getItemsManager } from './DatabaseService';
+import { loadSyncConfig, saveSyncConfig } from './SyncConfigStorage';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -116,19 +117,15 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       // 设置 token 刷新回调
       serverAdapter.setTokenRefreshCallback((token, refreshToken, expiresIn) => {
         // 保存新 token 到配置文件（确保持久化）
-        const syncConfigPath = path.join(app.getPath('userData'), 'sync-config.json');
         try {
-          let existingConfig = {};
-          if (fs.existsSync(syncConfigPath)) {
-            existingConfig = JSON.parse(fs.readFileSync(syncConfigPath, 'utf8'));
-          }
+          const existingConfig = loadSyncConfig() || {};
           const updatedConfig = {
             ...existingConfig,
             server_token: token,
             server_refresh_token: refreshToken,
             server_token_expires: Date.now() + expiresIn * 1000,
           };
-          fs.writeFileSync(syncConfigPath, JSON.stringify(updatedConfig, null, 2), 'utf8');
+          saveSyncConfig(updatedConfig);
           console.log('[SyncService] Token refreshed and saved to config file');
         } catch (e) {
           console.error('[SyncService] Failed to save refreshed token to config:', e);

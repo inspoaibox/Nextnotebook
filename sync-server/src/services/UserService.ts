@@ -4,6 +4,44 @@ import { User, UserInfo, UserListResult, UserRole } from '../types';
 
 export class UserService {
   /**
+   * 获取当前系统中的用户总数
+   */
+  getUserCount(): number {
+    const db = getDatabase();
+    const row = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+    return row.count;
+  }
+
+  /**
+   * 将旧版无 user_id 的数据归属给单用户系统中的唯一用户。
+   * 这样既兼容老数据迁移，也避免新用户读取到历史共享数据。
+   */
+  claimLegacyDataForSingleUser(userId?: string): void {
+    if (!userId) {
+      return;
+    }
+
+    const db = getDatabase();
+    const userCount = this.getUserCount();
+    if (userCount !== 1) {
+      return;
+    }
+
+    const now = Date.now();
+    const transaction = db.transaction(() => {
+      db.prepare('UPDATE items SET user_id = ? WHERE user_id IS NULL').run(userId);
+      db.prepare('UPDATE changes SET user_id = ? WHERE user_id IS NULL').run(userId);
+      db.prepare('UPDATE sessions SET user_id = ? WHERE user_id IS NULL').run(userId);
+      db.prepare('UPDATE audit_logs SET user_id = ? WHERE user_id IS NULL').run(userId);
+      db.prepare(
+        'INSERT OR REPLACE INTO metadata (key, value, updated_at) VALUES (?, ?, ?)'
+      ).run('legacy_data_claimed_by', userId, now);
+    });
+
+    transaction();
+  }
+
+  /**
    * 获取用户信息
    */
   getUser(userId: string): UserInfo | null {

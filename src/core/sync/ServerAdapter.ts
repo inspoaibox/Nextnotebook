@@ -18,7 +18,12 @@ interface AuthResponse {
     username: string;
     role: string;
   };
+  userId?: string;
+  isAdmin?: boolean;
+  initialized?: boolean;
+  registrationEnabled?: boolean;
   error?: string;
+  message?: string;
 }
 
 export class ServerAdapter implements StorageAdapter {
@@ -117,16 +122,24 @@ export class ServerAdapter implements StorageAdapter {
 
       const data = await response.json();
       
-      if (response.ok && data.token) {
-        this.token = data.token;
-        this.refreshToken = data.refreshToken;
-        this.tokenExpires = Date.now() + (data.expiresIn || 3600) * 1000;
+      const token = data.accessToken || data.token;
+
+      if (response.ok) {
+        if (token) {
+          this.token = token;
+          this.refreshToken = data.refreshToken;
+          this.tokenExpires = Date.now() + (data.expiresIn || 3600) * 1000;
+        }
+
         return {
           success: true,
-          token: data.token,
+          token,
           refreshToken: data.refreshToken,
           expiresIn: data.expiresIn,
           user: data.user,
+          userId: data.userId,
+          isAdmin: data.isAdmin,
+          message: data.message,
         };
       }
       
@@ -249,12 +262,16 @@ export class ServerAdapter implements StorageAdapter {
   // 获取服务器注册状态
   async getRegistrationStatus(): Promise<{ registrationOpen: boolean; hasUsers: boolean }> {
     try {
-      const response = await this.doFetch(`${this.baseUrl}/api/auth/status`, {
+      const response = await this.doFetch(`${this.baseUrl}/api/health/status`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
       if (response.ok) {
-        return await response.json();
+        const data = await response.json();
+        return {
+          registrationOpen: data.registrationEnabled ?? data.registrationOpen ?? true,
+          hasUsers: data.initialized ?? data.hasUsers ?? false,
+        };
       }
       return { registrationOpen: true, hasUsers: false };
     } catch (error) {

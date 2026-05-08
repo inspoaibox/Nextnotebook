@@ -268,6 +268,8 @@ export class SyncEngine {
         const result = await this.adapter.putItem(itemToUpload);
 
         if (result.success) {
+          let resourceUploadFailed = false;
+
           // 如果是资源类型，同时上传资源文件
           if (item.type === 'resource' && this.resourcesDir) {
             try {
@@ -281,16 +283,24 @@ export class SyncEngine {
                 const resourceId = `${item.id}${ext}`;
                 const uploadSuccess = await this.adapter.putResource(resourceId, fileData, payload.mime_type);
                 if (!uploadSuccess) {
+                  resourceUploadFailed = true;
                   console.warn(`[SyncEngine] Failed to upload resource file: ${resourceId}`);
                 } else {
                   console.log(`[SyncEngine] Uploaded resource file: ${resourceId}`);
                 }
               } else {
+                resourceUploadFailed = true;
                 console.warn(`[SyncEngine] Resource file not found: ${resourceFilePath}`);
               }
             } catch (resourceError) {
+              resourceUploadFailed = true;
               console.error(`[SyncEngine] Error uploading resource file for ${item.id}:`, resourceError);
             }
+          }
+
+          if (resourceUploadFailed) {
+            errors.push(`Failed to upload resource file for item ${item.id}`);
+            continue;
           }
 
           this.itemsManager.markSynced(item.id, result.remoteRev);

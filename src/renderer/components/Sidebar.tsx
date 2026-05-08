@@ -92,6 +92,60 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [renameFolderName, setRenameFolderName] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
+  React.useEffect(() => {
+    if (!selectedFolderId || selectedFolderId === 'uncategorized') {
+      return;
+    }
+
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      let changed = false;
+      let currentId: string | null = selectedFolderId;
+
+      while (currentId) {
+        if (!next.has(currentId)) {
+          next.add(currentId);
+          changed = true;
+        }
+        const currentFolder = folders.find(folder => folder.id === currentId);
+        currentId = currentFolder?.parentId || null;
+      }
+
+      return changed ? next : prev;
+    });
+  }, [folders, selectedFolderId]);
+
+  const expandFolder = (folderId: string) => {
+    setExpandedFolders(prev => {
+      if (prev.has(folderId)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(folderId);
+      return next;
+    });
+  };
+
+  const handleFolderSelect = (folderId: string) => {
+    const hasChildren = folders.some(f => f.parentId === folderId);
+
+    if (hasChildren && selectedFolderId === folderId) {
+      setExpandedFolders(prev => {
+        const next = new Set(prev);
+        if (next.has(folderId)) {
+          next.delete(folderId);
+        } else {
+          next.add(folderId);
+        }
+        return next;
+      });
+    } else if (hasChildren) {
+      expandFolder(folderId);
+    }
+
+    onSelectFolder(folderId);
+  };
+
   // 切换文件夹展开/折叠状态
   const toggleFolderExpand = (folderId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -190,7 +244,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         key: `folder-${folder.id}`,
         label: (
           <Dropdown menu={{ items: getFolderContextMenu(folder) }} trigger={['contextMenu']}>
-            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingLeft: indentPadding }}>
+            <span
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingLeft: indentPadding }}
+            >
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, overflow: 'hidden' }}>
                 {isSelected ? <FolderOpenOutlined style={{ color: folder.color || '#1890ff' }} /> : <FolderOutlined style={{ color: folder.color || undefined }} />}
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder.name}</span>
@@ -248,7 +304,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         icon: isSelected ? <FolderOpenOutlined style={{ color: folder.color || '#1890ff' }} /> : <FolderOutlined style={{ color: folder.color || undefined }} />,
         label: (
           <Dropdown menu={{ items: getFolderContextMenu(folder) }} trigger={['contextMenu']}>
-            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <span
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}
+            >
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder.name}</span>
               {hasChildren && (
                 <span 
@@ -362,7 +420,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       onSelectView('trash');
     } else if (key.startsWith('folder-')) {
       const folderId = key.replace('folder-', '');
-      onSelectFolder(folderId);
+      handleFolderSelect(folderId);
     } else if (key.startsWith('tag-')) {
       const tagId = key.replace('tag-', '');
       onSelectTag(tagId);
