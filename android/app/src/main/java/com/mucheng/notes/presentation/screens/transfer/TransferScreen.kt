@@ -949,7 +949,7 @@ private fun ChatView(
                 }
             } else {
                 items(uiState.messages) { message ->
-                    val fileEntity = if (message.type == "file" && message.fileId != null) {
+                    val fileEntity = if ((message.type == "file" || message.type == "image") && message.fileId != null) {
                         uiState.files.find { it.id == message.fileId }
                     } else null
                     MessageBubble(
