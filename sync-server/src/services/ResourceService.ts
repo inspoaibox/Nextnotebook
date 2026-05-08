@@ -39,16 +39,22 @@ export class ResourceService {
     return path.join(dir, id);
   }
 
+  private getItemIdFromResourceName(id: string): string {
+    const ext = path.extname(id);
+    return ext ? id.slice(0, -ext.length) : id;
+  }
+
   private canAccessResource(id: string): boolean {
     if (!this.userId) {
       return true;
     }
 
     userService.claimLegacyDataForSingleUser(this.userId);
+    const itemId = this.getItemIdFromResourceName(id);
     const db = getDatabase();
     const row = db
       .prepare('SELECT id FROM items WHERE id = ? AND type = ? AND user_id = ?')
-      .get(id, 'resource', this.userId) as { id: string } | undefined;
+      .get(itemId, 'resource', this.userId) as { id: string } | undefined;
 
     return !!row;
   }

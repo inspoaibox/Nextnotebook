@@ -12,6 +12,8 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -538,6 +541,62 @@ private fun QrCodeImage(
     }
 }
 
+@Composable
+private fun TransferImagePreview(
+    localPath: String?,
+    isSent: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val bitmap = remember(localPath) {
+        localPath?.let { path ->
+            runCatching {
+                if (path.startsWith("content://")) {
+                    context.contentResolver.openInputStream(Uri.parse(path))?.use { input ->
+                        BitmapFactory.decodeStream(input)
+                    }
+                } else {
+                    BitmapFactory.decodeFile(path)
+                }
+            }.getOrNull()
+        }
+    }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .background(
+                if (isSent) {
+                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f)
+                } else {
+                    MaterialTheme.colorScheme.surface
+                }
+            )
+            .clickable(enabled = bitmap != null, onClick = onClick)
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "图片预览",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Icon(
+                Icons.Filled.Image,
+                contentDescription = null,
+                tint = if (isSent) {
+                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                },
+                modifier = Modifier.size(36.dp)
+            )
+        }
+    }
+}
+
 /**
  * 中继模式内容
  */
@@ -977,6 +1036,7 @@ private fun MessageBubble(
 ) {
     val isSent = message.direction == MessageDirection.SENT.value
     val isFileMessage = message.type == "file" || message.type == "image"
+    val isImageMessage = message.type == "image" || fileEntity?.mimeType?.startsWith("image/") == true
     val dateFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -1013,6 +1073,22 @@ private fun MessageBubble(
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     if (isFileMessage) {
+                        if (isImageMessage) {
+                            TransferImagePreview(
+                                localPath = fileEntity?.localPath,
+                                isSent = isSent,
+                                onClick = {
+                                    if (canOpenFile) {
+                                        fileEntity?.let { onOpenFile(it.id) }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .width(220.dp)
+                                    .heightIn(min = 120.dp, max = 220.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1051,7 +1127,7 @@ private fun MessageBubble(
                                     onClick = { fileEntity?.let { onOpenFolder(it.id) } },
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                                 ) {
-                                    Text("打开文件夹", style = MaterialTheme.typography.labelSmall)
+                                    Text("文件位置", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -1099,7 +1175,7 @@ private fun MessageBubble(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("打开文件夹") },
+                        text = { Text("文件位置") },
                         onClick = {
                             fileEntity?.let { onOpenFolder(it.id) }
                             showMenu = false

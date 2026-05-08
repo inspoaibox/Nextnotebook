@@ -39,16 +39,24 @@ router.put('/:id', (req, res, next) => {
     });
 
     req.on('end', () => {
-      const data = Buffer.concat(chunks);
-      
-      if (data.length > config.maxResourceSize) {
-        res.status(413).json({ error: `Resource size exceeds limit (${config.maxResourceSize} bytes)` });
-        return;
-      }
+      try {
+        const data = Buffer.concat(chunks);
 
-      const resourceService = new ResourceService(req.userId);
-      resourceService.putResource(req.params.id, data);
-      res.json({ success: true });
+        if (data.length > config.maxResourceSize) {
+          res.status(413).json({ error: `Resource size exceeds limit (${config.maxResourceSize} bytes)` });
+          return;
+        }
+
+        const resourceService = new ResourceService(req.userId);
+        const saved = resourceService.putResource(req.params.id, data);
+        if (!saved) {
+          next(createError('Resource item not found or access denied', 404));
+          return;
+        }
+        res.json({ success: true });
+      } catch (error) {
+        next(error);
+      }
     });
 
     req.on('error', (error) => {

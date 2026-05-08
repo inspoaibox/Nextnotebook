@@ -418,7 +418,10 @@ class TransferViewModel @Inject constructor(
             
             try {
                 val preFileId = UUID.randomUUID().toString()
-                
+                val contentResolver = getApplication<Application>().contentResolver
+                val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+                val messageType = if (isImageFile("", mimeType, uri.toString())) MessageType.IMAGE else MessageType.FILE
+
                 val sentFileInfo = transferClient.sendFileFromUri(
                     targetDeviceId = session!!.peerDeviceId,
                     sessionId = sessionId,
@@ -453,7 +456,7 @@ class TransferViewModel @Inject constructor(
                     id = messageId,
                     sessionId = sessionId,
                     direction = MessageDirection.SENT.value,
-                    type = MessageType.FILE.value,
+                    type = messageType.value,
                     content = sentFileInfo.filename,
                     fileId = sentFileInfo.id,
                     createdAt = System.currentTimeMillis(),
@@ -666,11 +669,16 @@ class TransferViewModel @Inject constructor(
                 if (fileEntity != null) {
                     val sessionId = findOrCreateSessionForDevice(event.senderId)
                     val messageId = UUID.randomUUID().toString()
+                    val messageType = if (isImageFile(fileEntity.filename, fileEntity.mimeType, fileEntity.localPath)) {
+                        MessageType.IMAGE.value
+                    } else {
+                        MessageType.FILE.value
+                    }
                     messageDao.insert(TransferMessageEntity(
                         id = messageId,
                         sessionId = sessionId,
                         direction = MessageDirection.RECEIVED.value,
-                        type = "file",
+                        type = messageType,
                         content = fileEntity.filename,
                         fileId = fileEntity.id,
                         createdAt = System.currentTimeMillis(),
@@ -820,12 +828,17 @@ class TransferViewModel @Inject constructor(
 
     fun openFile(fileId: String) {
         viewModelScope.launch {
-            val file = fileDao.getById(fileId) ?: return@launch
-            val localPath = file.localPath ?: return@launch
+            val context = getApplication<Application>()
+            val file = fileDao.getById(fileId) ?: run {
+                android.widget.Toast.makeText(context, "文件记录不存在", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val localPath = file.localPath ?: run {
+                android.widget.Toast.makeText(context, "文件路径不存在", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
 
             try {
-                val context = getApplication<Application>()
-
                 if (localPath.startsWith("content://")) {
                     val uri = android.net.Uri.parse(localPath)
                     val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
@@ -833,7 +846,11 @@ class TransferViewModel @Inject constructor(
                         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
+                    if (intent.resolveActivity(context.packageManager) != null) {
+                        context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
+                    } else {
+                        android.widget.Toast.makeText(context, "没有可打开此文件的应用", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                     return@launch
                 }
 
@@ -853,21 +870,44 @@ class TransferViewModel @Inject constructor(
                     addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
+                if (intent.resolveActivity(context.packageManager) != null) {
+                    context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
+                } else {
+                    android.widget.Toast.makeText(context, "没有可打开此文件的应用", android.widget.Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) {
                 android.util.Log.e("TransferViewModel", "Failed to open file", e)
+                android.widget.Toast.makeText(context, "打开失败：${e.message ?: "未知错误"}", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
 
+    private fun isImageFile(filename: String, mimeType: String?, localPath: String? = null): Boolean {
+        if (mimeType?.startsWith("image/") == true) return true
+        val candidate = listOf(filename, localPath.orEmpty()).firstOrNull { it.isNotBlank() }?.lowercase() ?: return false
+        return candidate.endsWith(".png") ||
+            candidate.endsWith(".jpg") ||
+            candidate.endsWith(".jpeg") ||
+            candidate.endsWith(".gif") ||
+            candidate.endsWith(".webp") ||
+            candidate.endsWith(".bmp") ||
+            candidate.endsWith(".heic") ||
+            candidate.endsWith(".heif")
+    }
+
     fun openFileFolder(fileId: String) {
         viewModelScope.launch {
-            val file = fileDao.getById(fileId) ?: return@launch
-            val localPath = file.localPath ?: return@launch
+            val context = getApplication<Application>()
+            val file = fileDao.getById(fileId) ?: run {
+                android.widget.Toast.makeText(context, "文件记录不存在", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val localPath = file.localPath ?: run {
+                android.widget.Toast.makeText(context, "文件路径不存在", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
 
             try {
-                val context = getApplication<Application>()
-
                 if (localPath.startsWith("content://")) {
                     val uri = android.net.Uri.parse(localPath)
                     val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
@@ -875,7 +915,11 @@ class TransferViewModel @Inject constructor(
                         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
+                    if (intent.resolveActivity(context.packageManager) != null) {
+                        context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
+                    } else {
+                        android.widget.Toast.makeText(context, "没有可打开此文件的应用", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                     return@launch
                 }
 
@@ -883,22 +927,13 @@ class TransferViewModel @Inject constructor(
                 val parent = javaFile.parentFile
 
                 if (parent != null && parent.exists()) {
-                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        parent
-                    )
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, "*/*")
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(android.content.Intent.createChooser(intent, "打开文件夹"))
+                    android.widget.Toast.makeText(context, "文件位置：${parent.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
                 } else {
                     android.widget.Toast.makeText(context, "文件夹不存在", android.widget.Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 android.util.Log.e("TransferViewModel", "Failed to open folder", e)
+                android.widget.Toast.makeText(context, "打开文件夹失败：${e.message ?: "未知错误"}", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
