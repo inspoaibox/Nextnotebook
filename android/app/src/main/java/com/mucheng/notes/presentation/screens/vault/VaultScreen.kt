@@ -48,6 +48,55 @@ import com.mucheng.notes.security.TOTPCode
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+private val vaultSearchWhitespaceRegex = Regex("\\s+")
+
+private fun MutableList<String>.addVaultSearchValue(value: String?) {
+    if (!value.isNullOrBlank()) {
+        add(value.trim().lowercase())
+    }
+}
+
+private fun VaultEntryItem.matchesVaultSearch(query: String, folderName: String?): Boolean {
+    val terms = query.trim().lowercase().split(vaultSearchWhitespaceRegex).filter { it.isNotBlank() }
+    if (terms.isEmpty()) return true
+
+    val fields = buildList {
+        addVaultSearchValue(name)
+        addVaultSearchValue(getEntryTypeName(entryType))
+        addVaultSearchValue(folderName)
+        addVaultSearchValue(username)
+        addVaultSearchValue(notes)
+        uris.forEach { uri ->
+            addVaultSearchValue(uri.name)
+            addVaultSearchValue(uri.uri)
+            addVaultSearchValue(uri.matchType)
+        }
+        totpSecrets.forEach { totp ->
+            addVaultSearchValue(totp.name)
+            addVaultSearchValue(totp.account)
+        }
+        addVaultSearchValue(cardHolderName)
+        addVaultSearchValue(cardNumber)
+        addVaultSearchValue(cardBrand)
+        addVaultSearchValue(cardExpMonth)
+        addVaultSearchValue(cardExpYear)
+        addVaultSearchValue(identityTitle)
+        addVaultSearchValue(identityFirstName)
+        addVaultSearchValue(identityLastName)
+        addVaultSearchValue(identityEmail)
+        addVaultSearchValue(identityPhone)
+        addVaultSearchValue(identityAddress)
+        customFields.forEach { field ->
+            addVaultSearchValue(field.name)
+            if (!field.type.equals("hidden", ignoreCase = true)) {
+                addVaultSearchValue(field.value)
+            }
+        }
+    }
+
+    return terms.all { term -> fields.any { field -> field.contains(term) } }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VaultScreen(
@@ -81,6 +130,7 @@ fun VaultScreen(
     var selectedEntry by remember { mutableStateOf<VaultEntryItem?>(null) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var createFolderParentId by remember { mutableStateOf<String?>(null) }
+    val folderNameById = remember(folders) { folders.associate { it.id to it.name } }
 
     // 过滤条目：先按文件夹过滤，再按搜索查询过滤
     val filteredEntries = entries
@@ -91,9 +141,7 @@ fun VaultScreen(
             }
             // 搜索过滤
             if (uiState.searchQuery.isNotBlank()) {
-                val query = uiState.searchQuery.lowercase()
-                entry.name.lowercase().contains(query) ||
-                entry.username.lowercase().contains(query)
+                entry.matchesVaultSearch(uiState.searchQuery, folderNameById[entry.folderId])
             } else {
                 true
             }

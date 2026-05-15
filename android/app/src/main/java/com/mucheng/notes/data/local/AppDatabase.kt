@@ -27,7 +27,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun resourceCacheDao(): ResourceCacheDao
     
     companion object {
-        private const val DATABASE_NAME = "mucheng_notes.db"
+        const val DATABASE_NAME = "mucheng_notes.db"
         
         @Volatile
         private var INSTANCE: AppDatabase? = null
@@ -54,9 +54,6 @@ abstract class AppDatabase : RoomDatabase() {
         }
         
         private fun buildDatabase(context: Context, passphrase: ByteArray): AppDatabase {
-            // 初始化 SQLCipher
-            System.loadLibrary("sqlcipher")
-            
             val factory = SupportOpenHelperFactory(passphrase, null, false)
             
             return Room.databaseBuilder(

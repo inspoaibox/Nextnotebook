@@ -20,6 +20,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
+import java.io.OutputStream
 import java.util.UUID
 import javax.inject.Inject
 
@@ -53,8 +54,9 @@ class TransferViewModel @Inject constructor(
     private val fileDao = database.fileDao()
     
     // 文件写入流管理
-    private val fileStreams = mutableMapOf<String, FileOutputStream>()
+    private val fileStreams = mutableMapOf<String, OutputStream>()
     private val filePaths = mutableMapOf<String, String>()
+    private val pendingMediaUris = mutableMapOf<String, android.net.Uri>()
     
     private var messageCollectionJob: Job? = null
     private var fileCollectionJob: Job? = null
@@ -578,18 +580,12 @@ class TransferViewModel @Inject constructor(
                 val sessionId = findOrCreateSessionForDevice(event.senderId)
                 android.util.Log.d("TransferViewModel", "handleFileIncoming: sessionId=$sessionId")
                 
-                // 创建保存文件
-                val downloadsDir = getApplication<Application>().getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
-                if (downloadsDir != null && !downloadsDir.exists()) {
-                    downloadsDir.mkdirs()
-                }
-                
-                // 处理文件名冲突? 简单覆盖
-                val file = File(downloadsDir, event.fileInfo.filename)
-                val fos = FileOutputStream(file)
-                
-                fileStreams[event.fileInfo.id] = fos
-                filePaths[event.fileInfo.id] = file.absolutePath
+                // 接收文件优先保存到系统下载目录，便于预览、打开和定位。
+                val target = createIncomingFileTarget(getApplication(), event.fileInfo)
+
+                fileStreams[event.fileInfo.id] = target.outputStream
+                filePaths[event.fileInfo.id] = target.localPath
+                target.contentUri?.let { pendingMediaUris[event.fileInfo.id] = it }
                 
                 val fileEntity = TransferFileEntity(
                     id = event.fileInfo.id,
@@ -597,7 +593,7 @@ class TransferViewModel @Inject constructor(
                     filename = event.fileInfo.filename,
                     fileSize = event.fileInfo.fileSize,
                     mimeType = event.fileInfo.mimeType,
-                    localPath = file.absolutePath,
+                    localPath = target.localPath,
                     direction = MessageDirection.RECEIVED.value,
                     status = FileTransferStatus.TRANSFERRING.value,
                     progress = 0f,
@@ -613,6 +609,7 @@ class TransferViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 android.util.Log.e("TransferViewModel", "Failed to init incoming file", e)
+                cleanupPendingMediaUri(event.fileInfo.id)
             }
         }
     }
@@ -656,6 +653,7 @@ class TransferViewModel @Inject constructor(
                     }
                     fileStreams.remove(event.fileId)
                 }
+                finalizePendingMediaUri(event.fileId)
 
                 val localPath = filePaths.remove(event.fileId)
                 fileDao.completeTransfer(
@@ -688,6 +686,7 @@ class TransferViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 android.util.Log.e("TransferViewModel", "Failed to complete file", e)
+                cleanupPendingMediaUri(event.fileId)
             }
         }
     }
@@ -695,6 +694,87 @@ class TransferViewModel @Inject constructor(
     /**
      * 查找或创建设备的会话
      */
+    private data class IncomingFileTarget(
+        val outputStream: OutputStream,
+        val localPath: String,
+        val contentUri: android.net.Uri? = null
+    )
+
+    private fun createIncomingFileTarget(
+        context: android.content.Context,
+        fileInfo: FileTransferInfo
+    ): IncomingFileTarget {
+        val resolver = context.contentResolver
+        val mimeType = resolveMimeType(fileInfo.filename, fileInfo.mimeType, null)
+        val safeName = sanitizeFilename(fileInfo.filename)
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, safeName)
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, mimeType)
+                put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/Mucheng")
+                put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("无法创建下载文件")
+            val output = resolver.openOutputStream(uri)
+                ?: throw IllegalStateException("无法写入下载文件")
+            return IncomingFileTarget(
+                outputStream = output,
+                localPath = uri.toString(),
+                contentUri = uri
+            )
+        }
+
+        val downloadsDir = File(
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+            "Mucheng"
+        )
+        if (!downloadsDir.exists()) downloadsDir.mkdirs()
+
+        var file = File(downloadsDir, safeName)
+        val ext = file.extension.takeIf { it.isNotBlank() }?.let { ".$it" } ?: ""
+        val baseName = file.name.removeSuffix(ext)
+        var counter = 1
+        while (file.exists()) {
+            file = File(downloadsDir, "${baseName}_${counter}${ext}")
+            counter++
+        }
+
+        return IncomingFileTarget(
+            outputStream = FileOutputStream(file),
+            localPath = file.absolutePath,
+            contentUri = null
+        )
+    }
+
+    private fun finalizePendingMediaUri(fileId: String) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return
+        val uri = pendingMediaUris.remove(fileId) ?: return
+        runCatching {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.IS_PENDING, 0)
+            }
+            getApplication<Application>().contentResolver.update(uri, values, null, null)
+        }.onFailure {
+            android.util.Log.w("TransferViewModel", "Failed to publish received file: $uri", it)
+        }
+    }
+
+    private fun cleanupPendingMediaUri(fileId: String) {
+        val uri = pendingMediaUris.remove(fileId) ?: return
+        runCatching {
+            getApplication<Application>().contentResolver.delete(uri, null, null)
+        }.onFailure {
+            android.util.Log.w("TransferViewModel", "Failed to delete incomplete received file: $uri", it)
+        }
+    }
+
+    private fun sanitizeFilename(filename: String): String {
+        val name = filename.ifBlank { "received-${System.currentTimeMillis()}" }
+        return name.replace(Regex("[\\\\/:*?\"<>|\\u0000-\\u001f]"), "_").take(180)
+    }
+
     private suspend fun findOrCreateSessionForDevice(deviceId: String): String = sessionMutex.withLock {
         // 先检查是否有活跃的会话
         val existingSession = _uiState.value.sessions.find { 
@@ -839,18 +919,10 @@ class TransferViewModel @Inject constructor(
             }
 
             try {
+                val openMimeType = resolveMimeType(file.filename, file.mimeType, localPath)
                 if (localPath.startsWith("content://")) {
                     val uri = android.net.Uri.parse(localPath)
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, file.mimeType ?: "application/octet-stream")
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    if (intent.resolveActivity(context.packageManager) != null) {
-                        context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
-                    } else {
-                        android.widget.Toast.makeText(context, "没有可打开此文件的应用", android.widget.Toast.LENGTH_SHORT).show()
-                    }
+                    openUriWithMime(context, uri, openMimeType, isApkFile(file.filename, file.mimeType, localPath))
                     return@launch
                 }
 
@@ -865,16 +937,7 @@ class TransferViewModel @Inject constructor(
                     "${context.packageName}.fileprovider",
                     javaFile
                 )
-                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, file.mimeType ?: "application/octet-stream")
-                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                if (intent.resolveActivity(context.packageManager) != null) {
-                    context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
-                } else {
-                    android.widget.Toast.makeText(context, "没有可打开此文件的应用", android.widget.Toast.LENGTH_SHORT).show()
-                }
+                openUriWithMime(context, uri, openMimeType, isApkFile(file.filename, file.mimeType, localPath))
             } catch (e: Exception) {
                 android.util.Log.e("TransferViewModel", "Failed to open file", e)
                 android.widget.Toast.makeText(context, "打开失败：${e.message ?: "未知错误"}", android.widget.Toast.LENGTH_SHORT).show()
@@ -895,6 +958,81 @@ class TransferViewModel @Inject constructor(
             candidate.endsWith(".heif")
     }
 
+    private fun isApkFile(filename: String, mimeType: String?, localPath: String? = null): Boolean {
+        if (mimeType == "application/vnd.android.package-archive") return true
+        return listOf(filename, localPath.orEmpty()).any { it.lowercase().endsWith(".apk") }
+    }
+
+    private fun resolveMimeType(filename: String, mimeType: String?, localPath: String? = null): String {
+        if (isApkFile(filename, mimeType, localPath)) {
+            return "application/vnd.android.package-archive"
+        }
+        if (!mimeType.isNullOrBlank() && mimeType != "application/octet-stream") {
+            return mimeType
+        }
+
+        val candidate = listOf(filename, localPath.orEmpty()).firstOrNull { it.isNotBlank() }?.lowercase().orEmpty()
+        return when {
+            candidate.endsWith(".jpg") || candidate.endsWith(".jpeg") -> "image/jpeg"
+            candidate.endsWith(".png") -> "image/png"
+            candidate.endsWith(".gif") -> "image/gif"
+            candidate.endsWith(".webp") -> "image/webp"
+            candidate.endsWith(".pdf") -> "application/pdf"
+            candidate.endsWith(".txt") -> "text/plain"
+            candidate.endsWith(".zip") -> "application/zip"
+            candidate.endsWith(".apk") -> "application/vnd.android.package-archive"
+            else -> mimeType?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        }
+    }
+
+    private fun startChooserFromApplication(
+        context: android.content.Context,
+        intent: android.content.Intent,
+        title: String
+    ) {
+        val chooser = android.content.Intent.createChooser(intent, title).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            context.startActivity(chooser)
+        } catch (e: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(context, "没有可打开此文件的应用", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openUriWithMime(
+        context: android.content.Context,
+        uri: android.net.Uri,
+        mimeType: String,
+        isApk: Boolean
+    ) {
+        val intent = if (isApk) {
+            android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                putExtra(android.content.Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        } else {
+            android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+
+        try {
+            if (isApk) {
+                context.startActivity(intent)
+            } else {
+                startChooserFromApplication(context, intent, "打开文件")
+            }
+        } catch (e: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(context, "没有可打开此文件的应用", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun openFileFolder(fileId: String) {
         viewModelScope.launch {
             val context = getApplication<Application>()
@@ -909,17 +1047,7 @@ class TransferViewModel @Inject constructor(
 
             try {
                 if (localPath.startsWith("content://")) {
-                    val uri = android.net.Uri.parse(localPath)
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, file.mimeType ?: "application/octet-stream")
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    if (intent.resolveActivity(context.packageManager) != null) {
-                        context.startActivity(android.content.Intent.createChooser(intent, "打开文件"))
-                    } else {
-                        android.widget.Toast.makeText(context, "没有可打开此文件的应用", android.widget.Toast.LENGTH_SHORT).show()
-                    }
+                    openDownloadsLocation(context)
                     return@launch
                 }
 
@@ -927,14 +1055,71 @@ class TransferViewModel @Inject constructor(
                 val parent = javaFile.parentFile
 
                 if (parent != null && parent.exists()) {
-                    android.widget.Toast.makeText(context, "文件位置：${parent.absolutePath}", android.widget.Toast.LENGTH_LONG).show()
+                    if (!openDirectoryLocation(context, parent)) {
+                        openDownloadsLocation(context)
+                    }
                 } else {
-                    android.widget.Toast.makeText(context, "文件夹不存在", android.widget.Toast.LENGTH_SHORT).show()
+                    openDownloadsLocation(context)
                 }
             } catch (e: Exception) {
                 android.util.Log.e("TransferViewModel", "Failed to open folder", e)
                 android.widget.Toast.makeText(context, "打开文件夹失败：${e.message ?: "未知错误"}", android.widget.Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    private fun openDirectoryLocation(context: android.content.Context, directory: File): Boolean {
+        val contentUri = runCatching {
+            androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                directory
+            )
+        }.getOrNull()
+        val fileUri = android.net.Uri.fromFile(directory)
+        val intents = listOfNotNull(
+            contentUri?.let { uri ->
+                android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "resource/folder")
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            },
+            contentUri?.let { uri ->
+                android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "vnd.android.document/directory")
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            },
+            android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(fileUri, "resource/folder")
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                data = fileUri
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+
+        for (intent in intents) {
+            val opened = runCatching {
+                context.startActivity(intent)
+                true
+            }.getOrDefault(false)
+            if (opened) return true
+        }
+        return false
+    }
+
+    private fun openDownloadsLocation(context: android.content.Context) {
+        val intent = android.content.Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(intent)
+        } catch (e: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(context, "系统没有可打开下载目录的文件管理器", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 

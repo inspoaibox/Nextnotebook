@@ -2,7 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { DatabaseManager } from '../database/Database';
+import { ItemsManager } from '../database/ItemsManager';
 import { CryptoEngine } from '../crypto/CryptoEngine';
+import { ItemBase } from '@shared/types';
 
 export interface BackupOptions {
   includeResources: boolean;
@@ -36,11 +38,13 @@ export interface RestoreResult {
 
 export class BackupManager {
   private dbManager: DatabaseManager;
+  private itemsManager: ItemsManager;
   private userDataPath: string;
   private cryptoEngine: CryptoEngine;
 
   constructor(dbManager: DatabaseManager, userDataPath: string) {
     this.dbManager = dbManager;
+    this.itemsManager = new ItemsManager(dbManager);
     this.userDataPath = userDataPath;
     this.cryptoEngine = new CryptoEngine();
   }
@@ -64,7 +68,7 @@ export class BackupManager {
       };
 
       // 导出所有 items
-      const items = this.dbManager.query<Record<string, unknown>>('SELECT * FROM items');
+      const items = this.itemsManager.getAllForExport() as unknown as Record<string, unknown>[];
       backupData.items = items;
       (backupData.metadata as BackupMetadata).items_count = items.length;
 
@@ -156,33 +160,7 @@ export class BackupManager {
 
       this.dbManager.transaction(() => {
         for (const item of items) {
-          // 检查是否已存在
-          const existing = this.dbManager.get<{ id: string }>('SELECT id FROM items WHERE id = ?', [item.id]);
-          if (existing) {
-            // 更新
-            this.dbManager.run(
-              `UPDATE items SET type = ?, created_time = ?, updated_time = ?, deleted_time = ?,
-               payload = ?, content_hash = ?, sync_status = ?, local_rev = ?, remote_rev = ?,
-               encryption_applied = ?, schema_version = ? WHERE id = ?`,
-              [
-                item.type, item.created_time, item.updated_time, item.deleted_time,
-                item.payload, item.content_hash, item.sync_status, item.local_rev, item.remote_rev,
-                item.encryption_applied, item.schema_version, item.id,
-              ]
-            );
-          } else {
-            // 插入
-            this.dbManager.run(
-              `INSERT INTO items (id, type, created_time, updated_time, deleted_time, payload,
-               content_hash, sync_status, local_rev, remote_rev, encryption_applied, schema_version)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                item.id, item.type, item.created_time, item.updated_time, item.deleted_time,
-                item.payload, item.content_hash, item.sync_status, item.local_rev, item.remote_rev,
-                item.encryption_applied, item.schema_version,
-              ]
-            );
-          }
+          this.itemsManager.upsertFromPlainItem(item as unknown as ItemBase);
           itemsRestored++;
         }
       });

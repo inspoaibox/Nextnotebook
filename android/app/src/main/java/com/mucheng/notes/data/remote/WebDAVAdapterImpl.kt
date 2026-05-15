@@ -69,7 +69,6 @@ class WebDAVAdapterImpl @Inject constructor() : WebDAVAdapter {
             val sardine = getSardine()
             
             android.util.Log.d("WebDAV", "Testing connection to: ${cfg.url}${cfg.syncPath}")
-            android.util.Log.d("WebDAV", "Username: ${cfg.username}, Password length: ${cfg.password?.length ?: 0}")
             
             // 尝试访问同步目录
             val path = "${cfg.url}${cfg.syncPath}"

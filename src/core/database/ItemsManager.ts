@@ -3,12 +3,28 @@ import * as crypto from 'crypto';
 import { ItemBase, ItemType } from '@shared/types';
 import { DatabaseManager } from './Database';
 import { SyncCursor } from '../sync/StorageAdapter';
+import {
+  decryptLocalPayload,
+  encryptLocalPayload,
+  isLocalPayloadEncrypted,
+} from './LocalPayloadCrypto';
+
+const LOCALLY_ENCRYPTED_ITEM_TYPES = new Set<ItemType>([
+  'note',
+  'excel_note',
+  'vault_entry',
+]);
 
 export class ItemsManager {
   private db: DatabaseManager;
 
   constructor(db: DatabaseManager) {
     this.db = db;
+    const droppedPlaintextSearch = this.dropPlaintextSearchArtifacts();
+    const migratedPayloads = this.migratePayloadEncryptionScope();
+    if (droppedPlaintextSearch || migratedPayloads > 0) {
+      this.compactDatabase();
+    }
   }
 
   // ========== 同步游标管理（本地存储，按服务器独立）==========
@@ -115,6 +131,122 @@ export class ItemsManager {
     return crypto.createHash('sha256').update(payload).digest('hex').substring(0, 16);
   }
 
+  private decryptItem(item: ItemBase): ItemBase {
+    if (!isLocalPayloadEncrypted(item.payload)) {
+      return item;
+    }
+    return {
+      ...item,
+      payload: decryptLocalPayload(item.payload),
+    };
+  }
+
+  private decryptItems(items: ItemBase[]): ItemBase[] {
+    return items.map(item => this.decryptItem(item));
+  }
+
+  private shouldEncryptPayload(type: ItemType): boolean {
+    return LOCALLY_ENCRYPTED_ITEM_TYPES.has(type);
+  }
+
+  private preparePayloadForStorage(type: ItemType, payload: string): string {
+    if (this.shouldEncryptPayload(type)) {
+      return encryptLocalPayload(payload);
+    }
+
+    // Keep non-sensitive local payloads plaintext. This also normalizes rows
+    // that may have been encrypted by an older local-only development build.
+    return isLocalPayloadEncrypted(payload) ? decryptLocalPayload(payload) : payload;
+  }
+
+  private migratePayloadEncryptionScope(): number {
+    const items = this.db.query<{ id: string; type: ItemType; payload: string }>(
+      'SELECT id, type, payload FROM items'
+    );
+
+    const updates = items
+      .map(item => ({
+        ...item,
+        nextPayload: this.preparePayloadForStorage(item.type, item.payload),
+      }))
+      .filter(item => item.nextPayload !== item.payload);
+
+    if (updates.length === 0) return 0;
+
+    this.db.transaction(() => {
+      for (const item of updates) {
+        this.db.run('UPDATE items SET payload = ? WHERE id = ?', [
+          item.nextPayload,
+          item.id,
+        ]);
+      }
+    });
+    console.log(`[ItemsManager] Normalized ${updates.length} local payloads`);
+    return updates.length;
+  }
+
+  private dropPlaintextSearchArtifacts(): boolean {
+    const artifacts = this.db.query<{ name: string }>(
+      `SELECT name FROM sqlite_master
+       WHERE name IN (
+         'notes_fts_insert',
+         'notes_fts_update',
+         'notes_fts_delete',
+         'notes_fts',
+         'items_fts'
+       )`
+    );
+    if (artifacts.length === 0) {
+      return false;
+    }
+
+    this.db.getDatabase().exec(`
+      DROP TRIGGER IF EXISTS notes_fts_insert;
+      DROP TRIGGER IF EXISTS notes_fts_update;
+      DROP TRIGGER IF EXISTS notes_fts_delete;
+      DROP TABLE IF EXISTS notes_fts;
+      DROP TABLE IF EXISTS items_fts;
+    `);
+    return true;
+  }
+
+  private compactDatabase(): void {
+    try {
+      this.db.getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+      this.db.getDatabase().exec('VACUUM');
+      this.db.getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+    } catch (error) {
+      console.warn('[ItemsManager] Failed to compact database after local encryption migration:', error);
+    }
+  }
+
+  getAllForExport(): ItemBase[] {
+    return this.decryptItems(this.db.query<ItemBase>('SELECT * FROM items'));
+  }
+
+  getRawById(id: string): ItemBase | undefined {
+    return this.db.get<ItemBase>('SELECT * FROM items WHERE id = ?', [id]);
+  }
+
+  upsertFromPlainItem(item: ItemBase, syncStatus: ItemBase['sync_status'] = item.sync_status): ItemBase {
+    const storedPayload = this.preparePayloadForStorage(item.type, item.payload);
+    this.db.run(
+      `INSERT OR REPLACE INTO items (id, type, created_time, updated_time, deleted_time, payload,
+       content_hash, sync_status, local_rev, remote_rev, encryption_applied, schema_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        item.id, item.type, item.created_time, item.updated_time, item.deleted_time,
+        storedPayload, item.content_hash, syncStatus, item.local_rev || 1,
+        item.remote_rev, item.encryption_applied || 0, item.schema_version || 1,
+      ]
+    );
+    return this.decryptItem({
+      ...item,
+      payload: storedPayload,
+      sync_status: syncStatus,
+    });
+  }
+
   // 创建新 Item
   create<T extends object>(type: ItemType, payload: T): ItemBase {
     const now = Date.now();
@@ -152,7 +284,7 @@ export class ItemsManager {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         item.id, item.type, item.created_time, item.updated_time, item.deleted_time,
-        item.payload, item.content_hash, item.sync_status, item.local_rev,
+        this.preparePayloadForStorage(item.type, item.payload), item.content_hash, item.sync_status, item.local_rev,
         item.remote_rev, item.encryption_applied, item.schema_version,
       ]
     );
@@ -166,36 +298,27 @@ export class ItemsManager {
 
   // 创建带指定 ID 的 Item（用于同步时保持远端 ID）
   createWithId(item: ItemBase): ItemBase {
-    this.db.run(
-      `INSERT OR REPLACE INTO items (id, type, created_time, updated_time, deleted_time, payload, 
-       content_hash, sync_status, local_rev, remote_rev, encryption_applied, schema_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        item.id, item.type, item.created_time, item.updated_time, item.deleted_time,
-        item.payload, item.content_hash, 'clean', item.local_rev,
-        item.remote_rev, item.encryption_applied, item.schema_version,
-      ]
-    );
-
-    return item;
+    return this.upsertFromPlainItem(item, 'clean');
   }
 
   // 获取单个 Item
   getById(id: string): ItemBase | undefined {
-    return this.db.get<ItemBase>('SELECT * FROM items WHERE id = ? AND deleted_time IS NULL', [id]);
+    const item = this.db.get<ItemBase>('SELECT * FROM items WHERE id = ? AND deleted_time IS NULL', [id]);
+    return item ? this.decryptItem(item) : undefined;
   }
 
   // 获取单个 Item（包括已删除的）
   getByIdIncludeDeleted(id: string): ItemBase | undefined {
-    return this.db.get<ItemBase>('SELECT * FROM items WHERE id = ?', [id]);
+    const item = this.db.get<ItemBase>('SELECT * FROM items WHERE id = ?', [id]);
+    return item ? this.decryptItem(item) : undefined;
   }
 
   // 获取所有指定类型的 Items
   getByType(type: ItemType): ItemBase[] {
-    return this.db.query<ItemBase>(
+    return this.decryptItems(this.db.query<ItemBase>(
       'SELECT * FROM items WHERE type = ? AND deleted_time IS NULL ORDER BY updated_time DESC',
       [type]
-    );
+    ));
   }
 
   // 更新 Item（合并更新，保留未修改的字段）
@@ -229,7 +352,7 @@ export class ItemsManager {
     this.db.run(
       `UPDATE items SET payload = ?, content_hash = ?, updated_time = ?, 
        local_rev = local_rev + 1, sync_status = 'modified' WHERE id = ?`,
-      [payloadStr, newHash, now, id]
+      [this.preparePayloadForStorage(existing.type, payloadStr), newHash, now, id]
     );
 
     const updated = this.getById(id);
@@ -246,7 +369,14 @@ export class ItemsManager {
     this.db.run(
       `UPDATE items SET payload = ?, content_hash = ?, updated_time = ?, 
        remote_rev = ?, sync_status = 'clean', deleted_time = ? WHERE id = ?`,
-      [item.payload, item.content_hash, item.updated_time, item.remote_rev, item.deleted_time ?? null, item.id]
+      [
+        this.preparePayloadForStorage(item.type, item.payload),
+        item.content_hash,
+        item.updated_time,
+        item.remote_rev,
+        item.deleted_time ?? null,
+        item.id,
+      ]
     );
 
     return this.getById(item.id);
@@ -290,21 +420,21 @@ export class ItemsManager {
   // 获取已删除的 Items（回收站）
   getDeleted(type?: ItemType): ItemBase[] {
     if (type) {
-      return this.db.query<ItemBase>(
+      return this.decryptItems(this.db.query<ItemBase>(
         'SELECT * FROM items WHERE type = ? AND deleted_time IS NOT NULL ORDER BY deleted_time DESC',
         [type]
-      );
+      ));
     }
-    return this.db.query<ItemBase>(
+    return this.decryptItems(this.db.query<ItemBase>(
       'SELECT * FROM items WHERE deleted_time IS NOT NULL ORDER BY deleted_time DESC'
-    );
+    ));
   }
 
   // 获取需要同步的 Items
   getPendingSync(): ItemBase[] {
-    const items = this.db.query<ItemBase>(
+    const items = this.decryptItems(this.db.query<ItemBase>(
       "SELECT * FROM items WHERE sync_status IN ('modified', 'deleted') ORDER BY updated_time ASC"
-    );
+    ));
     console.log(`[ItemsManager] getPendingSync: found ${items.length} items`);
     if (items.length > 0) {
       const byType = items.reduce((acc, i) => {
@@ -349,29 +479,25 @@ export class ItemsManager {
 
   // 搜索 Items（基础实现，后续用 FTS5 增强）
   search(query: string, type?: ItemType): ItemBase[] {
-    const likeQuery = `%${query}%`;
-    if (type) {
-      return this.db.query<ItemBase>(
-        `SELECT * FROM items WHERE type = ? AND deleted_time IS NULL 
-         AND payload LIKE ? ORDER BY updated_time DESC`,
-        [type, likeQuery]
-      );
-    }
-    return this.db.query<ItemBase>(
-      `SELECT * FROM items WHERE deleted_time IS NULL 
-       AND payload LIKE ? ORDER BY updated_time DESC`,
-      [likeQuery]
-    );
+    const normalized = query.toLowerCase();
+    const items = type
+      ? this.getByType(type)
+      : this.decryptItems(this.db.query<ItemBase>(
+          'SELECT * FROM items WHERE deleted_time IS NULL ORDER BY updated_time DESC'
+        ));
+    return items.filter(item => item.payload.toLowerCase().includes(normalized));
   }
 
   // 递归获取所有子文件夹 ID
   private getAllChildFolderIds(folderId: string): string[] {
     const childIds: string[] = [];
-    const directChildren = this.db.query<ItemBase>(
-      `SELECT id FROM items WHERE type = 'folder' AND deleted_time IS NULL 
-       AND json_extract(payload, '$.parent_id') = ?`,
-      [folderId]
-    );
+    const directChildren = this.getByType('folder').filter(folder => {
+      try {
+        return (JSON.parse(folder.payload) as { parent_id?: string | null }).parent_id === folderId;
+      } catch {
+        return false;
+      }
+    });
     for (const child of directChildren) {
       childIds.push(child.id);
       childIds.push(...this.getAllChildFolderIds(child.id));
@@ -384,31 +510,33 @@ export class ItemsManager {
   getNotesByFolder(folderId: string | null): ItemBase[] {
     if (folderId === null) {
       // 返回所有笔记，不限制文件夹
-      return this.db.query<ItemBase>(
+      return this.decryptItems(this.db.query<ItemBase>(
         `SELECT * FROM items WHERE type = 'note' AND deleted_time IS NULL 
          ORDER BY updated_time DESC`
-      );
+      ));
     }
     
     // 获取当前文件夹及所有子文件夹的 ID
     const allFolderIds = [folderId, ...this.getAllChildFolderIds(folderId)];
     
-    // 构建 IN 查询的占位符
-    const placeholders = allFolderIds.map(() => '?').join(',');
-    
-    return this.db.query<ItemBase>(
-      `SELECT * FROM items WHERE type = 'note' AND deleted_time IS NULL 
-       AND json_extract(payload, '$.folder_id') IN (${placeholders}) ORDER BY updated_time DESC`,
-      allFolderIds
-    );
+    return this.getByType('note').filter(note => {
+      try {
+        return allFolderIds.includes((JSON.parse(note.payload) as { folder_id?: string | null }).folder_id || '');
+      } catch {
+        return false;
+      }
+    });
   }
 
   // 获取置顶笔记
   getPinnedNotes(): ItemBase[] {
-    return this.db.query<ItemBase>(
-      `SELECT * FROM items WHERE type = 'note' AND deleted_time IS NULL 
-       AND json_extract(payload, '$.is_pinned') = 1 ORDER BY updated_time DESC`
-    );
+    return this.getByType('note').filter(note => {
+      try {
+        return Boolean((JSON.parse(note.payload) as { is_pinned?: boolean }).is_pinned);
+      } catch {
+        return false;
+      }
+    });
   }
 
   // 统计信息

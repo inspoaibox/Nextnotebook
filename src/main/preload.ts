@@ -243,6 +243,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('transfer:sendMessage', targetDeviceId, sessionId, message),
     sendFile: (targetDeviceId: string, sessionId: string, filePath: string) =>
       ipcRenderer.invoke('transfer:sendFile', targetDeviceId, sessionId, filePath),
+    saveTempFile: (filename: string, base64Data: string) =>
+      ipcRenderer.invoke('transfer:saveTempFile', filename, base64Data),
     sendMessageRead: (targetDeviceId: string, messageIds: string[]) =>
       ipcRenderer.invoke('transfer:sendMessageRead', targetDeviceId, messageIds),
 

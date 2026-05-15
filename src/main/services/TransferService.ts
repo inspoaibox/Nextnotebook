@@ -706,6 +706,31 @@ class TransferService {
       return await this.relay.sendFile(targetDeviceId, sessionId, filePath);
     });
 
+    ipcMain.handle('transfer:saveTempFile', async (_, filename: string, base64Data: string) => {
+      if (!base64Data || typeof base64Data !== 'string') {
+        throw new Error('临时文件数据为空');
+      }
+
+      const safeFilename =
+        path
+          .basename(filename || `clipboard-${Date.now()}`)
+          .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+          .trim() || `clipboard-${Date.now()}`;
+      const tempDir = path.join(app.getPath('temp'), 'NextNotebookTransfer');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const payload = base64Data.includes(',') ? base64Data.split(',').pop() || '' : base64Data;
+      const buffer = Buffer.from(payload, 'base64');
+      const tempPath = path.join(
+        tempDir,
+        `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${safeFilename}`
+      );
+      fs.writeFileSync(tempPath, buffer);
+      return tempPath;
+    });
+
     ipcMain.handle('transfer:sendMessageRead', (_, targetDeviceId, messageIds) => {
       if (!this.server?.sendMessageRead(targetDeviceId, messageIds)) {
         this.relay.sendMessageRead(targetDeviceId, messageIds);

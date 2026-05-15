@@ -575,7 +575,6 @@ class SettingsViewModel @Inject constructor(
             val fullPath = "$baseUrl$syncPath"
             
             android.util.Log.d("SettingsViewModel", "Testing WebDAV connection to: $fullPath")
-            android.util.Log.d("SettingsViewModel", "Username: $username, Password length: ${password.length}")
             
             // 第一步：尝试访问根 URL 验证认证
             try {

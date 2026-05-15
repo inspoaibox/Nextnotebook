@@ -1,5 +1,6 @@
 import { DatabaseManager } from '../database/Database';
 import { ItemBase, NotePayload } from '@shared/types';
+import { decryptLocalPayload, isLocalPayloadEncrypted } from '../database/LocalPayloadCrypto';
 
 export interface SearchResult {
   id: string;
@@ -29,225 +30,83 @@ export class SearchEngine {
     this.db = db;
   }
 
-  // 初始化 FTS5 索引
   initializeFTS(): void {
     if (this.ftsInitialized) return;
-
-    // 创建 FTS5 虚拟表
-    this.db.getDatabase().exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
-        id UNINDEXED,
-        title,
-        content,
-        tags,
-        tokenize='unicode61'
-      )
-    `);
-
-    // 创建触发器以保持索引同步
-    this.db.getDatabase().exec(`
-      CREATE TRIGGER IF NOT EXISTS notes_fts_insert AFTER INSERT ON items
-      WHEN NEW.type = 'note' AND NEW.deleted_time IS NULL
-      BEGIN
-        INSERT INTO notes_fts(id, title, content, tags)
-        VALUES (
-          NEW.id,
-          json_extract(NEW.payload, '$.title'),
-          json_extract(NEW.payload, '$.content'),
-          json_extract(NEW.payload, '$.tags')
-        );
-      END
-    `);
-
-    this.db.getDatabase().exec(`
-      CREATE TRIGGER IF NOT EXISTS notes_fts_update AFTER UPDATE ON items
-      WHEN NEW.type = 'note'
-      BEGIN
-        DELETE FROM notes_fts WHERE id = OLD.id;
-        INSERT OR IGNORE INTO notes_fts(id, title, content, tags)
-        SELECT NEW.id,
-          json_extract(NEW.payload, '$.title'),
-          json_extract(NEW.payload, '$.content'),
-          json_extract(NEW.payload, '$.tags')
-        WHERE NEW.deleted_time IS NULL;
-      END
-    `);
-
-    this.db.getDatabase().exec(`
-      CREATE TRIGGER IF NOT EXISTS notes_fts_delete AFTER DELETE ON items
-      WHEN OLD.type = 'note'
-      BEGIN
-        DELETE FROM notes_fts WHERE id = OLD.id;
-      END
-    `);
-
-    // 重建索引（首次初始化时）
-    this.rebuildIndex();
+    this.dropPlaintextFtsArtifacts();
     this.ftsInitialized = true;
   }
 
-  // 重建全文索引
   rebuildIndex(): void {
-    this.db.transaction(() => {
-      // 清空现有索引
-      this.db.run('DELETE FROM notes_fts');
-
-      // 重新索引所有笔记
-      const notes = this.db.query<ItemBase>(
-        "SELECT * FROM items WHERE type = 'note' AND deleted_time IS NULL"
-      );
-
-      for (const note of notes) {
-        const payload = JSON.parse(note.payload) as NotePayload;
-        this.db.run(
-          'INSERT INTO notes_fts(id, title, content, tags) VALUES (?, ?, ?, ?)',
-          [note.id, payload.title, payload.content, JSON.stringify(payload.tags)]
-        );
-      }
-    });
+    this.dropPlaintextFtsArtifacts();
   }
 
-  // 全文搜索
   search(query: string, options: SearchOptions = {}): SearchResult[] {
+    return this.simpleSearch(query, options);
+  }
+
+  simpleSearch(query: string, options: SearchOptions = {}): SearchResult[] {
     if (!query.trim()) return [];
 
-    const { folderId, dateFrom, dateTo, limit = 50, offset = 0 } = options;
+    const { limit = 50, offset = 0 } = options;
+    const normalized = query.toLowerCase();
+    const notes = this.filterNotes(this.getNotes(), options)
+      .map(item => ({ item, payload: this.parseNotePayload(item) }))
+      .filter(({ payload }) => {
+        const haystack = [
+          payload.title,
+          payload.content,
+          ...(payload.tags || []),
+        ].join('\n').toLowerCase();
+        return haystack.includes(normalized);
+      });
 
-    // 构建 FTS5 查询
-    const ftsQuery = this.buildFTSQuery(query);
-
-    // 执行搜索
-    const results = this.db.query<{
-      id: string;
-      title: string;
-      content: string;
-      tags: string;
-      rank: number;
-      updated_time: number;
-      payload: string;
-    }>(
-      `SELECT 
-        notes_fts.id,
-        notes_fts.title,
-        snippet(notes_fts, 1, '<mark>', '</mark>', '...', 32) as content,
-        notes_fts.tags,
-        rank,
-        items.updated_time,
-        items.payload
-      FROM notes_fts
-      JOIN items ON notes_fts.id = items.id
-      WHERE notes_fts MATCH ?
-      ${folderId !== undefined ? 'AND json_extract(items.payload, "$.folder_id") = ?' : ''}
-      ${dateFrom ? 'AND items.updated_time >= ?' : ''}
-      ${dateTo ? 'AND items.updated_time <= ?' : ''}
-      ORDER BY rank
-      LIMIT ? OFFSET ?`,
-      [
-        ftsQuery,
-        ...(folderId !== undefined ? [folderId] : []),
-        ...(dateFrom ? [dateFrom] : []),
-        ...(dateTo ? [dateTo] : []),
-        limit,
-        offset,
-      ]
-    );
-
-    return results.map(r => ({
-      id: r.id,
+    return notes.slice(offset, offset + limit).map(({ item, payload }) => ({
+      id: item.id,
       type: 'note',
-      title: r.title || '无标题',
-      snippet: r.content,
-      matchCount: this.countMatches(r.content, query),
-      score: Math.abs(r.rank),
-      updatedTime: r.updated_time,
+      title: payload.title || '无标题',
+      snippet: this.generateSnippet(payload.content || payload.title || '', query),
+      matchCount: this.countMatches(`${payload.title}\n${payload.content}`, query),
+      score: 1,
+      updatedTime: item.updated_time,
     }));
   }
 
-  // 简单搜索（不使用 FTS，用于回退）
-  simpleSearch(query: string, options: SearchOptions = {}): SearchResult[] {
-    const { limit = 50, offset = 0 } = options;
-    const likeQuery = `%${query}%`;
-
-    const results = this.db.query<ItemBase>(
-      `SELECT * FROM items 
-       WHERE type = 'note' 
-       AND deleted_time IS NULL
-       AND (payload LIKE ? OR payload LIKE ?)
-       ORDER BY updated_time DESC
-       LIMIT ? OFFSET ?`,
-      [likeQuery, likeQuery, limit, offset]
-    );
-
-    return results.map(item => {
-      const payload = JSON.parse(item.payload) as NotePayload;
-      return {
-        id: item.id,
-        type: 'note',
-        title: payload.title || '无标题',
-        snippet: this.generateSnippet(payload.content, query),
-        matchCount: this.countMatches(payload.content, query),
-        score: 1,
-        updatedTime: item.updated_time,
-      };
+  searchByTags(tags: string[]): ItemBase[] {
+    if (tags.length === 0) return [];
+    return this.getNotes().filter(item => {
+      const payload = this.parseNotePayload(item);
+      return tags.every(tag => (payload.tags || []).includes(tag));
     });
   }
 
-  // 按标签搜索
-  searchByTags(tags: string[]): ItemBase[] {
-    if (tags.length === 0) return [];
-
-    const conditions = tags.map(() => 'json_extract(payload, "$.tags") LIKE ?').join(' AND ');
-    const params = tags.map(tag => `%"${tag}"%`);
-
-    return this.db.query<ItemBase>(
-      `SELECT * FROM items 
-       WHERE type = 'note' 
-       AND deleted_time IS NULL
-       AND ${conditions}
-       ORDER BY updated_time DESC`,
-      params
-    );
-  }
-
-  // 按日期范围搜索
   searchByDateRange(from: number, to: number): ItemBase[] {
-    return this.db.query<ItemBase>(
-      `SELECT * FROM items 
-       WHERE type = 'note' 
-       AND deleted_time IS NULL
-       AND updated_time >= ? AND updated_time <= ?
-       ORDER BY updated_time DESC`,
-      [from, to]
-    );
+    return this.getNotes().filter(item => item.updated_time >= from && item.updated_time <= to);
   }
 
-  // 获取搜索建议
   getSuggestions(prefix: string, limit: number = 10): string[] {
     if (!prefix.trim()) return [];
+    const normalized = prefix.toLowerCase();
+    const seen = new Set<string>();
+    const suggestions: string[] = [];
 
-    const results = this.db.query<{ title: string }>(
-      `SELECT DISTINCT json_extract(payload, '$.title') as title
-       FROM items 
-       WHERE type = 'note' 
-       AND deleted_time IS NULL
-       AND json_extract(payload, '$.title') LIKE ?
-       LIMIT ?`,
-      [`${prefix}%`, limit]
-    );
+    for (const note of this.getNotes()) {
+      const title = this.parseNotePayload(note).title || '';
+      if (!title || !title.toLowerCase().startsWith(normalized) || seen.has(title)) {
+        continue;
+      }
+      seen.add(title);
+      suggestions.push(title);
+      if (suggestions.length >= limit) break;
+    }
 
-    return results.map(r => r.title).filter(Boolean);
+    return suggestions;
   }
 
-  // 获取热门标签
   getPopularTags(limit: number = 20): Array<{ tag: string; count: number }> {
-    const notes = this.db.query<ItemBase>(
-      "SELECT payload FROM items WHERE type = 'note' AND deleted_time IS NULL"
-    );
-
     const tagCounts: Record<string, number> = {};
-    for (const note of notes) {
-      const payload = JSON.parse(note.payload) as NotePayload;
-      for (const tag of payload.tags) {
+    for (const note of this.getNotes()) {
+      const payload = this.parseNotePayload(note);
+      for (const tag of payload.tags || []) {
         tagCounts[tag] = (tagCounts[tag] || 0) + 1;
       }
     }
@@ -258,16 +117,45 @@ export class SearchEngine {
       .slice(0, limit);
   }
 
-  // 构建 FTS5 查询字符串
-  private buildFTSQuery(query: string): string {
-    const terms = query.trim().split(/\s+/).filter(Boolean);
-    if (terms.length === 1) {
-      return `"${terms[0]}"*`;
-    }
-    return terms.map(t => `"${t}"*`).join(' AND ');
+  private getNotes(): ItemBase[] {
+    return this.db.query<ItemBase>(
+      "SELECT * FROM items WHERE type = 'note' AND deleted_time IS NULL ORDER BY updated_time DESC"
+    ).map(item => this.decryptItem(item));
   }
 
-  // 生成搜索结果片段
+  private filterNotes(notes: ItemBase[], options: SearchOptions): ItemBase[] {
+    return notes.filter(note => {
+      if (options.dateFrom && note.updated_time < options.dateFrom) return false;
+      if (options.dateTo && note.updated_time > options.dateTo) return false;
+
+      const payload = this.parseNotePayload(note);
+      if (options.folderId !== undefined && payload.folder_id !== options.folderId) return false;
+      if (options.tags?.length && !options.tags.every(tag => (payload.tags || []).includes(tag))) return false;
+      return true;
+    });
+  }
+
+  private decryptItem(item: ItemBase): ItemBase {
+    if (!isLocalPayloadEncrypted(item.payload)) {
+      return item;
+    }
+    return { ...item, payload: decryptLocalPayload(item.payload) };
+  }
+
+  private parseNotePayload(item: ItemBase): NotePayload {
+    return JSON.parse(item.payload) as NotePayload;
+  }
+
+  private dropPlaintextFtsArtifacts(): void {
+    this.db.getDatabase().exec(`
+      DROP TRIGGER IF EXISTS notes_fts_insert;
+      DROP TRIGGER IF EXISTS notes_fts_update;
+      DROP TRIGGER IF EXISTS notes_fts_delete;
+      DROP TABLE IF EXISTS notes_fts;
+      DROP TABLE IF EXISTS items_fts;
+    `);
+  }
+
   private generateSnippet(content: string, query: string, maxLength: number = 150): string {
     const lowerContent = content.toLowerCase();
     const lowerQuery = query.toLowerCase();
@@ -287,7 +175,6 @@ export class SearchEngine {
     return snippet;
   }
 
-  // 计算匹配次数
   private countMatches(text: string, query: string): number {
     const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(escapedQuery, 'gi');

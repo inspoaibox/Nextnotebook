@@ -9,7 +9,9 @@ export interface Config {
   databasePath: string;
   resourcesPath: string;
   apiKeys: string[];
+  legacyApiKeyAuthEnabled: boolean;
   logLevel: string;
+  jsonBodyLimit: string;
   maxResourceSize: number;
   changeLogRetentionDays: number;
   corsOrigins: string[];
@@ -20,6 +22,7 @@ export interface Config {
   refreshTokenExpiresIn: number;
   // 频率限制配置
   apiRateLimit: number;
+  syncRateLimit: number;
   loginRateLimit: number;
   registerRateLimit: number;
   // 安全配置
@@ -72,7 +75,9 @@ export const config: Config = {
   databasePath: process.env.DATABASE_PATH || './data/sync.db',
   resourcesPath: process.env.RESOURCES_PATH || './data/resources',
   apiKeys: parseApiKeys(process.env.API_KEYS),
+  legacyApiKeyAuthEnabled: process.env.LEGACY_API_KEY_AUTH_ENABLED === 'true',
   logLevel: process.env.LOG_LEVEL || 'info',
+  jsonBodyLimit: process.env.JSON_BODY_LIMIT || '50mb',
   maxResourceSize: parseInt(process.env.MAX_RESOURCE_SIZE || '104857600', 10),
   changeLogRetentionDays: parseInt(process.env.CHANGE_LOG_RETENTION_DAYS || '90', 10),
   corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
@@ -83,6 +88,7 @@ export const config: Config = {
   refreshTokenExpiresIn: parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN || '2592000', 10), // 30天（原7天太短）
   // 频率限制配置
   apiRateLimit: parseInt(process.env.API_RATE_LIMIT || '10000', 10),
+  syncRateLimit: parseInt(process.env.SYNC_RATE_LIMIT || '50000', 10),
   loginRateLimit: parseInt(process.env.LOGIN_RATE_LIMIT || '5', 10),
   registerRateLimit: parseInt(process.env.REGISTER_RATE_LIMIT || '3', 10),
   // 安全配置
@@ -128,6 +134,16 @@ export function checkSecurityConfig(): void {
   // 检查 CORS 配置
   if (config.corsOrigins.includes('*')) {
     warnings.push('CORS_ORIGINS 设置为 *，允许任何来源访问（生产环境建议限制）');
+  }
+
+  if (config.apiKeys.length > 0 && !config.legacyApiKeyAuthEnabled) {
+    warnings.push('API_KEYS 已设置但旧版 API Key 认证未启用；如确需兼容旧客户端，请设置 LEGACY_API_KEY_AUTH_ENABLED=true');
+  } else if (config.legacyApiKeyAuthEnabled) {
+    warnings.push('旧版 API Key 认证已启用；当前账号+密码+同步密钥部署建议关闭 LEGACY_API_KEY_AUTH_ENABLED');
+  }
+
+  if (config.secureMode && !config.trustProxy) {
+    warnings.push('SECURE_MODE 已启用但 TRUST_PROXY 未启用；如果服务在 HTTPS 反代后面，可能无法识别 HTTPS 请求');
   }
   
   // 检查是否在生产环境使用默认端口

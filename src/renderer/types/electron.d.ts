@@ -315,6 +315,15 @@ export interface TransferAPI {
   // 数据库操作
   db: TransferDatabaseAPI;
 
+  sendMessage: (targetDeviceId: string, sessionId: string, message: object) => Promise<boolean>;
+  sendFile: (
+    targetDeviceId: string,
+    sessionId: string,
+    filePath: string
+  ) => Promise<{ id: string; filename: string; fileSize: number; mimeType: string }>;
+  saveTempFile: (filename: string, base64Data: string) => Promise<string>;
+  sendMessageRead: (targetDeviceId: string, messageIds: string[]) => Promise<void>;
+
   // 事件监听（返回取消订阅函数）
   onDeviceConnected: (callback: (device: ConnectedDevice) => void) => () => void;
   onDeviceDisconnected: (callback: (deviceId: string) => void) => () => void;

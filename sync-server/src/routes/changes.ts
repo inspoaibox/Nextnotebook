@@ -25,7 +25,8 @@ router.get('/', (req, res, next) => {
   try {
     const changeService = new ChangeService();
     const cursor = req.query.cursor as string | undefined;
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
+    const requestedLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 100, 1), 500);
 
     const result = changeService.listChanges(cursor, limit, req.userId);
     

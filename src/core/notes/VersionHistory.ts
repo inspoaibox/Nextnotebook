@@ -1,4 +1,9 @@
 import { DatabaseManager } from '../database/Database';
+import {
+  decryptLocalPayload,
+  encryptLocalPayload,
+  isLocalPayloadEncrypted,
+} from '../database/LocalPayloadCrypto';
 
 export interface NoteVersion {
   id: number;
@@ -19,6 +24,10 @@ export class VersionHistory {
     this.maxVersions = maxVersions;
     this.minInterval = minInterval;
     this.initializeTable();
+    const migrated = this.migratePlainVersionsToEncrypted();
+    if (migrated > 0) {
+      this.compactDatabase();
+    }
   }
 
   // 初始化版本历史表
@@ -62,7 +71,7 @@ export class VersionHistory {
     const size = new Blob([content]).size;
     this.db.run(
       'INSERT INTO note_versions (note_id, title, content, created_at, size) VALUES (?, ?, ?, ?, ?)',
-      [noteId, title, content, Date.now(), size]
+      [noteId, encryptLocalPayload(title), encryptLocalPayload(content), Date.now(), size]
     );
 
     // 清理旧版本
@@ -76,23 +85,25 @@ export class VersionHistory {
     return this.db.query<NoteVersion>(
       'SELECT id, note_id as noteId, title, content, created_at as createdAt, size FROM note_versions WHERE note_id = ? ORDER BY created_at DESC',
       [noteId]
-    );
+    ).map(version => this.decryptVersion(version));
   }
 
   // 获取最新版本
   getLatestVersion(noteId: string): NoteVersion | undefined {
-    return this.db.get<NoteVersion>(
+    const version = this.db.get<NoteVersion>(
       'SELECT id, note_id as noteId, title, content, created_at as createdAt, size FROM note_versions WHERE note_id = ? ORDER BY created_at DESC LIMIT 1',
       [noteId]
     );
+    return version ? this.decryptVersion(version) : undefined;
   }
 
   // 获取特定版本
   getVersion(versionId: number): NoteVersion | undefined {
-    return this.db.get<NoteVersion>(
+    const version = this.db.get<NoteVersion>(
       'SELECT id, note_id as noteId, title, content, created_at as createdAt, size FROM note_versions WHERE id = ?',
       [versionId]
     );
+    return version ? this.decryptVersion(version) : undefined;
   }
 
   // 恢复到特定版本
@@ -194,6 +205,49 @@ export class VersionHistory {
     }
 
     return totalDeleted;
+  }
+
+  private decryptVersion(version: NoteVersion): NoteVersion {
+    return {
+      ...version,
+      title: isLocalPayloadEncrypted(version.title) ? decryptLocalPayload(version.title) : version.title,
+      content: isLocalPayloadEncrypted(version.content)
+        ? decryptLocalPayload(version.content)
+        : version.content,
+    };
+  }
+
+  private migratePlainVersionsToEncrypted(): number {
+    const versions = this.db.query<NoteVersion>(
+      'SELECT id, note_id as noteId, title, content, created_at as createdAt, size FROM note_versions'
+    );
+    const plainVersions = versions.filter(
+      version => !isLocalPayloadEncrypted(version.title) || !isLocalPayloadEncrypted(version.content)
+    );
+    if (plainVersions.length === 0) {
+      return 0;
+    }
+
+    this.db.transaction(() => {
+      for (const version of plainVersions) {
+        this.db.run('UPDATE note_versions SET title = ?, content = ? WHERE id = ?', [
+          encryptLocalPayload(version.title),
+          encryptLocalPayload(version.content),
+          version.id,
+        ]);
+      }
+    });
+    return plainVersions.length;
+  }
+
+  private compactDatabase(): void {
+    try {
+      this.db.getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+      this.db.getDatabase().exec('VACUUM');
+      this.db.getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+    } catch (error) {
+      console.warn('[VersionHistory] Failed to compact database after encryption migration:', error);
+    }
   }
 }
 

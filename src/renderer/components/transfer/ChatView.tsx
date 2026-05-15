@@ -229,6 +229,96 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
     }
   }, [inputValue, session.id, session.peer_device_id, session.connection_type]);
 
+  const sendFilePath = useCallback(
+    async (filePath: string) => {
+      const result = await transferClient.sendFile(session.peer_device_id, session.id, filePath);
+
+      const newFile: TransferFile = {
+        id: result.id,
+        session_id: session.id,
+        filename: result.filename,
+        file_size: result.fileSize,
+        mime_type: result.mimeType,
+        local_path: filePath,
+        direction: 'sent',
+        status: 'completed',
+        progress: 100,
+        file_hash: null,
+        created_at: Date.now(),
+        completed_at: Date.now(),
+      };
+      setFiles(prev => [...prev, newFile]);
+      return result;
+    },
+    [session.id, session.peer_device_id]
+  );
+
+  const blobToDataUrl = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('无法读取剪贴板文件'));
+        }
+      };
+      reader.onerror = () => reject(reader.error || new Error('无法读取剪贴板文件'));
+      reader.readAsDataURL(blob);
+    });
+
+  const getClipboardFilename = (file: File, index: number): string => {
+    if (file.name && file.name !== 'image.png') return file.name;
+    const extension = file.type.split('/')[1]?.replace('jpeg', 'jpg') || 'bin';
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[:.]/g, '-')
+      .replace('T', '-')
+      .slice(0, 19);
+    return `clipboard-${timestamp}${index > 0 ? `-${index + 1}` : ''}.${extension}`;
+  };
+
+  const handlePaste = useCallback(
+    async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const clipboardData = e.clipboardData;
+      if (!clipboardData) return;
+
+      const pastedFiles = Array.from(clipboardData.files || []);
+      const itemFiles = Array.from(clipboardData.items || [])
+        .filter(item => item.kind === 'file')
+        .map(item => item.getAsFile())
+        .filter((file): file is File => !!file);
+      const uniqueFiles = [...pastedFiles];
+      for (const file of itemFiles) {
+        if (!uniqueFiles.some(existing => existing.name === file.name && existing.size === file.size)) {
+          uniqueFiles.push(file);
+        }
+      }
+
+      if (uniqueFiles.length === 0) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      try {
+        for (let i = 0; i < uniqueFiles.length; i++) {
+          const file = uniqueFiles[i];
+          let filePath = (file as any).path as string | undefined;
+          if (!filePath) {
+            const dataUrl = await blobToDataUrl(file);
+            filePath = await transferClient.saveTempFile(getClipboardFilename(file, i), dataUrl);
+          }
+          const result = await sendFilePath(filePath);
+          message.success(`文件 ${result.filename} 已发送`);
+        }
+      } catch (error: any) {
+        console.error('[ChatView] Failed to send pasted file:', error);
+        message.error(error.message || '粘贴发送失败');
+      }
+    },
+    [sendFilePath]
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -497,28 +587,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
                   return false;
                 }
 
-                const result = await transferClient.sendFile(
-                  session.peer_device_id,
-                  session.id,
-                  filePath
-                );
-
-                const newFile: TransferFile = {
-                  id: result.id,
-                  session_id: session.id,
-                  filename: result.filename,
-                  file_size: result.fileSize,
-                  mime_type: result.mimeType,
-                  local_path: filePath,
-                  direction: 'sent',
-                  status: 'completed',
-                  progress: 100,
-                  file_hash: null,
-                  created_at: Date.now(),
-                  completed_at: Date.now(),
-                };
-                setFiles(prev => [...prev, newFile]);
-
+                const result = await sendFilePath(filePath);
                 message.success(`文件 ${result.filename} 已发送`);
               } catch (error: any) {
                 console.error('[ChatView] Failed to send file:', error);
@@ -533,6 +602,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="输入消息..."
             autoSize={{ minRows: 1, maxRows: 4 }}
             style={{ flex: 1 }}

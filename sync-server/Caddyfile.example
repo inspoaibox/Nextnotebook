@@ -4,8 +4,15 @@
 # 基础配置 - 自动 HTTPS
 sync.yourdomain.com {
     # 反向代理到同步服务器
-    reverse_proxy localhost:3000 {
-        # 传递真实客户端 IP（重要：用于频率限制）
+    # 服务端 .env 建议设置：
+    # TRUST_PROXY=true
+    # SECURE_MODE=true
+    # CORS_ORIGINS=https://sync.yourdomain.com
+    # TRANSFER_RELAY_PATH=/transfer
+    #
+    # Caddy reverse_proxy 默认支持 WebSocket，快传中继 /transfer 无需额外配置。
+    reverse_proxy 127.0.0.1:3000 {
+        # 传递真实客户端 IP 和 HTTPS 协议（重要：用于频率限制、审计和 SECURE_MODE）
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}

@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import { config } from './config';
 import { corsMiddleware } from './middleware/cors';
 import { loggerMiddleware } from './middleware/logger';
 import { authMiddleware } from './middleware/auth';
@@ -19,10 +20,36 @@ import adminRouter from './routes/admin';
 
 const app = express();
 
+if (config.trustProxy) {
+  app.set('trust proxy', 1);
+}
+
 // 中间件
 app.use(corsMiddleware);
 app.use(loggerMiddleware);
-app.use(express.json({ limit: '1024mb' }));
+app.use((req, res, next) => {
+  if (config.secureMode && !req.secure) {
+    res.status(400).json({
+      error: {
+        code: 'SECURE_CONNECTION_REQUIRED',
+        message: 'HTTPS is required',
+      },
+    });
+    return;
+  }
+  next();
+});
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (config.secureMode) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+app.use(express.json({ limit: config.jsonBodyLimit }));
 
 // 静态文件服务（管理界面）
 app.use(express.static(path.join(__dirname, 'public')));

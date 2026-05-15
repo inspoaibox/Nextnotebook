@@ -1,6 +1,6 @@
 import { app, ipcMain, IpcMainInvokeEvent, dialog } from 'electron';
 import { DatabaseManager, ItemsManager } from '@core/database';
-import { ItemType } from '@shared/types';
+import { ItemBase, ItemType } from '@shared/types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -145,8 +145,8 @@ function registerIpcHandlers(): void {
 
       const userDataPath = app.getPath('userData');
       
-      // 获取所有数据
-      const items = dbManager!.query<any>('SELECT * FROM items');
+      // 获取所有数据。ItemsManager 返回的是明文 payload，避免把本地落盘密文导出。
+      const items = getItemsManager().getAllForExport();
 
       // 读取同步配置
       let syncConfig: object | null = null;
@@ -157,7 +157,7 @@ function registerIpcHandlers(): void {
 
       // 读取 AI 设置（从数据库中的 ai-config-singleton 条目）
       let aiSettings: string | null = null;
-      const aiConfigItem = dbManager!.get<{ payload: string }>('SELECT payload FROM items WHERE id = ?', ['ai-config-singleton']);
+      const aiConfigItem = getItemsManager().getByIdIncludeDeleted('ai-config-singleton');
       if (aiConfigItem) {
         aiSettings = aiConfigItem.payload;
       }
@@ -266,29 +266,28 @@ function registerIpcHandlers(): void {
       // 导入数据
       dbManager!.transaction(() => {
         for (const item of importData.items) {
+          const importItem = item as ItemBase;
           if (options.mode === 'merge') {
             // 合并模式：检查是否已存在
-            const existing = dbManager!.get<{ id: string }>('SELECT id FROM items WHERE id = ?', [item.id]);
+            const existing = getItemsManager().getRawById(importItem.id);
             if (existing) {
               // 比较更新时间，保留较新的
-              const existingItem = dbManager!.get<{ updated_time: number }>('SELECT updated_time FROM items WHERE id = ?', [item.id]);
-              if (existingItem && existingItem.updated_time >= item.updated_time) {
+              if (existing.updated_time >= importItem.updated_time) {
                 itemsSkipped++;
                 continue;
               }
             }
           }
 
-          // 插入或更新
-          dbManager!.run(
-            `INSERT OR REPLACE INTO items (id, type, created_time, updated_time, deleted_time, payload,
-             content_hash, sync_status, local_rev, remote_rev, encryption_applied, schema_version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              item.id, item.type, item.created_time, item.updated_time, item.deleted_time,
-              item.payload, item.content_hash, 'modified', item.local_rev || 1, item.remote_rev,
-              item.encryption_applied || 0, item.schema_version || 1
-            ]
+          // 插入或更新。导入文件中的 payload 是明文，通过 ItemsManager 写入时会本地加密。
+          getItemsManager().upsertFromPlainItem(
+            {
+              ...importItem,
+              local_rev: importItem.local_rev || 1,
+              encryption_applied: importItem.encryption_applied || 0,
+              schema_version: importItem.schema_version || 1,
+            },
+            'modified'
           );
           itemsImported++;
         }

@@ -1,23 +1,24 @@
 import { Request, Response, NextFunction } from 'express';
 import { getDatabase } from '../database';
 import { AuthErrorCodes } from '../services/AuthService';
+import { config as appConfig } from '../config';
 
 // 默认频率限制配置
 const DEFAULT_RATE_LIMITS = {
   api: {
-    maxRequests: 10000,   // 每分钟最多10000次请求（多用户场景）
+    maxRequests: appConfig.apiRateLimit,
     windowMs: 60 * 1000   // 1分钟窗口
   },
   sync: {
-    maxRequests: 50000,   // 同步 API 每分钟最多50000次请求（多用户高频同步）
+    maxRequests: appConfig.syncRateLimit,
     windowMs: 60 * 1000   // 1分钟窗口
   },
   login: {
-    maxRequests: 5,       // 每15分钟最多5次登录尝试（防暴力破解）
+    maxRequests: appConfig.loginRateLimit,
     windowMs: 15 * 60 * 1000  // 15分钟窗口
   },
   register: {
-    maxRequests: 3,       // 每小时最多3次注册尝试（防滥用）
+    maxRequests: appConfig.registerRateLimit,
     windowMs: 60 * 60 * 1000  // 1小时窗口
   }
 };
@@ -68,7 +69,7 @@ function getBlockDuration(): number {
  * 获取登录尝试次数限制
  */
 function getLoginMaxAttempts(): number {
-  return parseInt(getSystemSetting('login_max_attempts', '10'), 10);
+  return parseInt(getSystemSetting('login_max_attempts', String(appConfig.loginRateLimit)), 10);
 }
 
 /**
@@ -104,10 +105,6 @@ interface RateLimitResult {
  * 获取客户端 IP 地址
  */
 function getClientIp(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
-  }
   return req.ip || req.socket.remoteAddress || 'unknown';
 }
 

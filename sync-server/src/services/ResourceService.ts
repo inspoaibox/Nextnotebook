@@ -4,6 +4,8 @@ import { config } from '../config';
 import { getDatabase } from '../database';
 import { userService } from './UserService';
 
+const RESOURCE_ID_PATTERN = /^[A-Za-z0-9._-]{1,255}$/;
+
 export class ResourceService {
   private resourceDir: string;
   private userId?: string;
@@ -20,7 +22,15 @@ export class ResourceService {
     }
   }
 
+  private isValidResourceId(id: string): boolean {
+    return RESOURCE_ID_PATTERN.test(id) && !id.includes('..');
+  }
+
   private getResourcePath(id: string): string {
+    if (!this.isValidResourceId(id)) {
+      throw new Error('Invalid resource id');
+    }
+
     // 使用 ID 前两位作为子目录，避免单目录文件过多
     const subDir = id.substring(0, 2);
     
@@ -45,6 +55,10 @@ export class ResourceService {
   }
 
   private canAccessResource(id: string): boolean {
+    if (!this.isValidResourceId(id)) {
+      return false;
+    }
+
     if (!this.userId) {
       return true;
     }

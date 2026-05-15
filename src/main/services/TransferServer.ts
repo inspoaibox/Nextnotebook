@@ -318,6 +318,7 @@ export class TransferServer {
       zip: 'application/zip',
       mp3: 'audio/mpeg',
       mp4: 'video/mp4',
+      apk: 'application/vnd.android.package-archive',
     };
     const mimeType = mimeTypes[ext] || 'application/octet-stream';
 

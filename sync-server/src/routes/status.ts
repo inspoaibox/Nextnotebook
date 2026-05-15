@@ -7,8 +7,8 @@ const startTime = Date.now();
 
 // GET /api/status - 服务器状态
 router.get('/', (req, res) => {
-  const itemService = new ItemService();
-  const resourceService = new ResourceService();
+  const itemService = new ItemService(req.userId);
+  const resourceService = new ResourceService(req.userId);
 
   const countResult = itemService.getCount();
   const storageStats = resourceService.getStorageStats();

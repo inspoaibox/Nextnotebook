@@ -12,6 +12,9 @@ export function hashApiKey(apiKey: string): string {
 
 // 验证 API Key
 function isValidApiKey(apiKey: string): boolean {
+  if (!config.legacyApiKeyAuthEnabled) {
+    return false;
+  }
   return config.apiKeys.includes(apiKey);
 }
 

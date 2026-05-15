@@ -107,13 +107,32 @@ export class TokenService {
     try {
       const payload = jwt.verify(token, JWT_SECRET) as AccessTokenPayload;
       
-      // 检查会话是否被撤销
+      // 检查会话是否被撤销，同时确认用户仍然有效。
       const db = getDatabase();
-      const session = db.prepare('SELECT revoked FROM sessions WHERE id = ?').get(payload.sid) as { revoked: number } | undefined;
+      const session = db.prepare(`
+        SELECT s.revoked, s.user_id, u.status, u.role, u.sync_key_fingerprint
+        FROM sessions s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.id = ?
+      `).get(payload.sid) as {
+        revoked: number;
+        user_id: string;
+        status: string;
+        role: UserRole;
+        sync_key_fingerprint: string;
+      } | undefined;
       
-      if (!session || session.revoked === 1) {
+      if (
+        !session ||
+        session.revoked === 1 ||
+        session.status === 'disabled' ||
+        session.user_id !== payload.sub ||
+        session.sync_key_fingerprint !== payload.skf
+      ) {
         return null;
       }
+
+      payload.role = session.role;
       
       return payload;
     } catch {

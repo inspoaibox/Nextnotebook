@@ -167,6 +167,53 @@ const ENTRY_TYPE_CONFIG: Record<VaultEntryType, { label: string; icon: React.Rea
   secure_note: { label: '安全笔记', icon: <FileTextOutlined />, color: '#faad14' },
 };
 
+const normalizeSearchText = (value: string | number | null | undefined): string =>
+  String(value ?? '').trim().toLowerCase();
+
+const getVaultEntrySearchFields = (entry: VaultEntry, folders: VaultFolder[]): string[] => {
+  const folderName = folders.find(folder => folder.id === entry.folderId)?.name || '';
+
+  return [
+    entry.name,
+    ENTRY_TYPE_CONFIG[entry.entryType].label,
+    folderName,
+    entry.username,
+    entry.notes,
+    ...entry.uris.flatMap(uri => [uri.name, uri.uri, uri.match_type]),
+    ...entry.totpSecrets.flatMap(totp => [totp.name, totp.account]),
+    entry.cardHolderName,
+    entry.cardNumber,
+    entry.cardBrand,
+    entry.cardExpMonth,
+    entry.cardExpYear,
+    entry.identityTitle,
+    entry.identityFirstName,
+    entry.identityLastName,
+    entry.identityEmail,
+    entry.identityPhone,
+    entry.identityAddress,
+    ...entry.customFields.flatMap(field => [
+      field.name,
+      field.type === 'hidden' ? '' : field.value,
+    ]),
+  ];
+};
+
+const matchesVaultEntrySearch = (
+  entry: VaultEntry,
+  query: string,
+  folders: VaultFolder[]
+): boolean => {
+  const terms = normalizeSearchText(query).split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+
+  const fields = getVaultEntrySearchFields(entry, folders)
+    .map(normalizeSearchText)
+    .filter(Boolean);
+
+  return terms.every(term => fields.some(field => field.includes(term)));
+};
+
 // 密码显示组件
 const PasswordField: React.FC<{ value: string; onCopy: () => void }> = ({ value, onCopy }) => {
   const [visible, setVisible] = useState(false);
@@ -696,12 +743,9 @@ const VaultPanel: React.FC = () => {
   };
 
   // 过滤条目
-  const filteredEntries = searchQuery
-    ? entries.filter(e =>
-      e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      e.username.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    : entries;
+  const filteredEntries = entries.filter(entry =>
+    matchesVaultEntrySearch(entry, searchQuery, folders)
+  );
 
   const handleCreateEntry = () => {
     setEditingEntry(null);

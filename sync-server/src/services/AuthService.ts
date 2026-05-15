@@ -18,6 +18,8 @@ import {
   TokenPair
 } from '../types';
 
+const DUMMY_PASSWORD_HASH = '$2b$10$dvFS1xZDvA9KGkEJ0XtO9ufCVUoaloQtVY7gOF8FlB1xktHKPv9Vq';
+
 // 错误码
 export const AuthErrorCodes = {
   NO_AUTH: 'AUTH_001',
@@ -170,7 +172,7 @@ export class AuthService {
 
     if (!user) {
       // 执行一次假的密码验证，防止时序攻击
-      await verifyPassword(password, '$2b$10$dummy.hash.for.timing.attack.prevention');
+      await verifyPassword(password, DUMMY_PASSWORD_HASH);
       return genericError;
     }
 

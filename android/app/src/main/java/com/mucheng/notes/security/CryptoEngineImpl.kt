@@ -90,7 +90,7 @@ class CryptoEngineImpl @Inject constructor(
                 val key = Base64.decode(keyBase64, Base64.NO_WRAP)
                 if (key.size == KEY_SIZE / 8) {
                     masterKey = key
-                    android.util.Log.d("CryptoEngine", "Master key restored from storage, fingerprint: ${getKeyFingerprint()?.take(16)}...")
+                    android.util.Log.d("CryptoEngine", "Master key restored from storage")
                 } else {
                     android.util.Log.w("CryptoEngine", "Invalid persisted key size: ${key.size}, expected: ${KEY_SIZE / 8}")
                 }
@@ -176,11 +176,6 @@ class CryptoEngineImpl @Inject constructor(
             val iv = Base64.decode(encryptedData.iv, Base64.NO_WRAP)
             val authTag = Base64.decode(encryptedData.authTag, Base64.NO_WRAP)
 
-            android.util.Log.d("CryptoEngine", "decrypt: decoded Base64 data:")
-            android.util.Log.d("CryptoEngine", "  ciphertext bytes: ${ciphertext.size}")
-            android.util.Log.d("CryptoEngine", "  iv bytes: ${iv.size} (expected: $IV_SIZE)")
-            android.util.Log.d("CryptoEngine", "  authTag bytes: ${authTag.size} (expected: ${AUTH_TAG_SIZE / 8})")
-
             // 验证长度
             if (iv.size != IV_SIZE) {
                 throw IllegalArgumentException("Invalid IV length: ${iv.size}, expected: $IV_SIZE")
@@ -220,28 +215,14 @@ class CryptoEngineImpl @Inject constructor(
     
     override fun decryptPayload(encryptedPayload: String): String {
         try {
-            android.util.Log.d("CryptoEngine", "decryptPayload: parsing encrypted JSON...")
-            android.util.Log.d("CryptoEngine", "  Payload preview: ${encryptedPayload.take(200)}...")
-
             val encrypted = json.decodeFromString<EncryptedData>(encryptedPayload)
-
-            android.util.Log.d("CryptoEngine", "  Parsed EncryptedData:")
-            android.util.Log.d("CryptoEngine", "    ciphertext length: ${encrypted.ciphertext.length}")
-            android.util.Log.d("CryptoEngine", "    iv length: ${encrypted.iv.length}")
-            android.util.Log.d("CryptoEngine", "    authTag length: ${encrypted.authTag.length}")
-
             val result = decrypt(encrypted)
-            android.util.Log.d("CryptoEngine", "  ✅ Decryption successful, plaintext length: ${result.length}")
             return result
         } catch (e: kotlinx.serialization.SerializationException) {
-            android.util.Log.e("CryptoEngine", "❌ Failed to parse encrypted payload JSON:")
-            android.util.Log.e("CryptoEngine", "  Error: ${e.message}")
-            android.util.Log.e("CryptoEngine", "  Payload: $encryptedPayload")
+            android.util.Log.e("CryptoEngine", "Failed to parse encrypted payload JSON: ${e.message}")
             throw IllegalArgumentException("Invalid encrypted payload format: ${e.message}", e)
         } catch (e: Exception) {
-            android.util.Log.e("CryptoEngine", "❌ Decryption failed:")
-            android.util.Log.e("CryptoEngine", "  Error Type: ${e.javaClass.simpleName}")
-            android.util.Log.e("CryptoEngine", "  Error Message: ${e.message}")
+            android.util.Log.e("CryptoEngine", "Decryption failed: ${e.javaClass.simpleName} - ${e.message}")
             throw e
         }
     }
@@ -277,14 +258,10 @@ class CryptoEngineImpl @Inject constructor(
         // 注意：桌面端使用的是完整的字符串（33字节），不截断
         val fixedSalt = "mucheng-sync-salt-2024-fixed-key".toByteArray(Charsets.UTF_8)
 
-        android.util.Log.d("CryptoEngine", "initMasterKey: password=$password")
-        android.util.Log.d("CryptoEngine", "initMasterKey: salt length=${fixedSalt.size} bytes")
-        android.util.Log.d("CryptoEngine", "initMasterKey: salt hex=${fixedSalt.joinToString("") { "%02x".format(it) }}")
-
         val derivedKey = deriveKeyFromPassword(password, fixedSalt)
         setMasterKey(derivedKey.key)
 
-        android.util.Log.d("CryptoEngine", "initMasterKey: key derived successfully, key length=${derivedKey.key.size} bytes")
+        android.util.Log.d("CryptoEngine", "Master key derived successfully")
     }
     
     override fun clearMasterKey() {

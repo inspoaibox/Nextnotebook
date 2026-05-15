@@ -38,8 +38,6 @@ export class ChangeService {
     const db = getDatabase();
     const cursorNum = cursor ? parseInt(cursor, 10) : 0;
 
-    console.log(`[ChangeService] listChanges called: cursor=${cursor}, cursorNum=${cursorNum}, limit=${limit}, userId=${userId}`);
-
     // 构建用户过滤条件
     const userFilter = userId 
       ? 'AND user_id = ?' 
@@ -56,21 +54,10 @@ export class ChangeService {
     `);
 
     const rows = stmt.all(cursorNum, ...userParams, limit + 1) as RemoteChange[];
-    
-    console.log(`[ChangeService] Query returned ${rows.length} rows`);
-    if (rows.length > 0) {
-      console.log(`[ChangeService] First change_id: ${rows[0].change_id}, Last change_id: ${rows[rows.length - 1].change_id}`);
-    }
-    
-    // 调试：查看所有变更的 change_id 范围
-    const allChanges = db.prepare('SELECT MIN(change_id) as min_id, MAX(change_id) as max_id, COUNT(*) as total FROM changes').get() as { min_id: number; max_id: number; total: number };
-    console.log(`[ChangeService] Total changes in DB: ${allChanges.total}, min_id: ${allChanges.min_id}, max_id: ${allChanges.max_id}`);
 
     const hasMore = rows.length > limit;
     const changes = hasMore ? rows.slice(0, limit) : rows;
     const nextCursor = changes.length > 0 ? changes[changes.length - 1].change_id.toString() : null;
-
-    console.log(`[ChangeService] Returning ${changes.length} changes, nextCursor=${nextCursor}, hasMore=${hasMore}`);
 
     return {
       changes,

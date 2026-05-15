@@ -394,7 +394,6 @@ export class TransferRelayServer {
   private handleMessageSend(socket: Socket, data: any): void {
     const senderId = this.socketToDevice.get(socket.id);
     console.log(`[TransferRelay] MESSAGE_SEND from socket ${socket.id}, senderId: ${senderId}`);
-    console.log(`[TransferRelay] MESSAGE_SEND data:`, JSON.stringify(data));
 
     if (!senderId) {
       console.log(`[TransferRelay] Sender not registered, ignoring message`);
@@ -419,9 +418,6 @@ export class TransferRelayServer {
       return;
     }
 
-    console.log(`[TransferRelay] Looking for target device: ${targetDeviceId}`);
-    console.log(`[TransferRelay] Connected devices:`, Array.from(this.connectedDevices.keys()));
-
     const target = this.connectedDevices.get(targetDeviceId);
 
     if (!target) {
@@ -433,18 +429,14 @@ export class TransferRelayServer {
       return;
     }
 
-    console.log(`[TransferRelay] Target found: ${target.name} (socketId: ${target.socketId})`);
-
     // 转发消息
     const targetSocket = this.io?.sockets.sockets.get(target.socketId);
     if (targetSocket) {
-      console.log(`[TransferRelay] Forwarding message to ${target.name}`);
       targetSocket.emit(SOCKET_EVENTS.MESSAGE_RECEIVE, {
         senderId,
         sessionId,
         message,
       });
-      console.log(`[TransferRelay] Message forwarded successfully`);
     } else {
       console.log(`[TransferRelay] Target socket not found for socketId: ${target.socketId}`);
     }

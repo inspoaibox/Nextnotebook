@@ -581,7 +581,7 @@ class NotesViewModel @Inject constructor(
                 color = payload.color
             )
         } catch (e: Exception) {
-            android.util.Log.e("NotesViewModel", "Failed to parse folder payload: ${e.message}, payload: ${this.payload}")
+            android.util.Log.e("NotesViewModel", "Failed to parse folder payload: ${e.message}")
             // 返回一个默认的文件夹，避免崩溃
             FolderItem(
                 id = this.id,

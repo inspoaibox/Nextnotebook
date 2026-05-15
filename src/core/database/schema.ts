@@ -25,18 +25,6 @@ export const CREATE_ITEMS_INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_items_deleted_time ON items(deleted_time)',
 ];
 
-// FTS5 全文搜索表
-export const CREATE_FTS_TABLE = `
-  CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
-    id,
-    title,
-    content,
-    tags,
-    content='items',
-    content_rowid='rowid'
-  )
-`;
-
 // 同步元数据表
 export const CREATE_SYNC_META_TABLE = `
   CREATE TABLE IF NOT EXISTS sync_meta (
@@ -57,7 +45,6 @@ export const CREATE_SCHEMA_VERSION_TABLE = `
 export const ALL_SCHEMAS = [
   CREATE_ITEMS_TABLE,
   ...CREATE_ITEMS_INDEXES,
-  CREATE_FTS_TABLE,
   CREATE_SYNC_META_TABLE,
   CREATE_SCHEMA_VERSION_TABLE,
 ];

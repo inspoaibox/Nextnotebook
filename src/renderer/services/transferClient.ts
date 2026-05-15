@@ -640,6 +640,14 @@ export const transferClient = {
   },
 
   /**
+   * 将剪贴板中的 Blob/File 保存成临时文件，供现有文件传输链路发送
+   */
+  async saveTempFile(filename: string, base64Data: string): Promise<string> {
+    if (!transferApi?.saveTempFile) throw new Error('Transfer temp file API not available');
+    return transferApi.saveTempFile(filename, base64Data);
+  },
+
+  /**
    * 发送消息已读回执
    */
   async sendMessageReadReceipt(targetDeviceId: string, messageIds: string[]): Promise<void> {
@@ -789,6 +797,7 @@ export const transferClient = {
       'mp4': 'video/mp4',
       'avi': 'video/x-msvideo',
       'mov': 'video/quicktime',
+      'apk': 'application/vnd.android.package-archive',
     };
     return mimeTypes[ext] || 'application/octet-stream';
   },

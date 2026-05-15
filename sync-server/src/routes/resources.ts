@@ -33,13 +33,32 @@ router.put('/:id', (req, res, next) => {
     }
 
     const chunks: Buffer[] = [];
+    let receivedBytes = 0;
+    let rejected = false;
     
     req.on('data', (chunk: Buffer) => {
+      if (rejected) {
+        return;
+      }
+
+      receivedBytes += chunk.length;
+      if (receivedBytes > config.maxResourceSize) {
+        rejected = true;
+        chunks.length = 0;
+        res.status(413).json({ error: `Resource size exceeds limit (${config.maxResourceSize} bytes)` });
+        req.destroy();
+        return;
+      }
+
       chunks.push(chunk);
     });
 
     req.on('end', () => {
       try {
+        if (rejected || res.headersSent) {
+          return;
+        }
+
         const data = Buffer.concat(chunks);
 
         if (data.length > config.maxResourceSize) {
@@ -60,6 +79,9 @@ router.put('/:id', (req, res, next) => {
     });
 
     req.on('error', (error) => {
+      if (rejected || res.headersSent) {
+        return;
+      }
       next(error);
     });
   } catch (error) {

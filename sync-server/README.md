@@ -361,29 +361,69 @@ curl "http://localhost:3000/api/admin/logs?page=1&limit=50" \
 
 ## Nginx 反向代理配置
 
-推荐使用 Nginx 配置 HTTPS：
+推荐使用 Nginx 终止 HTTPS，再反向代理到本机 `127.0.0.1:3000`。使用反代时，同步服务器 `.env` 建议同时设置：
+
+```bash
+TRUST_PROXY=true
+SECURE_MODE=true
+CORS_ORIGINS=https://sync.yourdomain.com
+JSON_BODY_LIMIT=50mb
+MAX_RESOURCE_SIZE=104857600
+TRANSFER_RELAY_PATH=/transfer
+```
+
+注意：
+- `TRUST_PROXY=true` 只应在服务确实位于可信 Nginx/Caddy 后面时启用，否则客户端可伪造来源 IP 影响限流和审计。
+- `SECURE_MODE=true` 会要求请求经过 HTTPS。反代必须传递 `X-Forwarded-Proto https`，否则服务端会拒绝请求。
+- 快传中继使用 Socket.IO，`/transfer` 路径必须支持 WebSocket Upgrade。
+- `client_max_body_size` 要大于或等于 `MAX_RESOURCE_SIZE`，否则大附件会先被 Nginx 拒绝。
 
 ```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
 server {
     listen 443 ssl http2;
     server_name sync.yourdomain.com;
 
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
+    client_max_body_size 100M;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
-        # 上传文件大小限制
-        client_max_body_size 100M;
+
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # 可选：明确保留快传中继路径，便于排查 WebSocket 配置
+    location /transfer/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 }
 
@@ -399,12 +439,29 @@ server {
 
 Caddy 会自动申请和续期 SSL 证书，配置更简单：
 
+使用 Caddy 反代时，同步服务器 `.env` 同样建议设置：
+
+```bash
+TRUST_PROXY=true
+SECURE_MODE=true
+CORS_ORIGINS=https://sync.yourdomain.com
+JSON_BODY_LIMIT=50mb
+MAX_RESOURCE_SIZE=104857600
+TRANSFER_RELAY_PATH=/transfer
+```
+
+Caddy 的 `reverse_proxy` 默认支持 WebSocket，不需要额外写 Upgrade 头；但仍要保留 `X-Forwarded-Proto` 和真实 IP 头，供服务端 HTTPS 判断、登录限流和审计日志使用。
+
 ### 基础配置（Caddyfile）
 
 ```caddyfile
 sync.yourdomain.com {
     # 反向代理到同步服务器
-    reverse_proxy localhost:3000
+    reverse_proxy 127.0.0.1:3000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
     
     # 上传文件大小限制
     request_body {
@@ -423,7 +480,7 @@ sync.yourdomain.com {
 ```caddyfile
 sync.yourdomain.com {
     # 反向代理
-    reverse_proxy localhost:3000 {
+    reverse_proxy 127.0.0.1:3000 {
         # 传递真实 IP
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
@@ -486,7 +543,9 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - TRUST_PROXY=true
+      - SECURE_MODE=true
       - CORS_ORIGINS=https://sync.yourdomain.com
+      - TRANSFER_RELAY_KEY=${TRANSFER_RELAY_KEY}
     volumes:
       - ./data:/app/data
 

@@ -548,11 +548,8 @@ class VaultViewModel @Inject constructor(
     }
     
     private fun ItemEntity.toVaultEntryItem(): VaultEntryItem {
-        android.util.Log.d("VaultViewModel", "toVaultEntryItem: id=${this.id}, type=${this.type}")
-        android.util.Log.d("VaultViewModel", "toVaultEntryItem: payload=${this.payload}")
         return try {
             val payload = json.decodeFromString<VaultEntryPayload>(this.payload)
-            android.util.Log.d("VaultViewModel", "toVaultEntryItem: parsed successfully, name=${payload.name}")
             VaultEntryItem(
                 id = this.id,
                 name = payload.name,
@@ -581,7 +578,6 @@ class VaultViewModel @Inject constructor(
             )
         } catch (e: Exception) {
             android.util.Log.e("VaultViewModel", "Failed to parse vault entry payload: ${e.message}")
-            android.util.Log.e("VaultViewModel", "Payload content: ${this.payload}")
             e.printStackTrace()
             // 返回一个默认的条目，避免崩溃
             VaultEntryItem(
@@ -622,7 +618,7 @@ class VaultViewModel @Inject constructor(
                 parentId = payload.parentId
             )
         } catch (e: Exception) {
-            android.util.Log.e("VaultViewModel", "Failed to parse vault folder payload: ${e.message}, payload: ${this.payload}")
+            android.util.Log.e("VaultViewModel", "Failed to parse vault folder payload: ${e.message}")
             // 返回一个默认的文件夹，避免崩溃
             VaultFolderItem(
                 id = this.id,

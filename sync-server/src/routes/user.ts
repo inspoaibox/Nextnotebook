@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authService, AuthErrorCodes } from '../services/AuthService';
 import { auditService } from '../services/AuditService';
-import { getClientIp } from '../middleware/rateLimiter';
+import { getClientIp, loginRateLimiter, recordFailure, resetCounter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -178,7 +178,7 @@ router.put('/sync-key', async (req: Request, res: Response) => {
  * POST /api/user/reset-password - 重置密码（使用同步密钥验证）
  * 注意：这是公开端点，不需要认证
  */
-router.post('/reset-password', async (req: Request, res: Response) => {
+router.post('/reset-password', loginRateLimiter, async (req: Request, res: Response) => {
   const { username, syncKey, newPassword } = req.body;
   const ip = getClientIp(req);
   const userAgent = req.headers['user-agent'];
@@ -206,11 +206,13 @@ router.post('/reset-password', async (req: Request, res: Response) => {
     });
 
     if (result.success) {
+      resetCounter(ip, 'login');
       res.json({
         success: true,
         message: '密码重置成功，请使用新密码登录'
       });
     } else {
+      recordFailure(ip, 'login');
       // 不泄露具体错误原因
       res.status(400).json({
         error: {

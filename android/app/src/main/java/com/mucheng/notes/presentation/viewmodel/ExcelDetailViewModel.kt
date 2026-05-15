@@ -52,9 +52,6 @@ class ExcelDetailViewModel @Inject constructor(
             try {
                 val item = itemRepository.getById(noteId)
                 if (item != null) {
-                    // 添加日志以诊断问题
-                    android.util.Log.d("ExcelDetailVM", "Raw payload: ${item.payload}")
-                    
                     val payload = try {
                         json.decodeFromString<ExcelNotePayload>(item.payload)
                     } catch (e: Exception) {
