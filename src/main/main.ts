@@ -208,6 +208,10 @@ function createWindow(): void {
     mainWindow = null;
   });
 
+  mainWindow.on('minimize', () => {
+    sendToRenderer('window-minimized');
+  });
+
   // 窗口关闭按钮处理
   mainWindow.on('close', event => {
     if (!isQuitting) {
@@ -553,6 +557,10 @@ ipcMain.handle('load-sync-config', () => {
     console.error('Failed to load sync config:', e);
     return null;
   }
+});
+
+ipcMain.on('trigger-menu-action', (_event, action: string) => {
+  sendToRenderer('menu-action', action);
 });
 
 // 窗口操作

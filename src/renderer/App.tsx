@@ -252,22 +252,24 @@ const App: React.FC = () => {
             message.success('已切换到跟随系统');
             break;
           case 'lock-app':
-            const securitySettings = localStorage.getItem('mucheng-security');
-            if (securitySettings) {
-              try {
-                const settings = JSON.parse(securitySettings);
-                if (settings.appLockEnabled && settings.lockPassword) {
-                  setIsAppLocked(true);
-                  setVaultUnlocked(false);
-                  message.info('应用已锁定');
-                } else {
+            {
+              const securitySettings = localStorage.getItem('mucheng-security');
+              if (securitySettings) {
+                try {
+                  const settings = JSON.parse(securitySettings);
+                  if (settings.appLockEnabled && settings.lockPassword) {
+                    setIsAppLocked(true);
+                    setVaultUnlocked(false);
+                    message.info('应用已锁定');
+                  } else {
+                    message.warning('请先在设置中启用应用锁定');
+                  }
+                } catch {
                   message.warning('请先在设置中启用应用锁定');
                 }
-              } catch {
+              } else {
                 message.warning('请先在设置中启用应用锁定');
               }
-            } else {
-              message.warning('请先在设置中启用应用锁定');
             }
             break;
           // 设置菜单
@@ -1145,7 +1147,7 @@ const App: React.FC = () => {
   );
 
   // 锁定应用
-  const handleLockApp = useCallback(() => {
+  const handleLockApp = useCallback((showFeedback: boolean = true) => {
     const securitySettings = localStorage.getItem('mucheng-security');
     if (securitySettings) {
       try {
@@ -1153,15 +1155,23 @@ const App: React.FC = () => {
         if (settings.appLockEnabled && settings.lockPassword) {
           setIsAppLocked(true);
           setVaultUnlocked(false); // 同时锁定密码库
-          message.info('应用已锁定');
+          if (showFeedback) {
+            message.info('应用已锁定');
+          }
         } else {
-          message.warning('请先在设置中启用应用锁定');
+          if (showFeedback) {
+            message.warning('请先在设置中启用应用锁定');
+          }
         }
       } catch {
-        message.warning('请先在设置中启用应用锁定');
+        if (showFeedback) {
+          message.warning('请先在设置中启用应用锁定');
+        }
       }
     } else {
-      message.warning('请先在设置中启用应用锁定');
+      if (showFeedback) {
+        message.warning('请先在设置中启用应用锁定');
+      }
     }
   }, []);
 
@@ -1226,6 +1236,29 @@ const App: React.FC = () => {
       }
     }
   }, []);
+
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (!api?.onWindowMinimized) {
+      return;
+    }
+
+    api.onWindowMinimized(() => {
+      const securitySettings = localStorage.getItem('mucheng-security');
+      if (!securitySettings) {
+        return;
+      }
+
+      try {
+        const settings = JSON.parse(securitySettings);
+        if (settings.appLockEnabled && settings.lockPassword && settings.lockOnMinimize) {
+          handleLockApp(false);
+        }
+      } catch {
+        /* ignore */
+      }
+    });
+  }, [handleLockApp]);
 
   // 更新 ref 以保持最新的回调函数
   React.useEffect(() => {

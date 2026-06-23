@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authService } from '../services/AuthService';
+import { config } from '../config';
 
 const router = Router();
 
@@ -15,10 +16,13 @@ router.get('/', (_req, res) => {
 // 用于前端判断是否需要初始化
 router.get('/status', (_req, res) => {
   const status = authService.getSystemStatus();
+  const setupTokenRequired = !status.initialized && (config.requireInitialSetupToken || Boolean(config.initialSetupToken));
   res.json({
     status: 'ok',
     initialized: status.initialized,
     registrationEnabled: status.registrationEnabled,
+    setupTokenRequired,
+    setupBlocked: setupTokenRequired && !config.initialSetupToken,
     timestamp: Date.now(),
   });
 });

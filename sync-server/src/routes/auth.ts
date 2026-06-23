@@ -1,16 +1,28 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import { authService, AuthErrorCodes } from '../services/AuthService';
 import { auditService } from '../services/AuditService';
 import { authMiddleware } from '../middleware/auth';
-import { loginRateLimiter, registerRateLimiter, recordFailure, resetCounter, getClientIp } from '../middleware/rateLimiter';
+import { loginRateLimiter, registerRateLimiter, resetCounter, getClientIp } from '../middleware/rateLimiter';
+import { config } from '../config';
 
 const router = Router();
+
+function isSetupTokenValid(token?: string): boolean {
+  if (!config.initialSetupToken || !token) {
+    return false;
+  }
+
+  const expected = Buffer.from(config.initialSetupToken, 'utf8');
+  const received = Buffer.from(token, 'utf8');
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
+}
 
 /**
  * POST /api/auth/register - 用户注册
  */
 router.post('/register', registerRateLimiter, async (req: Request, res: Response) => {
-  const { username, password, syncKey } = req.body;
+  const { username, password, syncKey, setupToken } = req.body;
   const ip = getClientIp(req);
   const userAgent = req.headers['user-agent'];
 
@@ -26,6 +38,36 @@ router.post('/register', registerRateLimiter, async (req: Request, res: Response
   }
 
   try {
+    const isFirstUser = !authService.hasAnyUser();
+    const requiresSetupToken = isFirstUser && (config.requireInitialSetupToken || Boolean(config.initialSetupToken));
+    if (requiresSetupToken && !config.initialSetupToken) {
+      res.status(503).json({
+        error: {
+          code: 'AUTH_018',
+          message: '服务器未配置初始化令牌，无法创建首个管理员'
+        }
+      });
+      return;
+    }
+
+    if (requiresSetupToken && !isSetupTokenValid(setupToken)) {
+      auditService.log({
+        action: 'register',
+        ip,
+        userAgent,
+        details: { username, reason: 'invalid_setup_token' },
+        success: false
+      });
+
+      res.status(403).json({
+        error: {
+          code: 'AUTH_019',
+          message: '初始化令牌无效'
+        }
+      });
+      return;
+    }
+
     const result = await authService.register(username, password, syncKey);
 
     // 记录审计日志
@@ -108,9 +150,6 @@ router.post('/login', loginRateLimiter, async (req: Request, res: Response) => {
         user: result.user
       });
     } else {
-      // 登录失败，记录失败尝试
-      recordFailure(ip, 'login');
-
       const statusCode = result.errorCode === AuthErrorCodes.ACCOUNT_DISABLED ? 403 : 401;
       res.status(statusCode).json({
         error: {

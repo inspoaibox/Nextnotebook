@@ -32,6 +32,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWindowCloseRequest: (callback: () => void) => {
     ipcRenderer.on('window-close-request', () => callback());
   },
+  onWindowMinimized: (callback: () => void) => {
+    ipcRenderer.on('window-minimized', () => callback());
+  },
+  triggerMenuAction: (action: string) => {
+    ipcRenderer.send('trigger-menu-action', action);
+  },
 
   // 菜单事件监听
   onMenuAction: (callback: (action: string) => void) => {
@@ -222,6 +228,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancel: () => ipcRenderer.invoke('clipper:cancel'),
     // 获取待处理的剪藏
     getPending: () => ipcRenderer.invoke('clipper:getPending'),
+    // 获取插件授权状态
+    getExtensionAuth: () => ipcRenderer.invoke('clipper:getExtensionAuth'),
+    // 撤销插件授权
+    revokeExtensionAuth: () => ipcRenderer.invoke('clipper:revokeExtensionAuth'),
     // 监听笔记创建成功事件
     onNoteCreated: (callback: (data: { noteId: string }) => void) => {
       ipcRenderer.on('note-created', (_event, data) => callback(data));

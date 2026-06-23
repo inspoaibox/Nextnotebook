@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authService, AuthErrorCodes } from '../services/AuthService';
 import { auditService } from '../services/AuditService';
-import { getClientIp, loginRateLimiter, recordFailure, resetCounter } from '../middleware/rateLimiter';
+import { getClientIp, loginRateLimiter, resetCounter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -212,7 +212,6 @@ router.post('/reset-password', loginRateLimiter, async (req: Request, res: Respo
         message: '密码重置成功，请使用新密码登录'
       });
     } else {
-      recordFailure(ip, 'login');
       // 不泄露具体错误原因
       res.status(400).json({
         error: {

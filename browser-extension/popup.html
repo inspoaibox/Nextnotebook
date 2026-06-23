@@ -11,10 +11,11 @@
       box-sizing: border-box;
     }
     body {
-      width: 340px;
+      width: 430px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       background: #fff;
       color: #333;
+      overflow: hidden;
     }
     .header {
       padding: 16px;
@@ -32,6 +33,9 @@
     }
     .content {
       padding: 16px;
+      max-height: min(536px, calc(100vh - 62px));
+      overflow-y: auto;
+      scrollbar-width: thin;
     }
     .status {
       display: flex;
@@ -83,7 +87,7 @@
     }
     .tab {
       flex: 1;
-      padding: 10px 16px;
+      padding: 10px 8px;
       border: none;
       background: transparent;
       font-size: 13px;
@@ -265,12 +269,536 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .bookmark-manager-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .bookmark-manager-title {
+      min-width: 0;
+    }
+    .bookmark-manager-title strong {
+      display: block;
+      font-size: 14px;
+      line-height: 1.3;
+      color: #111827;
+    }
+    .bookmark-manager-title span {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+      color: #6b7280;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bookmark-add-entry {
+      flex: 0 0 auto;
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid #2563eb;
+      border-radius: 7px;
+      background: #fff;
+      color: #1d4ed8;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .bookmark-add-entry:hover {
+      background: #eff6ff;
+      border-color: #1d4ed8;
+    }
+    .bookmark-add-entry:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      background: #f9fafb;
+      border-color: #cbd5e1;
+      color: #64748b;
+    }
+    .bookmark-add-panel {
+      display: none;
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+    }
+    .bookmark-add-panel.active {
+      display: block;
+    }
+    .bookmark-add-panel .form-group {
+      margin-bottom: 10px;
+    }
+    .bookmark-add-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .bookmark-add-actions .btn {
+      flex: 1;
+      padding: 10px;
+      margin: 0;
+    }
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+    .btn-secondary:hover {
+      background: #e5e7eb;
+    }
+    .bookmark-manager-layout {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr);
+      height: clamp(280px, calc(100vh - 230px), 390px);
+      min-height: 0;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f8fafc;
+    }
+    .bookmark-folder-list {
+      overflow: auto;
+      min-height: 0;
+      padding: 8px 6px;
+      border-right: 1px solid #e5e7eb;
+      background: #f3f6fb;
+      scrollbar-width: thin;
+    }
+    .bookmark-folder-button {
+      width: 100%;
+      min-height: 32px;
+      margin-bottom: 3px;
+      padding: 6px 7px;
+      padding-left: calc(6px + var(--bookmark-folder-level, 0) * 12px);
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: #4b5563;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.16s;
+    }
+    .bookmark-folder-button.is-child {
+      min-height: 30px;
+    }
+    .bookmark-folder-button:hover {
+      background: rgba(37, 99, 235, 0.06);
+      color: #1f2937;
+    }
+    .bookmark-folder-button.active {
+      background: rgba(37, 99, 235, 0.12);
+      color: #1d4ed8;
+      border-color: rgba(37, 99, 235, 0.08);
+    }
+    .bookmark-folder-toggle {
+      flex: 0 0 10px;
+      width: 10px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      font-size: 10px;
+      line-height: 1;
+    }
+    .bookmark-folder-toggle.has-children {
+      cursor: pointer;
+      color: #334155;
+    }
+    .bookmark-folder-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .bookmark-folder-count {
+      flex: 0 0 auto;
+      color: #94a3b8;
+      font-size: 11px;
+    }
+    .bookmark-list {
+      overflow: auto;
+      min-height: 0;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      background: #ffffff;
+      scrollbar-width: thin;
+    }
+    .bookmark-item {
+      min-height: 58px;
+      padding: 9px 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.16s;
+    }
+    .bookmark-item:hover {
+      border-color: #bfdbfe;
+      background: #f8fbff;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    }
+    .bookmark-item-icon {
+      flex: 0 0 34px;
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      background: #eef2f8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .bookmark-item-icon img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+    }
+    .bookmark-item-main {
+      flex: 1;
+      min-width: 0;
+    }
+    .bookmark-item-name {
+      margin-bottom: 3px;
+      color: #111827;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.35;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bookmark-item-meta {
+      color: #6b7280;
+      font-size: 11px;
+      line-height: 1.35;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      word-break: break-all;
+    }
+    .bookmark-item-open {
+      flex: 0 0 22px;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      background: #f1f5f9;
+      font-size: 12px;
+    }
+    .bookmark-empty {
+      min-height: 140px;
+      padding: 22px 12px;
+      border: 1px dashed #d1d5db;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: #6b7280;
+      font-size: 13px;
+      line-height: 1.6;
+      background: #f9fafb;
+    }
     /* 隐藏的表单 */
     .form-panel {
       display: none;
     }
     .form-panel.active {
       display: block;
+    }
+    #bookmark-form.active {
+      display: flex;
+      min-height: 0;
+      flex-direction: column;
+    }
+    .vault-site {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #4b5563;
+      overflow: hidden;
+    }
+    .vault-site span:last-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .vault-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .vault-secondary-btn {
+      flex: 1;
+      height: 34px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #fff;
+      color: #374151;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .vault-secondary-btn:hover {
+      border-color: #667eea;
+      color: #4f46e5;
+      background: #f8f7ff;
+    }
+    .vault-add-panel {
+      display: none;
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .vault-add-panel.active {
+      display: block;
+    }
+    .vault-add-title {
+      margin-bottom: 10px;
+      color: #111827;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .vault-add-row {
+      margin-bottom: 10px;
+    }
+    .vault-add-row label {
+      display: block;
+      margin-bottom: 5px;
+      color: #374151;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .vault-add-row input,
+    .vault-add-row select {
+      width: 100%;
+      height: 34px;
+      padding: 0 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      background: #fff;
+    }
+    .vault-add-row input:focus,
+    .vault-add-row select:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.12);
+    }
+    .vault-add-footer {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .vault-add-footer .btn {
+      flex: 1;
+      margin-top: 0;
+    }
+    .vault-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .vault-entry {
+      width: 100%;
+      min-height: 64px;
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .vault-entry:hover {
+      border-color: #667eea;
+      background: #f8f7ff;
+    }
+    .vault-entry:focus-visible {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.14);
+    }
+    .vault-entry[aria-disabled="true"],
+    .vault-entry.is-filling {
+      cursor: wait;
+      opacity: 0.7;
+    }
+    .vault-entry-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .vault-entry-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+    .vault-entry-title span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .vault-entry-user {
+      font-size: 12px;
+      color: #6b7280;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .vault-entry-totp {
+      flex: 0 0 92px;
+      min-height: 42px;
+      padding: 6px 8px;
+      border: 1px solid #bbf7d0;
+      border-radius: 7px;
+      background: #f0fdf4;
+      text-align: center;
+      color: #166534;
+      cursor: pointer;
+      transition: all 0.18s;
+    }
+    .vault-entry-totp:hover {
+      border-color: #22c55e;
+      background: #dcfce7;
+      box-shadow: 0 2px 8px rgba(22, 163, 74, 0.14);
+    }
+    .vault-entry-totp:focus-visible {
+      outline: none;
+      border-color: #16a34a;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+    }
+    .vault-entry-totp.is-filling {
+      cursor: wait;
+      opacity: 0.72;
+    }
+    .vault-totp-top {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    .vault-totp-code {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.15;
+      color: #15803d;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+    .vault-totp-copy {
+      flex: 0 0 auto;
+      height: 20px;
+      min-width: 30px;
+      padding: 0 5px;
+      border: 1px solid #86efac;
+      border-radius: 5px;
+      background: #ffffff;
+      color: #15803d;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .vault-totp-copy:hover {
+      background: #dcfce7;
+      border-color: #22c55e;
+    }
+    .vault-totp-copy:disabled {
+      cursor: wait;
+      opacity: 0.65;
+    }
+    .vault-totp-meta {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin-top: 3px;
+      font-size: 10px;
+      color: #4b5563;
+      white-space: nowrap;
+    }
+    .vault-totp-name {
+      max-width: 46px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .vault-totp-remaining.is-danger,
+    .vault-totp-code.is-danger {
+      color: #dc2626;
+    }
+    .vault-totp-extra {
+      color: #6b7280;
+    }
+    .vault-empty {
+      padding: 24px 12px;
+      border: 1px dashed #d1d5db;
+      border-radius: 8px;
+      text-align: center;
+      color: #6b7280;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .vault-empty-action {
+      display: block;
+      width: 132px;
+      height: 32px;
+      margin: 12px auto 0;
+      border: 1px solid #667eea;
+      border-radius: 6px;
+      background: #fff;
+      color: #4f46e5;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .vault-empty-action:hover {
+      background: #f8f7ff;
+    }
+    .vault-favorite {
+      color: #f59e0b;
+      flex-shrink: 0;
     }
   </style>
 </head>
@@ -291,7 +819,8 @@
     <!-- Tab 切换 -->
     <div class="tabs">
       <button class="tab active" data-tab="note">📄 保存笔记</button>
-      <button class="tab" data-tab="bookmark">🔖 添加书签</button>
+      <button class="tab" data-tab="bookmark">🔖 书签管理</button>
+      <button class="tab" data-tab="vault">🔐 密码库</button>
     </div>
     
     <!-- 笔记表单 -->
@@ -325,37 +854,113 @@
       </div>
     </div>
     
-    <!-- 书签表单 -->
+    <!-- 书签管理 -->
     <div id="bookmark-form" class="form-panel">
-      <div class="icon-preview">
-        <img id="bookmark-icon-img" src="" alt="" style="display: none;">
-        <div id="bookmark-icon-placeholder" class="icon-placeholder">🌐</div>
-        <div class="icon-info">
-          <div id="bookmark-domain"></div>
-          <div id="bookmark-url-preview" class="icon-url"></div>
+      <div class="bookmark-manager-toolbar">
+        <div class="bookmark-manager-title">
+          <strong>书签管理</strong>
+          <span id="bookmark-manager-count">正在读取书签...</span>
+        </div>
+        <button id="bookmark-add-entry" class="bookmark-add-entry" type="button">＋ 添加书签</button>
+      </div>
+
+      <div id="bookmark-add-panel" class="bookmark-add-panel">
+        <div class="icon-preview">
+          <img id="bookmark-icon-img" src="" alt="" style="display: none;">
+          <div id="bookmark-icon-placeholder" class="icon-placeholder">🌐</div>
+          <div class="icon-info">
+            <div id="bookmark-domain"></div>
+            <div id="bookmark-url-preview" class="icon-url"></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="bookmark-name">名称</label>
+          <input type="text" id="bookmark-name" placeholder="书签名称">
+        </div>
+
+        <div class="form-group">
+          <label for="bookmark-desc">描述</label>
+          <textarea id="bookmark-desc" placeholder="网站描述（可选）"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="bookmark-folder">保存到文件夹</label>
+          <select id="bookmark-folder">
+            <option value="">📁 根目录</option>
+          </select>
+        </div>
+
+        <div class="bookmark-add-actions">
+          <button id="bookmark-add-cancel" class="btn btn-secondary" type="button">取消</button>
+          <button id="bookmark-btn" class="btn btn-primary" type="button" disabled>
+            添加书签
+          </button>
         </div>
       </div>
-      
-      <div class="form-group">
-        <label for="bookmark-name">名称</label>
-        <input type="text" id="bookmark-name" placeholder="书签名称">
+
+      <div class="bookmark-manager-layout">
+        <div id="bookmark-folder-list" class="bookmark-folder-list"></div>
+        <div id="bookmark-list" class="bookmark-list">
+          <div class="bookmark-empty">正在读取书签...</div>
+        </div>
       </div>
-      
-      <div class="form-group">
-        <label for="bookmark-desc">描述</label>
-        <textarea id="bookmark-desc" placeholder="网站描述（可选）"></textarea>
+    </div>
+
+    <!-- 密码库表单 -->
+    <div id="vault-form" class="form-panel">
+      <div class="vault-site">
+        <span>🌐</span>
+        <span id="vault-site-url">当前网站</span>
       </div>
-      
-      <div class="form-group">
-        <label for="bookmark-folder">保存到文件夹</label>
-        <select id="bookmark-folder">
-          <option value="">📁 根目录</option>
-        </select>
+      <div class="vault-actions">
+        <button id="vault-add-toggle" class="vault-secondary-btn" type="button">➕ 手动添加账号</button>
+        <button id="vault-capture-btn" class="vault-secondary-btn" type="button">读取页面输入</button>
       </div>
-      
-      <button id="bookmark-btn" class="btn btn-primary" disabled>
-        添加书签
-      </button>
+      <div id="vault-add-panel" class="vault-add-panel">
+        <div class="vault-add-title">新建密码库条目</div>
+        <div class="vault-add-row">
+          <label for="vault-add-name">名称</label>
+          <input id="vault-add-name" type="text" placeholder="网站或账号名称">
+        </div>
+        <div class="vault-add-row">
+          <label for="vault-add-username">用户名</label>
+          <input id="vault-add-username" type="text" placeholder="账号 / 邮箱 / 手机号">
+        </div>
+        <div class="vault-add-row">
+          <label for="vault-add-password">密码</label>
+          <input id="vault-add-password" type="password" placeholder="密码">
+        </div>
+        <div class="vault-add-row">
+          <label for="vault-add-url">关联网站</label>
+          <input id="vault-add-url" type="text" placeholder="https://example.com">
+        </div>
+        <div class="vault-add-row">
+          <label for="vault-add-uri-name">网站名称</label>
+          <input id="vault-add-uri-name" type="text" placeholder="例如 GitHub / 公司后台">
+        </div>
+        <div class="vault-add-row">
+          <label for="vault-add-totp-name">TOTP 名称</label>
+          <input id="vault-add-totp-name" type="text" placeholder="可选，默认使用条目名称">
+        </div>
+        <div class="vault-add-row">
+          <label for="vault-add-totp-secret">TOTP 密钥</label>
+          <input id="vault-add-totp-secret" type="text" placeholder="密钥或 otpauth:// 链接">
+        </div>
+        <div class="vault-add-row">
+          <label for="vault-add-folder">分组</label>
+          <select id="vault-add-folder">
+            <option value="">未分类</option>
+          </select>
+        </div>
+        <div class="vault-add-footer">
+          <button id="vault-add-cancel" class="btn" type="button">取消</button>
+          <button id="vault-add-save" class="btn btn-primary" type="button">保存</button>
+        </div>
+      </div>
+      <div id="vault-list" class="vault-list">
+        <div class="vault-empty">正在查找匹配的账号...</div>
+      </div>
     </div>
   </div>
   

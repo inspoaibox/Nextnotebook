@@ -28,6 +28,8 @@ export interface Config {
   // 安全配置
   trustProxy: boolean;
   secureMode: boolean;
+  initialSetupToken: string;
+  requireInitialSetupToken: boolean;
   // Transfer 中继服务器配置
   transferRelayEnabled: boolean;
   transferRelayPath: string;
@@ -94,6 +96,8 @@ export const config: Config = {
   // 安全配置
   trustProxy: process.env.TRUST_PROXY === 'true',  // 是否信任代理（用于获取真实 IP）
   secureMode: process.env.SECURE_MODE === 'true',  // 是否启用安全模式（强制 HTTPS）
+  initialSetupToken: process.env.INITIAL_SETUP_TOKEN || '',
+  requireInitialSetupToken: process.env.REQUIRE_INITIAL_SETUP_TOKEN === 'true' || process.env.NODE_ENV === 'production',
   // Transfer 中继服务器配置
   transferRelayEnabled: process.env.TRANSFER_RELAY_ENABLED !== 'false',  // 默认启用
   transferRelayPath: process.env.TRANSFER_RELAY_PATH || '/transfer',
@@ -144,6 +148,18 @@ export function checkSecurityConfig(): void {
 
   if (config.secureMode && !config.trustProxy) {
     warnings.push('SECURE_MODE 已启用但 TRUST_PROXY 未启用；如果服务在 HTTPS 反代后面，可能无法识别 HTTPS 请求');
+  }
+
+  if (process.env.NODE_ENV === 'production' && !config.secureMode) {
+    warnings.push('生产环境建议启用 SECURE_MODE 并通过 HTTPS 访问登录界面');
+  }
+
+  if (config.requireInitialSetupToken && !config.initialSetupToken) {
+    warnings.push('REQUIRE_INITIAL_SETUP_TOKEN 已启用但 INITIAL_SETUP_TOKEN 未设置；首次管理员初始化将被阻止');
+  } else if (!config.requireInitialSetupToken && !config.initialSetupToken) {
+    warnings.push('INITIAL_SETUP_TOKEN 未设置；首次公网初始化时存在管理员抢注风险');
+  } else if (config.initialSetupToken.length < 16) {
+    warnings.push('INITIAL_SETUP_TOKEN 太短（建议至少16字符）');
   }
   
   // 检查是否在生产环境使用默认端口

@@ -13,7 +13,8 @@ export type ItemType =
   | 'ai_config'
   | 'ai_conversation'
   | 'ai_message'
-  | 'excel_note';
+  | 'excel_note'
+  | 'template';
 
 // 同步状态 - 与客户端 SyncStatus 完全一致
 export type SyncStatus = 'clean' | 'modified' | 'deleted' | 'conflict';

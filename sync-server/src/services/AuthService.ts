@@ -94,15 +94,12 @@ export class AuthService {
     role: UserRole = 'user'
   ): Promise<RegisterResult> {
     const db = getDatabase();
-    const isFirstUser = !this.hasAnyUser();
+    const isFirstUserAtStart = !this.hasAnyUser();
 
     // 如果不是第一个用户，检查注册是否开放
-    if (!isFirstUser && !this.isRegistrationEnabled()) {
+    if (!isFirstUserAtStart && !this.isRegistrationEnabled()) {
       return { success: false, error: '注册已关闭', errorCode: AuthErrorCodes.REGISTRATION_DISABLED };
     }
-
-    // 第一个用户自动成为管理员
-    const actualRole: UserRole = isFirstUser ? 'admin' : role;
 
     // 验证用户名
     const usernameValidation = validateUsername(username);
@@ -139,17 +136,36 @@ export class AuthService {
     const syncKeyFingerprint = computeSyncKeyFingerprint(syncKey);
     const now = Date.now();
 
-    db.prepare(`
-      INSERT INTO users (id, username, password_hash, sync_key_fingerprint, role, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
-    `).run(userId, username, passwordHash, syncKeyFingerprint, actualRole, now, now);
+    const createUser = db.transaction((): RegisterResult => {
+      const isFirstUser = !this.hasAnyUser();
 
-    // 如果是第一个用户（管理员），默认关闭注册
-    if (isFirstUser) {
-      this.setRegistrationEnabled(false);
-    }
+      // 密码哈希期间可能已有首个用户创建完成，写入前必须再次判断。
+      if (!isFirstUser && !this.isRegistrationEnabled()) {
+        return { success: false, error: '注册已关闭', errorCode: AuthErrorCodes.REGISTRATION_DISABLED };
+      }
 
-    return { success: true, userId, isAdmin: actualRole === 'admin' };
+      const existingUserInTx = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+      if (existingUserInTx) {
+        return { success: false, error: '用户名已存在', errorCode: AuthErrorCodes.USERNAME_EXISTS };
+      }
+
+      // 第一个用户自动成为管理员，以事务内的最终状态为准。
+      const actualRole: UserRole = isFirstUser ? 'admin' : role;
+
+      db.prepare(`
+        INSERT INTO users (id, username, password_hash, sync_key_fingerprint, role, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+      `).run(userId, username, passwordHash, syncKeyFingerprint, actualRole, now, now);
+
+      // 如果是第一个用户（管理员），默认关闭注册
+      if (isFirstUser) {
+        this.setRegistrationEnabled(false);
+      }
+
+      return { success: true, userId, isAdmin: actualRole === 'admin' };
+    });
+
+    return createUser();
   }
 
   /**
@@ -168,7 +184,7 @@ export class AuthService {
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as User | undefined;
 
     // 统一的错误消息，不泄露用户是否存在
-    const genericError = { success: false, error: '用户名或密码错误', errorCode: AuthErrorCodes.INVALID_CREDENTIALS };
+    const genericError = { success: false, error: '用户名、密码或同步密钥错误', errorCode: AuthErrorCodes.INVALID_CREDENTIALS };
 
     if (!user) {
       // 执行一次假的密码验证，防止时序攻击
@@ -190,7 +206,7 @@ export class AuthService {
     // 验证同步密钥
     const syncKeyFingerprint = computeSyncKeyFingerprint(syncKey);
     if (syncKeyFingerprint !== user.sync_key_fingerprint) {
-      return { success: false, error: '同步密钥验证失败', errorCode: AuthErrorCodes.SYNC_KEY_MISMATCH };
+      return genericError;
     }
 
     // 生成令牌

@@ -1378,6 +1378,57 @@ body.dark-mode hr {
   margin-bottom: 16px;
 }
 
+.markdown-preview .markdown-code-block {
+  position: relative;
+  margin-bottom: 16px;
+  border-radius: 6px;
+}
+
+.markdown-preview .markdown-code-block pre,
+.markdown-preview .markdown-code-block > div {
+  margin: 0 !important;
+}
+
+.markdown-preview .markdown-code-plain {
+  padding: 40px 16px 16px;
+  margin: 0;
+  overflow: auto;
+}
+
+.markdown-preview .markdown-code-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  opacity: 0.86;
+}
+
+.markdown-preview .markdown-code-copy:hover,
+.markdown-preview .markdown-code-copy:focus-visible {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  opacity: 1;
+}
+
+.markdown-preview .markdown-code-block-plain .markdown-code-copy {
+  color: rgba(0, 0, 0, 0.58);
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.markdown-preview .markdown-code-block-plain .markdown-code-copy:hover,
+.markdown-preview .markdown-code-block-plain .markdown-code-copy:focus-visible {
+  color: rgba(0, 0, 0, 0.88) !important;
+  background: #fff !important;
+  border-color: rgba(0, 0, 0, 0.16) !important;
+}
+
 /* 修复 SyntaxHighlighter 代码块选择问题 */
 .markdown-preview pre > div,
 .markdown-preview pre > code {
@@ -1502,6 +1553,19 @@ body.dark-mode .markdown-preview code {
 
 body.dark-mode .markdown-preview pre {
   background-color: #1f1f1f;
+}
+
+body.dark-mode .markdown-preview .markdown-code-block-plain .markdown-code-copy {
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+body.dark-mode .markdown-preview .markdown-code-block-plain .markdown-code-copy:hover,
+body.dark-mode .markdown-preview .markdown-code-block-plain .markdown-code-copy:focus-visible {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
 }
 
 body.dark-mode .markdown-preview blockquote {

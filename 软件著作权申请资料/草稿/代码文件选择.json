@@ -1,0 +1,3477 @@
+{
+  "softwareName": "启动应用",
+  "version": "V1.0.0",
+  "generatedAt": "2026-06-01T09:52:25.983Z",
+  "items": [
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\ToolboxPanel.tsx",
+      "relativePath": "src/renderer/components/ToolboxPanel.tsx",
+      "language": "TypeScript",
+      "lines": 4943,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 4943,
+      "reason": "页面或组件文件，能够体现用户界面和主要操作流程。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\App.tsx",
+      "relativePath": "src/renderer/App.tsx",
+      "language": "TypeScript",
+      "lines": 1544,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 1544,
+      "reason": "入口、路由或布局文件，能够体现软件启动和页面组织逻辑。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\ImageToolPanel.tsx",
+      "relativePath": "src/renderer/components/ImageToolPanel.tsx",
+      "language": "TypeScript",
+      "lines": 1393,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 1393,
+      "reason": "页面或组件文件，能够体现用户界面和主要操作流程。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\main.ts",
+      "relativePath": "src/main/main.ts",
+      "language": "TypeScript",
+      "lines": 1314,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 1314,
+      "reason": "入口、路由或布局文件，能够体现软件启动和页面组织逻辑。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\GhostscriptService.ts",
+      "relativePath": "src/main/services/GhostscriptService.ts",
+      "language": "TypeScript",
+      "lines": 959,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 959,
+      "reason": "接口或服务文件，能够体现业务请求、数据处理和外部服务调用。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\TransferService.ts",
+      "relativePath": "src/main/services/TransferService.ts",
+      "language": "TypeScript",
+      "lines": 821,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 821,
+      "reason": "接口或服务文件，能够体现业务请求、数据处理和外部服务调用。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\services\\aiApi.ts",
+      "relativePath": "src/renderer/services/aiApi.ts",
+      "language": "TypeScript",
+      "lines": 737,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 737,
+      "reason": "接口或服务文件，能够体现业务请求、数据处理和外部服务调用。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\public\\app.js",
+      "relativePath": "sync-server/src/public/app.js",
+      "language": "JavaScript",
+      "lines": 722,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 722,
+      "reason": "入口、路由或布局文件，能够体现软件启动和页面组织逻辑。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\PDFService.ts",
+      "relativePath": "src/main/services/PDFService.ts",
+      "language": "TypeScript",
+      "lines": 698,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 698,
+      "reason": "接口或服务文件，能够体现业务请求、数据处理和外部服务调用。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\ImageService.ts",
+      "relativePath": "src/main/services/ImageService.ts",
+      "language": "TypeScript",
+      "lines": 619,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 619,
+      "reason": "接口或服务文件，能够体现业务请求、数据处理和外部服务调用。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\database\\ItemsManager.ts",
+      "relativePath": "src/core/database/ItemsManager.ts",
+      "language": "TypeScript",
+      "lines": 565,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 565,
+      "reason": "业务处理文件，能够体现核心功能的执行逻辑。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\ClipperService.ts",
+      "relativePath": "src/main/services/ClipperService.ts",
+      "language": "TypeScript",
+      "lines": 548,
+      "selected": true,
+      "startLine": 1,
+      "endLine": 548,
+      "reason": "接口或服务文件，能够体现业务请求、数据处理和外部服务调用。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\shared\\types\\index.ts",
+      "relativePath": "src/shared/types/index.ts",
+      "language": "TypeScript",
+      "lines": 526,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 526,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\remote\\AIApiClient.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/remote/AIApiClient.kt",
+      "language": "Kotlin",
+      "lines": 520,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 520,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\services\\pdfApi.ts",
+      "relativePath": "src/renderer/services/pdfApi.ts",
+      "language": "TypeScript",
+      "lines": 496,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 496,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\SyncService.ts",
+      "relativePath": "src/main/services/SyncService.ts",
+      "language": "TypeScript",
+      "lines": 493,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 493,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\RenameTool.tsx",
+      "relativePath": "src/renderer/components/pdf/RenameTool.tsx",
+      "language": "TypeScript",
+      "lines": 489,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 489,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\export\\ExportManager.ts",
+      "relativePath": "src/core/export/ExportManager.ts",
+      "language": "TypeScript",
+      "lines": 488,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 488,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\excel\\ImportExportService.ts",
+      "relativePath": "src/core/excel/ImportExportService.ts",
+      "language": "TypeScript",
+      "lines": 432,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 432,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\MergeSplitTool.tsx",
+      "relativePath": "src/renderer/components/pdf/MergeSplitTool.tsx",
+      "language": "TypeScript",
+      "lines": 427,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 427,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\WatermarkTool.tsx",
+      "relativePath": "src/renderer/components/pdf/WatermarkTool.tsx",
+      "language": "TypeScript",
+      "lines": 420,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 420,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\ToImageTool.tsx",
+      "relativePath": "src/renderer/components/pdf/ToImageTool.tsx",
+      "language": "TypeScript",
+      "lines": 417,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 417,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\services\\AuthService.ts",
+      "relativePath": "sync-server/src/services/AuthService.ts",
+      "language": "TypeScript",
+      "lines": 411,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 411,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\MarkdownToolbar.tsx",
+      "relativePath": "src/renderer/components/MarkdownToolbar.tsx",
+      "language": "TypeScript",
+      "lines": 396,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 396,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\excel\\ExcelToolbar.tsx",
+      "relativePath": "src/renderer/components/excel/ExcelToolbar.tsx",
+      "language": "TypeScript",
+      "lines": 388,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 388,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\PDFToolPanel.tsx",
+      "relativePath": "src/renderer/components/pdf/PDFToolPanel.tsx",
+      "language": "TypeScript",
+      "lines": 384,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 384,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\DatabaseService.ts",
+      "relativePath": "src/main/services/DatabaseService.ts",
+      "language": "TypeScript",
+      "lines": 382,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 382,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\FormFillTool.tsx",
+      "relativePath": "src/renderer/components/pdf/FormFillTool.tsx",
+      "language": "TypeScript",
+      "lines": 368,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 368,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\SecurityTool.tsx",
+      "relativePath": "src/renderer/components/pdf/SecurityTool.tsx",
+      "language": "TypeScript",
+      "lines": 367,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 367,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\ImageToPdfTool.tsx",
+      "relativePath": "src/renderer/components/pdf/ImageToPdfTool.tsx",
+      "language": "TypeScript",
+      "lines": 364,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 364,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\ConvertTool.tsx",
+      "relativePath": "src/renderer/components/pdf/ConvertTool.tsx",
+      "language": "TypeScript",
+      "lines": 342,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 342,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\DeletePagesTool.tsx",
+      "relativePath": "src/renderer/components/pdf/DeletePagesTool.tsx",
+      "language": "TypeScript",
+      "lines": 340,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 340,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\RotateTool.tsx",
+      "relativePath": "src/renderer/components/pdf/RotateTool.tsx",
+      "language": "TypeScript",
+      "lines": 338,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 338,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\templates\\TemplateManager.ts",
+      "relativePath": "src/core/templates/TemplateManager.ts",
+      "language": "TypeScript",
+      "lines": 332,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 332,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\CompressTool.tsx",
+      "relativePath": "src/renderer/components/pdf/CompressTool.tsx",
+      "language": "TypeScript",
+      "lines": 329,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 329,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\MetadataTool.tsx",
+      "relativePath": "src/renderer/components/pdf/MetadataTool.tsx",
+      "language": "TypeScript",
+      "lines": 308,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 308,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\CompareTool.tsx",
+      "relativePath": "src/renderer/components/pdf/CompareTool.tsx",
+      "language": "TypeScript",
+      "lines": 307,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 307,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\backup\\BackupManager.ts",
+      "relativePath": "src/core/backup/BackupManager.ts",
+      "language": "TypeScript",
+      "lines": 286,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 286,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\navigation\\MainNavigation.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/navigation/MainNavigation.kt",
+      "language": "Kotlin",
+      "lines": 282,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 282,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\components\\NoteToolbar.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/components/NoteToolbar.kt",
+      "language": "Kotlin",
+      "lines": 273,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 273,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\types\\index.ts",
+      "relativePath": "sync-server/src/types/index.ts",
+      "language": "TypeScript",
+      "lines": 255,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 255,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\service\\MuchengAutofillService.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/service/MuchengAutofillService.kt",
+      "language": "Kotlin",
+      "lines": 239,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 239,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\services\\TokenService.ts",
+      "relativePath": "sync-server/src/services/TokenService.ts",
+      "language": "TypeScript",
+      "lines": 239,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 239,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\ReorderTool.tsx",
+      "relativePath": "src/renderer/components/pdf/ReorderTool.tsx",
+      "language": "TypeScript",
+      "lines": 233,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 233,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\services\\ItemService.ts",
+      "relativePath": "sync-server/src/services/ItemService.ts",
+      "language": "TypeScript",
+      "lines": 233,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 233,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\sync\\ResourceSyncManager.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/sync/ResourceSyncManager.kt",
+      "language": "Kotlin",
+      "lines": 227,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 227,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\ExtractPagesTool.tsx",
+      "relativePath": "src/renderer/components/pdf/ExtractPagesTool.tsx",
+      "language": "TypeScript",
+      "lines": 219,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 219,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\services\\imageApi.ts",
+      "relativePath": "src/renderer/services/imageApi.ts",
+      "language": "TypeScript",
+      "lines": 208,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 208,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\PreviewTool.tsx",
+      "relativePath": "src/renderer/components/pdf/PreviewTool.tsx",
+      "language": "TypeScript",
+      "lines": 207,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 207,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\services\\UserService.ts",
+      "relativePath": "sync-server/src/services/UserService.ts",
+      "language": "TypeScript",
+      "lines": 203,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 203,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\security\\AppLock.ts",
+      "relativePath": "src/core/security/AppLock.ts",
+      "language": "TypeScript",
+      "lines": 202,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 202,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\resources\\ResourceManager.ts",
+      "relativePath": "src/core/resources/ResourceManager.ts",
+      "language": "TypeScript",
+      "lines": 193,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 193,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\sync\\OfflineQueueManager.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/sync/OfflineQueueManager.kt",
+      "language": "Kotlin",
+      "lines": 189,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 189,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\index.html",
+      "relativePath": "src/renderer/index.html",
+      "language": "HTML",
+      "lines": 179,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 179,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\services\\itemsApi.ts",
+      "relativePath": "src/renderer/services/itemsApi.ts",
+      "language": "TypeScript",
+      "lines": 177,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 177,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\services\\AuditService.ts",
+      "relativePath": "sync-server/src/services/AuditService.ts",
+      "language": "TypeScript",
+      "lines": 177,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 177,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\services\\ResourceService.ts",
+      "relativePath": "sync-server/src/services/ResourceService.ts",
+      "language": "TypeScript",
+      "lines": 177,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 177,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\service\\TransferNotificationService.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/service/TransferNotificationService.kt",
+      "language": "Kotlin",
+      "lines": 175,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 175,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\BiometricManagerImpl.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/BiometricManagerImpl.kt",
+      "language": "Kotlin",
+      "lines": 146,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 146,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\KeystoreManager.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/KeystoreManager.kt",
+      "language": "Kotlin",
+      "lines": 142,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 142,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\services\\syncApi.ts",
+      "relativePath": "src/renderer/services/syncApi.ts",
+      "language": "TypeScript",
+      "lines": 139,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 139,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\McpService.ts",
+      "relativePath": "src/main/services/McpService.ts",
+      "language": "TypeScript",
+      "lines": 131,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 131,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\service\\ReminderService.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/service/ReminderService.kt",
+      "language": "Kotlin",
+      "lines": 129,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 129,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\AppLockManagerImpl.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/AppLockManagerImpl.kt",
+      "language": "Kotlin",
+      "lines": 128,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 128,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\DatabaseKeyManager.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/DatabaseKeyManager.kt",
+      "language": "Kotlin",
+      "lines": 127,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 127,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\NetworkSecurityManager.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/NetworkSecurityManager.kt",
+      "language": "Kotlin",
+      "lines": 108,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 108,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\MainActivity.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/MainActivity.kt",
+      "language": "Kotlin",
+      "lines": 104,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 104,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\services\\ChangeService.ts",
+      "relativePath": "sync-server/src/services/ChangeService.ts",
+      "language": "TypeScript",
+      "lines": 103,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 103,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\app.ts",
+      "relativePath": "sync-server/src/app.ts",
+      "language": "TypeScript",
+      "lines": 94,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 94,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\index.tsx",
+      "relativePath": "src/renderer/index.tsx",
+      "language": "TypeScript",
+      "lines": 84,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 84,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\AppLockManager.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/AppLockManager.kt",
+      "language": "Kotlin",
+      "lines": 83,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 83,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\local\\AppDatabase.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/local/AppDatabase.kt",
+      "language": "Kotlin",
+      "lines": 78,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 78,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\index.ts",
+      "relativePath": "sync-server/src/index.ts",
+      "language": "TypeScript",
+      "lines": 74,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 74,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\BiometricManager.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/BiometricManager.kt",
+      "language": "Kotlin",
+      "lines": 59,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 59,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\services\\modelApi.ts",
+      "relativePath": "src/renderer/services/modelApi.ts",
+      "language": "TypeScript",
+      "lines": 58,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 58,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\public\\index.html",
+      "relativePath": "sync-server/src/public/index.html",
+      "language": "HTML",
+      "lines": 46,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 46,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\index.ts",
+      "relativePath": "src/core/index.ts",
+      "language": "TypeScript",
+      "lines": 30,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 30,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\image\\RemoveBackgroundTool.tsx",
+      "relativePath": "src/renderer/components/image/RemoveBackgroundTool.tsx",
+      "language": "TypeScript",
+      "lines": 27,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 27,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\database\\index.ts",
+      "relativePath": "sync-server/src/database/index.ts",
+      "language": "TypeScript",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\services\\inferenceApi.ts",
+      "relativePath": "src/renderer/services/inferenceApi.ts",
+      "language": "TypeScript",
+      "lines": 23,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 23,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\sync\\index.ts",
+      "relativePath": "src/core/sync/index.ts",
+      "language": "TypeScript",
+      "lines": 16,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 16,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\MuchengNotesApp.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/MuchengNotesApp.kt",
+      "language": "Kotlin",
+      "lines": 8,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 8,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\transfer\\index.ts",
+      "relativePath": "src/renderer/components/transfer/index.ts",
+      "language": "TypeScript",
+      "lines": 7,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 7,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\notes\\index.ts",
+      "relativePath": "src/core/notes/index.ts",
+      "language": "TypeScript",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\database\\index.ts",
+      "relativePath": "src/core/database/index.ts",
+      "language": "TypeScript",
+      "lines": 4,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 4,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\backup\\index.ts",
+      "relativePath": "src/core/backup/index.ts",
+      "language": "TypeScript",
+      "lines": 3,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 3,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\crypto\\index.ts",
+      "relativePath": "src/core/crypto/index.ts",
+      "language": "TypeScript",
+      "lines": 3,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 3,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\export\\index.ts",
+      "relativePath": "src/core/export/index.ts",
+      "language": "TypeScript",
+      "lines": 3,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 3,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\search\\index.ts",
+      "relativePath": "src/core/search/index.ts",
+      "language": "TypeScript",
+      "lines": 3,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 3,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\security\\index.ts",
+      "relativePath": "src/core/security/index.ts",
+      "language": "TypeScript",
+      "lines": 3,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 3,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\templates\\index.ts",
+      "relativePath": "src/core/templates/index.ts",
+      "language": "TypeScript",
+      "lines": 3,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 3,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\resources\\index.ts",
+      "relativePath": "src/core/resources/index.ts",
+      "language": "TypeScript",
+      "lines": 2,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 2,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\SettingsModal.tsx",
+      "relativePath": "src/renderer/components/SettingsModal.tsx",
+      "language": "TypeScript",
+      "lines": 2789,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 2789,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\Editor.tsx",
+      "relativePath": "src/renderer/components/Editor.tsx",
+      "language": "TypeScript",
+      "lines": 2139,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 2139,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useExcelNotes.ts",
+      "relativePath": "src/renderer/hooks/useExcelNotes.ts",
+      "language": "TypeScript",
+      "lines": 1947,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1947,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\vault\\VaultScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/vault/VaultScreen.kt",
+      "language": "Kotlin",
+      "lines": 1913,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1913,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\BookmarkPanel.tsx",
+      "relativePath": "src/renderer/components/BookmarkPanel.tsx",
+      "language": "TypeScript",
+      "lines": 1827,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1827,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\notes\\NoteDetailScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/notes/NoteDetailScreen.kt",
+      "language": "Kotlin",
+      "lines": 1602,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1602,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\NoteDetailViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/NoteDetailViewModel.kt",
+      "language": "Kotlin",
+      "lines": 1540,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1540,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\transfer\\TransferClient.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/transfer/TransferClient.kt",
+      "language": "Kotlin",
+      "lines": 1455,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1455,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\VaultPanel.tsx",
+      "relativePath": "src/renderer/components/VaultPanel.tsx",
+      "language": "TypeScript",
+      "lines": 1363,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1363,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\ai\\AIScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/ai/AIScreen.kt",
+      "language": "Kotlin",
+      "lines": 1337,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1337,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\transfer\\TransferScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/transfer/TransferScreen.kt",
+      "language": "Kotlin",
+      "lines": 1189,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1189,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\notes\\NotesScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/notes/NotesScreen.kt",
+      "language": "Kotlin",
+      "lines": 1179,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1179,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\SettingsViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/SettingsViewModel.kt",
+      "language": "Kotlin",
+      "lines": 1179,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1179,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\TransferViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/TransferViewModel.kt",
+      "language": "Kotlin",
+      "lines": 1135,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1135,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\excel\\SpreadsheetGrid.tsx",
+      "relativePath": "src/renderer/components/excel/SpreadsheetGrid.tsx",
+      "language": "TypeScript",
+      "lines": 1121,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1121,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\TransferPanel.tsx",
+      "relativePath": "src/renderer/components/TransferPanel.tsx",
+      "language": "TypeScript",
+      "lines": 1053,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1053,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\TransferServer.ts",
+      "relativePath": "src/main/services/TransferServer.ts",
+      "language": "TypeScript",
+      "lines": 1035,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1035,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\settings\\AISettingsScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/settings/AISettingsScreen.kt",
+      "language": "Kotlin",
+      "lines": 1001,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1001,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\ExcelEditorPanel.tsx",
+      "relativePath": "src/renderer/components/ExcelEditorPanel.tsx",
+      "language": "TypeScript",
+      "lines": 911,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 911,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\excel\\FormulaEngine.ts",
+      "relativePath": "src/core/excel/FormulaEngine.ts",
+      "language": "TypeScript",
+      "lines": 835,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 835,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\AIAssistantPanel.tsx",
+      "relativePath": "src/renderer/components/AIAssistantPanel.tsx",
+      "language": "TypeScript",
+      "lines": 816,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 816,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\services\\transferClient.ts",
+      "relativePath": "src/renderer/services/transferClient.ts",
+      "language": "TypeScript",
+      "lines": 807,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 807,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\MindMapEditor.tsx",
+      "relativePath": "src/renderer/components/MindMapEditor.tsx",
+      "language": "TypeScript",
+      "lines": 790,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 790,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\todos\\TodosScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/todos/TodosScreen.kt",
+      "language": "Kotlin",
+      "lines": 784,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 784,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\sync\\SyncEngine.ts",
+      "relativePath": "src/core/sync/SyncEngine.ts",
+      "language": "TypeScript",
+      "lines": 770,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 770,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\transfer\\relay.ts",
+      "relativePath": "sync-server/src/transfer/relay.ts",
+      "language": "TypeScript",
+      "lines": 764,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 764,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\AIAssistant.tsx",
+      "relativePath": "src/renderer/components/AIAssistant.tsx",
+      "language": "TypeScript",
+      "lines": 763,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 763,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\WhiteboardEditor.tsx",
+      "relativePath": "src/renderer/components/WhiteboardEditor.tsx",
+      "language": "TypeScript",
+      "lines": 763,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 763,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\FlowchartEditor.tsx",
+      "relativePath": "src/renderer/components/FlowchartEditor.tsx",
+      "language": "TypeScript",
+      "lines": 757,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 757,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\sync\\WebDAVAdapter.ts",
+      "relativePath": "src/core/sync/WebDAVAdapter.ts",
+      "language": "TypeScript",
+      "lines": 754,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 754,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useAI.ts",
+      "relativePath": "src/renderer/hooks/useAI.ts",
+      "language": "TypeScript",
+      "lines": 741,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 741,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\bookmarks\\BookmarksScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/bookmarks/BookmarksScreen.kt",
+      "language": "Kotlin",
+      "lines": 709,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 709,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\sync\\ServerAdapter.ts",
+      "relativePath": "src/core/sync/ServerAdapter.ts",
+      "language": "TypeScript",
+      "lines": 708,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 708,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\remote\\ServerAdapterImpl.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/remote/ServerAdapterImpl.kt",
+      "language": "Kotlin",
+      "lines": 692,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 692,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\VaultViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/VaultViewModel.kt",
+      "language": "Kotlin",
+      "lines": 673,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 673,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\Sidebar.tsx",
+      "relativePath": "src/renderer/components/Sidebar.tsx",
+      "language": "TypeScript",
+      "lines": 639,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 639,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\transfer\\ChatView.tsx",
+      "relativePath": "src/renderer/components/transfer/ChatView.tsx",
+      "language": "TypeScript",
+      "lines": 639,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 639,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\remote\\WebDAVAdapterImpl.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/remote/WebDAVAdapterImpl.kt",
+      "language": "Kotlin",
+      "lines": 635,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 635,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\NotesViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/NotesViewModel.kt",
+      "language": "Kotlin",
+      "lines": 622,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 622,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\sync\\SyncEngine.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/sync/SyncEngine.kt",
+      "language": "Kotlin",
+      "lines": 597,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 597,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\settings\\SecuritySettingsScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/settings/SecuritySettingsScreen.kt",
+      "language": "Kotlin",
+      "lines": 563,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 563,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\TodoPanel.tsx",
+      "relativePath": "src/renderer/components/TodoPanel.tsx",
+      "language": "TypeScript",
+      "lines": 555,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 555,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\PDFPreview.tsx",
+      "relativePath": "src/renderer/components/pdf/PDFPreview.tsx",
+      "language": "TypeScript",
+      "lines": 539,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 539,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\PDFThumbnails.tsx",
+      "relativePath": "src/renderer/components/pdf/PDFThumbnails.tsx",
+      "language": "TypeScript",
+      "lines": 523,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 523,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\transfer\\TransferDatabase.ts",
+      "relativePath": "src/core/transfer/TransferDatabase.ts",
+      "language": "TypeScript",
+      "lines": 509,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 509,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\RelayClient.ts",
+      "relativePath": "src/main/services/RelayClient.ts",
+      "language": "TypeScript",
+      "lines": 505,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 505,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\admin.ts",
+      "relativePath": "sync-server/src/routes/admin.ts",
+      "language": "TypeScript",
+      "lines": 500,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 500,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\GeneratorResults.tsx",
+      "relativePath": "src/renderer/components/GeneratorResults.tsx",
+      "language": "TypeScript",
+      "lines": 472,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 472,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\lock\\LockScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/lock/LockScreen.kt",
+      "language": "Kotlin",
+      "lines": 465,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 465,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\settings\\SyncSettingsScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/settings/SyncSettingsScreen.kt",
+      "language": "Kotlin",
+      "lines": 455,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 455,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\middleware\\rateLimiter.ts",
+      "relativePath": "sync-server/src/middleware/rateLimiter.ts",
+      "language": "TypeScript",
+      "lines": 447,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 447,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\preload.ts",
+      "relativePath": "src/main/preload.ts",
+      "language": "TypeScript",
+      "lines": 426,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 426,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\contexts\\SettingsContext.tsx",
+      "relativePath": "src/renderer/contexts/SettingsContext.tsx",
+      "language": "TypeScript",
+      "lines": 396,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 396,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\CropBox.tsx",
+      "relativePath": "src/renderer/components/CropBox.tsx",
+      "language": "TypeScript",
+      "lines": 366,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 366,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\SyncStatusBar.tsx",
+      "relativePath": "src/renderer/components/SyncStatusBar.tsx",
+      "language": "TypeScript",
+      "lines": 357,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 357,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\excel\\ExcelScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/excel/ExcelScreen.kt",
+      "language": "Kotlin",
+      "lines": 348,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 348,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\CryptoEngineImpl.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/CryptoEngineImpl.kt",
+      "language": "Kotlin",
+      "lines": 340,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 340,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useImagePresets.ts",
+      "relativePath": "src/renderer/hooks/useImagePresets.ts",
+      "language": "TypeScript",
+      "lines": 334,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 334,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\components\\QRScanner.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/components/QRScanner.kt",
+      "language": "Kotlin",
+      "lines": 318,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 318,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\local\\transfer\\TransferDatabase.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/local/transfer/TransferDatabase.kt",
+      "language": "Kotlin",
+      "lines": 304,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 304,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\ComparisonView.tsx",
+      "relativePath": "src/renderer/components/ComparisonView.tsx",
+      "language": "TypeScript",
+      "lines": 299,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 299,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\ExcelDetailViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/ExcelDetailViewModel.kt",
+      "language": "Kotlin",
+      "lines": 296,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 296,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\DiagramPanel.tsx",
+      "relativePath": "src/renderer/components/DiagramPanel.tsx",
+      "language": "TypeScript",
+      "lines": 295,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 295,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\components\\FolderTree.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/components/FolderTree.kt",
+      "language": "Kotlin",
+      "lines": 294,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 294,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\AIViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/AIViewModel.kt",
+      "language": "Kotlin",
+      "lines": 292,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 292,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\services\\fakerGenerator.ts",
+      "relativePath": "src/renderer/services/fakerGenerator.ts",
+      "language": "TypeScript",
+      "lines": 290,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 290,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useVault.ts",
+      "relativePath": "src/renderer/hooks/useVault.ts",
+      "language": "TypeScript",
+      "lines": 280,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 280,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\auth.ts",
+      "relativePath": "sync-server/src/routes/auth.ts",
+      "language": "TypeScript",
+      "lines": 280,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 280,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\ExcelViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/ExcelViewModel.kt",
+      "language": "Kotlin",
+      "lines": 276,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 276,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\excel\\ColumnFilterDropdown.tsx",
+      "relativePath": "src/renderer/components/excel/ColumnFilterDropdown.tsx",
+      "language": "TypeScript",
+      "lines": 275,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 275,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\shared\\transfer\\constants.ts",
+      "relativePath": "src/shared/transfer/constants.ts",
+      "language": "TypeScript",
+      "lines": 274,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 274,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\BookmarksViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/BookmarksViewModel.kt",
+      "language": "Kotlin",
+      "lines": 266,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 266,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\database\\schema.ts",
+      "relativePath": "sync-server/src/database/schema.ts",
+      "language": "TypeScript",
+      "lines": 259,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 259,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\excel\\FindReplaceDialog.tsx",
+      "relativePath": "src/renderer/components/excel/FindReplaceDialog.tsx",
+      "language": "TypeScript",
+      "lines": 257,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 257,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\transfer\\DeviceListView.tsx",
+      "relativePath": "src/renderer/components/transfer/DeviceListView.tsx",
+      "language": "TypeScript",
+      "lines": 257,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 257,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\notes\\VersionHistory.ts",
+      "relativePath": "src/core/notes/VersionHistory.ts",
+      "language": "TypeScript",
+      "lines": 255,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 255,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\excel\\SortFilterDialog.tsx",
+      "relativePath": "src/renderer/components/excel/SortFilterDialog.tsx",
+      "language": "TypeScript",
+      "lines": 253,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 253,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\TemplateSelector.tsx",
+      "relativePath": "src/renderer/components/TemplateSelector.tsx",
+      "language": "TypeScript",
+      "lines": 252,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 252,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useNotes.ts",
+      "relativePath": "src/renderer/hooks/useNotes.ts",
+      "language": "TypeScript",
+      "lines": 243,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 243,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\transfer\\TransferConstants.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/transfer/TransferConstants.kt",
+      "language": "Kotlin",
+      "lines": 237,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 237,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\user.ts",
+      "relativePath": "sync-server/src/routes/user.ts",
+      "language": "TypeScript",
+      "lines": 236,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 236,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\GeneratorConfig.tsx",
+      "relativePath": "src/renderer/components/GeneratorConfig.tsx",
+      "language": "TypeScript",
+      "lines": 232,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 232,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\sync\\SyncScheduler.ts",
+      "relativePath": "src/core/sync/SyncScheduler.ts",
+      "language": "TypeScript",
+      "lines": 228,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 228,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\TodosViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/TodosViewModel.kt",
+      "language": "Kotlin",
+      "lines": 225,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 225,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\NoteList.tsx",
+      "relativePath": "src/renderer/components/NoteList.tsx",
+      "language": "TypeScript",
+      "lines": 225,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 225,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\crypto\\CryptoEngine.ts",
+      "relativePath": "src/core/crypto/CryptoEngine.ts",
+      "language": "TypeScript",
+      "lines": 223,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 223,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useBookmarks.ts",
+      "relativePath": "src/renderer/hooks/useBookmarks.ts",
+      "language": "TypeScript",
+      "lines": 215,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 215,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\GeneratorView.tsx",
+      "relativePath": "src/renderer/components/GeneratorView.tsx",
+      "language": "TypeScript",
+      "lines": 214,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 214,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\viewmodel\\LockScreenViewModel.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/viewmodel/LockScreenViewModel.kt",
+      "language": "Kotlin",
+      "lines": 212,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 212,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\components\\SpreadsheetView.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/components/SpreadsheetView.kt",
+      "language": "Kotlin",
+      "lines": 205,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 205,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\components\\SyncStatusIndicator.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/components/SyncStatusIndicator.kt",
+      "language": "Kotlin",
+      "lines": 202,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 202,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\ImportModal.tsx",
+      "relativePath": "src/renderer/components/ImportModal.tsx",
+      "language": "TypeScript",
+      "lines": 201,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 201,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\sync.ts",
+      "relativePath": "sync-server/src/routes/sync.ts",
+      "language": "TypeScript",
+      "lines": 201,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 201,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useTodos.ts",
+      "relativePath": "src/renderer/hooks/useTodos.ts",
+      "language": "TypeScript",
+      "lines": 197,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 197,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\WelcomeGuide.tsx",
+      "relativePath": "src/renderer/components/WelcomeGuide.tsx",
+      "language": "TypeScript",
+      "lines": 196,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 196,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\excel\\SheetTabs.tsx",
+      "relativePath": "src/renderer/components/excel/SheetTabs.tsx",
+      "language": "TypeScript",
+      "lines": 189,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 189,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\items.ts",
+      "relativePath": "sync-server/src/routes/items.ts",
+      "language": "TypeScript",
+      "lines": 188,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 188,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\search\\SearchEngine.ts",
+      "relativePath": "src/core/search/SearchEngine.ts",
+      "language": "TypeScript",
+      "lines": 187,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 187,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\components\\GestureUtils.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/components/GestureUtils.kt",
+      "language": "Kotlin",
+      "lines": 184,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 184,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\settings\\DataSettingsScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/settings/DataSettingsScreen.kt",
+      "language": "Kotlin",
+      "lines": 177,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 177,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\remote\\WebDAVAdapter.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/remote/WebDAVAdapter.kt",
+      "language": "Kotlin",
+      "lines": 175,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 175,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\settings\\FeaturesSettingsScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/settings/FeaturesSettingsScreen.kt",
+      "language": "Kotlin",
+      "lines": 174,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 174,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\config.ts",
+      "relativePath": "sync-server/src/config.ts",
+      "language": "TypeScript",
+      "lines": 174,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 174,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\notes\\NoteLinkParser.ts",
+      "relativePath": "src/core/notes/NoteLinkParser.ts",
+      "language": "TypeScript",
+      "lines": 163,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 163,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\TOTPGenerator.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/TOTPGenerator.kt",
+      "language": "Kotlin",
+      "lines": 161,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 161,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\settings\\AboutScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/settings/AboutScreen.kt",
+      "language": "Kotlin",
+      "lines": 159,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 159,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useImageHistory.ts",
+      "relativePath": "src/renderer/hooks/useImageHistory.ts",
+      "language": "TypeScript",
+      "lines": 158,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 158,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useImageKeyboard.ts",
+      "relativePath": "src/renderer/hooks/useImageKeyboard.ts",
+      "language": "TypeScript",
+      "lines": 157,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 157,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useImageSettings.ts",
+      "relativePath": "src/renderer/hooks/useImageSettings.ts",
+      "language": "TypeScript",
+      "lines": 157,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 157,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useRealTimePreview.ts",
+      "relativePath": "src/renderer/hooks/useRealTimePreview.ts",
+      "language": "TypeScript",
+      "lines": 153,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 153,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\SecurityUtils.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/SecurityUtils.kt",
+      "language": "Kotlin",
+      "lines": 151,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 151,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\settings\\SettingsScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/settings/SettingsScreen.kt",
+      "language": "Kotlin",
+      "lines": 147,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 147,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\theme\\Theme.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/theme/Theme.kt",
+      "language": "Kotlin",
+      "lines": 145,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 145,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useGenerator.ts",
+      "relativePath": "src/renderer/hooks/useGenerator.ts",
+      "language": "TypeScript",
+      "lines": 143,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 143,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\CryptoEngine.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/CryptoEngine.kt",
+      "language": "Kotlin",
+      "lines": 142,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 142,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\middleware\\auth.ts",
+      "relativePath": "sync-server/src/middleware/auth.ts",
+      "language": "TypeScript",
+      "lines": 140,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 140,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\local\\dao\\ItemDao.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/local/dao/ItemDao.kt",
+      "language": "Kotlin",
+      "lines": 137,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 137,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\excel\\CellContextMenu.tsx",
+      "relativePath": "src/renderer/components/excel/CellContextMenu.tsx",
+      "language": "TypeScript",
+      "lines": 137,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 137,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\repository\\ItemRepositoryImpl.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/repository/ItemRepositoryImpl.kt",
+      "language": "Kotlin",
+      "lines": 135,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 135,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\LockScreen.tsx",
+      "relativePath": "src/renderer/components/LockScreen.tsx",
+      "language": "TypeScript",
+      "lines": 135,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 135,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\pdf\\utils.ts",
+      "relativePath": "src/renderer/components/pdf/utils.ts",
+      "language": "TypeScript",
+      "lines": 132,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 132,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\settings\\ThemeSettingsScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/settings/ThemeSettingsScreen.kt",
+      "language": "Kotlin",
+      "lines": 131,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 131,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useDiagrams.ts",
+      "relativePath": "src/renderer/hooks/useDiagrams.ts",
+      "language": "TypeScript",
+      "lines": 131,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 131,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\utils\\imageUtils.ts",
+      "relativePath": "src/renderer/utils/imageUtils.ts",
+      "language": "TypeScript",
+      "lines": 130,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 130,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\presentation\\screens\\excel\\ExcelDetailScreen.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/presentation/screens/excel/ExcelDetailScreen.kt",
+      "language": "Kotlin",
+      "lines": 127,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 127,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\VaultLockScreen.tsx",
+      "relativePath": "src/renderer/components/VaultLockScreen.tsx",
+      "language": "TypeScript",
+      "lines": 124,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 124,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useFolders.ts",
+      "relativePath": "src/renderer/hooks/useFolders.ts",
+      "language": "TypeScript",
+      "lines": 122,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 122,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\utils\\crypto.ts",
+      "relativePath": "sync-server/src/utils/crypto.ts",
+      "language": "TypeScript",
+      "lines": 122,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 122,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\security\\SecureSyncStorage.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/security/SecureSyncStorage.kt",
+      "language": "Kotlin",
+      "lines": 115,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 115,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\repository\\SyncRepositoryImpl.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/repository/SyncRepositoryImpl.kt",
+      "language": "Kotlin",
+      "lines": 110,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 110,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\resources.ts",
+      "relativePath": "sync-server/src/routes/resources.ts",
+      "language": "TypeScript",
+      "lines": 109,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 109,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\components\\excel\\FormulaBar.tsx",
+      "relativePath": "src/renderer/components/excel/FormulaBar.tsx",
+      "language": "TypeScript",
+      "lines": 107,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 107,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\sync\\StorageAdapter.ts",
+      "relativePath": "src/core/sync/StorageAdapter.ts",
+      "language": "TypeScript",
+      "lines": 104,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 104,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\database\\Database.ts",
+      "relativePath": "src/core/database/Database.ts",
+      "language": "TypeScript",
+      "lines": 101,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 101,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useTags.ts",
+      "relativePath": "src/renderer/hooks/useTags.ts",
+      "language": "TypeScript",
+      "lines": 99,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 99,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\payload\\VaultPayload.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/payload/VaultPayload.kt",
+      "language": "Kotlin",
+      "lines": 98,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 98,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\main\\services\\SyncConfigStorage.ts",
+      "relativePath": "src/main/services/SyncConfigStorage.ts",
+      "language": "TypeScript",
+      "lines": 96,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 96,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\database\\LocalPayloadCrypto.ts",
+      "relativePath": "src/core/database/LocalPayloadCrypto.ts",
+      "language": "TypeScript",
+      "lines": 95,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 95,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\SyncConfig.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/SyncConfig.kt",
+      "language": "Kotlin",
+      "lines": 94,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 94,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\repository\\ItemRepository.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/repository/ItemRepository.kt",
+      "language": "Kotlin",
+      "lines": 94,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 94,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\payload\\ExcelPayload.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/payload/ExcelPayload.kt",
+      "language": "Kotlin",
+      "lines": 84,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 84,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\services\\CleanupScheduler.ts",
+      "relativePath": "sync-server/src/services/CleanupScheduler.ts",
+      "language": "TypeScript",
+      "lines": 76,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 76,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\payload\\AIPayload.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/payload/AIPayload.kt",
+      "language": "Kotlin",
+      "lines": 71,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 71,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\changes.ts",
+      "relativePath": "sync-server/src/routes/changes.ts",
+      "language": "TypeScript",
+      "lines": 70,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 70,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\hooks\\useFeatureSettings.ts",
+      "relativePath": "src/renderer/hooks/useFeatureSettings.ts",
+      "language": "TypeScript",
+      "lines": 65,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 65,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\middleware\\logger.ts",
+      "relativePath": "sync-server/src/middleware/logger.ts",
+      "language": "TypeScript",
+      "lines": 65,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 65,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\local\\entity\\ItemEntity.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/local/entity/ItemEntity.kt",
+      "language": "Kotlin",
+      "lines": 63,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 63,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\di\\RepositoryModule.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/di/RepositoryModule.kt",
+      "language": "Kotlin",
+      "lines": 62,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 62,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\meta.ts",
+      "relativePath": "sync-server/src/routes/meta.ts",
+      "language": "TypeScript",
+      "lines": 59,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 59,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\scripts\\createAdmin.ts",
+      "relativePath": "sync-server/src/scripts/createAdmin.ts",
+      "language": "TypeScript",
+      "lines": 59,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 59,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\di\\SecurityModule.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/di/SecurityModule.kt",
+      "language": "Kotlin",
+      "lines": 58,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 58,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\local\\dao\\ResourceCacheDao.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/local/dao/ResourceCacheDao.kt",
+      "language": "Kotlin",
+      "lines": 52,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 52,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\core\\database\\schema.ts",
+      "relativePath": "src/core/database/schema.ts",
+      "language": "TypeScript",
+      "lines": 51,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 51,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\di\\DatabaseModule.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/di/DatabaseModule.kt",
+      "language": "Kotlin",
+      "lines": 50,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 50,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\payload\\TodoPayload.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/payload/TodoPayload.kt",
+      "language": "Kotlin",
+      "lines": 40,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 40,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\payload\\NotePayload.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/payload/NotePayload.kt",
+      "language": "Kotlin",
+      "lines": 39,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 39,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\middleware\\errorHandler.ts",
+      "relativePath": "sync-server/src/middleware/errorHandler.ts",
+      "language": "TypeScript",
+      "lines": 39,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 39,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\ItemType.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/ItemType.kt",
+      "language": "Kotlin",
+      "lines": 35,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 35,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\payload\\DiagramPayload.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/payload/DiagramPayload.kt",
+      "language": "Kotlin",
+      "lines": 32,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 32,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\status.ts",
+      "relativePath": "sync-server/src/routes/status.ts",
+      "language": "TypeScript",
+      "lines": 29,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 29,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\data\\local\\entity\\ResourceCacheEntity.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/data/local/entity/ResourceCacheEntity.kt",
+      "language": "Kotlin",
+      "lines": 28,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 28,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\payload\\BookmarkPayload.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/payload/BookmarkPayload.kt",
+      "language": "Kotlin",
+      "lines": 27,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 27,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\repository\\SyncRepository.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/repository/SyncRepository.kt",
+      "language": "Kotlin",
+      "lines": 27,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 27,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\health.ts",
+      "relativePath": "sync-server/src/routes/health.ts",
+      "language": "TypeScript",
+      "lines": 27,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 27,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\androidTest\\java\\com\\example\\myapplication\\ExampleInstrumentedTest.kt",
+      "relativePath": "android/app/src/androidTest/java/com/example/myapplication/ExampleInstrumentedTest.kt",
+      "language": "Kotlin",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\di\\NetworkModule.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/di/NetworkModule.kt",
+      "language": "Kotlin",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\app\\src\\main\\java\\com\\mucheng\\notes\\domain\\model\\payload\\ResourcePayload.kt",
+      "relativePath": "android/app/src/main/java/com/mucheng/notes/domain/model/payload/ResourcePayload.kt",
+      "language": "Kotlin",
+      "lines": 20,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 20,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\middleware\\cors.ts",
+      "relativePath": "sync-server/src/middleware/cors.ts",
+      "language": "TypeScript",
+      "lines": 10,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 10,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\test-ai-layout.html",
+      "relativePath": "test-ai-layout.html",
+      "language": "HTML",
+      "lines": 281,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 281,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\webpack.main.config.js",
+      "relativePath": "webpack.main.config.js",
+      "language": "JavaScript",
+      "lines": 71,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 71,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\sync-server\\src\\routes\\data.ts",
+      "relativePath": "sync-server/src/routes/data.ts",
+      "language": "TypeScript",
+      "lines": 1,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\src\\renderer\\styles\\global.css",
+      "relativePath": "src/renderer/styles/global.css",
+      "language": "Style",
+      "lines": 1554,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 1554,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\browser-extension\\lib\\turndown.js",
+      "relativePath": "browser-extension/lib/turndown.js",
+      "language": "JavaScript",
+      "lines": 977,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 977,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\turndown.js",
+      "relativePath": "turndown.js",
+      "language": "JavaScript",
+      "lines": 977,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 977,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\browser-extension\\content.js",
+      "relativePath": "browser-extension/content.js",
+      "language": "JavaScript",
+      "lines": 911,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 911,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\browser-extension\\popup.js",
+      "relativePath": "browser-extension/popup.js",
+      "language": "JavaScript",
+      "lines": 520,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 520,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\browser-extension\\lib\\Readability.js",
+      "relativePath": "browser-extension/lib/Readability.js",
+      "language": "JavaScript",
+      "lines": 382,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 382,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\browser-extension\\popup.html",
+      "relativePath": "browser-extension/popup.html",
+      "language": "HTML",
+      "lines": 367,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 367,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\scripts\\test-sync-mechanism.js",
+      "relativePath": "scripts/test-sync-mechanism.js",
+      "language": "JavaScript",
+      "lines": 273,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 273,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\scripts\\diagnose-sync-error.js",
+      "relativePath": "scripts/diagnose-sync-error.js",
+      "language": "JavaScript",
+      "lines": 257,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 257,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\scripts\\download-ghostscript.js",
+      "relativePath": "scripts/download-ghostscript.js",
+      "language": "JavaScript",
+      "lines": 230,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 230,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\lprsetup.sh",
+      "relativePath": "gs-portable/lib/lprsetup.sh",
+      "language": "Script",
+      "lines": 224,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 224,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\lprsetup.sh",
+      "relativePath": "release/win-unpacked/resources/gs/lib/lprsetup.sh",
+      "language": "Script",
+      "lines": 224,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 224,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\browser-extension\\lib\\turndown-plugin-gfm.js",
+      "relativePath": "browser-extension/lib/turndown-plugin-gfm.js",
+      "language": "JavaScript",
+      "lines": 181,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 181,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\webpack.renderer.config.js",
+      "relativePath": "webpack.renderer.config.js",
+      "language": "JavaScript",
+      "lines": 170,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 170,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\unix-lpr.sh",
+      "relativePath": "gs-portable/lib/unix-lpr.sh",
+      "language": "Script",
+      "lines": 166,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 166,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\unix-lpr.sh",
+      "relativePath": "release/win-unpacked/resources/gs/lib/unix-lpr.sh",
+      "language": "Script",
+      "lines": 166,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 166,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\browser-extension\\background.js",
+      "relativePath": "browser-extension/background.js",
+      "language": "JavaScript",
+      "lines": 102,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 102,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\gradlew.bat",
+      "relativePath": "android/gradlew.bat",
+      "language": "Script",
+      "lines": 93,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 93,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\test-android-ai-input.bat",
+      "relativePath": "test-android-ai-input.bat",
+      "language": "Script",
+      "lines": 87,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 87,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\ps2pdfxx.bat",
+      "relativePath": "gs-portable/lib/ps2pdfxx.bat",
+      "language": "Script",
+      "lines": 65,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 65,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\ps2pdfxx.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/ps2pdfxx.bat",
+      "language": "Script",
+      "lines": 65,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 65,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\.eslintrc.js",
+      "relativePath": ".eslintrc.js",
+      "language": "JavaScript",
+      "lines": 33,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 33,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\ps2pdf.bat",
+      "relativePath": "gs-portable/lib/ps2pdf.bat",
+      "language": "Script",
+      "lines": 27,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 27,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\ps2pdf.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/ps2pdf.bat",
+      "language": "Script",
+      "lines": 27,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 27,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\eps2eps.bat",
+      "relativePath": "gs-portable/lib/eps2eps.bat",
+      "language": "Script",
+      "lines": 26,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 26,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\eps2eps.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/eps2eps.bat",
+      "language": "Script",
+      "lines": 26,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 26,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\ps2ps.bat",
+      "relativePath": "gs-portable/lib/ps2ps.bat",
+      "language": "Script",
+      "lines": 25,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 25,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\ps2ps2.bat",
+      "relativePath": "gs-portable/lib/ps2ps2.bat",
+      "language": "Script",
+      "lines": 25,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 25,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\ps2ps.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/ps2ps.bat",
+      "language": "Script",
+      "lines": 25,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 25,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\ps2ps2.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/ps2ps2.bat",
+      "language": "Script",
+      "lines": 25,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 25,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\pdf2ps.bat",
+      "relativePath": "gs-portable/lib/pdf2ps.bat",
+      "language": "Script",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\ps2pdf12.bat",
+      "relativePath": "gs-portable/lib/ps2pdf12.bat",
+      "language": "Script",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\ps2pdf13.bat",
+      "relativePath": "gs-portable/lib/ps2pdf13.bat",
+      "language": "Script",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\ps2pdf14.bat",
+      "relativePath": "gs-portable/lib/ps2pdf14.bat",
+      "language": "Script",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\pdf2ps.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/pdf2ps.bat",
+      "language": "Script",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\ps2pdf12.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/ps2pdf12.bat",
+      "language": "Script",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\ps2pdf13.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/ps2pdf13.bat",
+      "language": "Script",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\ps2pdf14.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/ps2pdf14.bat",
+      "language": "Script",
+      "lines": 24,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 24,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\jest.config.js",
+      "relativePath": "jest.config.js",
+      "language": "JavaScript",
+      "lines": 22,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 22,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\ps2epsi.bat",
+      "relativePath": "gs-portable/lib/ps2epsi.bat",
+      "language": "Script",
+      "lines": 20,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 20,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\ps2epsi.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/ps2epsi.bat",
+      "language": "Script",
+      "lines": 20,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 20,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\pdf2dsc.bat",
+      "relativePath": "gs-portable/lib/pdf2dsc.bat",
+      "language": "Script",
+      "lines": 18,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 18,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\pdf2dsc.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/pdf2dsc.bat",
+      "language": "Script",
+      "lines": 18,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 18,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\pf2afm.bat",
+      "relativePath": "gs-portable/lib/pf2afm.bat",
+      "language": "Script",
+      "lines": 17,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 17,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\pf2afm.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/pf2afm.bat",
+      "language": "Script",
+      "lines": 17,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 17,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\pfbtopfa.bat",
+      "relativePath": "gs-portable/lib/pfbtopfa.bat",
+      "language": "Script",
+      "lines": 16,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 16,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\pfbtopfa.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/pfbtopfa.bat",
+      "language": "Script",
+      "lines": 16,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 16,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\android\\set-java-env.ps1",
+      "relativePath": "android/set-java-env.ps1",
+      "language": "Script",
+      "lines": 15,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 15,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gssetgs.bat",
+      "relativePath": "gs-portable/lib/gssetgs.bat",
+      "language": "Script",
+      "lines": 15,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 15,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gssetgs32.bat",
+      "relativePath": "gs-portable/lib/gssetgs32.bat",
+      "language": "Script",
+      "lines": 15,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 15,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gssetgs64.bat",
+      "relativePath": "gs-portable/lib/gssetgs64.bat",
+      "language": "Script",
+      "lines": 15,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 15,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\ps2ascii.bat",
+      "relativePath": "gs-portable/lib/ps2ascii.bat",
+      "language": "Script",
+      "lines": 15,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 15,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gssetgs.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gssetgs.bat",
+      "language": "Script",
+      "lines": 15,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 15,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gssetgs32.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gssetgs32.bat",
+      "language": "Script",
+      "lines": 15,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 15,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gssetgs64.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gssetgs64.bat",
+      "language": "Script",
+      "lines": 15,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 15,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\ps2ascii.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/ps2ascii.bat",
+      "language": "Script",
+      "lines": 15,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 15,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gsbj.bat",
+      "relativePath": "gs-portable/lib/gsbj.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gsdj.bat",
+      "relativePath": "gs-portable/lib/gsdj.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gsdj500.bat",
+      "relativePath": "gs-portable/lib/gsdj500.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gslj.bat",
+      "relativePath": "gs-portable/lib/gslj.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gslp.bat",
+      "relativePath": "gs-portable/lib/gslp.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gsnd.bat",
+      "relativePath": "gs-portable/lib/gsnd.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gsndt.bat",
+      "relativePath": "gs-portable/lib/gsndt.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gst.bat",
+      "relativePath": "gs-portable/lib/gst.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\gstt.bat",
+      "relativePath": "gs-portable/lib/gstt.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\lpgs.bat",
+      "relativePath": "gs-portable/lib/lpgs.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\lpr2.bat",
+      "relativePath": "gs-portable/lib/lpr2.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gsbj.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gsbj.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gsdj.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gsdj.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gsdj500.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gsdj500.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gslj.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gslj.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gslp.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gslp.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gsnd.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gsnd.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gsndt.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gsndt.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gst.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gst.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\gstt.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/gstt.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\lpgs.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/lpgs.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\lpr2.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/lpr2.bat",
+      "language": "Script",
+      "lines": 5,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 5,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\wmakebat.bat",
+      "relativePath": "gs-portable/lib/wmakebat.bat",
+      "language": "Script",
+      "lines": 4,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 4,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\wmakebat.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/wmakebat.bat",
+      "language": "Script",
+      "lines": 4,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 4,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\lp386.bat",
+      "relativePath": "gs-portable/lib/lp386.bat",
+      "language": "Script",
+      "lines": 2,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 2,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\gs-portable\\lib\\lp386r2.bat",
+      "relativePath": "gs-portable/lib/lp386r2.bat",
+      "language": "Script",
+      "lines": 2,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 2,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\lp386.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/lp386.bat",
+      "language": "Script",
+      "lines": 2,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 2,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    },
+    {
+      "path": "D:\\website\\Nextnotebook\\release\\win-unpacked\\resources\\gs\\lib\\lp386r2.bat",
+      "relativePath": "release/win-unpacked/resources/gs/lib/lp386r2.bat",
+      "language": "Script",
+      "lines": 2,
+      "selected": false,
+      "startLine": 1,
+      "endLine": 2,
+      "reason": "未选择；如当前材料不足 60 页，可勾选该文件补充。"
+    }
+  ]
+}

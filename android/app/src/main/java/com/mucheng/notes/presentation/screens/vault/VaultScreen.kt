@@ -50,6 +50,11 @@ import java.util.UUID
 
 private val vaultSearchWhitespaceRegex = Regex("\\s+")
 
+private data class TotpDisplayItem(
+    val totp: VaultTotp,
+    val code: TOTPCode
+)
+
 private fun MutableList<String>.addVaultSearchValue(value: String?) {
     if (!value.isNullOrBlank()) {
         add(value.trim().lowercase())
@@ -95,6 +100,32 @@ private fun VaultEntryItem.matchesVaultSearch(query: String, folderName: String?
     }
 
     return terms.all { term -> fields.any { field -> field.contains(term) } }
+}
+
+private fun VaultTotp.displayName(): String {
+    return when {
+        name.isNotBlank() && account.isNotBlank() -> "$name - $account"
+        name.isNotBlank() -> name
+        account.isNotBlank() -> account
+        else -> "TOTP 验证码"
+    }
+}
+
+@Composable
+private fun rememberTotpDisplayItems(
+    totps: List<VaultTotp>,
+    viewModel: VaultViewModel
+): List<TotpDisplayItem> {
+    return totps.mapNotNull { totp ->
+        val secret = totp.secret.takeIf { it.isNotBlank() }
+        val totpCode by if (secret != null) {
+            viewModel.observeTotpCode(secret).collectAsState(initial = null)
+        } else {
+            remember { mutableStateOf<TOTPCode?>(null) }
+        }
+
+        totpCode?.let { code -> TotpDisplayItem(totp = totp, code = code) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -255,13 +286,7 @@ fun VaultScreen(
                     contentPadding = PaddingValues(bottom = bottomPadding.calculateBottomPadding()),
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     items(filteredEntries) { entry ->
-                        // 只有当 TOTP 密钥非空时才观察
-                        val totpSecret = entry.totpSecrets.firstOrNull()?.secret?.takeIf { it.isNotBlank() }
-                        val totpCode by if (totpSecret != null) {
-                            viewModel.observeTotpCode(totpSecret).collectAsState(initial = null)
-                        } else {
-                            remember { mutableStateOf<TOTPCode?>(null) }
-                        }
+                        val totpItems = rememberTotpDisplayItems(entry.totpSecrets, viewModel)
                         
                         VaultEntryCard(
                             entry = entry,
@@ -271,8 +296,8 @@ fun VaultScreen(
                             },
                             onCopyUsername = { viewModel.copyToClipboard(entry.username, "用户名", false) },
                             onCopyPassword = { viewModel.copyToClipboard(entry.password, "密码") },
-                            totpCode = totpCode,
-                            onCopyTotp = totpCode?.let { code -> { viewModel.copyToClipboard(code.code, "验证码", false) } },
+                            totpItems = totpItems,
+                            onCopyTotp = { item -> viewModel.copyToClipboard(item.code.code, item.totp.displayName(), false) },
                             onEdit = {
                                 selectedEntry = entry
                                 showEditEntryDialog = true
@@ -375,16 +400,11 @@ fun VaultScreen(
     // 预览条目对话框
     if (showPreviewDialog && selectedEntry != null) {
         val entry = selectedEntry!!
-        val totpSecret = entry.totpSecrets.firstOrNull()?.secret?.takeIf { it.isNotBlank() }
-        val totpCode by if (totpSecret != null) {
-            viewModel.observeTotpCode(totpSecret).collectAsState(initial = null)
-        } else {
-            remember { mutableStateOf<TOTPCode?>(null) }
-        }
+        val totpItems = rememberTotpDisplayItems(entry.totpSecrets, viewModel)
         
         VaultEntryPreviewDialog(
             entry = entry,
-            totpCode = totpCode,
+            totpItems = totpItems,
             onDismiss = { 
                 showPreviewDialog = false
                 selectedEntry = null
@@ -395,7 +415,7 @@ fun VaultScreen(
             },
             onCopyUsername = { viewModel.copyToClipboard(entry.username, "用户名", false) },
             onCopyPassword = { viewModel.copyToClipboard(entry.password, "密码") },
-            onCopyTotp = totpCode?.let { code -> { viewModel.copyToClipboard(code.code, "验证码", false) } }
+            onCopyTotp = { item -> viewModel.copyToClipboard(item.code.code, item.totp.displayName(), false) }
         )
     }
     
@@ -475,12 +495,12 @@ fun VaultScreen(
 @Composable
 private fun VaultEntryPreviewDialog(
     entry: VaultEntryItem,
-    totpCode: TOTPCode?,
+    totpItems: List<TotpDisplayItem>,
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
     onCopyUsername: () -> Unit,
     onCopyPassword: () -> Unit,
-    onCopyTotp: (() -> Unit)?
+    onCopyTotp: (TotpDisplayItem) -> Unit
 ) {
     var showPassword by remember { mutableStateOf(false) }
     
@@ -546,10 +566,18 @@ private fun VaultEntryPreviewDialog(
                         }
                         
                         // TOTP
-                        if (totpCode != null && onCopyTotp != null) {
+                        if (totpItems.isNotEmpty()) {
                             HorizontalDivider()
                             Text("TOTP 验证码", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
-                            TOTPDisplay(totpCode = totpCode, onCopy = onCopyTotp)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                totpItems.forEach { item ->
+                                    TOTPDisplay(
+                                        label = item.totp.displayName(),
+                                        totpCode = item.code,
+                                        onCopy = { onCopyTotp(item) }
+                                    )
+                                }
+                            }
                         }
                     }
                     
@@ -1059,8 +1087,8 @@ private fun VaultEntryCard(
     onClick: () -> Unit,
     onCopyUsername: () -> Unit, 
     onCopyPassword: () -> Unit,
-    totpCode: TOTPCode? = null, 
-    onCopyTotp: (() -> Unit)? = null,
+    totpItems: List<TotpDisplayItem> = emptyList(),
+    onCopyTotp: (TotpDisplayItem) -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleFavorite: () -> Unit
@@ -1112,9 +1140,12 @@ private fun VaultEntryCard(
                 }
                 
                 // 右侧：TOTP 显示（如果有）
-                if (totpCode != null && onCopyTotp != null) {
+                if (totpItems.isNotEmpty()) {
                     Spacer(Modifier.width(8.dp))
-                    CompactTOTPDisplay(totpCode = totpCode, onCopy = onCopyTotp)
+                    CompactTOTPListDisplay(
+                        totpItems = totpItems,
+                        onCopy = onCopyTotp
+                    )
                 }
                 
                 // 最右侧：复制按钮
@@ -1160,49 +1191,78 @@ private fun VaultEntryCard(
  * 紧凑型 TOTP 显示组件（用于列表项右侧）
  */
 @Composable
-private fun CompactTOTPDisplay(totpCode: TOTPCode, onCopy: () -> Unit) {
+private fun CompactTOTPListDisplay(
+    totpItems: List<TotpDisplayItem>,
+    onCopy: (TotpDisplayItem) -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.End,
+        modifier = Modifier.widthIn(max = 132.dp)
+    ) {
+        totpItems.forEach { item ->
+            CompactTOTPDisplay(
+                label = item.totp.displayName(),
+                totpCode = item.code,
+                onCopy = { onCopy(item) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactTOTPDisplay(label: String, totpCode: TOTPCode, onCopy: () -> Unit) {
     val color = if (totpCode.remainingSeconds <= 5) MaterialTheme.colorScheme.error 
                 else MaterialTheme.colorScheme.primary
     
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        horizontalAlignment = Alignment.End,
         modifier = Modifier
             .clickable(onClick = onCopy)
             .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
-        // 倒计时圆环
-        Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-            val progress = totpCode.remainingSeconds / 30f
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawArc(
-                    color = color.copy(alpha = 0.2f),
-                    startAngle = -90f, sweepAngle = 360f, useCenter = false,
-                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
-                    size = Size(size.width, size.height)
-                )
-                drawArc(
-                    color = color,
-                    startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
-                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
-                    size = Size(size.width, size.height)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 倒计时圆环
+            Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                val progress = totpCode.remainingSeconds / 30f
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawArc(
+                        color = color.copy(alpha = 0.2f),
+                        startAngle = -90f, sweepAngle = 360f, useCenter = false,
+                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                        size = Size(size.width, size.height)
+                    )
+                    drawArc(
+                        color = color,
+                        startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
+                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                        size = Size(size.width, size.height)
+                    )
+                }
+                Text(
+                    text = "${totpCode.remainingSeconds}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                    color = color
                 )
             }
+            
+            Spacer(Modifier.width(4.dp))
+            
+            // 验证码
             Text(
-                text = "${totpCode.remainingSeconds}",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                text = formatTOTPCode(totpCode.code),
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
                 color = color
             )
         }
-        
-        Spacer(Modifier.width(4.dp))
-        
-        // 验证码
-        Text(
-            text = formatTOTPCode(totpCode.code),
-            style = MaterialTheme.typography.labelMedium,
-            fontFamily = FontFamily.Monospace,
-            color = color
-        )
     }
 }
 
@@ -1210,53 +1270,65 @@ private fun CompactTOTPDisplay(totpCode: TOTPCode, onCopy: () -> Unit) {
  * TOTP 验证码显示组件 - 紧凑版
  */
 @Composable
-private fun TOTPDisplay(totpCode: TOTPCode, onCopy: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+private fun TOTPDisplay(label: String, totpCode: TOTPCode, onCopy: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth()
     ) {
-        // 紧凑倒计时圆环
-        Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
-            val progress = totpCode.remainingSeconds / 30f
-            val color = if (totpCode.remainingSeconds <= 5) MaterialTheme.colorScheme.error 
-                        else MaterialTheme.colorScheme.primary
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.height(4.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 紧凑倒计时圆环
+            Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                val progress = totpCode.remainingSeconds / 30f
+                val color = if (totpCode.remainingSeconds <= 5) MaterialTheme.colorScheme.error 
+                            else MaterialTheme.colorScheme.primary
             
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawArc(
-                    color = color.copy(alpha = 0.2f),
-                    startAngle = -90f, sweepAngle = 360f, useCenter = false,
-                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
-                    size = Size(size.width, size.height)
-                )
-                drawArc(
-                    color = color,
-                    startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
-                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
-                    size = Size(size.width, size.height)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawArc(
+                        color = color.copy(alpha = 0.2f),
+                        startAngle = -90f, sweepAngle = 360f, useCenter = false,
+                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
+                        size = Size(size.width, size.height)
+                    )
+                    drawArc(
+                        color = color,
+                        startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
+                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
+                        size = Size(size.width, size.height)
+                    )
+                }
+                Text(
+                    text = "${totpCode.remainingSeconds}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = color
                 )
             }
+            
+            Spacer(Modifier.width(8.dp))
+            
+            // 验证码
             Text(
-                text = "${totpCode.remainingSeconds}",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                color = color
+                text = formatTOTPCode(totpCode.code),
+                style = MaterialTheme.typography.titleMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f)
             )
-        }
-        
-        Spacer(Modifier.width(8.dp))
-        
-        // 验证码
-        Text(
-            text = formatTOTPCode(totpCode.code),
-            style = MaterialTheme.typography.titleMedium,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f)
-        )
-        
-        IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.ContentCopy, "复制验证码", 
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp))
+            
+            IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.ContentCopy, "复制验证码", 
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp))
+            }
         }
     }
 }

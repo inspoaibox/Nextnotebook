@@ -70,6 +70,24 @@ export interface SyncAPI {
   onTokenRefreshed: (callback: (data: { token: string; refreshToken: string; expiresIn: number }) => void) => void;
 }
 
+export interface DesktopElectronAPI {
+  getAppPath: () => Promise<any>;
+  getAppPaths: () => Promise<any>;
+  openExternal: (url: string) => Promise<any>;
+  openPath: (filePath: string) => Promise<any>;
+  setAutoLaunch: (enabled: boolean) => Promise<any>;
+  getAutoLaunch: () => Promise<any>;
+  saveThemeSettings: (settings: { theme: string }) => Promise<any>;
+  saveSyncConfig: (config: object) => Promise<any>;
+  loadSyncConfig: () => Promise<any>;
+  minimizeToTray: () => void;
+  quitApp: () => void;
+  onWindowCloseRequest: (callback: () => void) => void;
+  onWindowMinimized: (callback: () => void) => void;
+  triggerMenuAction: (action: string) => void;
+  onMenuAction: (callback: (action: string) => void) => void;
+}
+
 export interface PDFAPI {
   getInfo: (file: string) => Promise<any>;
   merge: (options: object) => Promise<string>;
@@ -173,10 +191,22 @@ export interface ClipperReceivedData {
   images?: ClipImage[];
 }
 
+export interface ClipperExtensionAuthStatus {
+  bound: boolean;
+  paired: boolean;
+  origin: string | null;
+  extensionId: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
+  confirmedAt: number | null;
+}
+
 export interface ClipperAPI {
   confirm: (data: ClipperConfirmData) => Promise<{ success: boolean; noteId?: string; error?: string }>;
   cancel: () => Promise<{ success: boolean }>;
   getPending: () => Promise<ClipperReceivedData | null>;
+  getExtensionAuth: () => Promise<ClipperExtensionAuthStatus>;
+  revokeExtensionAuth: () => Promise<{ success: boolean; error?: string }>;
   onNoteCreated: (callback: (data: { noteId: string }) => void) => void;
 }
 

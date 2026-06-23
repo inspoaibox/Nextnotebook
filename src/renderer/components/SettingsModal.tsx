@@ -59,7 +59,18 @@ interface SettingsModalProps {
 interface SecuritySettings {
   appLockEnabled: boolean;
   autoLockTimeout: number;
+  lockOnMinimize: boolean;
   lockPassword: string;
+}
+
+interface ClipperExtensionAuthStatus {
+  bound: boolean;
+  paired: boolean;
+  origin: string | null;
+  extensionId: string | null;
+  createdAt: number | null;
+  updatedAt: number | null;
+  confirmedAt: number | null;
 }
 
 // 快捷键配置
@@ -175,7 +186,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
         /* ignore */
       }
     }
-    return { appLockEnabled: false, autoLockTimeout: 5, lockPassword: '' };
+    return { appLockEnabled: false, autoLockTimeout: 5, lockOnMinimize: false, lockPassword: '' };
   });
   const [showPasswordInput, setShowPasswordInput] = useState(false);
   const [passwordInputMode, setPasswordInputMode] = useState<'set' | 'change' | 'remove'>('set');
@@ -192,6 +203,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   const [oldVaultPassword, setOldVaultPassword] = useState('');
   const [newVaultPassword, setNewVaultPassword] = useState('');
   const [confirmVaultPassword, setConfirmVaultPassword] = useState('');
+  const [clipperAuth, setClipperAuth] = useState<ClipperExtensionAuthStatus | null>(null);
+  const [clipperAuthLoading, setClipperAuthLoading] = useState(false);
 
   // 同步密钥状态
   const [hasSyncKey, setHasSyncKey] = useState(() => !!localStorage.getItem('mucheng-sync-key'));
@@ -218,6 +231,52 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
   const [serverPassword, setServerPassword] = useState('');
   const [serverSyncKey, setServerSyncKey] = useState('');
   const [serverAuthLoading, setServerAuthLoading] = useState(false);
+
+  const handleLockNow = () => {
+    const api = (window as any).electronAPI;
+    api?.triggerMenuAction?.('lock-app');
+  };
+
+  const formatSecurityTime = (value: number | null) => {
+    if (!value) return '未记录';
+    return new Date(value).toLocaleString();
+  };
+
+  const loadClipperAuth = async () => {
+    const api = getElectronAPI();
+    if (!api?.clipper?.getExtensionAuth) return;
+
+    setClipperAuthLoading(true);
+    try {
+      const status = await api.clipper.getExtensionAuth();
+      setClipperAuth(status);
+    } catch (error) {
+      message.error(`读取插件授权失败: ${(error as Error).message}`);
+    } finally {
+      setClipperAuthLoading(false);
+    }
+  };
+
+  const handleRevokeClipperAuth = async () => {
+    const api = getElectronAPI();
+    if (!api?.clipper?.revokeExtensionAuth) {
+      message.error('插件授权管理不可用');
+      return;
+    }
+
+    try {
+      const result = await api.clipper.revokeExtensionAuth();
+      if (result?.success) {
+        message.success('已撤销浏览器插件授权');
+        await loadClipperAuth();
+      } else {
+        message.error(result?.error || '撤销授权失败');
+      }
+    } catch (error) {
+      message.error(`撤销授权失败: ${(error as Error).message}`);
+    }
+  };
+
   const [serverLoggedIn, setServerLoggedIn] = useState(false);
   const [serverUserInfo, setServerUserInfo] = useState<{ username: string; role: string } | null>(null);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
@@ -242,6 +301,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
         }
       };
       loadPaths();
+    }
+  }, [open, activeTab]);
+
+  useEffect(() => {
+    if (open && activeTab === 'security') {
+      loadClipperAuth();
     }
   }, [open, activeTab]);
 
@@ -1511,7 +1576,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                     />
                   </div>
                 </div>
+                <div style={{ marginBottom: 24 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 8,
+                    }}
+                  >
+                    <span style={{ fontWeight: 500 }}>最小化后自动锁定</span>
+                    <Switch
+                      checked={securitySettings.lockOnMinimize}
+                      onChange={checked => {
+                        const s = { ...securitySettings, lockOnMinimize: checked };
+                        setSecuritySettings(s);
+                        localStorage.setItem('mucheng-security', JSON.stringify(s));
+                      }}
+                    />
+                  </div>
+                  <p style={{ color: '#888', fontSize: 13, margin: 0 }}>
+                    窗口最小化到任务栏或托盘时立即锁定应用
+                  </p>
+                </div>
                 <Space>
+                  <Button type="primary" size="small" onClick={handleLockNow}>
+                    立即锁定
+                  </Button>
                   <Button
                     size="small"
                     onClick={() => {
@@ -1534,6 +1625,78 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                 </Space>
               </>
             )}
+
+            <Divider style={{ margin: '16px 0' }} />
+
+            <div style={{ marginBottom: 24 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 8,
+                }}
+              >
+                <span style={{ fontWeight: 500 }}>浏览器插件授权</span>
+                <Space>
+                  <Button size="small" onClick={loadClipperAuth} loading={clipperAuthLoading}>
+                    刷新
+                  </Button>
+                  {clipperAuth?.bound && (
+                    <Popconfirm
+                      title="撤销浏览器插件授权？"
+                      description="撤销后，插件需要重新经过桌面端确认才能连接。"
+                      okText="撤销"
+                      cancelText="取消"
+                      onConfirm={handleRevokeClipperAuth}
+                    >
+                      <Button danger size="small">
+                        撤销授权
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </Space>
+              </div>
+
+              <div
+                style={{
+                  background: '#f5f5f5',
+                  borderRadius: 8,
+                  padding: 16,
+                  color: '#555',
+                  fontSize: 13,
+                }}
+              >
+                {clipperAuth?.bound ? (
+                  <>
+                    <div style={{ marginBottom: 8 }}>
+                      <Tag color={clipperAuth.paired ? 'green' : 'orange'} style={{ marginRight: 8 }}>
+                        {clipperAuth.paired ? '已授权' : '待确认'}
+                      </Tag>
+                      <Text code copyable>
+                        {clipperAuth.extensionId || clipperAuth.origin}
+                      </Text>
+                    </div>
+                    <div style={{ marginBottom: 4 }}>
+                      来源：<Text code>{clipperAuth.origin}</Text>
+                    </div>
+                    <div style={{ color: '#888' }}>
+                      确认时间：{clipperAuth.confirmedAt ? formatSecurityTime(clipperAuth.confirmedAt) : '未确认'}
+                    </div>
+                    {!clipperAuth.paired && (
+                      <div style={{ color: '#fa8c16', marginTop: 8 }}>
+                        此绑定缺少桌面端确认，插件下次连接时会弹窗确认。
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Tag style={{ marginRight: 8 }}>未授权</Tag>
+                    <span>插件首次连接时会在桌面端弹窗确认。</span>
+                  </>
+                )}
+              </div>
+            </div>
 
             <Divider style={{ margin: '16px 0' }} />
 

@@ -38,6 +38,112 @@ import MarkdownToolbar from './MarkdownToolbar';
 import { useAISettings } from '../hooks/useAI';
 import { callAIApi } from '../services/aiApi';
 
+const copyTextToClipboard = async (text: string) => {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (error) {
+      // Fall back to execCommand for packaged Electron windows where clipboard permissions can be stricter.
+    }
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    const copied = document.execCommand('copy');
+    if (!copied) {
+      throw new Error('Copy command failed');
+    }
+  } finally {
+    document.body.removeChild(textarea);
+  }
+};
+
+const getReactNodeText = (node: React.ReactNode): string => {
+  if (node === null || node === undefined || typeof node === 'boolean') {
+    return '';
+  }
+
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node.map(getReactNodeText).join('');
+  }
+
+  if (React.isValidElement(node)) {
+    return getReactNodeText((node.props as { children?: React.ReactNode }).children);
+  }
+
+  return '';
+};
+
+const MarkdownCodeBlock: React.FC<{ code: string; language?: string }> = ({ code, language }) => {
+  const handleCopy = useCallback(async () => {
+    try {
+      await copyTextToClipboard(code);
+      message.success('代码已复制');
+    } catch (error) {
+      message.error('复制代码失败');
+    }
+  }, [code]);
+
+  const languageName = language?.trim();
+
+  return (
+    <div className={`markdown-code-block ${languageName ? 'markdown-code-block-highlighted' : 'markdown-code-block-plain'}`}>
+      <Tooltip title="复制代码">
+        <Button
+          type="text"
+          size="small"
+          className="markdown-code-copy"
+          icon={<CopyOutlined />}
+          aria-label="复制代码"
+          onClick={handleCopy}
+        />
+      </Tooltip>
+      {languageName ? (
+        <SyntaxHighlighter
+          style={oneDark}
+          language={languageName}
+          PreTag="div"
+          wrapLines={false}
+          wrapLongLines={false}
+          customStyle={{
+            margin: 0,
+            padding: '40px 16px 16px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            lineHeight: '1.5',
+          }}
+          codeTagProps={{
+            style: {
+              display: 'block',
+              whiteSpace: 'pre',
+              userSelect: 'text',
+            }
+          }}
+        >
+          {code}
+        </SyntaxHighlighter>
+      ) : (
+        <pre className="markdown-code-plain">
+          <code>{code}</code>
+        </pre>
+      )}
+    </div>
+  );
+};
+
 // 资源图片组件 - 处理 resource:// 协议的图片
 const ResourceImage: React.FC<{ src?: string; alt?: string; title?: string }> = ({ src, alt, title }) => {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -1268,35 +1374,28 @@ const Editor: React.FC<EditorProps> = ({
       const id = headings.find(h => h.text === text && h.level === 6)?.id || '';
       return <h6 data-heading-id={id}>{children}</h6>;
     },
-    code: ({ node, inline, className, children, ...props }: any) => {
+    pre: ({ children }: any) => {
+      const child = React.Children.toArray(children)[0] as React.ReactElement<{
+        className?: string;
+        children?: React.ReactNode;
+      }> | undefined;
+      const childClassName = child?.props?.className || '';
+      const match = /language-(\w+)/.exec(childClassName);
+      const codeText = getReactNodeText(child?.props?.children).replace(/\n$/, '');
+
+      return (
+        <MarkdownCodeBlock
+          code={codeText}
+          language={match?.[1]}
+        />
+      );
+    },
+    code: ({ className, children, ...props }: any) => {
       const match = /language-(\w+)/.exec(className || '');
-      return !inline && match ? (
-        <SyntaxHighlighter
-          style={oneDark}
-          language={match[1]}
-          PreTag="div"
-          wrapLines={false}
-          wrapLongLines={false}
-          customStyle={{
-            margin: 0,
-            padding: '16px',
-            borderRadius: '6px',
-            fontSize: '14px',
-            lineHeight: '1.5',
-          }}
-          codeTagProps={{
-            style: {
-              display: 'block',
-              whiteSpace: 'pre',
-              userSelect: 'text',
-            }
-          }}
-          {...props}
-        >
-          {String(children).replace(/\n$/, '')}
-        </SyntaxHighlighter>
-      ) : (
-        <code className={className} {...props}>
+      const codeClassName = match ? className : undefined;
+
+      return (
+        <code className={codeClassName} {...props}>
           {children}
         </code>
       );

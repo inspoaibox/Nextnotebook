@@ -1,7 +1,8 @@
 // 暮城笔记同步服务器管理界面
 const API = '/api';
-let token = localStorage.getItem('token');
+let token = sessionStorage.getItem('token');
 let user = null;
+localStorage.removeItem('token');
 
 // API 请求
 async function api(path, opt = {}) {
@@ -15,6 +16,26 @@ async function api(path, opt = {}) {
 
 // 渲染函数
 function render(html) { document.getElementById('app').innerHTML = html; }
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = String(str ?? '');
+  return div.innerHTML;
+}
+
+function escapeJsString(str) {
+  return String(str ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/</g, '\\x3C')
+    .replace(/>/g, '\\x3E');
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str);
+}
 
 // 显示消息
 function showMsg(msg, type = 'info') {
@@ -41,13 +62,20 @@ function parsePayload(str) {
 // ========== 页面模板 ==========
 
 // 登录页
-function renderLogin(isSetup = false) {
+function renderLogin(isSetup = false, setupState = {}) {
+  const setupTokenRequired = Boolean(setupState.setupTokenRequired);
+  const setupBlocked = Boolean(setupState.setupBlocked);
   render(`
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea,#764ba2);padding:20px;">
       <div style="background:white;border-radius:12px;padding:40px;width:100%;max-width:400px;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
         <h1 style="text-align:center;margin-bottom:8px;">🌙 暮城笔记</h1>
         <p style="text-align:center;color:#666;margin-bottom:24px;">${isSetup ? '首次使用，请创建管理员账号' : '同步服务器管理面板'}</p>
         <div id="error" style="display:none;background:#fee;color:#c00;padding:10px;border-radius:6px;margin-bottom:16px;font-size:14px;"></div>
+        ${setupBlocked ? `
+          <div style="background:#fff3cd;color:#856404;padding:10px;border-radius:6px;margin-bottom:16px;font-size:14px;line-height:1.5;">
+            服务器要求初始化令牌，但尚未配置 INITIAL_SETUP_TOKEN。请在服务器环境变量中配置后重启。
+          </div>
+        ` : ''}
         <form id="loginForm">
           <div style="margin-bottom:16px;">
             <label style="display:block;margin-bottom:6px;font-weight:500;">用户名</label>
@@ -63,7 +91,14 @@ function renderLogin(isSetup = false) {
             <input type="password" id="syncKey" required style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
             ${isSetup ? '<small style="color:#666;">至少16个字符，用于数据加密，请牢记</small>' : ''}
           </div>
-          <button type="submit" style="width:100%;padding:12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;border-radius:6px;font-size:16px;cursor:pointer;">
+          ${isSetup && setupTokenRequired ? `
+            <div style="margin-bottom:20px;">
+              <label style="display:block;margin-bottom:6px;font-weight:500;">初始化令牌</label>
+              <input type="password" id="setupToken" ${setupBlocked ? 'disabled' : 'required'} style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+              <small style="color:#666;">服务器 INITIAL_SETUP_TOKEN，用于防止首个管理员被抢注</small>
+            </div>
+          ` : ''}
+          <button type="submit" ${setupBlocked ? 'disabled' : ''} style="width:100%;padding:12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;border-radius:6px;font-size:16px;cursor:${setupBlocked ? 'not-allowed' : 'pointer'};opacity:${setupBlocked ? '0.6' : '1'};">
             ${isSetup ? '创建管理员' : '登录'}
           </button>
         </form>
@@ -79,16 +114,17 @@ function renderLogin(isSetup = false) {
       const username = document.getElementById('username').value;
       const password = document.getElementById('password').value;
       const syncKey = document.getElementById('syncKey').value;
+      const setupToken = document.getElementById('setupToken')?.value || '';
       
       if (isSetup) {
-        await api('/auth/register', { method: 'POST', body: JSON.stringify({ username, password, syncKey }) });
+        await api('/auth/register', { method: 'POST', body: JSON.stringify({ username, password, syncKey, setupToken }) });
         showMsg('管理员创建成功，请登录', 'success');
       }
       
       const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ username, password, syncKey }) });
       token = data.accessToken;
       user = data.user;
-      localStorage.setItem('token', token);
+      sessionStorage.setItem('token', token);
       renderApp();
     } catch (err) {
       errEl.textContent = err.message;
@@ -152,7 +188,7 @@ function renderApp() {
         <div class="header">
           <h2 id="pageTitle">仪表盘</h2>
           <div class="user-info">
-            <span>👤 ${user?.username || ''}</span>
+            <span>👤 ${escapeHtml(user?.username || '')}</span>
             <button class="btn btn-secondary" onclick="logout()">退出</button>
           </div>
         </div>
@@ -168,7 +204,15 @@ function navigate(page) {
   renderApp();
 }
 
-function logout() {
+async function logout() {
+  try {
+    if (token) {
+      await api('/auth/logout', { method: 'POST' });
+    }
+  } catch {
+    // 本地退出仍然继续，避免网络异常时卡住。
+  }
+  sessionStorage.removeItem('token');
   localStorage.removeItem('token');
   token = null;
   user = null;
@@ -205,7 +249,7 @@ async function loadPage(page) {
       case 'logs': await loadLogs(content); break;
     }
   } catch (err) {
-    content.innerHTML = `<div style="color:#dc3545;padding:20px;">加载失败: ${err.message}</div>`;
+    content.innerHTML = `<div style="color:#dc3545;padding:20px;">加载失败: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -218,12 +262,15 @@ async function loadDashboard(el) {
   
   el.innerHTML = `
     <div class="stats-grid">
-      ${allTypes.map(type => `
-        <div class="stat-card" style="cursor:pointer;" onclick="viewTypeItems('${type}')">
+      ${allTypes.map(type => {
+        const typeArg = escapeAttr(escapeJsString(type));
+        return `
+        <div class="stat-card" style="cursor:pointer;" onclick="viewTypeItems('${typeArg}')">
           <div class="stat-value">${stats.byType[type] || 0}</div>
-          <div class="stat-label">${type}</div>
+          <div class="stat-label">${escapeHtml(type)}</div>
         </div>
-      `).join('')}
+      `;
+      }).join('')}
       <div class="stat-card">
         <div class="stat-value">${stats.itemCount || 0}</div>
         <div class="stat-label">总计</div>
@@ -233,9 +280,9 @@ async function loadDashboard(el) {
       <div class="card-header">服务器信息</div>
       <div class="card-body">
         <p><strong>状态:</strong> 运行中 ✅</p>
-        <p><strong>当前用户:</strong> ${user?.username} (${user?.role})</p>
+        <p><strong>当前用户:</strong> ${escapeHtml(user?.username)} (${escapeHtml(user?.role)})</p>
         <p><strong>时间:</strong> ${new Date().toLocaleString('zh-CN')}</p>
-        <p><strong>数据类型:</strong> ${allTypes.join(', ') || '无'}</p>
+        <p><strong>数据类型:</strong> ${allTypes.map(escapeHtml).join(', ') || '无'}</p>
       </div>
     </div>
   `;
@@ -279,15 +326,16 @@ async function loadAI(el) {
             <tbody>
               ${conversations.map(item => {
                 const payload = parsePayload(item.payload);
+                const itemArg = escapeAttr(escapeJsString(item.id));
                 return `
                   <tr>
-                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${item.id.substring(0, 8)}...</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${escapeHtml(item.id.substring(0, 8))}...</td>
                     <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${escapeHtml(payload.title || '未命名对话')}</td>
                     <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${escapeHtml(payload.model || '-')}</td>
                     <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(item.updated_time)}</td>
                     <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
-                      <button class="btn btn-sm btn-secondary" onclick="viewItem('${item.id}')">查看</button>
-                      <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id}')">删除</button>
+                      <button class="btn btn-sm btn-secondary" onclick="viewItem('${itemArg}')">查看</button>
+                      <button class="btn btn-sm btn-danger" onclick="deleteItem('${itemArg}')">删除</button>
                     </td>
                   </tr>
                 `;
@@ -316,16 +364,17 @@ async function loadAI(el) {
               ${messages.slice(0, 20).map(item => {
                 const payload = parsePayload(item.payload);
                 const roleIcon = payload.role === 'user' ? '👤' : '🤖';
-                const content = (payload.content || '').substring(0, 50);
+                const content = String(payload.content || '').substring(0, 50);
+                const itemArg = escapeAttr(escapeJsString(item.id));
                 return `
                   <tr>
-                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${item.id.substring(0, 8)}...</td>
-                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${roleIcon} ${payload.role || '-'}</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${escapeHtml(item.id.substring(0, 8))}...</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${roleIcon} ${escapeHtml(payload.role || '-')}</td>
                     <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(content)}${content.length >= 50 ? '...' : ''}</td>
                     <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(item.updated_time)}</td>
                     <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
-                      <button class="btn btn-sm btn-secondary" onclick="viewItem('${item.id}')">查看</button>
-                      <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id}')">删除</button>
+                      <button class="btn btn-sm btn-secondary" onclick="viewItem('${itemArg}')">查看</button>
+                      <button class="btn btn-sm btn-danger" onclick="deleteItem('${itemArg}')">删除</button>
                     </td>
                   </tr>
                 `;
@@ -341,13 +390,13 @@ async function loadAI(el) {
 
 // 数据项列表
 async function loadItems(el, type, label) {
-  const data = await api(`/items/list?type=${type}&limit=100`);
+  const data = await api(`/items/list?type=${encodeURIComponent(type)}&limit=100`);
   const items = data.items || [];
   
   el.innerHTML = `
     <div class="card">
       <div class="card-header">
-        <span>${label}列表 (${items.length})</span>
+        <span>${escapeHtml(label)}列表 (${items.length})</span>
       </div>
       <div class="card-body" style="padding:0;">
         ${items.length === 0 ? '<p style="padding:20px;color:#666;">暂无数据</p>' : `
@@ -371,26 +420,23 @@ async function loadItems(el, type, label) {
     const tbody = document.getElementById('itemsBody');
     items.forEach(item => {
       const payload = parsePayload(item.payload);
-      const title = payload.title || payload.name || payload.url || payload.content?.substring(0, 50) || item.id.substring(0, 8);
+      const itemId = String(item.id ?? '');
+      const contentPreview = typeof payload.content === 'string' ? payload.content.substring(0, 50) : '';
+      const title = payload.title || payload.name || payload.url || contentPreview || itemId.substring(0, 8);
+      const itemArg = escapeAttr(escapeJsString(item.id));
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${item.id.substring(0, 8)}...</td>
+        <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${escapeHtml(itemId.substring(0, 8))}...</td>
         <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${escapeHtml(title)}</td>
         <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(item.updated_time)}</td>
         <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
-          <button class="btn btn-sm btn-secondary" onclick="viewItem('${item.id}')">查看</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id}')">删除</button>
+          <button class="btn btn-sm btn-secondary" onclick="viewItem('${itemArg}')">查看</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteItem('${itemArg}')">删除</button>
         </td>
       `;
       tbody.appendChild(tr);
     });
   }
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 // 查看指定类型的数据项
@@ -403,13 +449,13 @@ async function viewTypeItems(type) {
   try {
     await loadItems(content, type, type);
   } catch (err) {
-    content.innerHTML = `<div style="color:#dc3545;padding:20px;">加载失败: ${err.message}</div>`;
+    content.innerHTML = `<div style="color:#dc3545;padding:20px;">加载失败: ${escapeHtml(err.message)}</div>`;
   }
 }
 
 async function viewItem(id) {
   try {
-    const item = await api(`/items/${id}`);
+    const item = await api(`/items/${encodeURIComponent(id)}`);
     const payload = parsePayload(item.payload);
     alert(JSON.stringify(payload, null, 2));
   } catch (err) {
@@ -420,7 +466,7 @@ async function viewItem(id) {
 async function deleteItem(id) {
   if (!confirm('确定删除此项？')) return;
   try {
-    await api(`/items/${id}`, { method: 'DELETE' });
+    await api(`/items/${encodeURIComponent(id)}`, { method: 'DELETE' });
     showMsg('删除成功', 'success');
     loadPage(currentPage);
   } catch (err) {
@@ -454,9 +500,10 @@ async function loadUsers(el) {
   
   const tbody = document.getElementById('usersBody');
   data.users.forEach(u => {
+    const userIdArg = escapeAttr(escapeJsString(u.id));
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${u.username}</td>
+      <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${escapeHtml(u.username)}</td>
       <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${u.role === 'admin' ? '管理员' : '用户'}</td>
       <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
         <span style="padding:4px 8px;border-radius:4px;font-size:12px;background:${u.status === 'active' ? '#d4edda' : '#f8d7da'};color:${u.status === 'active' ? '#155724' : '#721c24'};">
@@ -467,9 +514,9 @@ async function loadUsers(el) {
       <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
         ${u.id !== user.id ? `
           ${u.status === 'active' 
-            ? `<button class="btn btn-sm btn-secondary" onclick="toggleUser('${u.id}', false)">禁用</button>`
-            : `<button class="btn btn-sm btn-success" onclick="toggleUser('${u.id}', true)">启用</button>`}
-          <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')">删除</button>
+            ? `<button class="btn btn-sm btn-secondary" onclick="toggleUser('${userIdArg}', false)">禁用</button>`
+            : `<button class="btn btn-sm btn-success" onclick="toggleUser('${userIdArg}', true)">启用</button>`}
+          <button class="btn btn-sm btn-danger" onclick="deleteUser('${userIdArg}')">删除</button>
         ` : '<span style="color:#999;">当前用户</span>'}
       </td>
     `;
@@ -479,7 +526,7 @@ async function loadUsers(el) {
 
 async function toggleUser(id, enable) {
   try {
-    await api(`/admin/users/${id}/${enable ? 'enable' : 'disable'}`, { method: 'PUT' });
+    await api(`/admin/users/${encodeURIComponent(id)}/${enable ? 'enable' : 'disable'}`, { method: 'PUT' });
     showMsg(enable ? '已启用' : '已禁用', 'success');
     loadPage('users');
   } catch (err) { showMsg(err.message, 'error'); }
@@ -488,7 +535,7 @@ async function toggleUser(id, enable) {
 async function deleteUser(id) {
   if (!confirm('确定删除此用户？')) return;
   try {
-    await api(`/admin/users/${id}`, { method: 'DELETE' });
+    await api(`/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
     showMsg('删除成功', 'success');
     loadPage('users');
   } catch (err) { showMsg(err.message, 'error'); }
@@ -561,16 +608,19 @@ async function loadSettings(el) {
               </tr>
             </thead>
             <tbody>
-              ${blockedIPs.blockedIPs.map(b => `
+              ${blockedIPs.blockedIPs.map(b => {
+                const ipArg = escapeAttr(escapeJsString(b.ip));
+                return `
                 <tr>
-                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;">${b.ip}</td>
+                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;">${escapeHtml(b.ip)}</td>
                   <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${b.count}</td>
                   <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(b.blockedUntil)}</td>
                   <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
-                    <button class="btn btn-sm btn-secondary" onclick="clearBlock('${b.ip}')">解除锁定</button>
+                    <button class="btn btn-sm btn-secondary" onclick="clearBlock('${ipArg}')">解除锁定</button>
                   </td>
                 </tr>
-              `).join('')}
+              `;
+              }).join('')}
             </tbody>
           </table>
         `}
@@ -621,7 +671,7 @@ async function loadLogs(el) {
   const data = await api('/changes?limit=200');
   
   // 统计各类型数量
-  const typeCounts = {};
+  const typeCounts = Object.create(null);
   data.changes.forEach(c => {
     typeCounts[c.type] = (typeCounts[c.type] || 0) + 1;
   });
@@ -634,7 +684,7 @@ async function loadLogs(el) {
           <select id="typeFilter" onchange="filterLogs()" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
             <option value="">全部类型</option>
             ${Object.entries(typeCounts).map(([type, count]) => 
-              `<option value="${type}">${type} (${count})</option>`
+              `<option value="${escapeAttr(type)}">${escapeHtml(type)} (${count})</option>`
             ).join('')}
           </select>
           <input type="text" id="searchLogs" placeholder="搜索ID..." onkeyup="filterLogs()" style="padding:6px;border:1px solid #ddd;border-radius:4px;width:150px;">
@@ -653,15 +703,18 @@ async function loadLogs(el) {
               </tr>
             </thead>
             <tbody id="logsBody">
-              ${data.changes.map(c => `
-                <tr data-type="${c.type}" data-id="${c.item_id}">
-                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${c.change_id}</td>
-                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;"><span style="padding:2px 6px;background:#e0e0e0;border-radius:3px;font-size:12px;">${c.type}</span></td>
-                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${c.item_id.substring(0, 8)}...</td>
+              ${data.changes.map(c => {
+                const changeItemId = String(c.item_id ?? '');
+                return `
+                <tr data-type="${escapeAttr(c.type)}" data-id="${escapeAttr(changeItemId)}">
+                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${escapeHtml(c.change_id)}</td>
+                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;"><span style="padding:2px 6px;background:#e0e0e0;border-radius:3px;font-size:12px;">${escapeHtml(c.type)}</span></td>
+                  <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${escapeHtml(changeItemId.substring(0, 8))}...</td>
                   <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(c.updated_time)}</td>
                   <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${c.deleted_time ? '🗑️ 删除' : '✏️ 更新'}</td>
                 </tr>
-              `).join('')}
+              `;
+              }).join('')}
             </tbody>
           </table>
         `}
@@ -670,7 +723,7 @@ async function loadLogs(el) {
     <div style="margin-top:16px;padding:16px;background:#f8f9fa;border-radius:6px;">
       <strong>类型统计：</strong>
       ${Object.entries(typeCounts).map(([type, count]) => 
-        `<span style="margin-left:12px;padding:4px 8px;background:#e0e0e0;border-radius:4px;">${type}: ${count}</span>`
+        `<span style="margin-left:12px;padding:4px 8px;background:#e0e0e0;border-radius:4px;">${escapeHtml(type)}: ${count}</span>`
       ).join('')}
     </div>
   `;
@@ -683,7 +736,7 @@ function filterLogs() {
   
   rows.forEach(row => {
     const type = row.getAttribute('data-type');
-    const id = row.getAttribute('data-id').toLowerCase();
+    const id = (row.getAttribute('data-id') || '').toLowerCase();
     const typeMatch = !typeFilter || type === typeFilter;
     const searchMatch = !searchText || id.includes(searchText);
     row.style.display = (typeMatch && searchMatch) ? '' : 'none';
@@ -698,7 +751,7 @@ async function init() {
     const status = await api('/health/status');
     
     if (!status.initialized) {
-      renderLogin(true);
+      renderLogin(true, status);
       return;
     }
     
@@ -712,6 +765,7 @@ async function init() {
     user = profile.user;
     renderApp();
   } catch (err) {
+    sessionStorage.removeItem('token');
     localStorage.removeItem('token');
     token = null;
     renderLogin(false);

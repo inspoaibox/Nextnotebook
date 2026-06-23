@@ -6,6 +6,41 @@ import { userService } from '../services/UserService';
 
 const router = Router();
 
+const VALID_ITEM_TYPES = new Set([
+  'note',
+  'folder',
+  'tag',
+  'resource',
+  'todo',
+  'vault_entry',
+  'vault_folder',
+  'bookmark',
+  'bookmark_folder',
+  'diagram',
+  'ai_config',
+  'ai_conversation',
+  'ai_message',
+  'excel_note',
+  'template',
+]);
+
+function validateItemId(id: unknown): void {
+  if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(id)) {
+    throw createError('Invalid item id', 400);
+  }
+}
+
+function validateItemType(type: unknown): void {
+  if (typeof type !== 'string' || !VALID_ITEM_TYPES.has(type)) {
+    throw createError('Invalid item type', 400);
+  }
+}
+
+function validateIncomingItem(item: { id?: unknown; type?: unknown }): void {
+  validateItemId(item.id);
+  validateItemType(item.type);
+}
+
 // GET /api/items/all - 全量拉取所有数据项（新客户端首次同步使用）
 router.get('/all', (req, res, next) => {
   try {
@@ -44,6 +79,9 @@ router.get('/count', (req, res, next) => {
   try {
     const itemService = new ItemService(req.userId);
     const type = req.query.type as string | undefined;
+    if (type) {
+      validateItemType(type);
+    }
     const result = itemService.getCount(type);
     res.json(result);
   } catch (error) {
@@ -59,6 +97,10 @@ router.get('/list', (req, res, next) => {
     const type = req.query.type as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
     const offset = parseInt(req.query.offset as string) || 0;
+
+    if (type) {
+      validateItemType(type);
+    }
     
     // 构建查询
     let sql = 'SELECT * FROM items WHERE deleted_time IS NULL';
@@ -111,6 +153,8 @@ router.post('/batch', (req, res, next) => {
       throw createError('Batch size exceeds limit (100)', 400);
     }
 
+    items.forEach(validateIncomingItem);
+
     const itemService = new ItemService(req.userId);
     const result = itemService.batchPut(items);
     res.json(result);
@@ -122,6 +166,7 @@ router.post('/batch', (req, res, next) => {
 // GET /api/items/:id - 获取单个数据项
 router.get('/:id', (req, res, next) => {
   try {
+    validateItemId(req.params.id);
     const itemService = new ItemService(req.userId);
     const item = itemService.getItem(req.params.id);
 
@@ -138,6 +183,7 @@ router.get('/:id', (req, res, next) => {
 // PUT /api/items/:id - 创建或更新数据项
 router.put('/:id', (req, res, next) => {
   try {
+    validateItemId(req.params.id);
     const itemService = new ItemService(req.userId);
     const item = {
       ...req.body,
@@ -148,6 +194,7 @@ router.put('/:id', (req, res, next) => {
     if (!item.type || !item.payload || !item.content_hash) {
       throw createError('Missing required fields: type, payload, content_hash', 400);
     }
+    validateIncomingItem(item);
 
     // 记录同步上传详情
     console.log(JSON.stringify({
@@ -171,6 +218,7 @@ router.put('/:id', (req, res, next) => {
 // DELETE /api/items/:id - 硬删除数据项
 router.delete('/:id', (req, res, next) => {
   try {
+    validateItemId(req.params.id);
     const itemService = new ItemService(req.userId);
     const deleted = itemService.deleteItem(req.params.id);
 
