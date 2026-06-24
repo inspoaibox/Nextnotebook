@@ -54,13 +54,13 @@ export class CleanupScheduler {
         log('info', 'Cleaned up change logs', { deleted: deletedChanges });
       }
 
-      // 清理软删除数据（30 天前）
-      const softDeleteRetention = 30 * 24 * 60 * 60 * 1000;
+      // 清理软删除数据（含二进制磁盘文件，默认 30 天前，可由 SOFT_DELETE_RETENTION_DAYS 配置）
+      const softDeleteRetention = config.softDeleteRetentionDays * 24 * 60 * 60 * 1000;
       const itemsBefore = now - softDeleteRetention;
       const deletedItems = this.itemService.cleanupSoftDeleted(itemsBefore);
 
       if (deletedItems > 0) {
-        log('info', 'Cleaned up soft-deleted items', { deleted: deletedItems });
+        log('info', 'Cleaned up soft-deleted items', { deleted: deletedItems, retentionDays: config.softDeleteRetentionDays });
       }
 
       // 清理过期和已撤销的会话

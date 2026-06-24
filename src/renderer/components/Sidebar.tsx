@@ -22,6 +22,7 @@ import {
   RightOutlined,
   DownOutlined,
   FileExcelOutlined,
+  CloudOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Folder } from '../hooks/useFolders';
@@ -40,6 +41,7 @@ interface SidebarProps {
   diagramEnabled?: boolean;
   transferEnabled?: boolean;
   excelEnabled?: boolean;
+  cloudDriveEnabled?: boolean;
   currentTool?: string | null;
   onSelectFolder: (folderId: string | null) => void;
   onSelectView: (view: 'all' | 'starred' | 'trash') => void;
@@ -69,6 +71,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   diagramEnabled,
   transferEnabled,
   excelEnabled,
+  cloudDriveEnabled,
   currentTool,
   onSelectFolder,
   onSelectView,
@@ -458,6 +461,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   // 计算选中的 key
   const getSelectedKeys = () => {
     if (currentTool === 'todo') return ['todo'];
+    if (currentTool === 'cloud-drive') return ['cloud-drive'];
     if (selectedView === 'starred') return ['starred'];
     if (selectedView === 'trash') return ['trash'];
     if (selectedFolderId === 'uncategorized') return ['uncategorized'];
@@ -540,6 +544,16 @@ const Sidebar: React.FC<SidebarProps> = ({
                 icon={<SwapOutlined />}
                 size="small"
                 onClick={() => onSelectTool?.(currentTool === 'transfer' ? null : 'transfer')}
+              />
+            </Tooltip>
+          )}
+          {cloudDriveEnabled && (
+            <Tooltip title="网盘">
+              <Button
+                type={currentTool === 'cloud-drive' ? 'primary' : 'text'}
+                icon={<CloudOutlined />}
+                size="small"
+                onClick={() => onSelectTool?.(currentTool === 'cloud-drive' ? null : 'cloud-drive')}
               />
             </Tooltip>
           )}

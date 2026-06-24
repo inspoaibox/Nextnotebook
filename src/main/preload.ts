@@ -426,4 +426,48 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('notification:click', (_event, tag) => callback(tag));
     },
   },
+
+  // Cloud Drive API - 网盘同步
+  cloudDrive: {
+    getConfig: () => ipcRenderer.invoke('cloud-drive:getConfig'),
+    selectWatchedFolder: () => ipcRenderer.invoke('cloud-drive:selectWatchedFolder'),
+    startWatching: () => ipcRenderer.invoke('cloud-drive:startWatching'),
+    stopWatching: () => ipcRenderer.invoke('cloud-drive:stopWatching'),
+    scanNow: () => ipcRenderer.invoke('cloud-drive:scanNow'),
+    updateConfig: (patch: object) => ipcRenderer.invoke('cloud-drive:updateConfig', patch),
+    // 层7：手动控制
+    retryFailed: () => ipcRenderer.invoke('cloud-drive:retryFailed'),
+    retryItem: (itemId: string) => ipcRenderer.invoke('cloud-drive:retryItem', itemId),
+    pauseItem: (itemId: string) => ipcRenderer.invoke('cloud-drive:pauseItem', itemId),
+    resumeItem: (itemId: string) => ipcRenderer.invoke('cloud-drive:resumeItem', itemId),
+    cancelUpload: (itemId: string) => ipcRenderer.invoke('cloud-drive:cancelUpload', itemId),
+    clearCompleted: () => ipcRenderer.invoke('cloud-drive:clearCompleted'),
+    listItems: () => ipcRenderer.invoke('cloud-drive:listItems'),
+    // Phase 2：下载控制（与上传侧一一对应，独立队列）
+    downloadFile: (itemId: string) => ipcRenderer.invoke('cloud-drive:downloadFile', itemId),
+    pauseDownload: (itemId: string) => ipcRenderer.invoke('cloud-drive:pauseDownload', itemId),
+    resumeDownload: (itemId: string) => ipcRenderer.invoke('cloud-drive:resumeDownload', itemId),
+    cancelDownload: (itemId: string) => ipcRenderer.invoke('cloud-drive:cancelDownload', itemId),
+    retryDownload: (itemId: string) => ipcRenderer.invoke('cloud-drive:retryDownload', itemId),
+    retryAllDownloads: () => ipcRenderer.invoke('cloud-drive:retryAllDownloads'),
+    clearCompletedDownloads: () => ipcRenderer.invoke('cloud-drive:clearCompletedDownloads'),
+    // 监听单文件上传进度
+    onUploadProgress: (callback: (progress: unknown) => void) => {
+      const handler = (_event: unknown, progress: unknown) => callback(progress);
+      ipcRenderer.on('cloud-drive:uploadProgress', handler);
+      return () => ipcRenderer.removeListener('cloud-drive:uploadProgress', handler);
+    },
+    // 监听单文件下载进度
+    onDownloadProgress: (callback: (progress: unknown) => void) => {
+      const handler = (_event: unknown, progress: unknown) => callback(progress);
+      ipcRenderer.on('cloud-drive:downloadProgress', handler);
+      return () => ipcRenderer.removeListener('cloud-drive:downloadProgress', handler);
+    },
+    // 监听监听状态变化
+    onWatchingChange: (callback: (watching: boolean) => void) => {
+      const handler = (_event: unknown, watching: boolean) => callback(watching);
+      ipcRenderer.on('cloud-drive:watchingChange', handler);
+      return () => ipcRenderer.removeListener('cloud-drive:watchingChange', handler);
+    },
+  },
 });

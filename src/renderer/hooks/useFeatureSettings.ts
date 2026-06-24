@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: FeatureSettings = {
   diagram_enabled: true,
   transfer_enabled: true,
   excel_enabled: true,
+  cloud_drive_enabled: false,  // 网盘默认关闭，用户手动开启
 };
 
 function getSettings(): FeatureSettings {

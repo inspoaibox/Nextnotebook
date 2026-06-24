@@ -14,7 +14,9 @@ export type ItemType =
   | 'ai_conversation'
   | 'ai_message'
   | 'excel_note'
-  | 'template';
+  | 'template'
+  | 'cloud_file'      // 网盘文件
+  | 'cloud_folder';   // 网盘文件夹
 
 // 同步状态 - 与客户端 SyncStatus 完全一致
 export type SyncStatus = 'clean' | 'modified' | 'deleted' | 'conflict';

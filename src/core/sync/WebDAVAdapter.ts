@@ -42,8 +42,10 @@ export class WebDAVAdapter implements StorageAdapter {
     this.client = createClient(config.url, {
       username: config.username,
       password: config.password,
-      maxBodyLength: 100 * 1024 * 1024, // 100MB
-      maxContentLength: 100 * 1024 * 1024,
+      // 网盘单文件上限 500MB，留出余量取 600MB；
+      // 协议层不支持分块，大文件只能走单 PUT。
+      maxBodyLength: 600 * 1024 * 1024, // 600MB
+      maxContentLength: 600 * 1024 * 1024,
     });
     this.basePath = config.basePath || '/mucheng-notes';
     this.timeout = DEFAULT_TIMEOUT;
@@ -499,6 +501,155 @@ export class WebDAVAdapter implements StorageAdapter {
       console.error(`Failed to put resource ${id}:`, error);
       return false;
     }
+  }
+
+  // ============ 网盘分块上传能力声明 ============
+  // WebDAV 协议层不支持分块 / 断点续传，统一走 streamUploadFile 单 PUT 降级。
+  // CloudDriveScheduler 启动时会调用 hasChunkedUpload() 选择路径。
+
+  hasChunkedUpload(): boolean {
+    return false;
+  }
+
+  async createChunkedUpload(): Promise<never> {
+    throw new Error('WebDAV 协议不支持分块上传，请使用 streamUploadFile 降级路径');
+  }
+
+  async uploadChunk(): Promise<never> {
+    throw new Error('WebDAV 协议不支持分块上传，请使用 streamUploadFile 降级路径');
+  }
+
+  async completeChunkedUpload(): Promise<never> {
+    throw new Error('WebDAV 协议不支持分块上传，请使用 streamUploadFile 降级路径');
+  }
+
+  async getUploadStatus(): Promise<never> {
+    throw new Error('WebDAV 协议不支持分块上传，请使用 streamUploadFile 降级路径');
+  }
+
+  async abortChunkedUpload(): Promise<void> {
+    // WebDAV 无会话概念，no-op
+  }
+
+  /**
+   * 非分块流式上传：读本地文件 → 单次 PUT。
+   * 网盘文件大小限制（默认 500MB）由调用方在调用前校验，
+   * 这里按 maxBodyLength(600MB) 兜底。
+   * 返回本地计算的 SHA-256（协议不提供服务端校验）。
+   */
+  async streamUploadFile(params: {
+    itemId: string;
+    filePath: string;
+    size: number;
+    extension?: string;
+    mimeType?: string;
+  }): Promise<{ success: boolean; size: number; sha256: string }> {
+    try {
+      // 动态 import，避免在渲染进程/测试环境加载 node 原生模块
+      const fs = await import('fs');
+      const crypto = await import('crypto');
+
+      const data = fs.readFileSync(params.filePath);
+
+      // 资源路径：resources/{itemId}{extension?}
+      const fileName = params.extension
+        ? `${params.itemId}${params.extension}`
+        : params.itemId;
+      const resourcePath = this.getPath(`${PATHS.RESOURCES}/${fileName}`);
+
+      // 大文件单独放宽超时（按 1MB/s 的保守下限估算，最少 60s）
+      const putTimeout = Math.max(60000, Math.ceil(params.size / (1024 * 1024)) * 1000);
+      await this.withTimeout(
+        this.client.putFileContents(resourcePath, data),
+        putTimeout
+      );
+
+      const sha256 = crypto.createHash('sha256').update(data).digest('hex');
+      return { success: true, size: data.length, sha256 };
+    } catch (error) {
+      console.error(`[WebDAVAdapter] streamUploadFile(${params.itemId}) failed:`, error);
+      return { success: false, size: 0, sha256: '' };
+    }
+  }
+
+  // ============ 网盘下载能力声明 ============
+  // WebDAV 协议层不支持 Range / 断点续传，统一走 downloadFile 整文件 GET 降级。
+  // 调用方（CloudDriveScheduler.runDownload）应：
+  //   1. 调用 hasRangeDownload() 判断；false 时强制 start===0、chunkSize===0。
+  //   2. 按 100MB 上限兜底（getRemoteFileInfo 返回的 size 超限直接拒绝）。
+
+  hasRangeDownload(): boolean {
+    return false;
+  }
+
+  /**
+   * 通过 stat() 获取远端文件大小（不下载内容）。
+   * WebDAV PROPFIND 即可拿到 size，开销远小于下载。
+   * 返回 null 表示文件不存在或 stat 失败。
+   */
+  async getRemoteFileInfo(itemId: string): Promise<{ size: number; mtime: number | null; mimeType: string | null } | null> {
+    try {
+      const resourceDir = this.getPath(PATHS.RESOURCES);
+      const files = await this.withTimeout(
+        this.client.getDirectoryContents(resourceDir)
+      ) as Array<{ basename: string; size?: number; lastmod?: string }>;
+      const file = files.find(f => f.basename.startsWith(itemId));
+      if (!file) return null;
+      const mtime = file.lastmod ? Date.parse(file.lastmod) || null : null;
+      return {
+        size: typeof file.size === 'number' ? file.size : 0,
+        mtime,
+        mimeType: null,
+      };
+    } catch (error) {
+      console.error(`[WebDAVAdapter] getRemoteFileInfo(${itemId}) failed:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 整文件下载降级：getFileContents 一次性读入内存。
+   * WebDAV 无 Range 支持，调用方需保证 start===0、chunkSize===0，
+   * 否则视为无效调用并抛错（避免静默丢数据）。
+   * 大文件请走 hasRangeDownload()==true 的 StorageAdapter。
+   */
+  async downloadFile(params: {
+    itemId: string;
+    start: number;
+    chunkSize: number;
+    destPath: string;
+    signal?: AbortSignal;
+    onProgress?: (receivedBytes: number) => void;
+  }): Promise<{ bytesWritten: number }> {
+    if (params.start > 0 || params.chunkSize > 0) {
+      throw new Error(
+        `[WebDAVAdapter] downloadFile(${params.itemId}) 不支持断点续传，请传 start=0, chunkSize=0`
+      );
+    }
+    const fs = await import('fs');
+    const resourceDir = this.getPath(PATHS.RESOURCES);
+    const files = await this.withTimeout(
+      this.client.getDirectoryContents(resourceDir)
+    ) as Array<{ basename: string; size?: number }>;
+    const file = files.find(f => f.basename.startsWith(params.itemId));
+    if (!file) {
+      throw new Error(`[WebDAVAdapter] downloadFile(${params.itemId}): 远端资源不存在`);
+    }
+
+    // 大文件单独放宽超时（按 1MB/s 保守下限，最少 60s）
+    const size = typeof file.size === 'number' ? file.size : 100 * 1024 * 1024;
+    const timeoutMs = Math.max(60000, Math.ceil(size / (1024 * 1024)) * 1000);
+
+    const content = await this.withTimeout(
+      this.client.getFileContents(`${resourceDir}/${file.basename}`, { format: 'binary' }),
+      timeoutMs
+    );
+    const buf = Buffer.from(content as ArrayBuffer);
+
+    // 同步写整文件（一次性，覆盖已存在）
+    fs.writeFileSync(params.destPath, buf);
+    params.onProgress?.(buf.byteLength);
+    return { bytesWritten: buf.byteLength };
   }
 
   async deleteResource(id: string): Promise<boolean> {

@@ -28,7 +28,9 @@ export type ItemType =
   | 'ai_config'
   | 'ai_conversation'
   | 'ai_message'
-  | 'excel_note';
+  | 'excel_note'
+  | 'cloud_file'      // 网盘文件
+  | 'cloud_folder';   // 网盘文件夹
 
 // 图表类型
 export type DiagramType = 'mindmap' | 'flowchart' | 'whiteboard';
@@ -132,6 +134,7 @@ export interface FeatureSettings {
   diagram_enabled: boolean;
   transfer_enabled: boolean;
   excel_enabled: boolean;
+  cloud_drive_enabled: boolean;  // 网盘
 }
 
 // 书签 payload
@@ -256,6 +259,127 @@ export interface ResourcePayload {
   file_hash: string;
 }
 
+// 网盘文件分块上传状态
+export type CloudUploadState = 'pending' | 'uploading' | 'completed' | 'paused' | 'error';
+
+// 网盘文件分块下载状态
+export type CloudDownloadState =
+  | 'pending'        // 已知需要下载，未开始
+  | 'downloading'    // 进行中
+  | 'completed'      // 完成
+  | 'paused'         // 暂停
+  | 'error';
+
+// 冲突解决策略（远端版本 vs 本地已有文件）
+// - newest-wins: 以 mtime 更新者为准，覆盖较旧的一方
+// - create-copy: 保留两者，把本地较旧副本重命名为 "xxx (冲突副本).ext"
+// - skip: 跳过本次下载，保留本地版本不动
+export type CloudConflictStrategy = 'newest-wins' | 'create-copy' | 'skip';
+
+// 网盘文件 payload
+export interface CloudFilePayload {
+  filename: string;            // 文件名
+  mime_type: string;           // MIME 类型
+  size: number;                // 字节大小
+  file_hash: string;           // SHA-256（去重 & 变更检测）
+  parent_folder_id: string;    // 关联 cloud_folder，构建目录树（根目录文件为 'root'）
+  relative_path: string;       // 相对监听根目录的相对路径
+  mtime: number;               // 本地最后修改时间
+  // 分块上传状态（不加密，明文存储）
+  upload_state: CloudUploadState;
+  chunk_size: number;          // 分块大小（字节）
+  total_chunks: number;        // 总块数
+  uploaded_chunks: number[];   // 已上传的分块序号（断点续传依据）
+  upload_session_id: string | null;  // 服务端上传会话 ID
+  error_message: string | null;      // 最近一次上传错误
+  // 分块下载状态（远端 → 本地）
+  download_state: CloudDownloadState;
+  downloaded_size: number;     // 已下载字节数（断点续传依据；HTTP Range start）
+  downloaded_at: number | null;      // 最近一次下载完成时间戳
+  download_error: string | null;     // 最近一次下载错误
+}
+
+// 网盘文件夹 payload
+export interface CloudFolderPayload {
+  name: string;                       // 文件夹名
+  parent_folder_id: string | null;    // 父文件夹 ID（根为 null）
+  relative_path: string;              // 相对监听根目录的相对路径
+}
+
+// 网盘配置（独立持久化，不混入 SyncConfig）
+export interface CloudDriveConfig {
+  watched_root_path: string | null;   // 监听根目录（单根）
+  max_file_size: number;              // 单文件大小上限（字节，0 = 无限制）
+  chunk_size: number;                 // 分块大小（字节）
+  ignore_patterns: string[];          // 忽略规则（glob，如 ~$*、*.tmp）
+  ignore_hidden: boolean;             // 是否忽略隐藏文件（. 开头）
+  sync_deletions: boolean;            // 是否同步删除（软删除）
+  soft_delete_retention_days: number; // 软删除保留天数（超过则云端清理）
+  stability_threshold: number;        // 写入稳定阈值（毫秒，闸门1）
+  debounce_ms: number;                // 变更去抖时长（毫秒，闸门3）
+  small_file_concurrency: number;     // 小文件并发上传数
+  sync_cursor: string | null;         // 网盘独立同步游标
+  // 下载相关配置（Phase 2）
+  auto_download: boolean;             // 检测到云端有新版本时自动下载
+  download_chunk_size: number;        // 下载分块大小（字节，Range 段长）
+  download_concurrency: number;       // 并行下载文件数（同一时刻）
+  conflict_strategy: CloudConflictStrategy;  // 冲突解决策略
+}
+
+// 网盘配置默认值
+export const DEFAULT_CLOUD_DRIVE_CONFIG: CloudDriveConfig = {
+  watched_root_path: null,
+  max_file_size: 500 * 1024 * 1024,   // 500MB
+  chunk_size: 8 * 1024 * 1024,        // 8MB
+  ignore_patterns: [
+    '~$*',            // Office 锁文件
+    '*.tmp',          // 临时文件
+    '*.asd',          // Office 自动恢复
+    '*.wbk',          // Word 备份
+    '~*.*',           // Office 临时
+    '.DS_Store',      // macOS
+    'Thumbs.db',      // Windows 缩略图
+    'desktop.ini',    // Windows 文件夹配置
+    '*.lnk',          // Windows 快捷方式
+  ],
+  ignore_hidden: true,
+  sync_deletions: true,
+  soft_delete_retention_days: 30,
+  stability_threshold: 2000,          // 2 秒
+  debounce_ms: 3000,                  // 3 秒
+  small_file_concurrency: 3,
+  sync_cursor: null,
+  // Phase 2 下载默认值
+  auto_download: true,
+  download_chunk_size: 8 * 1024 * 1024, // 8MB（与服务端 upload chunk 对齐）
+  download_concurrency: 2,
+  conflict_strategy: 'create-copy',
+};
+
+// 网盘上传进度（用于 UI 展示）
+export interface CloudUploadProgress {
+  file_id: string;
+  filename: string;
+  relative_path: string;
+  size: number;
+  uploaded_bytes: number;
+  uploaded_chunks: number;
+  total_chunks: number;
+  state: CloudUploadState;
+  error_message: string | null;
+}
+
+// 网盘下载进度（用于 UI 展示）
+export interface CloudDownloadProgress {
+  file_id: string;
+  filename: string;
+  relative_path: string;
+  size: number;            // 远端文件总字节
+  downloaded_bytes: number;  // 已下载字节（含断点续传已写入部分）
+  state: CloudDownloadState;
+  error_message: string | null;
+}
+
 // 同步模块配置
 export interface SyncModules {
   notes: boolean;      // 笔记 + 文件夹 + 标签 + 附件
@@ -264,6 +388,7 @@ export interface SyncModules {
   diagrams: boolean;   // 脑图/流程图/白板
   todos: boolean;      // 待办事项
   ai: boolean;         // AI 配置 + 对话 + 消息
+  cloudDrive: boolean; // 网盘文件 + 文件夹（独立同步游标）
 }
 
 // 默认同步模块配置（全选）
@@ -274,6 +399,7 @@ export const DEFAULT_SYNC_MODULES: SyncModules = {
   diagrams: true,
   todos: true,
   ai: true,
+  cloudDrive: true,
 };
 
 // 模块到 ItemType 的映射
@@ -284,6 +410,7 @@ export const SYNC_MODULE_TYPES: Record<keyof SyncModules, ItemType[]> = {
   diagrams: ['diagram'],
   todos: ['todo'],
   ai: ['ai_config', 'ai_conversation', 'ai_message'],
+  cloudDrive: ['cloud_file', 'cloud_folder'],
 };
 
 // 同步配置

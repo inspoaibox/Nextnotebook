@@ -1269,6 +1269,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
                   onChange={checked => updateFeatureSettings({ excel_enabled: checked })}
                 />
               </div>
+
+              {/* 网盘 */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px 0' }}>
+                <div>
+                  <div style={{ fontWeight: 500 }}>网盘</div>
+                  <p style={{ color: '#888', fontSize: 12, margin: '4px 0 0' }}>
+                    监听本地文件夹并同步到云端，支持分块上传与断点续传
+                  </p>
+                </div>
+                <Switch
+                  checked={featureSettings.cloud_drive_enabled}
+                  onChange={checked => updateFeatureSettings({ cloud_drive_enabled: checked })}
+                />
+              </div>
             </div>
           </div>
         );

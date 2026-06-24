@@ -1,7 +1,14 @@
+import fs from 'fs';
+import path from 'path';
 import { getDatabase } from '../database';
 import { ItemBase, CountResult } from '../types';
 import { ChangeService } from './ChangeService';
 import { userService } from './UserService';
+import { ResourceService } from './ResourceService';
+
+// 拥有二进制内容的 item 类型（resource = 附件，cloud_file = 网盘文件）。
+// 这些类型的二进制内容以 id 为键存放在文件系统，软删除清理时需要一并删除磁盘文件。
+const BINARY_ITEM_TYPES = new Set(['resource', 'cloud_file']);
 
 export class ItemService {
   private changeService: ChangeService;
@@ -207,26 +214,73 @@ export class ItemService {
     };
   }
 
-  // 清理软删除的数据项
+  // 清理软删除的数据项（含二进制内容的磁盘文件）
+  // 二进制类型（resource / cloud_file）的磁盘文件会随行一起被删除，
+  // 避免软删除保留期到期后留下孤儿二进制（每个网盘文件可达 500MB）。
   cleanupSoftDeleted(before: number): number {
     this.prepareUserScope();
     const db = getDatabase();
-    
+
+    // 1) 先查出即将被删除的二进制类型行（需要 payload 解析扩展名 + 行级 user_id 定位磁盘目录）
+    let selectStmt;
+    if (this.userId) {
+      selectStmt = db.prepare(`
+        SELECT id, payload, user_id
+        FROM items
+        WHERE deleted_time IS NOT NULL AND deleted_time < ? AND user_id = ?
+          AND type IN ('resource', 'cloud_file')
+      `);
+      selectStmt.all(before, this.userId).forEach((row) => this.deleteBinaryForRow(row as { id: string; payload: string; user_id: string | null }));
+    } else {
+      // 无用户隔离：扫描全部，按各行自己的 user_id 定位目录
+      selectStmt = db.prepare(`
+        SELECT id, payload, user_id
+        FROM items
+        WHERE deleted_time IS NOT NULL AND deleted_time < ?
+          AND type IN ('resource', 'cloud_file')
+      `);
+      selectStmt.all(before).forEach((row) => this.deleteBinaryForRow(row as { id: string; payload: string; user_id: string | null }));
+    }
+
+    // 2) 删除行
     let stmt;
     if (this.userId) {
       stmt = db.prepare(`
-        DELETE FROM items 
+        DELETE FROM items
         WHERE deleted_time IS NOT NULL AND deleted_time < ? AND user_id = ?
       `);
       const result = stmt.run(before, this.userId);
       return result.changes;
     } else {
       stmt = db.prepare(`
-        DELETE FROM items 
+        DELETE FROM items
         WHERE deleted_time IS NOT NULL AND deleted_time < ?
       `);
       const result = stmt.run(before);
       return result.changes;
+    }
+  }
+
+  // 删除单行对应的二进制磁盘文件（尽力而为，失败不抛出，只记录）。
+  // 扩展名从 payload.filename 解析；磁盘目录由行级 user_id 决定。
+  private deleteBinaryForRow(row: { id: string; payload: string; user_id: string | null }): void {
+    try {
+      let filename: string | undefined;
+      try {
+        const payload = JSON.parse(row.payload || '{}') as { filename?: string };
+        filename = payload.filename;
+      } catch {
+        // payload 非法 JSON，无法确定扩展名 → 用无扩展名路径兜底（多数上传会带扩展名，此处可能 unlink 不到）
+      }
+      const extension = filename ? path.extname(filename) : '';
+      const resourceService = new ResourceService(row.user_id || undefined);
+      // resolveStoragePath 与上传端点落盘路径完全一致（users/{userId}/{subDir}/{id}{ext}）
+      const filePath = resourceService.resolveStoragePath(row.id, extension);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch {
+      // 删除磁盘文件失败不应阻断行清理流程；行删除后即变为孤儿，留待人工清理
     }
   }
 }

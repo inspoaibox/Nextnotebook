@@ -553,6 +553,285 @@ export class ServerAdapter implements StorageAdapter {
     }
   }
 
+  // ============ 分块上传（大文件 / 断点续传）============
+  // 对应服务端 sync-server/src/routes/resourceUpload.ts 的 5 个端点。
+  // JSON 控制类端点用 request<T>()（自带 token 自动刷新 + 401 重试）；
+  // 分块 PUT 用 doFetch() 直接传原始二进制，手动做一次 401 刷新重试。
+
+  hasChunkedUpload(): boolean {
+    return true;
+  }
+
+  async createChunkedUpload(params: {
+    itemId: string;
+    totalSize: number;
+    chunkSize: number;
+    extension?: string;
+  }): Promise<{ sessionId: string; chunkSize: number; totalChunks: number }> {
+    return this.request<{
+      session_id: string;
+      chunk_size: number;
+      total_chunks: number;
+    }>('POST', '/api/resources/upload', {
+      item_id: params.itemId,
+      total_size: params.totalSize,
+      chunk_size: params.chunkSize,
+      extension: params.extension,
+    }).then((r) => ({
+      sessionId: r.session_id,
+      chunkSize: r.chunk_size,
+      totalChunks: r.total_chunks,
+    }));
+  }
+
+  async uploadChunk(params: {
+    sessionId: string;
+    chunkIndex: number;
+    data: Buffer;
+  }): Promise<{ accepted: boolean; duplicate: boolean }> {
+    const path = `/api/resources/upload/${encodeURIComponent(params.sessionId)}/chunk`;
+    const doRequest = (): Promise<Response> =>
+      this.doFetch(`${this.baseUrl}${path}`, {
+        method: 'PUT',
+        headers: {
+          ...this.getHeaders(),
+          // 原始二进制，不能让 Content-Type 停在 application/json
+          'Content-Type': 'application/octet-stream',
+          'X-Chunk-Index': String(params.chunkIndex),
+        },
+        body: params.data as unknown as BodyInit,
+      });
+
+    let response = await doRequest();
+
+    // 与 request<T> 保持一致的 401 重试语义
+    if (response.status === 401 && this.refreshToken) {
+      const refreshed = await this.safeRefreshToken();
+      if (refreshed) {
+        response = await doRequest();
+      }
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage =
+        errorData.error?.message || errorData.message || `${response.status} ${response.statusText}`;
+      throw new Error(`Upload chunk ${params.chunkIndex} failed: ${errorMessage}`);
+    }
+
+    const result = await response.json();
+    return {
+      accepted: result.accepted === true,
+      duplicate: result.duplicate === true,
+    };
+  }
+
+  async completeChunkedUpload(sessionId: string): Promise<{
+    success: boolean;
+    size: number;
+    sha256: string;
+    location?: string;
+  }> {
+    const path = `/api/resources/upload/${encodeURIComponent(sessionId)}/complete`;
+    const result = await this.request<{
+      success: boolean;
+      item_id: string;
+      location?: string;
+      size: number;
+      sha256: string;
+    }>('POST', path);
+    return {
+      success: result.success === true,
+      size: result.size,
+      sha256: result.sha256,
+      location: result.location,
+    };
+  }
+
+  async getUploadStatus(sessionId: string): Promise<{
+    totalChunks: number;
+    chunkSize: number;
+    totalSize: number;
+    uploadedChunks: number[];
+    completed: boolean;
+  }> {
+    const path = `/api/resources/upload/${encodeURIComponent(sessionId)}/status`;
+    const result = await this.request<{
+      total_chunks: number;
+      chunk_size: number;
+      total_size: number;
+      uploaded_chunks: number[];
+      completed: boolean;
+    }>('GET', path);
+    return {
+      totalChunks: result.total_chunks,
+      chunkSize: result.chunk_size,
+      totalSize: result.total_size,
+      uploadedChunks: result.uploaded_chunks || [],
+      completed: result.completed === true,
+    };
+  }
+
+  async abortChunkedUpload(sessionId: string): Promise<void> {
+    try {
+      await this.request<void>(
+        'DELETE',
+        `/api/resources/upload/${encodeURIComponent(sessionId)}`
+      );
+    } catch (error) {
+      // 中止失败不抛，记录即可，服务端会按 TTL 自动回收
+      console.warn(`[ServerAdapter] abortChunkedUpload(${sessionId}) failed:`, error);
+    }
+  }
+
+  /**
+   * 非分块流式上传（走标准 PUT /api/resources/:id）。
+   * 当 CloudDriveScheduler 检测到分块能力不可用、或文件很小（< chunkSize）
+   * 时使用。body 直接是 Buffer，由 Electron net.fetch 流式发送。
+   */
+  async streamUploadFile(params: {
+    itemId: string;
+    filePath: string;
+    size: number;
+    extension?: string;
+    mimeType?: string;
+  }): Promise<{ success: boolean; size: number; sha256: string }> {
+    const crypto = await import('crypto');
+    const fs = await import('fs');
+    const data = fs.readFileSync(params.filePath);
+    const ok = await this.putResource(params.itemId, data, params.mimeType || 'application/octet-stream');
+    const sha256 = crypto.createHash('sha256').update(data).digest('hex');
+    return { success: ok, size: data.length, sha256 };
+  }
+
+  // ============ Range/206 下载（大文件 / 断点续传）============
+  // 对应服务端 sync-server/src/routes/resources.ts 的 GET /api/resources/:id
+  // （已支持 Accept-Ranges + Content-Range + 206 Partial Content）。
+  // 与分块上传对称：JSON 用 request<T>()，二进制 Range GET 用 doFetch() 手动 401 重试。
+
+  hasRangeDownload(): boolean {
+    return true;
+  }
+
+  /**
+   * 用 Range: bytes=0-0 探测远端文件元信息（size 从 Content-Range 解析）。
+   * 返回 null 表示文件不存在或不可达。
+   */
+  async getRemoteFileInfo(itemId: string): Promise<{ size: number; mtime: number | null; mimeType: string | null } | null> {
+    const doRequest = (): Promise<Response> =>
+      this.doFetch(`${this.baseUrl}/api/resources/${itemId}`, {
+        method: 'GET',
+        headers: { ...this.getHeaders(), Range: 'bytes=0-0' },
+      });
+
+    try {
+      let response = await doRequest();
+      // 与 uploadChunk 保持一致的 401 刷新重试语义
+      if (response.status === 401 && this.refreshToken) {
+        const refreshed = await this.safeRefreshToken();
+        if (refreshed) {
+          response = await doRequest();
+        }
+      }
+      if (!response.ok && response.status !== 206) return null;
+
+      const contentRange = response.headers.get('content-range') || '';
+      // 格式: "bytes 0-0/12345"
+      const match = contentRange.match(/\/(\d+)/);
+      const size = match
+        ? parseInt(match[1], 10)
+        : parseInt(response.headers.get('content-length') || '0', 10);
+      const mimeType = response.headers.get('content-type');
+      // 消费 body 防止 socket 泄漏
+      await response.arrayBuffer().catch(() => {});
+      return { size, mtime: null, mimeType };
+    } catch (error) {
+      console.error(`[ServerAdapter] getRemoteFileInfo(${itemId}) failed:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 按 Range 下载一段字节并写入 destPath。
+   * - start === 0：覆盖写（flags: 'w'），用于新下载或重新开始。
+   * - start  > 0：追加写（flags: 'a'），用于断点续传，调用方需保证文件已存在 start 字节。
+   * - chunkSize === 0：下载 start 起到文件末尾的全部剩余字节。
+   * 失败抛错；成功返回本次写入字节数。
+   */
+  async downloadFile(params: {
+    itemId: string;
+    start: number;
+    chunkSize: number;
+    destPath: string;
+    signal?: AbortSignal;
+    onProgress?: (receivedBytes: number) => void;
+  }): Promise<{ bytesWritten: number }> {
+    const fs = await import('fs');
+    const end = params.chunkSize > 0 ? params.start + params.chunkSize - 1 : undefined;
+    const rangeHeader =
+      end !== undefined ? `bytes=${params.start}-${end}` : `bytes=${params.start}-`;
+
+    const doRequest = (): Promise<Response> =>
+      this.doFetch(`${this.baseUrl}/api/resources/${params.itemId}`, {
+        method: 'GET',
+        headers: { ...this.getHeaders(), Range: rangeHeader },
+        signal: params.signal,
+      });
+
+    let response = await doRequest();
+    // 401 刷新重试
+    if (response.status === 401 && this.refreshToken) {
+      const refreshed = await this.safeRefreshToken();
+      if (refreshed) {
+        response = await doRequest();
+      }
+    }
+    // 200（服务端不支持 Range 时整文件）或 206 都可接受
+    if (!response.ok && response.status !== 206) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage =
+        errorData?.error?.message || errorData?.message || `${response.status} ${response.statusText}`;
+      throw new Error(`Download ${params.itemId} @${params.start} failed: ${errorMessage}`);
+    }
+
+    // start===0 覆盖；否则追加续传
+    const fileStream = fs.createWriteStream(params.destPath, {
+      flags: params.start > 0 ? 'a' : 'w',
+    });
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      fileStream.end();
+      throw new Error(`Download ${params.itemId}: empty response body`);
+    }
+
+    let written = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = Buffer.from(value);
+        // 用回调串行写入，避免反压导致内存堆积
+        await new Promise<void>((resolve, reject) => {
+          fileStream.write(chunk, (err) => (err ? reject(err) : resolve()));
+        });
+        written += chunk.byteLength;
+        params.onProgress?.(chunk.byteLength);
+      }
+      await new Promise<void>((resolve, reject) => {
+        fileStream.end((err: Error | null | undefined) => (err ? reject(err) : resolve()));
+      });
+    } catch (err) {
+      // 中途失败要主动销毁流，确保 fd 释放
+      fileStream.destroy();
+      // 尝试取消 reader，避免悬挂的 socket
+      await reader.cancel().catch(() => {});
+      throw err;
+    }
+
+    return { bytesWritten: written };
+  }
+
   async getSyncCursor(): Promise<SyncCursor | null> {
     try {
       return await this.request<SyncCursor>('GET', '/api/sync/cursor');

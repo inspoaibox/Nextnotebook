@@ -13,7 +13,17 @@ export interface Config {
   logLevel: string;
   jsonBodyLimit: string;
   maxResourceSize: number;
+  // 分块上传支持的单文件大小上限（网盘大文件 / 资源）。服务端硬上限。
+  maxChunkedUploadSize: number;
+  // 单个分块的最大字节数上限（防止恶意超大分块耗尽内存）。
+  maxUploadChunkSize: number;
+  // 分块上传会话的临时目录。
+  uploadTempPath: string;
+  // 分块上传会话空闲超时（毫秒），超时后自动清理临时分块。
+  uploadSessionTtl: number;
   changeLogRetentionDays: number;
+  // 软删除保留天数：到期后硬删除行 + 二进制磁盘文件（网盘文件可达 500MB，必须回收）。
+  softDeleteRetentionDays: number;
   corsOrigins: string[];
   // JWT 配置
   jwtSecret: string;
@@ -81,7 +91,12 @@ export const config: Config = {
   logLevel: process.env.LOG_LEVEL || 'info',
   jsonBodyLimit: process.env.JSON_BODY_LIMIT || '50mb',
   maxResourceSize: parseInt(process.env.MAX_RESOURCE_SIZE || '104857600', 10),
+  maxChunkedUploadSize: parseInt(process.env.MAX_CHUNKED_UPLOAD_SIZE || '524288000', 10), // 500MB
+  maxUploadChunkSize: parseInt(process.env.MAX_UPLOAD_CHUNK_SIZE || '16777216', 10), // 16MB（单块硬上限）
+  uploadTempPath: process.env.UPLOAD_TEMP_PATH || './data/uploads',
+  uploadSessionTtl: parseInt(process.env.UPLOAD_SESSION_TTL || '86400000', 10), // 24 小时
   changeLogRetentionDays: parseInt(process.env.CHANGE_LOG_RETENTION_DAYS || '90', 10),
+  softDeleteRetentionDays: parseInt(process.env.SOFT_DELETE_RETENTION_DAYS || '30', 10), // 30 天
   corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
   // JWT 配置
   jwtSecret: getRequiredSecret(process.env.JWT_SECRET, 'JWT_SECRET'),
@@ -185,5 +200,10 @@ export function ensureDataDirs(): void {
   
   if (!fs.existsSync(config.resourcesPath)) {
     fs.mkdirSync(config.resourcesPath, { recursive: true });
+  }
+
+  // 分块上传临时目录
+  if (!fs.existsSync(config.uploadTempPath)) {
+    fs.mkdirSync(config.uploadTempPath, { recursive: true });
   }
 }

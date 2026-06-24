@@ -411,6 +411,7 @@ export interface ElectronAPI {
   transfer: TransferAPI;
   notification: NotificationAPI;
   mcp: McpAPI;
+  cloudDrive: CloudDriveAPI;
 }
 
 export interface McpAPI {
@@ -418,6 +419,24 @@ export interface McpAPI {
   stopServer: (serverId: string) => Promise<{ success: boolean; error?: string }>;
   listTools: (serverId: string) => Promise<any[]>;
   callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
+}
+
+export interface CloudDriveAPI {
+  getConfig: () => Promise<unknown>;
+  selectWatchedFolder: () => Promise<{ canceled: boolean; path?: string }>;
+  startWatching: () => Promise<boolean>;
+  stopWatching: () => Promise<boolean>;
+  scanNow: () => Promise<boolean>;
+  updateConfig: (patch: object) => Promise<unknown>;
+  retryFailed: () => Promise<{ enqueued: number }>;
+  retryItem: (itemId: string) => Promise<boolean>;
+  pauseItem: (itemId: string) => Promise<boolean>;
+  resumeItem: (itemId: string) => Promise<boolean>;
+  cancelUpload: (itemId: string) => Promise<boolean>;
+  clearCompleted: () => Promise<{ cleared: string[] }>;
+  listItems: () => Promise<{ items: unknown[] }>;
+  onUploadProgress: (callback: (progress: unknown) => void) => () => void;
+  onWatchingChange: (callback: (watching: boolean) => void) => () => void;
 }
 
 declare global {

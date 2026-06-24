@@ -37,6 +37,12 @@ export interface SyncOptions {
   onProgress?: SyncProgressCallback;
   serverIdentifier?: ServerIdentifier;  // 服务器标识，用于独立存储游标
   resourcesDir?: string;  // 资源文件目录路径
+  // Phase 2：cloud_file 下载 / 删除 / 冲突回调（由 CloudDriveService 注入，
+  // SyncEngine 只负责把元数据写库并标记 download_state=pending，
+  // 物理文件下载/删除/冲突副本由 CloudDriveService + CloudDriveScheduler 处理）
+  onCloudFileChanged?: (itemId: string) => void;       // 元数据已更新，需触发下载
+  onCloudItemDeleted?: (itemId: string) => void;       // 远端删除，需删除本地文件
+  onCloudFileConflict?: (itemId: string, conflictPath: string) => void;  // 冲突副本已生成
 }
 
 export class SyncEngine {
@@ -47,6 +53,10 @@ export class SyncEngine {
   private progressCallback: SyncProgressCallback | null = null;
   private serverIdentifier: ServerIdentifier | null = null;
   private resourcesDir: string | null = null;
+  // Phase 2：cloud_file 物理文件相关回调（由 CloudDriveService 注入）
+  private onCloudFileChanged: ((itemId: string) => void) | null = null;
+  private onCloudItemDeleted: ((itemId: string) => void) | null = null;
+  private onCloudFileConflict: ((itemId: string, conflictPath: string) => void) | null = null;
 
   constructor(
     adapter: StorageAdapter,
@@ -64,6 +74,7 @@ export class SyncEngine {
         diagrams: true,
         todos: true,
         ai: true,
+        cloudDrive: true,
       },
       ...options,
     };
@@ -71,6 +82,9 @@ export class SyncEngine {
     this.progressCallback = options.onProgress || null;
     this.serverIdentifier = options.serverIdentifier || null;
     this.resourcesDir = options.resourcesDir || null;
+    this.onCloudFileChanged = options.onCloudFileChanged || null;
+    this.onCloudItemDeleted = options.onCloudItemDeleted || null;
+    this.onCloudFileConflict = options.onCloudFileConflict || null;
   }
 
   // 设置资源目录
@@ -603,6 +617,14 @@ export class SyncEngine {
         // 本地有数据，直接标记删除
         this.itemsManager.markDeletedFromRemote(change.item_id, change.deleted_time);
         console.log(`[SyncEngine] Marked local item ${change.item_id} as deleted from remote`);
+        // Phase 2：cloud_file/cloud_folder 删除需传播到本地文件系统
+        if ((change.type === 'cloud_file' || change.type === 'cloud_folder') && this.onCloudItemDeleted) {
+          try {
+            this.onCloudItemDeleted(change.item_id);
+          } catch (err) {
+            console.warn(`[SyncEngine] onCloudItemDeleted 回调失败 ${change.item_id}:`, err);
+          }
+        }
       }
       // 本地没有数据，不需要处理（已删除的数据不需要创建）
       return { success: true, conflict: false };
@@ -656,7 +678,55 @@ export class SyncEngine {
       this.itemsManager.createWithId(remoteItem);
     }
 
+    // Phase 2：cloud_file 元数据已写入本地，触发物理文件下载
+    // SyncEngine 不知道 watched_root_path，故只发回调；实际下载由 CloudDriveScheduler 执行。
+    // download_state=pending 在此处标记：远端 file_hash 与本地不同即视为需下载。
+    if (change.type === 'cloud_file' && this.onCloudFileChanged) {
+      try {
+        this.markCloudFileForDownload(remoteItem);
+        this.onCloudFileChanged(remoteItem.id);
+      } catch (err) {
+        console.warn(`[SyncEngine] onCloudFileChanged 回调失败 ${remoteItem.id}:`, err);
+      }
+    }
+
     return { success: true, conflict: false };
+  }
+
+  /**
+   * Phase 2：cloud_file 远端拉取后，标记 download_state=pending 触发物理下载。
+   * 通过比较 payload.file_hash 与本地文件实际哈希决定是否需要重新下载；
+   * 若本地文件尚不存在（首次拉取），直接标记 pending。
+   */
+  private markCloudFileForDownload(remoteItem: ItemBase): void {
+    try {
+      const payload = JSON.parse(remoteItem.payload) as import('@shared/types').CloudFilePayload;
+      // 仅在 file_hash 存在时才校验；上传中 file_hash 可能尚未回填
+      if (payload.file_hash) {
+        payload.download_state = 'pending';
+        payload.download_error = null;
+        // 注意：downloaded_size 不清零——Scheduler 的 runDownload 会基于断点续传
+        this.itemsManager.updateFromRemote({
+          ...remoteItem,
+          payload: JSON.stringify(payload),
+        });
+      }
+    } catch (err) {
+      console.warn(`[SyncEngine] markCloudFileForDownload 失败 ${remoteItem.id}:`, err);
+    }
+  }
+
+  // 为冲突副本派生独立路径，避免覆盖原文件。
+  // 例如 "notes/a.txt" -> "notes/a (冲突副本).txt"
+  private deriveConflictPath(relativePath: string): string {
+    const lastSlash = Math.max(relativePath.lastIndexOf('/'), relativePath.lastIndexOf('\\'));
+    const dir = lastSlash >= 0 ? relativePath.slice(0, lastSlash + 1) : '';
+    const fileName = lastSlash >= 0 ? relativePath.slice(lastSlash + 1) : relativePath;
+    const dotIdx = fileName.lastIndexOf('.');
+    const base = dotIdx > 0 ? fileName.slice(0, dotIdx) : fileName;
+    const ext = dotIdx > 0 ? fileName.slice(dotIdx) : '';
+    const conflictName = `${base} (冲突副本)${ext}`;
+    return dir ? `${dir}${conflictName}` : conflictName;
   }
 
   // 处理冲突
@@ -682,11 +752,41 @@ export class SyncEngine {
         return { success: true, conflict: true };
 
       case 'create-copy':
-      default:
+      default: {
         // 创建冲突副本
         const conflictPayload = JSON.parse(localItem.payload);
-        conflictPayload.title = `${conflictPayload.title || 'Untitled'} (冲突副本)`;
+        const originalTitle = conflictPayload.title || 'Untitled';
+        conflictPayload.title = `${originalTitle} (冲突副本)`;
         conflictPayload.is_conflict = true;
+
+        // cloud_file 需要额外处理：派生独立的 relative_path/filename，
+        // 并通知 CloudDriveService 复制实际文件字节（P2-5 完成具体复制逻辑）。
+        // 否则冲突副本与原记录会指向同一物理文件，远端覆盖时本地版本会丢失。
+        if (localItem.type === 'cloud_file') {
+          const originalRelPath: string =
+            conflictPayload.relative_path || conflictPayload.filename || originalTitle;
+          const conflictRelPath = this.deriveConflictPath(originalRelPath);
+          conflictPayload.relative_path = conflictRelPath;
+          conflictPayload.filename =
+            conflictRelPath.split(/[\\/]/).pop() || conflictPayload.filename;
+
+          // 重置下载相关状态——冲突副本是独立的本地副本，不需要下载
+          conflictPayload.download_state = 'completed';
+          conflictPayload.downloaded_size = conflictPayload.size || 0;
+          conflictPayload.downloaded_at = Date.now();
+          conflictPayload.download_error = null;
+
+          if (this.onCloudFileConflict) {
+            try {
+              this.onCloudFileConflict(localItem.id, conflictRelPath);
+            } catch (err) {
+              console.warn(
+                `[SyncEngine] onCloudFileConflict 回调失败 ${localItem.id}:`,
+                err,
+              );
+            }
+          }
+        }
 
         this.itemsManager.create(localItem.type, conflictPayload);
 
@@ -694,6 +794,7 @@ export class SyncEngine {
         this.itemsManager.updateFromRemote(remoteItem);
 
         return { success: true, conflict: true };
+      }
     }
   }
 

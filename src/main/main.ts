@@ -2,6 +2,16 @@ import { app, BrowserWindow, Menu, ipcMain, shell, Tray, nativeImage, dialog } f
 import * as path from 'path';
 import * as fs from 'fs';
 import { initializeDatabase, closeDatabase, getItemsManager } from './services/DatabaseService';
+import {
+  initializeCloudDriveService,
+  stopCloudDriveService,
+  getCloudDriveService,
+} from './services/CloudDriveService';
+import {
+  initializeCloudDriveScheduler,
+  stopCloudDriveScheduler,
+  getCloudDriveScheduler,
+} from './services/CloudDriveScheduler';
 import { registerSyncIpcHandlers } from './services/SyncService';
 import { imageService, ProcessOptions } from './services/ImageService';
 import {
@@ -447,6 +457,28 @@ app.whenReady().then(async () => {
   registerSyncIpcHandlers();
   createWindow();
 
+  // 初始化网盘服务（在数据库就绪后注册 IPC，并挂载主窗口）
+  try {
+    initializeCloudDriveService();
+    if (mainWindow) {
+      getCloudDriveService()?.setMainWindow(mainWindow);
+    }
+    console.log('Cloud Drive service initialized');
+  } catch (err) {
+    console.error('Failed to initialize Cloud Drive service:', err);
+  }
+
+  // 初始化网盘上传调度器（去抖 + 哈希比对 + 分块上传队列）
+  // 必须在 CloudDriveService 之后：调度器通过动态 require 读取其配置与进度回调
+  try {
+    initializeCloudDriveScheduler();
+    // 兜底：重扫上次未完成（pending/error）的 cloud_file，实现"重启续传"
+    getCloudDriveScheduler()?.retryAll();
+    console.log('Cloud Drive scheduler initialized');
+  } catch (err) {
+    console.error('Failed to initialize Cloud Drive scheduler:', err);
+  }
+
   // 启动 Web Clipper 服务
   try {
     const itemsManager = getItemsManager();
@@ -470,6 +502,9 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  // 先停调度器（停止在途上传队列与去抖定时器），再停监听服务
+  stopCloudDriveScheduler();
+  stopCloudDriveService();
   closeDatabase();
   if (process.platform !== 'darwin') {
     app.quit();

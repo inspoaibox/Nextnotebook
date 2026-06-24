@@ -15,6 +15,15 @@ let syncScheduler: SyncScheduler | null = null;
 let currentAdapter: StorageAdapter | null = null;
 let currentServerIdentifier: ServerIdentifier | null = null;
 
+/**
+ * 获取当前同步适配器（网盘 Scheduler 复用同一适配器上传分块）。
+ * 适配器内部的鉴权是自包含的（ServerAdapter 自动注入 Bearer + 401 刷新），
+ * 调用方无需关心 token。未建立同步连接时返回 null。
+ */
+export function getSyncAdapter(): StorageAdapter | null {
+  return currentAdapter;
+}
+
 export interface SyncServiceConfig {
   enabled: boolean;
   type: 'webdav' | 'server';
@@ -180,6 +189,43 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       syncModules: config.syncModules || DEFAULT_SYNC_MODULES,
       serverIdentifier: currentServerIdentifier, // 传递服务器标识
       resourcesDir, // 传递资源目录路径
+      // Phase 2：cloud_file 物理文件操作的回调注入。
+      // 通过动态 require 获取 CloudDriveService，避免 SyncService ↔ CloudDriveService 形成静态导入环。
+      // SyncEngine 触发这些回调时元数据已写库，CloudDriveService 只做物理文件操作。
+      onCloudFileChanged: (itemId: string) => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { getCloudDriveScheduler } = require('./CloudDriveScheduler') as typeof import('./CloudDriveScheduler');
+          const scheduler = getCloudDriveScheduler();
+          if (scheduler) {
+            scheduler.enqueueDownload(itemId);
+          }
+        } catch (err) {
+          console.warn('[SyncService] onCloudFileChanged 触发下载失败:', err);
+        }
+      },
+      onCloudItemDeleted: (itemId: string) => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { getCloudDriveService } = require('./CloudDriveService') as typeof import('./CloudDriveService');
+          getCloudDriveService()?.handleRemoteDelete(itemId);
+        } catch (err) {
+          console.warn('[SyncService] onCloudItemDeleted 处理失败:', err);
+        }
+      },
+      onCloudFileConflict: (itemId: string, conflictPath: string) => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { getCloudDriveService } = require('./CloudDriveService') as typeof import('./CloudDriveService');
+          const svc = getCloudDriveService();
+          if (svc) {
+            // 异步执行：copyFileSync 本身是同步的，但保留 void 容错
+            void svc.handleCloudFileConflict(itemId, conflictPath);
+          }
+        } catch (err) {
+          console.warn('[SyncService] onCloudFileConflict 处理失败:', err);
+        }
+      },
     };
     syncEngine = new SyncEngine(currentAdapter, itemsManager, syncOptions);
 

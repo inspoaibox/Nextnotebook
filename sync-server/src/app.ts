@@ -13,6 +13,7 @@ import metaRouter from './routes/meta';
 import itemsRouter from './routes/items';
 import changesRouter from './routes/changes';
 import resourcesRouter from './routes/resources';
+import resourceUploadRouter from './routes/resourceUpload';
 import syncRouter from './routes/sync';
 import authRouter from './routes/auth';
 import userRouter from './routes/user';
@@ -94,6 +95,8 @@ app.use('/api/meta', syncRateLimiter, metaRouter);
 app.use('/api/items', syncRateLimiter, itemsRouter);
 app.use('/api/changes', syncRateLimiter, changesRouter);
 app.use('/api/resources', syncRateLimiter, resourcesRouter);
+// 分块上传端点（/upload/* 为静态多段路径，不会被 resourcesRouter 的 /:id 单段匹配吞掉）
+app.use('/api/resources', syncRateLimiter, resourceUploadRouter);
 app.use('/api/sync', syncRateLimiter, syncRouter);
 
 // 所有非 API 路由返回管理界面（SPA 支持）

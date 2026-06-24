@@ -18,6 +18,7 @@ import ToolboxPanel from './components/ToolboxPanel';
 import DiagramPanel from './components/DiagramPanel';
 import TransferPanel from './components/TransferPanel';
 import ExcelEditorPanel from './components/ExcelEditorPanel';
+import CloudDrivePanel from './components/CloudDrivePanel';
 import { useNotes, useNote } from './hooks/useNotes';
 import { useFolders } from './hooks/useFolders';
 import { useTags } from './hooks/useTags';
@@ -1341,6 +1342,7 @@ const App: React.FC = () => {
           diagramEnabled={featureSettings.diagram_enabled}
           transferEnabled={featureSettings.transfer_enabled}
           excelEnabled={featureSettings.excel_enabled}
+          cloudDriveEnabled={featureSettings.cloud_drive_enabled}
           currentTool={currentTool}
           onSelectFolder={handleSelectFolder}
           onSelectView={handleSelectView}
@@ -1392,6 +1394,10 @@ const App: React.FC = () => {
         ) : currentTool === 'transfer' ? (
           <Content style={{ background: isDarkMode ? '#141414' : '#fff', padding: 0 }}>
             <TransferPanel visible={currentTool === 'transfer'} />
+          </Content>
+        ) : currentTool === 'cloud-drive' ? (
+          <Content style={{ background: isDarkMode ? '#141414' : '#fff', padding: 0 }}>
+            <CloudDrivePanel />
           </Content>
         ) : (
           <>

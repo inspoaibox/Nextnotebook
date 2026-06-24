@@ -3,6 +3,7 @@ import { ItemService } from '../services/ItemService';
 import { createError } from '../middleware/errorHandler';
 import { getDatabase } from '../database';
 import { userService } from '../services/UserService';
+import { config } from '../config';
 
 const router = Router();
 
@@ -22,6 +23,8 @@ const VALID_ITEM_TYPES = new Set([
   'ai_message',
   'excel_note',
   'template',
+  'cloud_file',
+  'cloud_folder',
 ]);
 
 function validateItemId(id: unknown): void {
@@ -126,12 +129,12 @@ router.get('/list', (req, res, next) => {
   }
 });
 
-// DELETE /api/items/cleanup - 清理软删除数据
+// DELETE /api/items/cleanup - 清理软删除数据（含二进制磁盘文件）
 router.delete('/cleanup', (req, res) => {
   const itemService = new ItemService(req.userId);
-  const before = req.query.before 
-    ? parseInt(req.query.before as string, 10) 
-    : Date.now() - 30 * 24 * 60 * 60 * 1000; // 默认 30 天前
+  const before = req.query.before
+    ? parseInt(req.query.before as string, 10)
+    : Date.now() - config.softDeleteRetentionDays * 24 * 60 * 60 * 1000; // 默认按配置保留期
 
   const deleted = itemService.cleanupSoftDeleted(before);
   res.json({
