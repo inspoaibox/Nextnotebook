@@ -2,6 +2,9 @@ package com.mucheng.notes.data.sync
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.mucheng.notes.data.cloud.CloudDriveConfigStore
+import com.mucheng.notes.data.cloud.CloudDriveDownloadManager
+import com.mucheng.notes.data.cloud.CloudDriveUploadManager
 import com.mucheng.notes.data.local.dao.ItemDao
 import com.mucheng.notes.data.local.dao.ResourceCacheDao
 import com.mucheng.notes.data.local.entity.ItemEntity
@@ -13,6 +16,7 @@ import com.mucheng.notes.domain.model.ItemType
 import com.mucheng.notes.domain.model.SyncConfig
 import com.mucheng.notes.domain.model.SyncModuleTypes
 import com.mucheng.notes.domain.model.SyncResult
+import com.mucheng.notes.domain.model.payload.CloudFilePayload
 import com.mucheng.notes.domain.model.payload.ResourcePayload
 import com.mucheng.notes.security.SecureSyncStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -38,6 +42,9 @@ class SyncEngine @Inject constructor(
     private val webDAVAdapter: WebDAVAdapter,
     private val itemDao: ItemDao,
     private val resourceCacheDao: ResourceCacheDao,
+    private val cloudDriveDownloadManager: CloudDriveDownloadManager,
+    private val cloudDriveUploadManager: CloudDriveUploadManager,
+    private val cloudDriveConfigStore: CloudDriveConfigStore,
     @ApplicationContext private val context: Context
 ) {
     private val json = Json {
@@ -251,9 +258,6 @@ class SyncEngine @Inject constructor(
         var count = 0
         val errors = mutableListOf<String>()
         for (item in pendingItems) {
-            // 明文同步：确保 encryptionApplied = 0
-            val itemToUpload = item.copy(encryptionApplied = 0)
-            
             if (item.syncStatus == "deleted") {
                 // 删除远端项目
                 if (adapter.deleteItem(item.id)) {
@@ -271,18 +275,52 @@ class SyncEngine @Inject constructor(
                     count++
                 }
             } else {
+                // 明文同步：确保 encryptionApplied = 0
+                // 使用 var 是因为云盘文件上传管理器会回写 payload（含真实 file_hash），
+                // 随后我们需要用最新 payload 覆盖待上传快照。
+                var itemToUpload = item.copy(encryptionApplied = 0)
+
+                // 如果是云盘文件类型，先执行二进制分块上传。
+                // 上传管理器内部会：流式读 SAF 文件 → 分块上传 → 服务端合并 →
+                // SHA-256 校验 → 回写 ItemEntity.payload（含真实 file_hash / size /
+                // upload_state=completed）并把 sync_status 置为 "modified"、local_rev+1。
+                // 这是一次"真实变更"，触发的 push 是期望行为（其它端要据此判断是否需要
+                // 下载）。注意：必须在上传成功后用最新 payload 覆盖 itemToUpload，
+                // 否则下面的 putItem 推上去的会是旧的（PENDING、无 file_hash）payload。
+                if (item.type == "cloud_file" && adapter.hasChunkedUpload()) {
+                    try {
+                        val payload = json.decodeFromString<CloudFilePayload>(item.payload)
+                        val uploadResult = cloudDriveUploadManager.upload(item.id, payload, adapter)
+                        if (uploadResult.isFailure) {
+                            val cause = uploadResult.exceptionOrNull()?.message ?: "unknown error"
+                            errors.add("Failed to upload cloud file binary for item ${item.id}: $cause")
+                            continue
+                        }
+                        // 上传管理器已回写本地 DB；重新读取以拿到含 file_hash 的最新 payload
+                        itemDao.getById(item.id)?.let { freshItem ->
+                            itemToUpload = freshItem.copy(encryptionApplied = 0)
+                        }
+                    } catch (e: Exception) {
+                        errors.add("Failed to upload cloud file binary for item ${item.id}: ${e.message}")
+                        continue
+                    }
+                }
+
                 // 上传项目
                 val result = adapter.putItem(itemToUpload)
-                if (result.isSuccess) {
-                    var resourceUploadFailed = false
 
-                    // 如果是资源类型，同时上传资源文件
+                if (result.isSuccess) {
+                    val remoteRev = result.getOrThrow()
+
+                    // 如果是资源类型，上传资源二进制文件
+                    // （资源路径：putItem 先行，再 uploadResource，与云盘文件相反）
                     if (item.type == "resource") {
+                        var resourceUploadFailed = false
                         try {
                             val payload = json.decodeFromString<ResourcePayload>(item.payload)
                             val ext = getExtensionFromFilename(payload.filename)
                             val resourceId = "${item.id}$ext"
-                            
+
                             // 从本地缓存获取文件
                             val cache = resourceCacheDao.getByResourceId(item.id)
                             if (cache != null) {
@@ -308,14 +346,14 @@ class SyncEngine @Inject constructor(
                             resourceUploadFailed = true
                             android.util.Log.w("SyncEngine", "Failed to upload resource file: ${e.message}")
                         }
+
+                        if (resourceUploadFailed) {
+                            errors.add("Failed to upload resource file for item ${item.id}")
+                            continue
+                        }
                     }
 
-                    if (resourceUploadFailed) {
-                        errors.add("Failed to upload resource file for item ${item.id}")
-                        continue
-                    }
-                    
-                    itemDao.markSynced(item.id, result.getOrThrow())
+                    itemDao.markSynced(item.id, remoteRev)
                     count++
                 } else {
                     errors.add("Failed to upload item ${item.id}: ${result.exceptionOrNull()?.message ?: "unknown error"}")
@@ -440,6 +478,33 @@ class SyncEngine @Inject constructor(
                                 android.util.Log.w("SyncEngine", "Failed to download resource: ${e.message}")
                             }
                         }
+
+                        // 如果是云盘文件类型，按配置自动下载到 SAF 文件夹
+                        // 下载管理器只更新侧表（CloudFileLocalPathEntity），不动 payload，
+                        // 因此不会触发本地 rev 增长 / 同步 churn。
+                        if (remoteItem.type == "cloud_file" &&
+                            cloudDriveConfigStore.current.autoDownload &&
+                            adapter.hasRangeDownload()
+                        ) {
+                            try {
+                                val payload = json.decodeFromString<CloudFilePayload>(remoteItem.payload)
+                                val downloadResult = cloudDriveDownloadManager.download(
+                                    remoteItem.id, payload, adapter
+                                )
+                                if (downloadResult.isFailure) {
+                                    val cause = downloadResult.exceptionOrNull()?.message ?: "unknown error"
+                                    android.util.Log.w(
+                                        "SyncEngine",
+                                        "Failed to download cloud file ${remoteItem.id}: $cause"
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.w(
+                                    "SyncEngine",
+                                    "Failed to download cloud file ${remoteItem.id}: ${e.message}"
+                                )
+                            }
+                        }
                     } catch (e: Exception) {
                         android.util.Log.e("SyncEngine", "Error processing full pull item ${remoteItem.id}: ${e.message}")
                     }
@@ -521,6 +586,31 @@ class SyncEngine @Inject constructor(
                     }
                 }
 
+                // 如果是云盘文件类型，按配置自动下载到 SAF 文件夹
+                if (remoteItem.type == "cloud_file" &&
+                    cloudDriveConfigStore.current.autoDownload &&
+                    adapter.hasRangeDownload()
+                ) {
+                    try {
+                        val payload = json.decodeFromString<CloudFilePayload>(remoteItem.payload)
+                        val downloadResult = cloudDriveDownloadManager.download(
+                            remoteItem.id, payload, adapter
+                        )
+                        if (downloadResult.isFailure) {
+                            val cause = downloadResult.exceptionOrNull()?.message ?: "unknown error"
+                            android.util.Log.w(
+                                "SyncEngine",
+                                "Failed to download cloud file ${remoteItem.id}: $cause"
+                            )
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w(
+                            "SyncEngine",
+                            "Failed to download cloud file ${remoteItem.id}: ${e.message}"
+                        )
+                    }
+                }
+
                 itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
                 count++
             }
@@ -564,13 +654,17 @@ class SyncEngine @Inject constructor(
             
             // 根据类型确定标题字段
             val titleField = when (type) {
-                "note", "folder", "tag", "bookmark_folder", "vault_folder", 
+                "note", "folder", "tag", "bookmark_folder", "vault_folder",
                 "ai_conversation" -> "title"
                 "bookmark" -> "title"
                 "vault_entry" -> "name"
                 "todo" -> "title"
                 "diagram" -> "title"
                 "ai_config" -> "name"
+                // 网盘类型使用各自 payload 的命名字段：
+                // CloudFilePayload 用 filename，CloudFolderPayload 用 name
+                "cloud_file" -> "filename"
+                "cloud_folder" -> "name"
                 else -> "title"
             }
             

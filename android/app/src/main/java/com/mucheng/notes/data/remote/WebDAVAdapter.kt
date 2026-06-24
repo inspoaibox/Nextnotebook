@@ -163,6 +163,87 @@ interface WebDAVAdapter {
      * 验证密钥指纹
      */
     suspend fun verifyKeyFingerprint(localFingerprint: String): KeyFingerprintResult
+
+    // ========== 网盘（cloud_drive）扩展能力 ==========
+    //
+    // 以下方法均带默认实现：WebDAV 适配器（WebDAVAdapterImpl）不具备
+    // Range 下载 / 分块上传能力，因此默认返回 false / null / 失败，
+    // 由调用方（CloudDriveDownloadManager / UploadManager）做能力探测后降级。
+    // 自建服务器适配器（ServerAdapterImpl）覆写这些方法以提供真实能力。
+    //
+    // 服务端契约与桌面端 ServerAdapter.ts 保持一致：
+    //   - Range 下载复用 GET /api/resources/:id + Range 头
+    //   - 分块上传复用 /api/resources/upload/:sessionId/*
+    // cloud_file / cloud_folder 仅是 ItemEntity.payload 上的元数据层，
+    // 二进制 I/O 与 resource 完全相同。
+
+    /**
+     * 是否支持 Range（断点续传）下载。
+     */
+    fun hasRangeDownload(): Boolean = false
+
+    /**
+     * 是否支持分块上传。
+     */
+    fun hasChunkedUpload(): Boolean = false
+
+    /**
+     * 探测远端资源大小（用 Range: bytes=0-0 探测，不下载正文）。
+     * @return 远端文件信息，不支持时返回 null。
+     */
+    suspend fun getRemoteFileInfo(itemId: String): RemoteFileInfo? = null
+
+    /**
+     * 按 Range 下载一段字节。
+     * @param start 起始字节偏移（含）
+     * @param chunkSize 本块大小；为 0 表示从 start 到文件末尾
+     * @return 该段字节；不支持时返回失败。
+     */
+    suspend fun downloadFileRange(itemId: String, start: Long, chunkSize: Long): Result<ByteArray> =
+        Result.failure(UnsupportedOperationException("Range download not supported"))
+
+    /**
+     * 创建分块上传会话。
+     * @param itemId 目标 ItemEntity id（若为新建文件可由服务端分配）
+     * @param totalSize 文件总大小
+     * @param chunkSize 建议分块大小
+     * @param extension 文件扩展名（不含点），用于服务端落盘
+     * @return 上传会话；不支持时返回 null。
+     */
+    suspend fun createChunkedUpload(
+        itemId: String,
+        totalSize: Long,
+        chunkSize: Long,
+        extension: String
+    ): ChunkedUploadSession? = null
+
+    /**
+     * 上传单个分块。
+     * @param sessionId 上传会话 id
+     * @param chunkIndex 分块序号（从 0 起）
+     * @param data 分块字节
+     * @return 分块上传结果；不支持或失败返回 null。
+     */
+    suspend fun uploadChunk(
+        sessionId: String,
+        chunkIndex: Int,
+        data: ByteArray
+    ): ChunkUploadResult? = null
+
+    /**
+     * 完成分块上传（服务端合并落盘 + 返回 item_id / sha256）。
+     */
+    suspend fun completeChunkedUpload(sessionId: String): ChunkedUploadCompleteResult? = null
+
+    /**
+     * 查询分块上传进度（用于断点续传校验）。
+     */
+    suspend fun getUploadStatus(sessionId: String): ChunkedUploadStatus? = null
+
+    /**
+     * 中止分块上传会话（服务端 TTL 自动回收，失败可忽略）。
+     */
+    suspend fun abortChunkedUpload(sessionId: String): Boolean = false
 }
 
 /**
@@ -171,4 +252,77 @@ interface WebDAVAdapter {
 data class KeyFingerprintResult(
     val valid: Boolean,
     val remoteFingerprint: String?
+)
+
+// ========== 网盘（cloud_drive）扩展能力的辅助数据类 ==========
+// 字段命名与桌面端 ServerAdapter.ts / shared/types/index.ts 保持一致。
+
+/**
+ * 远端文件探测结果（来自 Range: bytes=0-0 + Content-Range 头）。
+ */
+data class RemoteFileInfo(
+    val size: Long,
+    val mimeType: String? = null,
+    val mtime: Long? = null
+)
+
+/**
+ * 分块上传会话（POST /api/resources/upload 返回）。
+ */
+@Serializable
+data class ChunkedUploadSession(
+    @SerialName("session_id")
+    val sessionId: String,
+
+    @SerialName("chunk_size")
+    val chunkSize: Long,
+
+    @SerialName("total_chunks")
+    val totalChunks: Int
+)
+
+/**
+ * 单块上传结果（PUT /api/resources/upload/:sessionId/chunk 返回）。
+ */
+@Serializable
+data class ChunkUploadResult(
+    val accepted: Boolean = false,
+    val duplicate: Boolean = false
+)
+
+/**
+ * 完成分块上传结果（POST /api/resources/upload/:sessionId/complete 返回）。
+ */
+@Serializable
+data class ChunkedUploadCompleteResult(
+    val success: Boolean = false,
+
+    @SerialName("item_id")
+    val itemId: String? = null,
+
+    val location: String? = null,
+
+    val size: Long = 0,
+
+    val sha256: String? = null
+)
+
+/**
+ * 分块上传进度查询结果（GET /api/resources/upload/:sessionId/status 返回）。
+ */
+@Serializable
+data class ChunkedUploadStatus(
+    @SerialName("total_chunks")
+    val totalChunks: Int = 0,
+
+    @SerialName("chunk_size")
+    val chunkSize: Long = 0,
+
+    @SerialName("total_size")
+    val totalSize: Long = 0,
+
+    @SerialName("uploaded_chunks")
+    val uploadedChunks: List<Int> = emptyList(),
+
+    val completed: Boolean = false
 )

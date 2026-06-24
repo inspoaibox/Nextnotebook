@@ -2,6 +2,7 @@ package com.mucheng.notes.di
 
 import android.content.Context
 import com.mucheng.notes.data.local.AppDatabase
+import com.mucheng.notes.data.local.dao.CloudFileLocalPathDao
 import com.mucheng.notes.data.local.dao.ItemDao
 import com.mucheng.notes.data.local.dao.ResourceCacheDao
 import com.mucheng.notes.security.DatabaseKeyManager
@@ -45,5 +46,11 @@ object DatabaseModule {
     @Singleton
     fun provideResourceCacheDao(database: AppDatabase): ResourceCacheDao {
         return database.resourceCacheDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideCloudFileLocalPathDao(database: AppDatabase): CloudFileLocalPathDao {
+        return database.cloudFileLocalPathDao()
     }
 }

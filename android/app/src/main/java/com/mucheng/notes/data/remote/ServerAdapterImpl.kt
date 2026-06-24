@@ -677,15 +677,242 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
     
     override suspend fun verifyKeyFingerprint(localFingerprint: String): KeyFingerprintResult {
         val remoteFingerprint = getKeyFingerprint()
-        
+
         if (remoteFingerprint == null) {
             // 远端没有指纹，这是首次同步，保存本地指纹
             saveKeyFingerprint(localFingerprint)
             return KeyFingerprintResult(valid = true, remoteFingerprint = null)
         }
-        
+
         // 验证指纹是否匹配
         val valid = remoteFingerprint == localFingerprint
         return KeyFingerprintResult(valid = valid, remoteFingerprint = remoteFingerprint)
+    }
+
+    // ========== 网盘（cloud_drive）扩展能力实现 ==========
+    //
+    // 契约与桌面端 ServerAdapter.ts 完全一致：cloud_file / cloud_folder
+    // 仅是 ItemEntity.payload 元数据层，二进制 I/O 复用 /api/resources/:id
+    // 与 /api/resources/upload/:sessionId/* 两族接口。
+    //
+    // - JSON 端点走 request<T>()（自带 401 自动刷新）
+    // - 二进制端点（getRemoteFileInfo / downloadFileRange / uploadChunk）
+    //   手写 OkHttp 请求，并在 401 时走 safeRefreshToken() 重试一次。
+
+    override fun hasRangeDownload(): Boolean = true
+
+    override fun hasChunkedUpload(): Boolean = true
+
+    /**
+     * 构造带认证头的请求（用于二进制端点）。
+     * 仅完成 header 装配，不执行请求。
+     */
+    private fun newAuthRequestBuilder(url: String): Request.Builder {
+        val builder = Request.Builder().url(url)
+        accessToken?.let { builder.addHeader("Authorization", "Bearer $it") }
+        return builder
+    }
+
+    /**
+     * 探测远端文件大小：GET /api/resources/:id，Range: bytes=0-0。
+     * 从 Content-Range 头解析 "bytes 0-0/<size>"。
+     * 与桌面端 getRemoteFileInfo 行为一致：用 0-0 探测以避免下载正文，
+     * 同时消费 body 以释放 socket。
+     */
+    override suspend fun getRemoteFileInfo(itemId: String): RemoteFileInfo? = withContext(Dispatchers.IO) {
+        try {
+            val url = "${getBaseUrl()}/api/resources/$itemId"
+
+            suspend fun probe(): RemoteFileInfo? {
+                val builder = newAuthRequestBuilder(url)
+                    .addHeader("Range", "bytes=0-0")
+                    .get()
+                client.newCall(builder.build()).execute().use { response ->
+                    // 接受 200 或 206；非这两者说明资源不存在或鉴权失败
+                    if (response.code != 200 && response.code != 206) {
+                        android.util.Log.w("ServerAdapter", "getRemoteFileInfo $itemId -> ${response.code}")
+                        return@probe null
+                    }
+                    // 优先用 Content-Range 解析总大小
+                    val contentRange = response.header("Content-Range")
+                    val size = contentRange?.let { cr ->
+                        // 形如 "bytes 0-0/12345" 或 "bytes 0-0/*"
+                        Regex("""/(\d+)""").find(cr)?.groupValues?.get(1)?.toLongOrNull()
+                    } ?: response.body?.contentLength()?.takeIf { it > 0 }
+
+                    // 消费 body 释放 socket
+                    response.body?.close()
+
+                    if (size == null) {
+                        android.util.Log.w("ServerAdapter", "getRemoteFileInfo $itemId: no size in Content-Range/Content-Length")
+                        return@probe null
+                    }
+                    val mime = response.header("Content-Type")?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+                    return@probe RemoteFileInfo(size = size, mimeType = mime)
+                }
+            }
+
+            var result = probe()
+            if (result == null && refreshToken != null) {
+                // 401 路径下可能已刷新，再试一次
+                if (safeRefreshToken()) {
+                    result = probe()
+                }
+            }
+            result
+        } catch (e: Exception) {
+            android.util.Log.e("ServerAdapter", "getRemoteFileInfo $itemId error: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Range 下载：GET /api/resources/:id，Range: bytes=start-end。
+     * 接受 200（服务端忽略 Range 全量返回）或 206（部分内容）。
+     * 与桌面端 downloadFile 行为一致，但返回内存字节（Android 端由
+     * CloudDriveDownloadManager 负责把字节写入 SAF DocumentFile）。
+     */
+    override suspend fun downloadFileRange(itemId: String, start: Long, chunkSize: Long): Result<ByteArray> = withContext(Dispatchers.IO) {
+        try {
+            val url = "${getBaseUrl()}/api/resources/$itemId"
+            val rangeHeader = if (chunkSize <= 0) {
+                "bytes=$start-"
+            } else {
+                val end = start + chunkSize - 1
+                "bytes=$start-$end"
+            }
+
+            suspend fun fetch(): Pair<Int, ByteArray?> {
+                val builder = newAuthRequestBuilder(url)
+                    .addHeader("Range", rangeHeader)
+                    .get()
+                client.newCall(builder.build()).execute().use { response ->
+                    if (response.code != 200 && response.code != 206) {
+                        android.util.Log.w("ServerAdapter", "downloadFileRange $itemId -> ${response.code}")
+                        return@fetch response.code to null
+                    }
+                    val bytes = response.body?.bytes() ?: ByteArray(0)
+                    return@fetch response.code to bytes
+                }
+            }
+
+            var (code, bytes) = fetch()
+            if (bytes == null && code == 401 && refreshToken != null) {
+                if (safeRefreshToken()) {
+                    val retry = fetch()
+                    code = retry.first
+                    bytes = retry.second
+                }
+            }
+
+            if (bytes != null) {
+                Result.success(bytes)
+            } else {
+                Result.failure(Exception("Range 下载失败: HTTP $code"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ServerAdapter", "downloadFileRange $itemId error: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    // ---- 分块上传：JSON 端点走 request<T>() ----
+
+    @Serializable
+    private data class CreateSessionRequest(
+        @kotlinx.serialization.SerialName("item_id")
+        val itemId: String,
+        @kotlinx.serialization.SerialName("total_size")
+        val totalSize: Long,
+        @kotlinx.serialization.SerialName("chunk_size")
+        val chunkSize: Long,
+        val extension: String
+    )
+
+    override suspend fun createChunkedUpload(
+        itemId: String,
+        totalSize: Long,
+        chunkSize: Long,
+        extension: String
+    ): ChunkedUploadSession? {
+        val body = json.encodeToString(
+            CreateSessionRequest(
+                itemId = itemId,
+                totalSize = totalSize,
+                chunkSize = chunkSize,
+                extension = extension
+            )
+        )
+        return request("POST", "/api/resources/upload", body) { responseBody ->
+            json.decodeFromString<ChunkedUploadSession>(responseBody)
+        }
+    }
+
+    /**
+     * 上传单个分块：PUT /api/resources/upload/:sessionId/chunk。
+     * Body 为原始字节（非 JSON），因此手写请求；401 走 safeRefreshToken 重试一次。
+     */
+    override suspend fun uploadChunk(
+        sessionId: String,
+        chunkIndex: Int,
+        data: ByteArray
+    ): ChunkUploadResult? = withContext(Dispatchers.IO) {
+        val url = "${getBaseUrl()}/api/resources/upload/$sessionId/chunk"
+
+        suspend fun push(): Pair<Int, ChunkUploadResult?> {
+            val builder = newAuthRequestBuilder(url)
+                .addHeader("Content-Type", "application/octet-stream")
+                .addHeader("X-Chunk-Index", chunkIndex.toString())
+                .put(data.toRequestBody("application/octet-stream".toMediaType()))
+            client.newCall(builder.build()).execute().use { response ->
+                val respBody = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    android.util.Log.w("ServerAdapter", "uploadChunk session=$sessionId idx=$chunkIndex -> ${response.code}: $respBody")
+                    return@push response.code to null
+                }
+                val parsed = try {
+                    json.decodeFromString<ChunkUploadResult>(respBody)
+                } catch (e: Exception) {
+                    // 服务端未返回标准 body 也视为接受
+                    ChunkUploadResult(accepted = true, duplicate = false)
+                }
+                return@push response.code to parsed
+            }
+        }
+
+        var (code, result) = push()
+        if (result == null && code == 401 && refreshToken != null) {
+            if (safeRefreshToken()) {
+                val retry = push()
+                code = retry.first
+                result = retry.second
+            }
+        }
+        result
+    }
+
+    override suspend fun completeChunkedUpload(sessionId: String): ChunkedUploadCompleteResult? {
+        return request("POST", "/api/resources/upload/$sessionId/complete") { responseBody ->
+            json.decodeFromString<ChunkedUploadCompleteResult>(responseBody)
+        }
+    }
+
+    override suspend fun getUploadStatus(sessionId: String): ChunkedUploadStatus? {
+        return request("GET", "/api/resources/upload/$sessionId/status") { responseBody ->
+            json.decodeFromString<ChunkedUploadStatus>(responseBody)
+        }
+    }
+
+    /**
+     * 中止上传会话：DELETE /api/resources/upload/:sessionId。
+     * 与桌面端一致：失败仅告警不抛错（服务端 TTL 自动回收）。
+     */
+    override suspend fun abortChunkedUpload(sessionId: String): Boolean {
+        return try {
+            request("DELETE", "/api/resources/upload/$sessionId") { true } ?: false
+        } catch (e: Exception) {
+            android.util.Log.w("ServerAdapter", "abortChunkedUpload $sessionId failed (ignored): ${e.message}")
+            false
+        }
     }
 }

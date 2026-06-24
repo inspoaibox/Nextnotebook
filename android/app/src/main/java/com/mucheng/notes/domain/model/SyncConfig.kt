@@ -13,7 +13,8 @@ data class SyncModules(
     val vault: Boolean = true,      // 密码库条目 + 密码库文件夹
     val diagrams: Boolean = true,   // 脑图/流程图/白板
     val todos: Boolean = true,      // 待办事项
-    val ai: Boolean = true          // AI 配置 + 对话 + 消息
+    val ai: Boolean = true,         // AI 配置 + 对话 + 消息
+    val cloudDrive: Boolean = true  // 网盘文件 + 文件夹（独立同步游标）
 )
 
 /**
@@ -52,6 +53,7 @@ object SyncModuleTypes {
     val DIAGRAMS = listOf("diagram")
     val TODOS = listOf("todo")
     val AI = listOf("ai_config", "ai_conversation", "ai_message")
+    val CLOUD_DRIVE = listOf("cloud_file", "cloud_folder")
     
     /**
      * 根据同步模块配置获取需要同步的类型列表
@@ -64,6 +66,7 @@ object SyncModuleTypes {
         if (modules.diagrams) types.addAll(DIAGRAMS)
         if (modules.todos) types.addAll(TODOS)
         if (modules.ai) types.addAll(AI)
+        if (modules.cloudDrive) types.addAll(CLOUD_DRIVE)
         return types
     }
 }

@@ -17,7 +17,9 @@ enum class ItemType(val value: String) {
     AI_CONFIG("ai_config"),
     AI_CONVERSATION("ai_conversation"),
     AI_MESSAGE("ai_message"),
-    EXCEL_NOTE("excel_note");
+    EXCEL_NOTE("excel_note"),
+    CLOUD_FILE("cloud_file"),
+    CLOUD_FOLDER("cloud_folder");
 
     companion object {
         /**

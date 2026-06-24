@@ -4,10 +4,18 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mucheng.notes.data.cloud.CloudDriveConfigStore
+import com.mucheng.notes.data.cloud.CloudDriveDownloadManager
+import com.mucheng.notes.data.cloud.CloudDriveFolderPicker
+import com.mucheng.notes.data.cloud.CloudDriveUploadManager
+import com.mucheng.notes.data.cloud.CloudDownloadProgress
+import com.mucheng.notes.data.cloud.CloudUploadProgress
 import com.mucheng.notes.data.sync.SyncEngine
 import com.mucheng.notes.domain.model.SyncConfig
 import com.mucheng.notes.domain.model.SyncModules
 import com.mucheng.notes.domain.model.SyncStatus
+import com.mucheng.notes.domain.model.payload.CloudConflictStrategy
+import com.mucheng.notes.domain.model.payload.CloudDriveConfig
 import com.mucheng.notes.security.AppLockManager
 import com.mucheng.notes.security.AuthResult
 import com.mucheng.notes.security.BiometricManager
@@ -112,7 +120,14 @@ data class SettingsUiState(
     // AI 设置
     val aiDefaultChannel: String = "",
     val aiDefaultModel: String = "",
-    val aiChannelsJson: String = "" // AI 渠道配置 JSON
+    val aiChannelsJson: String = "", // AI 渠道配置 JSON
+
+    // 网盘（云盘）同步设置
+    val cloudDriveAuthorized: Boolean = false, // SAF 是否已授权
+    val cloudDriveWatchedRootPath: String = "", // 已授权的根目录展示名（来自 treeUri 解析）
+    val cloudDriveConflictStrategy: CloudConflictStrategy = CloudConflictStrategy.CREATE_COPY,
+    val cloudDriveAutoDownload: Boolean = true,
+    val cloudDriveConfig: CloudDriveConfig = CloudDriveConfig() // 完整配置快照（供需要扩展字段的 UI 读取）
 )
 
 /**
@@ -124,7 +139,11 @@ class SettingsViewModel @Inject constructor(
     private val appLockManager: AppLockManager,
     private val biometricManager: BiometricManager,
     private val syncEngine: SyncEngine,
-    private val itemRepository: com.mucheng.notes.domain.repository.ItemRepository
+    private val itemRepository: com.mucheng.notes.domain.repository.ItemRepository,
+    private val cloudDriveConfigStore: CloudDriveConfigStore,
+    private val cloudDriveFolderPicker: CloudDriveFolderPicker,
+    private val cloudDriveUploadManager: CloudDriveUploadManager,
+    private val cloudDriveDownloadManager: CloudDriveDownloadManager
 ) : ViewModel() {
     
     companion object {
@@ -183,6 +202,22 @@ class SettingsViewModel @Inject constructor(
     init {
         loadSettings()
         prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+
+        // 收集网盘配置流，合并进 UI 状态
+        viewModelScope.launch {
+            cloudDriveConfigStore.configFlow.collect { config ->
+                val authorized = cloudDriveFolderPicker.resolveRootDocumentFile() != null
+                _uiState.update {
+                    it.copy(
+                        cloudDriveAuthorized = authorized,
+                        cloudDriveWatchedRootPath = config.watchedRootPath ?: "",
+                        cloudDriveConflictStrategy = config.conflictStrategyEnum(),
+                        cloudDriveAutoDownload = config.autoDownload,
+                        cloudDriveConfig = config
+                    )
+                }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -1175,4 +1210,65 @@ class SettingsViewModel @Inject constructor(
             onResult(false, "生物识别不可用")
         }
     }
+
+    // ==================== 网盘（云盘）同步 ====================
+
+    /**
+     * 上传进度流（直接暴露给 UI 观察）。
+     */
+    val cloudUploadProgress: StateFlow<Map<String, CloudUploadProgress>>
+        get() = cloudDriveUploadManager.progress
+
+    /**
+     * 下载进度流（直接暴露给 UI 观察）。
+     */
+    val cloudDownloadProgress: StateFlow<Map<String, CloudDownloadProgress>>
+        get() = cloudDriveDownloadManager.progress
+
+    /**
+     * 由 Activity/Composable 在 OpenDocumentTree 回调中调用：获取 SAF 持久化权限。
+     * 必须在前台回调里调用。
+     */
+    fun grantCloudDriveFolder(treeUri: android.net.Uri): Boolean {
+        val ok = cloudDriveFolderPicker.takePersistablePermission(treeUri)
+        if (ok) {
+            _uiState.update { it.copy(message = "已授权网盘同步目录") }
+        } else {
+            _uiState.update { it.copy(message = "授权失败") }
+        }
+        return ok
+    }
+
+    /**
+     * 撤销 SAF 授权。
+     */
+    fun revokeCloudDriveFolder() {
+        cloudDriveFolderPicker.releasePermission()
+        _uiState.update {
+            it.copy(
+                cloudDriveAuthorized = false,
+                cloudDriveWatchedRootPath = "",
+                message = "已撤销网盘同步授权"
+            )
+        }
+    }
+
+    /**
+     * 设置冲突策略。
+     */
+    fun setCloudConflictStrategy(strategy: CloudConflictStrategy) {
+        cloudDriveConfigStore.setConflictStrategy(strategy)
+    }
+
+    /**
+     * 设置自动下载开关。
+     */
+    fun setCloudAutoDownload(enabled: Boolean) {
+        cloudDriveConfigStore.setAutoDownload(enabled)
+    }
+
+    /**
+     * 读取当前网盘配置快照。
+     */
+    fun currentCloudDriveConfig(): CloudDriveConfig = cloudDriveConfigStore.current
 }

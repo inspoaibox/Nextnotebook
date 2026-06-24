@@ -84,6 +84,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
+    // SAF DocumentFile - cloud-drive tree-uri support
+    implementation(libs.androidx.documentfile)
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))
