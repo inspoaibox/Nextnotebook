@@ -1362,20 +1362,23 @@ export class CloudDriveScheduler {
    * 扫描所有 cloud_file，把 download_state === 'pending' 的入队；
    * 若配置 auto_download=true，则 error/paused 也尝试自动恢复。
    * 由 CloudDriveService 在每次 sync 拉取后调用。
+   *
+   * 关闭自动下载（auto_download=false）时整体跳过：仅同步元数据，物理文件由用户手动触发
+   * （retryDownloadItem 不受此开关限制，用户显式重试仍可下载）。
    */
   scanForDownloads(): void {
     if (this.disposed) return;
     const config = this.getConfig();
     const auto = config.auto_download === true;
+    if (!auto) return;
     const files = this.itemsManager.getByType('cloud_file');
     for (const f of files) {
       try {
         const p = JSON.parse(f.payload) as CloudFilePayload;
-        if (p.download_state === 'pending') {
-          this.enqueueDownload(f.id);
-        } else if (
-          auto &&
-          (p.download_state === 'error' || p.download_state === 'paused')
+        if (
+          p.download_state === 'pending' ||
+          p.download_state === 'error' ||
+          p.download_state === 'paused'
         ) {
           this.enqueueDownload(f.id);
         }

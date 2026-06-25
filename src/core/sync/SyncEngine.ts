@@ -416,6 +416,14 @@ export class SyncEngine {
               const localItem = this.itemsManager.getByIdIncludeDeleted(remoteItem.id);
               if (localItem) {
                 this.itemsManager.markDeletedFromRemote(remoteItem.id, remoteItem.deleted_time);
+                // Phase 2：cloud_file/cloud_folder 删除需传播到本地文件系统（与增量分支一致）
+                if ((remoteItem.type === 'cloud_file' || remoteItem.type === 'cloud_folder') && this.onCloudItemDeleted) {
+                  try {
+                    this.onCloudItemDeleted(remoteItem.id);
+                  } catch (err) {
+                    console.warn(`[SyncEngine] onCloudItemDeleted 回调失败 ${remoteItem.id}:`, err);
+                  }
+                }
               }
               continue;
             }
@@ -472,6 +480,17 @@ export class SyncEngine {
                 }
               } catch (resourceError) {
                 console.error(`[SyncEngine] Error downloading resource for ${remoteItem.id}:`, resourceError);
+              }
+            }
+
+            // Phase 2：cloud_file 元数据已写入本地，触发物理文件下载（与增量分支一致）
+            // SyncEngine 不知道 watched_root_path，故只发回调；实际下载由 CloudDriveScheduler 执行。
+            if (remoteItem.type === 'cloud_file' && this.onCloudFileChanged) {
+              try {
+                this.markCloudFileForDownload(remoteItem);
+                this.onCloudFileChanged(remoteItem.id);
+              } catch (err) {
+                console.warn(`[SyncEngine] onCloudFileChanged 回调失败 ${remoteItem.id}:`, err);
               }
             }
           } catch (error) {

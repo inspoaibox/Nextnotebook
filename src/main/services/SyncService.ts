@@ -231,6 +231,13 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       // SyncEngine 触发这些回调时元数据已写库，CloudDriveService 只做物理文件操作。
       onCloudFileChanged: (itemId: string) => {
         try {
+          // 关闭自动下载时仅同步元数据，物理文件由用户手动触发下载。
+          // auto_download 属于 CloudDriveConfig（云盘传输配置），不在 SyncServiceConfig 上，
+          // 故通过 CloudDriveService 单例读取——与下方 onCloudItemDeleted 的取用方式一致。
+          const autoDownload = getCloudDriveService()?.getConfig().auto_download;
+          if (autoDownload === false) {
+            return;
+          }
           // eslint-disable-next-line @typescript-eslint/no-var-requires
           const { getCloudDriveScheduler } = require('./CloudDriveScheduler') as typeof import('./CloudDriveScheduler');
           const scheduler = getCloudDriveScheduler();

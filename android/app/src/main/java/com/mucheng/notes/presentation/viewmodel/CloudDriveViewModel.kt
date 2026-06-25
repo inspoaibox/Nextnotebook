@@ -213,10 +213,14 @@ class CloudDriveViewModel @Inject constructor(
         if (name.isBlank()) return
         viewModelScope.launch {
             val parentFolderId = _uiState.value.currentFolderId
+            // 计算新文件夹相对路径：根目录下直接用 name；子目录下拼 "父级相对路径/name"，
+            // 与桌面端 onFolderAdded 写入的 relative_path 保持一致（云端路径前缀）
+            val folderRelPath = relativeFolderPath(parentFolderId)
+            val relativePath = if (folderRelPath.isBlank()) name.trim() else "$folderRelPath/${name.trim()}"
             val payload = CloudFolderPayload(
                 name = name.trim(),
                 parentFolderId = parentFolderId,
-                relativePath = "",
+                relativePath = relativePath,
             )
             itemRepository.create(ItemType.CLOUD_FOLDER, json.encodeToString(payload))
             syncEngine.sync()
@@ -225,14 +229,73 @@ class CloudDriveViewModel @Inject constructor(
         }
     }
 
-    /** 删除文件/文件夹（软删 + 同步） */
+    /**
+     * 删除文件/文件夹（软删 + 同步）。
+     *
+     * 若删除的是文件夹，会先递归收集其全部子孙（子文件夹 + 子文件）并一并软删，
+     * 避免留下指向已删除父文件夹的孤儿记录。子孙收集复用 [loadItems] 的内存过滤
+     * 方案（DAO 的 getByFolderId 对 cloud_* 类型存在 key 不匹配）。
+     */
     fun deleteItem(id: String) {
         viewModelScope.launch {
+            val target = itemRepository.getById(id)
+            if (target?.type == ItemType.CLOUD_FOLDER.value) {
+                // 文件夹：级联软删全部子孙，再删自身
+                val descendants = withContext(Dispatchers.IO) { collectDescendantIds(id) }
+                for (descendantId in descendants) {
+                    itemRepository.softDelete(descendantId)
+                }
+            }
             itemRepository.softDelete(id)
             syncEngine.sync()
             _uiState.update { it.copy(snackbarMessage = "已删除") }
             refresh()
         }
+    }
+
+    /**
+     * 在内存中收集 [folderId] 的全部子孙 item id（不含 [folderId] 本身）。
+     * 广度优先遍历：加载所有未删除的 CLOUD_FOLDER / CLOUD_FILE，按 parentFolderId
+     * 建立父→子映射，从 [folderId] 向下展开。
+     */
+    private suspend fun collectDescendantIds(folderId: String): List<String> = withContext(Dispatchers.IO) {
+        val folders = itemRepository.getByTypeOnce(ItemType.CLOUD_FOLDER)
+        val files = itemRepository.getByTypeOnce(ItemType.CLOUD_FILE)
+
+        // 建立 parentFolderId -> 子 item id 列表 的映射（同时覆盖文件夹与文件两类）
+        val childrenByParent = mutableMapOf<String, MutableList<String>>()
+        for (entity in folders) {
+            if (entity.deletedTime != null) continue
+            val payload = runCatching {
+                json.decodeFromString<CloudFolderPayload>(entity.payload)
+            }.getOrNull() ?: continue
+            val parent = payload.parentFolderId
+            if (parent != null) {
+                childrenByParent.getOrPut(parent) { mutableListOf() }.add(entity.id)
+            }
+        }
+        for (entity in files) {
+            if (entity.deletedTime != null) continue
+            val payload = runCatching {
+                json.decodeFromString<CloudFilePayload>(entity.payload)
+            }.getOrNull() ?: continue
+            val parent = payload.parentFolderId
+            if (parent.isNotBlank()) {
+                childrenByParent.getOrPut(parent) { mutableListOf() }.add(entity.id)
+            }
+        }
+
+        // BFS：从待删文件夹向下展开
+        val result = mutableListOf<String>()
+        val queue = ArrayDeque<String>()
+        childrenByParent[folderId]?.let { queue.addAll(it) }
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            if (current in result) continue  // 防御环路
+            result.add(current)
+            childrenByParent[current]?.let { queue.addAll(it) }
+        }
+        result
     }
 
     /** 按需下载单个文件（不依赖 autoDownload 配置） */

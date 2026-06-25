@@ -297,6 +297,17 @@ class SyncEngine @Inject constructor(
                         } catch (e: Exception) {
                             android.util.Log.w("SyncEngine", "Failed to delete remote resource file: ${e.message}")
                         }
+                    } else if (item.type == "cloud_file" && adapter.hasChunkedUpload()) {
+                        // 网盘文件：二进制复用 /api/resources/:id（裸 id，无扩展名）。
+                        // 与 resource 类型不同，cloud_file 的资源 id 就是 item.id 本身
+                        //（见 ServerAdapterImpl 的 cloud_drive 扩展注释 + UploadManager.createChunkedUpload）。
+                        // WebDAV 不支持分块上传（hasChunkedUpload=false），其 cloud_file 无远端
+                        // 二进制，跳过清理，避免误删。
+                        try {
+                            adapter.deleteResource(item.id)
+                        } catch (e: Exception) {
+                            android.util.Log.w("SyncEngine", "Failed to delete remote cloud_file binary: ${e.message}")
+                        }
                     }
                     itemDao.hardDelete(item.id)
                     count++

@@ -392,6 +392,8 @@ export class CloudDriveService {
       })
       .on('ready', () => {
         console.log('[CloudDriveService] 初始扫描完成');
+        // 初始正向扫描结束后做反向对账：app 离线期间被删除的文件在此补偿清理
+        this.reconcileDeletedItems();
         this.emitWatchingChange(true);
       });
 
@@ -424,6 +426,8 @@ export class CloudDriveService {
     if (!root) return false;
     // chokidar 没有公开 rescan，这里手动遍历一次以补全遗漏
     this.walkAndEmit(root);
+    // 正向 upsert 完成后，做一次反向对账：清理离线期间被删除但 DB 仍残留的幽灵记录
+    this.reconcileDeletedItems();
     return true;
   }
 
@@ -450,6 +454,46 @@ export class CloudDriveService {
       } catch {
         // 文件可能在遍历中被删除，忽略
       }
+    }
+  }
+
+  /**
+   * 反向对账（补偿离线删除）。
+   * walkAndEmit 只做"磁盘存在 → 入库"的正向 upsert；而 chokidar 的 unlink/unlinkDir
+   * 仅在监听存活时触发。若 app 离线期间用户/其他程序删掉了文件，重启后这些删除
+   * 永远不会被捕获，DB 中残留的 cloud 项就成了幽灵记录。
+   * 此方法枚举 DB 中所有未删除的 cloud 项，凡磁盘对应路径已不存在（且非系统正在写入）
+   * 一律软删除。在 scanNow 与初始扫描 'ready' 后调用。
+   */
+  private reconcileDeletedItems(): void {
+    const root = this.config.watched_root_path;
+    if (!root) return;
+    let rows: Array<{ id: string; payload: string }>;
+    try {
+      rows = this.queryAllCloudItems(false);
+    } catch (err) {
+      console.error('[CloudDriveService] reconcileDeletedItems 查询失败:', err);
+      return;
+    }
+    let removed = 0;
+    for (const row of rows) {
+      try {
+        const payloadObj = JSON.parse(row.payload) as { relative_path?: string };
+        const rel = payloadObj.relative_path;
+        if (!rel) continue;
+        const abs = path.join(root, rel);
+        // 系统自身正在写入（下载/冲突复制）的路径跳过，避免误删正在落地的文件
+        if (this.writingPaths.has(abs)) continue;
+        if (!fs.existsSync(abs)) {
+          this.softDeleteCloudItem(row.id);
+          removed++;
+        }
+      } catch {
+        // 损坏 payload 跳过
+      }
+    }
+    if (removed > 0) {
+      console.log(`[CloudDriveService] 反向对账：补偿删除 ${removed} 个离线删除项`);
     }
   }
 
