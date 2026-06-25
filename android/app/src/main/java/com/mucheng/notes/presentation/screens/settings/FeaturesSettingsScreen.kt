@@ -130,10 +130,15 @@ fun FeaturesSettingsScreen(
 
             FeatureSwitch(
                 title = "网盘",
-                subtitle = "云端文件浏览器，支持上传/下载/文件夹管理",
+                subtitle = if (uiState.cloudDriveSupported) {
+                    "云端文件浏览器，支持上传/下载/文件夹管理"
+                } else {
+                    "仅自建同步服务器支持"
+                },
                 icon = Icons.Default.Cloud,
                 checked = uiState.cloudDriveEnabled,
-                onCheckedChange = { viewModel.setCloudDriveEnabled(it) }
+                onCheckedChange = { viewModel.setCloudDriveEnabled(it) },
+                enabled = uiState.cloudDriveSupported
             )
         }
     }

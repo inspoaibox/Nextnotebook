@@ -367,20 +367,28 @@ fun SyncSettingsScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // 网盘（云盘）同步到本机 SAF 目录
-                CloudDriveSyncSection(
-                    authorized = uiState.cloudDriveAuthorized,
-                    watchedRootPath = uiState.cloudDriveWatchedRootPath,
-                    conflictStrategy = uiState.cloudDriveConflictStrategy,
-                    autoDownload = uiState.cloudDriveAutoDownload,
-                    showConflictStrategyMenu = showConflictStrategyMenu,
-                    onToggleConflictStrategyMenu = { showConflictStrategyMenu = it },
-                    onPickFolder = { folderPickerLauncher.launch(null) },
-                    onRevokeFolder = { viewModel.revokeCloudDriveFolder() },
-                    onConflictStrategyChange = { viewModel.setCloudConflictStrategy(it) },
-                    onAutoDownloadChange = { viewModel.setCloudAutoDownload(it) },
-                    uploadProgress = uploadProgress,
-                    downloadProgress = downloadProgress
-                )
+                if (uiState.cloudDriveSupported) {
+                    CloudDriveSyncSection(
+                        authorized = uiState.cloudDriveAuthorized,
+                        watchedRootPath = uiState.cloudDriveWatchedRootPath,
+                        conflictStrategy = uiState.cloudDriveConflictStrategy,
+                        autoDownload = uiState.cloudDriveAutoDownload,
+                        showConflictStrategyMenu = showConflictStrategyMenu,
+                        onToggleConflictStrategyMenu = { showConflictStrategyMenu = it },
+                        onPickFolder = { folderPickerLauncher.launch(null) },
+                        onRevokeFolder = { viewModel.revokeCloudDriveFolder() },
+                        onConflictStrategyChange = { viewModel.setCloudConflictStrategy(it) },
+                        onAutoDownloadChange = { viewModel.setCloudAutoDownload(it) },
+                        uploadProgress = uploadProgress,
+                        downloadProgress = downloadProgress
+                    )
+                } else {
+                    Text(
+                        "网盘功能仅支持自建同步服务器",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
                 HorizontalDivider()

@@ -259,6 +259,10 @@ class SyncEngine @Inject constructor(
             return@withContext Result.failure(IllegalStateException("同步已禁用"))
         }
 
+        if (cfg.type != "server") {
+            return@withContext Result.failure(UnsupportedOperationException("网盘功能仅支持自建同步服务器"))
+        }
+
         return@withContext try {
             val adapter = getAdapter()
             if (!adapter.hasRangeDownload()) {
@@ -278,7 +282,8 @@ class SyncEngine @Inject constructor(
      */
     private suspend fun pushChanges(cfg: SyncConfig): PushResult {
         val adapter = getAdapter()
-        val enabledTypes = SyncModuleTypes.getEnabledTypes(cfg.syncModules)
+        val effectiveModules = if (cfg.type == "server") cfg.syncModules else cfg.syncModules.copy(cloudDrive = false)
+        val enabledTypes = SyncModuleTypes.getEnabledTypes(effectiveModules)
         val pendingItems = itemDao.getPendingSync()
             .filter { it.type in enabledTypes }
         
@@ -415,7 +420,8 @@ class SyncEngine @Inject constructor(
      */
     private suspend fun pullChanges(cfg: SyncConfig): PullResult {
         val adapter = getAdapter()
-        val enabledTypes = SyncModuleTypes.getEnabledTypes(cfg.syncModules)
+        val effectiveModules = if (cfg.type == "server") cfg.syncModules else cfg.syncModules.copy(cloudDrive = false)
+        val enabledTypes = SyncModuleTypes.getEnabledTypes(effectiveModules)
 
         // ✅ 从本地 SharedPreferences 获取游标（每个设备独立维护）
         val localCursor = getLocalSyncCursor()

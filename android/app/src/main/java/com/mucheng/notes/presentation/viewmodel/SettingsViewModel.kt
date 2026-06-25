@@ -10,6 +10,7 @@ import com.mucheng.notes.data.cloud.CloudDriveFolderPicker
 import com.mucheng.notes.data.cloud.CloudDriveUploadManager
 import com.mucheng.notes.data.cloud.CloudDownloadProgress
 import com.mucheng.notes.data.cloud.CloudUploadProgress
+import com.mucheng.notes.data.local.dao.CloudFileLocalPathDao
 import com.mucheng.notes.data.sync.SyncEngine
 import com.mucheng.notes.domain.model.SyncConfig
 import com.mucheng.notes.domain.model.SyncModules
@@ -128,7 +129,8 @@ data class SettingsUiState(
     val cloudDriveWatchedRootPath: String = "", // 已授权的根目录展示名（来自 treeUri 解析）
     val cloudDriveConflictStrategy: CloudConflictStrategy = CloudConflictStrategy.CREATE_COPY,
     val cloudDriveAutoDownload: Boolean = true,
-    val cloudDriveConfig: CloudDriveConfig = CloudDriveConfig() // 完整配置快照（供需要扩展字段的 UI 读取）
+    val cloudDriveConfig: CloudDriveConfig = CloudDriveConfig(), // 完整配置快照（供需要扩展字段的 UI 读取）
+    val cloudDriveSupported: Boolean = false
 )
 
 /**
@@ -144,7 +146,8 @@ class SettingsViewModel @Inject constructor(
     private val cloudDriveConfigStore: CloudDriveConfigStore,
     private val cloudDriveFolderPicker: CloudDriveFolderPicker,
     private val cloudDriveUploadManager: CloudDriveUploadManager,
-    private val cloudDriveDownloadManager: CloudDriveDownloadManager
+    private val cloudDriveDownloadManager: CloudDriveDownloadManager,
+    private val cloudFileLocalPathDao: CloudFileLocalPathDao
 ) : ViewModel() {
     
     companion object {
@@ -300,7 +303,8 @@ class SettingsViewModel @Inject constructor(
                 serverRefreshToken = SecureSyncStorage.getString(context, KEY_SERVER_REFRESH_TOKEN),
                 serverTokenExpires = SecureSyncStorage.getLong(context, KEY_SERVER_TOKEN_EXPIRES)?.takeIf { it > 0 },
                 serverLoggedIn = SecureSyncStorage.getString(context, KEY_SERVER_TOKEN) != null,
-                serverLoginUser = prefs.getString(KEY_SERVER_USERNAME, null)
+                serverLoginUser = prefs.getString(KEY_SERVER_USERNAME, null),
+                cloudDriveSupported = (prefs.getString(KEY_SYNC_TYPE, "webdav") ?: "webdav") == "server"
             )
         }
     }
@@ -332,6 +336,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setCloudDriveEnabled(enabled: Boolean) {
+        if (_uiState.value.syncType != "server" && enabled) {
+            _uiState.update { it.copy(message = "网盘功能仅支持自建同步服务器") }
+            return
+        }
         prefs.edit().putBoolean(KEY_CLOUD_DRIVE_ENABLED, enabled).apply()
         _uiState.update { it.copy(cloudDriveEnabled = enabled) }
     }
@@ -344,7 +352,21 @@ class SettingsViewModel @Inject constructor(
     
     fun setSyncType(type: String) {
         prefs.edit().putString(KEY_SYNC_TYPE, type).apply()
-        _uiState.update { it.copy(syncType = type) }
+        _uiState.update { state ->
+            val supportsCloudDrive = type == "server"
+            val nextModules = if (supportsCloudDrive) {
+                state.syncModules
+            } else {
+                state.syncModules.copy(cloudDrive = false)
+            }
+            state.copy(
+                syncType = type,
+                cloudDriveSupported = supportsCloudDrive,
+                cloudDriveEnabled = if (supportsCloudDrive) state.cloudDriveEnabled else false,
+                syncModules = nextModules,
+                message = if (supportsCloudDrive) state.message else "网盘功能仅支持自建同步服务器"
+            )
+        }
     }
     
     fun setWebdavUrl(url: String) {
@@ -535,6 +557,16 @@ class SettingsViewModel @Inject constructor(
     }
     
     fun setSyncModule(module: String, enabled: Boolean) {
+        if (module == "cloud_drive") {
+            if (_uiState.value.syncType != "server") {
+                _uiState.update { it.copy(message = "WebDAV 模式不支持网盘同步，请切换到自建服务器") }
+                return
+            }
+            _uiState.update { state ->
+                state.copy(syncModules = state.syncModules.copy(cloudDrive = enabled))
+            }
+            return
+        }
         val key = when (module) {
             "notes" -> KEY_SYNC_NOTES
             "bookmarks" -> KEY_SYNC_BOOKMARKS
@@ -765,6 +797,11 @@ class SettingsViewModel @Inject constructor(
             // 自建服务器需要先登录
             if (_uiState.value.syncType == "server" && !_uiState.value.serverLoggedIn) {
                 _uiState.update { it.copy(message = "请先登录服务器") }
+                return@launch
+            }
+
+            if (_uiState.value.syncType != "server" && _uiState.value.cloudDriveEnabled) {
+                _uiState.update { it.copy(message = "WebDAV 模式不支持网盘功能，请切换到自建服务器") }
                 return@launch
             }
             
@@ -1041,7 +1078,7 @@ class SettingsViewModel @Inject constructor(
             "vault" -> _uiState.value.vaultEnabled
             "ai" -> _uiState.value.aiEnabled
             "transfer" -> _uiState.value.transferEnabled
-            "cloud_drive" -> _uiState.value.cloudDriveEnabled
+            "cloud_drive" -> _uiState.value.cloudDriveEnabled && _uiState.value.cloudDriveSupported
             else -> true
         }
     }
@@ -1254,6 +1291,9 @@ class SettingsViewModel @Inject constructor(
      */
     fun revokeCloudDriveFolder() {
         cloudDriveFolderPicker.releasePermission()
+        viewModelScope.launch {
+            cloudFileLocalPathDao.deleteAll()
+        }
         _uiState.update {
             it.copy(
                 cloudDriveAuthorized = false,

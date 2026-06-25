@@ -239,14 +239,19 @@ class CloudDriveViewModel @Inject constructor(
     fun deleteItem(id: String) {
         viewModelScope.launch {
             val target = itemRepository.getById(id)
+            val idsToDelete = mutableListOf<String>()
             if (target?.type == ItemType.CLOUD_FOLDER.value) {
                 // 文件夹：级联软删全部子孙，再删自身
                 val descendants = withContext(Dispatchers.IO) { collectDescendantIds(id) }
-                for (descendantId in descendants) {
-                    itemRepository.softDelete(descendantId)
+                idsToDelete.addAll(descendants)
+            }
+            idsToDelete.add(id)
+            withContext(Dispatchers.IO) {
+                for (targetId in idsToDelete) {
+                    cleanupLocalCloudArtifacts(targetId)
+                    itemRepository.softDelete(targetId)
                 }
             }
-            itemRepository.softDelete(id)
             syncEngine.sync()
             _uiState.update { it.copy(snackbarMessage = "已删除") }
             refresh()
@@ -296,6 +301,28 @@ class CloudDriveViewModel @Inject constructor(
             childrenByParent[current]?.let { queue.addAll(it) }
         }
         result
+    }
+
+    /**
+     * 清理 Android 端网盘文件的本地落盘痕迹：
+     * - 删除 SAF DocumentFile（best-effort）
+     * - 删除 cloud_file_local_path 侧表记录
+     *
+     * 仅对 cloud_file 生效；cloud_folder 与其它类型直接跳过。
+     */
+    private suspend fun cleanupLocalCloudArtifacts(itemId: String) {
+        val item = itemRepository.getById(itemId) ?: return
+        if (item.type != ItemType.CLOUD_FILE.value) return
+
+        val record = localPathDao.getByCloudFileId(itemId)
+        if (record != null) {
+            runCatching {
+                DocumentFile.fromSingleUri(getApplication(), Uri.parse(record.documentUri))
+                    ?.takeIf { it.exists() }
+                    ?.delete()
+            }
+            localPathDao.delete(itemId)
+        }
     }
 
     /** 按需下载单个文件（不依赖 autoDownload 配置） */

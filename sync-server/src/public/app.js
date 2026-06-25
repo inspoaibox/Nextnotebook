@@ -445,7 +445,7 @@ async function loadItems(el, type, label) {
 
 // 网盘数据 —— 多级目录树浏览
 // 当前用户范围：服务端按 JWT user_id 隔离，这里只做客户端路径分组
-let cloudDriveState = { currentPath: '', files: [], folders: [] };
+let cloudDriveState = { currentPath: '', files: [], folders: [], treeExpanded: new Set(['']) };
 
 async function loadCloudDrive(el) {
   el.innerHTML = '<div style="text-align:center;padding:40px;color:#666;">加载中...</div>';
@@ -459,11 +459,25 @@ async function loadCloudDrive(el) {
 
 async function cloudRefresh() {
   const [fileData, folderData] = await Promise.all([
-    api('/items/list?type=cloud_file&limit=500'),
-    api('/items/list?type=cloud_folder&limit=500')
+    cloudFetchAllItems('cloud_file'),
+    cloudFetchAllItems('cloud_folder')
   ]);
   cloudDriveState.files = (fileData.items || []).map(normalizeCloudItem);
   cloudDriveState.folders = (folderData.items || []).map(normalizeCloudItem);
+}
+
+async function cloudFetchAllItems(type) {
+  const items = [];
+  const limit = 500;
+  let offset = 0;
+  while (true) {
+    const data = await api(`/items/list?type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}`);
+    const batch = data.items || [];
+    items.push(...batch);
+    if (batch.length < limit) break;
+    offset += limit;
+  }
+  return { items };
 }
 
 // 把后端 item 规整成统一结构（路径解析基于 payload.relative_path）
@@ -508,14 +522,29 @@ function cloudRender(el) {
       拖拽文件到此处上传，或点击右上角"上传文件"
     </div>
     <div id="cdUploadArea"></div>
-    <div class="card">
-      <div class="card-header">
-        <span>${escapeHtml(currentPath || '全部文件')} (${allRows.length})</span>
+    <div class="cd-shell">
+      <div class="cd-pane">
+        <div class="cd-pane-header">
+          <div>
+            <div class="cd-pane-title">目录树</div>
+            <div class="cd-pane-subtitle">显示全部同步路径</div>
+          </div>
+          <button class="btn btn-sm btn-secondary" onclick="cloudCollapseAll()">收起</button>
+        </div>
+        <div class="cd-tree">${cloudRenderTree()}</div>
       </div>
-      <div class="card-body" style="padding:0;">
-        ${allRows.length === 0
-          ? '<div class="cd-empty">此目录为空</div>'
-          : allRows.map(cloudRenderRow).join('')}
+      <div class="cd-pane cd-list">
+        <div class="cd-pane-header">
+          <div>
+            <div class="cd-pane-title">${escapeHtml(currentPath || '根目录')}</div>
+            <div class="cd-pane-subtitle">${escapeHtml(`${allRows.length} 项`)}</div>
+          </div>
+        </div>
+        <div style="padding:0;">
+          ${allRows.length === 0
+            ? '<div class="cd-empty">此目录为空</div>'
+            : allRows.map(cloudRenderRow).join('')}
+        </div>
       </div>
     </div>
   `;
@@ -573,6 +602,97 @@ function cloudRenderRow(item) {
         <button class="btn btn-sm btn-danger" onclick="cloudDelete('${arg}',false,'${nameArg}')">删除</button>
       </span>
     </div>`;
+}
+
+function cloudRenderTree() {
+  const folders = [...cloudDriveState.folders].sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'zh'));
+  const children = cloudBuildTreeIndex();
+  return cloudRenderTreeNode('', 0, children, folders.length + cloudDriveState.files.length);
+}
+
+function cloudBuildTreeIndex() {
+  const nodes = new Map();
+  for (const folder of cloudDriveState.folders) {
+    const path = folder.relativePath || '';
+    const parent = folder.parentPath || '';
+    if (!nodes.has(parent)) nodes.set(parent, []);
+    nodes.get(parent).push(folder);
+  }
+  for (const list of nodes.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  }
+  return nodes;
+}
+
+function cloudRenderTreeNode(path, depth, children, totalCount) {
+  const pathKey = path || '';
+  const isActive = cloudDriveState.currentPath === pathKey;
+  const expanded = cloudDriveState.treeExpanded.has(pathKey);
+  const directChildren = children.get(pathKey) || [];
+  const directCount = cloudCountDirect(pathKey);
+  const indent = depth * 14;
+  const toggleIcon = directChildren.length > 0 ? (expanded ? '▾' : '▸') : '•';
+  let html = `
+    <div class="cd-tree-root ${isActive ? 'is-active' : ''}" style="padding-left:${12 + indent}px" onclick="cloudNavigate('${escapeAttr(escapeJsString(pathKey))}')">
+      <button class="cd-tree-toggle" onclick="event.stopPropagation();cloudToggleTree('${escapeAttr(escapeJsString(pathKey))}')">${toggleIcon}</button>
+      <span class="cd-tree-label">根目录${pathKey ? '' : ''}</span>
+      <span class="cd-tree-count">${directCount}</span>
+    </div>
+  `;
+  if (!expanded) return html;
+  for (const node of directChildren) {
+    const nodePath = node.relativePath || '';
+    const hasChildren = (children.get(nodePath) || []).length > 0;
+    html += `
+      <div class="cd-tree-node ${cloudDriveState.currentPath === nodePath ? 'is-active' : ''}" style="padding-left:${12 + (depth + 1) * 14}px">
+        <button class="cd-tree-toggle" onclick="cloudToggleTree('${escapeAttr(escapeJsString(nodePath))}')">${hasChildren ? '▾' : '•'}</button>
+        <span class="cd-tree-label" onclick="cloudNavigate('${escapeAttr(escapeJsString(nodePath))}')">${escapeHtml(node.name)}</span>
+        <span class="cd-tree-count">${cloudCountDirect(nodePath)}</span>
+      </div>
+    `;
+    if (hasChildren && cloudDriveState.treeExpanded.has(nodePath)) {
+      html += cloudRenderTreeNodeChildren(nodePath, depth + 1, children);
+    }
+  }
+  return html;
+}
+
+function cloudRenderTreeNodeChildren(path, depth, children) {
+  const directChildren = children.get(path) || [];
+  let html = '';
+  for (const node of directChildren) {
+    const nodePath = node.relativePath || '';
+    const hasChildren = (children.get(nodePath) || []).length > 0;
+    html += `
+      <div class="cd-tree-node ${cloudDriveState.currentPath === nodePath ? 'is-active' : ''}" style="padding-left:${12 + depth * 14}px">
+        <button class="cd-tree-toggle" onclick="cloudToggleTree('${escapeAttr(escapeJsString(nodePath))}')">${hasChildren ? '▾' : '•'}</button>
+        <span class="cd-tree-label" onclick="cloudNavigate('${escapeAttr(escapeJsString(nodePath))}')">${escapeHtml(node.name)}</span>
+        <span class="cd-tree-count">${cloudCountDirect(nodePath)}</span>
+      </div>
+    `;
+    if (hasChildren && cloudDriveState.treeExpanded.has(nodePath)) {
+      html += cloudRenderTreeNodeChildren(nodePath, depth + 1, children);
+    }
+  }
+  return html;
+}
+
+function cloudCountDirect(path) {
+  return cloudListAt(path).length;
+}
+
+function cloudToggleTree(path) {
+  const key = path || '';
+  if (cloudDriveState.treeExpanded.has(key)) cloudDriveState.treeExpanded.delete(key);
+  else cloudDriveState.treeExpanded.add(key);
+  const content = document.getElementById('pageContent');
+  cloudRender(content);
+}
+
+function cloudCollapseAll() {
+  cloudDriveState.treeExpanded = new Set(['']);
+  const content = document.getElementById('pageContent');
+  cloudRender(content);
 }
 
 function cloudIconFor(ext) {

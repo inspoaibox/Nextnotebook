@@ -119,7 +119,7 @@ fun MainNavigation(
             "ai" -> uiState.aiEnabled
             "vault" -> uiState.vaultEnabled
             "transfer" -> uiState.transferEnabled
-            "cloud_drive" -> uiState.cloudDriveEnabled
+            "cloud_drive" -> uiState.cloudDriveEnabled && uiState.cloudDriveSupported
             else -> true
         }
     }
