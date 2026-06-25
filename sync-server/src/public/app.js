@@ -443,74 +443,628 @@ async function loadItems(el, type, label) {
   }
 }
 
-// 网盘数据
+// 网盘数据 —— 多级目录树浏览
+// 当前用户范围：服务端按 JWT user_id 隔离，这里只做客户端路径分组
+let cloudDriveState = { currentPath: '', files: [], folders: [] };
+
 async function loadCloudDrive(el) {
-  const [fileData, folderData] = await Promise.all([
-    api('/items/list?type=cloud_file&limit=100'),
-    api('/items/list?type=cloud_folder&limit=100')
-  ]);
-
-  const files = fileData.items || [];
-  const folders = folderData.items || [];
-
-  el.innerHTML = `
-    <div class="stats-grid" style="margin-bottom:24px;">
-      <div class="stat-card"><div class="stat-value">${files.length}</div><div class="stat-label">网盘文件</div></div>
-      <div class="stat-card"><div class="stat-value">${folders.length}</div><div class="stat-label">网盘文件夹</div></div>
-    </div>
-    ${renderCloudDriveTable('网盘文件', files, 'file')}
-    ${renderCloudDriveTable('网盘文件夹', folders, 'folder')}
-  `;
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:#666;">加载中...</div>';
+  try {
+    await cloudRefresh();
+    cloudRender(el);
+  } catch (err) {
+    el.innerHTML = `<div style="color:#dc3545;padding:20px;">加载失败: ${escapeHtml(err.message)}</div>`;
+  }
 }
 
-function renderCloudDriveTable(title, items, kind) {
-  return `
+async function cloudRefresh() {
+  const [fileData, folderData] = await Promise.all([
+    api('/items/list?type=cloud_file&limit=500'),
+    api('/items/list?type=cloud_folder&limit=500')
+  ]);
+  cloudDriveState.files = (fileData.items || []).map(normalizeCloudItem);
+  cloudDriveState.folders = (folderData.items || []).map(normalizeCloudItem);
+}
+
+// 把后端 item 规整成统一结构（路径解析基于 payload.relative_path）
+function normalizeCloudItem(item) {
+  const payload = parsePayload(item.payload);
+  const id = String(item.id ?? '');
+  const rawPath = String(payload.relative_path || payload.filename || payload.name || id);
+  // 拆分成 segments（去掉空段）
+  const segments = String(rawPath || '').split('/').map(s => s.trim()).filter(Boolean);
+  const relativePath = segments.join('/');
+  return {
+    id,
+    type: item.type,
+    payload,
+    name: payload.filename || payload.name || segments[segments.length - 1] || id,
+    relativePath,
+    segments,
+    parentPath: segments.slice(0, -1).join('/'),
+    size: Number(payload.size || 0),
+    state: payload.upload_state || payload.download_state || '',
+    mtime: item.updated_time || payload.mtime || 0,
+    extension: payload.filename ? (payload.filename.split('.').pop() || '').toLowerCase() : ''
+  };
+}
+
+function cloudRender(el) {
+  const { currentPath } = cloudDriveState;
+  const list = cloudListAt(currentPath);
+  const folders = list.filter(x => x.type === 'cloud_folder').sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  const files = list.filter(x => x.type === 'cloud_file').sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  const allRows = [...folders, ...files];
+
+  el.innerHTML = `
+    <div class="cd-toolbar">
+      <div class="cd-breadcrumb">${cloudRenderBreadcrumb(currentPath)}</div>
+      <button class="btn btn-sm btn-secondary" onclick="cloudRefreshAndRender()">刷新</button>
+      <button class="btn btn-sm btn-secondary" onclick="cloudCreateFolderPrompt()">新建文件夹</button>
+      <button class="btn btn-sm btn-primary" onclick="document.getElementById('cdFileInput').click()">上传文件</button>
+      <input id="cdFileInput" type="file" multiple style="display:none" onchange="cloudUploadOnChange(this.files)">
+    </div>
+    <div id="cdDropZone" class="cd-drop">
+      拖拽文件到此处上传，或点击右上角"上传文件"
+    </div>
+    <div id="cdUploadArea"></div>
     <div class="card">
-      <div class="card-header">${escapeHtml(title)} (${items.length})</div>
+      <div class="card-header">
+        <span>${escapeHtml(currentPath || '全部文件')} (${allRows.length})</span>
+      </div>
       <div class="card-body" style="padding:0;">
-        ${items.length === 0 ? '<p style="padding:20px;color:#666;">暂无数据</p>' : `
-          <table style="width:100%;border-collapse:collapse;">
-            <thead>
-              <tr style="background:#f8f9fa;">
-                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">ID</th>
-                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">名称</th>
-                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">路径</th>
-                ${kind === 'file' ? '<th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">大小</th><th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">状态</th>' : ''}
-                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">更新时间</th>
-                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items.map(item => {
-                const payload = parsePayload(item.payload);
-                const itemId = String(item.id ?? '');
-                const itemArg = escapeAttr(escapeJsString(item.id));
-                const name = kind === 'file'
-                  ? (payload.filename || payload.name || itemId.substring(0, 8))
-                  : (payload.name || payload.relative_path || itemId.substring(0, 8));
-                const relativePath = payload.relative_path || '-';
-                const size = Number(payload.size || 0);
-                const state = payload.upload_state || payload.download_state || '-';
-                return `
-                  <tr>
-                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${escapeHtml(itemId.substring(0, 8))}...</td>
-                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${escapeHtml(name)}</td>
-                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(relativePath)}</td>
-                    ${kind === 'file' ? `<td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${escapeHtml(formatFileSize(size))}</td><td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${escapeHtml(state)}</td>` : ''}
-                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(item.updated_time)}</td>
-                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
-                      <button class="btn btn-sm btn-secondary" onclick="viewItem('${itemArg}')">查看</button>
-                      <button class="btn btn-sm btn-danger" onclick="deleteItem('${itemArg}')">删除</button>
-                    </td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        `}
+        ${allRows.length === 0
+          ? '<div class="cd-empty">此目录为空</div>'
+          : allRows.map(cloudRenderRow).join('')}
       </div>
     </div>
   `;
+  cloudBindDrop();
+}
+
+function cloudRenderBreadcrumb(currentPath) {
+  const segs = currentPath ? currentPath.split('/').filter(Boolean) : [];
+  let html = `<span class="cd-crumb" onclick="cloudNavigate('')">根目录</span>`;
+  let acc = '';
+  segs.forEach((seg, i) => {
+    acc = acc ? acc + '/' + seg : seg;
+    const arg = escapeAttr(escapeJsString(acc));
+    html += `<span class="cd-crumb-sep">/</span>`;
+    if (i === segs.length - 1) {
+      html += `<span class="cd-crumb-current">${escapeHtml(seg)}</span>`;
+    } else {
+      html += `<span class="cd-crumb" onclick="cloudNavigate('${arg}')">${escapeHtml(seg)}</span>`;
+    }
+  });
+  return html;
+}
+
+function cloudRenderRow(item) {
+  const isFolder = item.type === 'cloud_folder';
+  const icon = isFolder ? '📁' : cloudIconFor(item.extension);
+  const arg = escapeAttr(escapeJsString(item.id));
+  const nameArg = escapeAttr(escapeJsString(item.name));
+  if (isFolder) {
+    const pathArg = escapeAttr(escapeJsString(item.relativePath));
+    return `
+      <div class="cd-row is-folder" ondblclick="cloudNavigate('${pathArg}')" onclick="cloudNavigate('${pathArg}')">
+        <span class="cd-row-icon">${icon}</span>
+        <span class="cd-row-name is-folder">${escapeHtml(item.name)}</span>
+        <span class="cd-row-meta"></span>
+        <span class="cd-row-state">${item.state ? escapeHtml(item.state) : ''}</span>
+        <span class="cd-row-actions">
+          <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();cloudRename('${arg}','${nameArg}',true)">重命名</button>
+          <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();cloudMovePrompt('${arg}','${escapeAttr(escapeJsString(item.relativePath))}')">移动</button>
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();cloudDelete('${arg}',true,'${nameArg}')">删除</button>
+        </span>
+      </div>`;
+  }
+  return `
+    <div class="cd-row">
+      <span class="cd-row-icon">${icon}</span>
+      <span class="cd-row-name">${escapeHtml(item.name)}</span>
+      <span class="cd-row-meta">${escapeHtml(formatFileSize(item.size))}</span>
+      <span class="cd-row-state">${item.state ? escapeHtml(item.state) : ''}</span>
+      <span class="cd-row-actions">
+        <button class="btn btn-sm btn-secondary" onclick="cloudView('${arg}')">查看</button>
+        <button class="btn btn-sm btn-secondary" onclick="cloudDownload('${arg}','${nameArg}')">下载</button>
+        <button class="btn btn-sm btn-secondary" onclick="cloudRename('${arg}','${nameArg}',false)">重命名</button>
+        <button class="btn btn-sm btn-secondary" onclick="cloudMovePrompt('${arg}','${escapeAttr(escapeJsString(item.relativePath))}')">移动</button>
+        <button class="btn btn-sm btn-danger" onclick="cloudDelete('${arg}',false,'${nameArg}')">删除</button>
+      </span>
+    </div>`;
+}
+
+function cloudIconFor(ext) {
+  if (!ext) return '📄';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return '🖼️';
+  if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) return '🎬';
+  if (['mp3', 'wav', 'flac', 'ogg', 'm4a'].includes(ext)) return '🎵';
+  if (['pdf'].includes(ext)) return '📕';
+  if (['doc', 'docx'].includes(ext)) return '📘';
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return '📗';
+  if (['ppt', 'pptx'].includes(ext)) return '📙';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '🗜️';
+  if (['txt', 'md', 'json', 'js', 'ts', 'html', 'css', 'py', 'java', 'go'].includes(ext)) return '📄';
+  return '📄';
+}
+
+// 取出指定路径下的直接子项（不递归）
+function cloudListAt(path) {
+  const norm = (path || '').split('/').filter(Boolean).join('/');
+  const atDepth = (norm ? norm.split('/').length : 0);
+  const all = [...cloudDriveState.folders, ...cloudDriveState.files];
+  return all.filter(item => {
+    if (item.segments.length !== atDepth + 1) return false;
+    const parent = item.segments.slice(0, -1).join('/');
+    return parent === norm;
+  });
+}
+
+// 导航
+function cloudNavigate(path) {
+  cloudDriveState.currentPath = path || '';
+  const content = document.getElementById('pageContent');
+  cloudRender(content);
+}
+
+async function cloudRefreshAndRender() {
+  try {
+    await cloudRefresh();
+    const content = document.getElementById('pageContent');
+    cloudRender(content);
+    showMsg('已刷新', 'success');
+  } catch (err) {
+    showMsg(err.message, 'error');
+  }
+}
+
+// 拖拽上传
+function cloudBindDrop() {
+  const zone = document.getElementById('cdDropZone');
+  if (!zone) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+      cloudUploadFiles(e.dataTransfer.files);
+    }
+  });
+}
+
+// 文件选择回调
+function cloudUploadOnChange(fileList) {
+  cloudUploadFiles(fileList);
+  document.getElementById('cdFileInput').value = '';
+}
+
+// 上传入口（支持多文件，串行）
+async function cloudUploadFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const base = cloudDriveState.currentPath || '';
+  for (const file of files) {
+    await cloudUploadOne(file, base).catch(err => showMsg(`上传失败: ${file.name} - ${err.message}`, 'error'));
+  }
+  await cloudRefreshAndRender();
+  showMsg(`已上传 ${files.length} 个文件`, 'success');
+}
+
+// 单个文件上传：item → upload session → chunks → complete
+async function cloudUploadOne(file, base) {
+  const itemId = cloudGenId();
+  const relativePath = base ? `${base}/${file.name}` : file.name;
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const chunkSize = 8 * 1024 * 1024; // 8MB
+  const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
+  const now = Date.now();
+
+  // 1) 先建 item
+  const payload = {
+    filename: file.name,
+    mime_type: file.type || 'application/octet-stream',
+    size: file.size,
+    file_hash: '',
+    parent_folder_id: cloudDeriveParent(base),
+    relative_path: relativePath,
+    mtime: now,
+    upload_state: 'pending',
+    chunk_size: chunkSize,
+    total_chunks: totalChunks,
+    uploaded_chunks: []
+  };
+  await api(`/items/${encodeURIComponent(itemId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ type: 'cloud_file', payload: JSON.stringify(payload), content_hash: '' })
+  });
+
+  // 2) 建上传会话
+  const session = await api('/resources/upload', {
+    method: 'POST',
+    body: JSON.stringify({ item_id: itemId, total_size: file.size, chunk_size: chunkSize, extension: ext || undefined })
+  });
+  const sessionId = session.session_id;
+
+  // 3) 分块上传
+  const uploaded = session.uploaded_chunks || [];
+  for (let i = 0; i < totalChunks; i++) {
+    if (uploaded.includes(i)) continue;
+    const start = i * chunkSize;
+    const blob = file.slice(start, Math.min(start + chunkSize, file.size));
+    await cloudUploadChunk(sessionId, i, blob, totalChunks, file.name);
+    uploaded.push(i);
+    cloudUploadProgress(file.name, i + 1, totalChunks);
+  }
+
+  // 4) 完成
+  await api(`/upload/${encodeURIComponent(sessionId)}/complete`, { method: 'POST' });
+  cloudUploadDone(file.name);
+}
+
+function cloudUploadChunk(sessionId, index, blob, totalChunks, label) {
+  const headers = { 'Content-Type': 'application/octet-stream', 'X-Chunk-Index': String(index) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return fetch(`${API}/upload/${encodeURIComponent(sessionId)}/chunk`, { method: 'PUT', headers, body: blob })
+    .then(async res => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error?.message || `分块 ${index + 1} 上传失败`);
+      return data;
+    });
+}
+
+function cloudUploadProgress(label, done, total) {
+  const area = document.getElementById('cdUploadArea');
+  if (!area) return;
+  const pct = total > 0 ? Math.round(done / total * 100) : 100;
+  const id = 'cdp-' + label.replace(/[^a-z0-9]/gi, '');
+  let node = document.getElementById(id);
+  if (!node) {
+    node = document.createElement('div');
+    node.id = id;
+    node.className = 'cd-progress-wrap';
+    node.innerHTML = `
+      <div style="font-size:12px;color:#333;margin-bottom:4px;">${escapeHtml(label)}</div>
+      <div class="cd-progress"><div class="cd-progress-bar" style="width:0%"></div></div>
+      <div class="cd-progress-label"><span class="cd-pct">0%</span><span class="cd-chunk"></span></div>
+    `;
+    area.appendChild(node);
+  }
+  node.querySelector('.cd-progress-bar').style.width = pct + '%';
+  node.querySelector('.cd-pct').textContent = pct + '%';
+  node.querySelector('.cd-chunk').textContent = `${done}/${total} 块`;
+}
+
+function cloudUploadDone(label) {
+  const id = 'cdp-' + label.replace(/[^a-z0-9]/gi, '');
+  const node = document.getElementById(id);
+  if (!node) return;
+  node.querySelector('.cd-progress-bar').style.width = '100%';
+  node.querySelector('.cd-pct').textContent = '完成';
+  node.querySelector('.cd-chunk').textContent = '✓';
+  setTimeout(() => node && node.remove(), 2000);
+}
+
+// 生成 UUID（带扩展后的 item_id 用）
+function cloudGenId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// 简单的 parent_folder_id 派生（仅用于 payload 字段兼容，不做强一致校验）
+function cloudDeriveParent(base) {
+  if (!base) return null;
+  return base;
+}
+
+// ========== 网盘操作 ==========
+
+// 查看：弹模态预览
+async function cloudView(id) {
+  cloudModalOpen('加载中...', '');
+  try {
+    const item = await api(`/items/${encodeURIComponent(id)}`);
+    const payload = parsePayload(item.payload);
+    const name = payload.filename || payload.name || id;
+    const ext = (String(name).split('.').pop() || '').toLowerCase();
+    const resName = id + (ext ? '.' + ext : '');
+    const url = `${API}/resources/${encodeURIComponent(resName)}?t=${Date.now()}`;
+
+    const head = `
+      <div class="cd-info-table">
+        <tr><td>名称</td><td>${escapeHtml(name)}</td></tr>
+        <tr><td>路径</td><td>${escapeHtml(payload.relative_path || '-')}</td></tr>
+        <tr><td>大小</td><td>${escapeHtml(formatFileSize(Number(payload.size || 0)))}</td></tr>
+        <tr><td>状态</td><td>${escapeHtml(payload.upload_state || '-')}</td></tr>
+        <tr><td>修改时间</td><td>${formatTime(payload.mtime || item.updated_time)}</td></tr>
+        <tr><td>ID</td><td style="font-family:monospace;font-size:11px;">${escapeHtml(id)}</td></tr>
+      </div>
+    `;
+
+    let preview = '';
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) {
+      preview = `<img class="cd-preview-img" src="${url}" alt="">`;
+    } else if (ext === 'pdf') {
+      preview = `<iframe class="cd-preview-iframe" src="${url}"></iframe>`;
+    } else if (['mp4', 'webm', 'mov'].includes(ext)) {
+      preview = `<video controls style="max-width:100%;max-height:70vh;display:block;margin:0 auto;"><source src="${url}"></video>`;
+    } else if (['mp3', 'wav', 'flac', 'ogg', 'm4a'].includes(ext)) {
+      preview = `<audio controls style="width:100%;"><source src="${url}"></audio>`;
+    } else if (['txt', 'md', 'json', 'log', 'csv', 'js', 'ts', 'css', 'html', 'py', 'java', 'go', 'xml'].includes(ext)) {
+      const text = await fetch(url).then(r => r.ok ? r.text() : '').catch(() => '');
+      preview = `<pre style="white-space:pre-wrap;word-break:break-word;background:#f7f7f7;padding:14px;border-radius:6px;font-size:12px;max-height:60vh;overflow:auto;">${escapeHtml(text.substring(0, 200000))}</pre>`;
+    } else {
+      preview = `<div class="cd-empty">此类型暂不支持在线预览，请点击下方下载</div>`;
+    }
+
+    cloudModalOpen(`查看：${name}`, head + preview, [
+      { text: '下载', cls: 'btn-primary', onclick: `cloudDownload('${escapeAttr(escapeJsString(id))}','${escapeAttr(escapeJsString(name))}')` },
+      { text: '关闭', cls: 'btn-secondary', onclick: 'cloudModalClose()' }
+    ]);
+  } catch (err) {
+    cloudModalClose();
+    showMsg(err.message, 'error');
+  }
+}
+
+// 下载
+async function cloudDownload(id, name) {
+  const ext = (String(name).split('.').pop() || '').toLowerCase();
+  const resName = id + (ext ? '.' + ext : '');
+  try {
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${API}/resources/${encodeURIComponent(resName)}`, { headers });
+    if (!res.ok) throw new Error(`下载失败 (${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name || id;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    showMsg(err.message, 'error');
+  }
+}
+
+// 重命名（文件改 filename+relative_path；文件夹改 name+relative_path，并级联子项路径）
+async function cloudRename(id, oldName, isFolder) {
+  const newName = prompt(`请输入新名称：`, oldName);
+  if (!newName || newName === oldName) return;
+  cloudShowOverlay('正在重命名...');
+  try {
+    const item = await api(`/items/${encodeURIComponent(id)}`);
+    const payload = parsePayload(item.payload);
+    if (isFolder) {
+      const oldPath = payload.relative_path || '';
+      const segs = oldPath.split('/').filter(Boolean);
+      segs[segs.length - 1] = newName;
+      const newPath = segs.join('/');
+      // 级联更新所有子项 relative_path
+      await cloudCascadeRename(oldPath, newPath);
+      payload.name = newName;
+      payload.relative_path = newPath;
+    } else {
+      const segs = (payload.relative_path || payload.filename || oldName).split('/');
+      segs[segs.length - 1] = newName;
+      payload.filename = newName;
+      payload.relative_path = segs.join('/');
+    }
+    await api(`/items/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ type: item.type, payload: JSON.stringify(payload), content_hash: String(item.content_hash || '') })
+    });
+    cloudHideOverlay();
+    showMsg('重命名成功', 'success');
+    await cloudRefreshAndRender();
+  } catch (err) {
+    cloudHideOverlay();
+    showMsg(err.message, 'error');
+  }
+}
+
+// 级联：把 oldPath 前缀改成 newPath（针对所有 cloud_file / cloud_folder 的"子项"）
+async function cloudCascadeRename(oldPath, newPath) {
+  const all = [...cloudDriveState.files, ...cloudDriveState.folders];
+  for (const it of all) {
+    const p = it.relativePath;
+    // 只处理严格子项（前缀匹配 oldPath/），folder 自身由调用方单独更新
+    if (p.startsWith(oldPath + '/')) {
+      const tail = p.substring(oldPath.length);
+      const newRel = newPath + tail;
+      const payload = { ...it.payload };
+      if (it.type === 'cloud_folder') payload.name = newRel.split('/').pop();
+      else payload.filename = newRel.split('/').pop();
+      payload.relative_path = newRel;
+      try {
+        await api(`/items/${encodeURIComponent(it.id)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ type: it.type, payload: JSON.stringify(payload), content_hash: '' })
+        });
+      } catch (_) { /* 尽力更新 */ }
+    }
+  }
+}
+
+// 移动
+async function cloudMovePrompt(id, currentRelPath) {
+  cloudModalOpen('移动到...', `
+    <div class="cd-form-group">
+      <label>当前路径</label>
+      <div style="font-size:13px;color:#666;padding:6px 0;">${escapeHtml(currentRelPath || '(根目录)')}</div>
+    </div>
+    <div class="cd-form-group">
+      <label>目标路径（留空表示根目录，多级用 / 分隔，例如：docs/work）</label>
+      <input id="cdMoveTarget" class="cd-input" value="${escapeAttr(currentRelPath.includes('/') ? currentRelPath.split('/').slice(0, -1).join('/') : '')}" placeholder="如 docs/work 或留空">
+    </div>
+    <div style="font-size:12px;color:#999;">提示：只会移动此项本身；文件夹移动会一并更新内部子项的路径。</div>
+  `, [
+    { text: '取消', cls: 'btn-secondary', onclick: 'cloudModalClose()' },
+    { text: '移动', cls: 'btn-primary', onclick: `cloudMoveDo('${escapeAttr(escapeJsString(id))}','${escapeAttr(escapeJsString(currentRelPath))}')` }
+  ]);
+}
+
+async function cloudMoveDo(id, oldRelPath) {
+  const input = document.getElementById('cdMoveTarget');
+  const target = (input ? input.value : '').trim().split('/').map(s => s.trim()).filter(Boolean).join('/');
+  cloudModalClose();
+  cloudShowOverlay('正在移动...');
+  try {
+    const item = await api(`/items/${encodeURIComponent(id)}`);
+    const payload = parsePayload(item.payload);
+    const isFolder = item.type === 'cloud_folder';
+    const name = isFolder ? (payload.name || oldRelPath.split('/').pop()) : (payload.filename || oldRelPath.split('/').pop());
+    const newRel = target ? `${target}/${name}` : name;
+
+    if (isFolder) {
+      await cloudCascadeRename(oldRelPath, newRel);
+      payload.name = name;
+      payload.relative_path = newRel;
+      payload.parent_folder_id = target || null;
+    } else {
+      payload.filename = name;
+      payload.relative_path = newRel;
+      payload.parent_folder_id = target || null;
+    }
+    await api(`/items/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ type: item.type, payload: JSON.stringify(payload), content_hash: String(item.content_hash || '') })
+    });
+    cloudHideOverlay();
+    showMsg('移动成功', 'success');
+    await cloudRefreshAndRender();
+  } catch (err) {
+    cloudHideOverlay();
+    showMsg(err.message, 'error');
+  }
+}
+
+// 删除：文件 = 资源 + item；文件夹 = 递归删除所有子项
+async function cloudDelete(id, isFolder, displayName) {
+  if (!confirm(`确定删除「${displayName || id}」？${isFolder ? '文件夹内所有内容将被一并删除且不可恢复。' : ''}`)) return;
+  cloudShowOverlay('正在删除...');
+  try {
+    if (isFolder) {
+      const folder = [...cloudDriveState.folders, ...cloudDriveState.files].find(x => x.id === id);
+      const prefix = folder ? folder.relativePath : '';
+      const toDelete = [
+        ...cloudDriveState.folders.filter(x => x.id === id || (prefix && (x.relativePath === prefix || x.relativePath.startsWith(prefix + '/')))),
+        ...cloudDriveState.files.filter(x => prefix && (x.relativePath === prefix || x.relativePath.startsWith(prefix + '/')))
+      ];
+      for (const it of toDelete) {
+        await cloudDeleteOne(it.id, it.type === 'cloud_folder');
+      }
+    } else {
+      await cloudDeleteOne(id, false);
+    }
+    cloudHideOverlay();
+    showMsg('删除成功', 'success');
+    await cloudRefreshAndRender();
+  } catch (err) {
+    cloudHideOverlay();
+    showMsg(err.message, 'error');
+  }
+}
+
+async function cloudDeleteOne(id, isFolder) {
+  if (!isFolder) {
+    // 删除二进制资源（允许不存在）
+    const item = [...cloudDriveState.files].find(x => x.id === id);
+    if (item) {
+      const ext = item.extension;
+      const resName = id + (ext ? '.' + ext : '');
+      try {
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`${API}/resources/${encodeURIComponent(resName)}`, { method: 'DELETE', headers });
+      } catch (_) { /* 容错 */ }
+    }
+  }
+  await api(`/items/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+// 新建文件夹
+async function cloudCreateFolderPrompt() {
+  const name = prompt('请输入文件夹名称：');
+  if (!name) return;
+  const base = cloudDriveState.currentPath || '';
+  const rel = base ? `${base}/${name}` : name;
+  const id = cloudGenId();
+  cloudShowOverlay('正在创建文件夹...');
+  try {
+    const payload = {
+      name,
+      parent_folder_id: base || null,
+      relative_path: rel
+    };
+    await api(`/items/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ type: 'cloud_folder', payload: JSON.stringify(payload), content_hash: '' })
+    });
+    cloudHideOverlay();
+    showMsg('创建成功', 'success');
+    await cloudRefreshAndRender();
+  } catch (err) {
+    cloudHideOverlay();
+    showMsg(err.message, 'error');
+  }
+}
+
+// ========== 模态/遮罩辅助 ==========
+
+function cloudModalOpen(title, bodyHtml, buttons) {
+  cloudModalClose();
+  const btns = (buttons || []).map((b, i) => {
+    return `<button class="btn ${b.cls || 'btn-secondary'}" data-i="${i}">${escapeHtml(b.text)}</button>`;
+  }).join('');
+  const mask = document.createElement('div');
+  mask.className = 'cd-modal-mask';
+  mask.id = 'cdModalMask';
+  mask.innerHTML = `
+    <div class="cd-modal">
+      <div class="cd-modal-header">
+        <span>${escapeHtml(title)}</span>
+        <button class="cd-modal-close" onclick="cloudModalClose()">×</button>
+      </div>
+      <div class="cd-modal-body">${bodyHtml}</div>
+      ${btns ? `<div class="cd-modal-footer">${btns}</div>` : ''}
+    </div>
+  `;
+  document.body.appendChild(mask);
+  // 点击空白关闭
+  mask.addEventListener('click', e => { if (e.target === mask) cloudModalClose(); });
+  // 绑定按钮
+  (buttons || []).forEach((b, i) => {
+    const el = mask.querySelector(`.cd-modal-footer button[data-i="${i}"]`);
+    if (el && b.onclick) el.setAttribute('onclick', b.onclick);
+  });
+}
+
+function cloudModalClose() {
+  const mask = document.getElementById('cdModalMask');
+  if (mask) mask.remove();
+}
+
+function cloudShowOverlay(label) {
+  cloudHideOverlay();
+  const div = document.createElement('div');
+  div.className = 'cd-overlay';
+  div.id = 'cdOverlay';
+  div.innerHTML = `<span style="display:inline-block;width:16px;height:16px;border:2px solid #667eea;border-top-color:transparent;border-radius:50%;animation:cdspin 0.8s linear infinite;"></span> ${escapeHtml(label || '处理中...')}`;
+  document.body.appendChild(div);
+}
+
+function cloudHideOverlay() {
+  const div = document.getElementById('cdOverlay');
+  if (div) div.remove();
 }
 
 function formatFileSize(bytes) {

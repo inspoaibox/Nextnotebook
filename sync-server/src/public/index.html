@@ -37,6 +37,51 @@
     .stat-card { background: white; border-radius: 8px; padding: 20px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .stat-value { font-size: 32px; font-weight: 700; color: #667eea; }
     .stat-label { font-size: 13px; color: #666; margin-top: 4px; }
+
+    /* ===== 网盘页面 ===== */
+    .cd-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .cd-breadcrumb { display: flex; align-items: center; gap: 6px; flex: 1; flex-wrap: wrap; min-width: 0; font-size: 14px; }
+    .cd-crumb { cursor: pointer; color: #667eea; padding: 2px 6px; border-radius: 4px; }
+    .cd-crumb:hover { background: rgba(102,126,234,0.1); text-decoration: underline; }
+    .cd-crumb-sep { color: #aaa; }
+    .cd-crumb-current { color: #333; padding: 2px 6px; font-weight: 600; }
+    .cd-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #f0f0f0; cursor: default; transition: background 0.15s; }
+    .cd-row:hover { background: #f8f9ff; }
+    .cd-row.is-folder { cursor: pointer; }
+    .cd-row-icon { font-size: 20px; width: 26px; text-align: center; flex-shrink: 0; }
+    .cd-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: #333; }
+    .cd-row-name.is-folder { font-weight: 500; }
+    .cd-row-meta { font-size: 12px; color: #999; flex-shrink: 0; width: 100px; text-align: right; }
+    .cd-row-state { font-size: 11px; color: #aaa; flex-shrink: 0; width: 80px; text-align: center; }
+    .cd-row-actions { flex-shrink: 0; display: flex; gap: 4px; }
+    .cd-empty { padding: 60px 20px; text-align: center; color: #999; }
+    .cd-drop { border: 2px dashed #c8cdf5; border-radius: 8px; padding: 28px; text-align: center; color: #888; background: #fbfbfe; margin-bottom: 16px; transition: all 0.2s; }
+    .cd-drop.dragover { border-color: #667eea; background: #eef1ff; color: #667eea; }
+    .cd-progress-wrap { margin-top: 8px; }
+    .cd-progress { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; }
+    .cd-progress-bar { height: 100%; background: linear-gradient(90deg,#667eea,#764ba2); transition: width 0.2s; }
+    .cd-progress-label { font-size: 12px; color: #666; margin-top: 4px; display: flex; justify-content: space-between; }
+
+    /* ===== 模态框 ===== */
+    .cd-modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9000; padding: 20px; }
+    .cd-modal { background: white; border-radius: 10px; max-width: 900px; width: 100%; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 12px 48px rgba(0,0,0,0.3); }
+    .cd-modal-header { padding: 14px 20px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+    .cd-modal-close { cursor: pointer; font-size: 22px; color: #999; line-height: 1; background: none; border: none; padding: 0 4px; }
+    .cd-modal-close:hover { color: #333; }
+    .cd-modal-body { flex: 1; overflow: auto; padding: 20px; }
+    .cd-modal-footer { padding: 12px 20px; border-top: 1px solid #e0e0e0; display: flex; justify-content: flex-end; gap: 8px; }
+    .cd-preview-img { max-width: 100%; max-height: 70vh; display: block; margin: 0 auto; }
+    .cd-preview-iframe { width: 100%; height: 70vh; border: none; }
+    .cd-form-group { margin-bottom: 14px; }
+    .cd-form-group label { display: block; font-size: 13px; color: #666; margin-bottom: 6px; }
+    .cd-input { width: 100%; padding: 8px 12px; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 14px; font-family: inherit; }
+    .cd-input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.15); }
+    .cd-info-table { width: 100%; font-size: 13px; }
+    .cd-info-table td { padding: 6px 4px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    .cd-info-table td:first-child { color: #999; width: 110px; }
+    .cd-info-table td:last-child { color: #333; word-break: break-all; }
+    .cd-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.85); display: flex; align-items: center; justify-content: center; z-index: 9500; font-size: 14px; color: #667eea; gap: 10px; }
+    @keyframes cdspin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>

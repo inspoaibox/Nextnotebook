@@ -7,6 +7,7 @@ import { StorageAdapter, WebDAVConfig, ServerConfig } from '@core/sync/StorageAd
 import { SyncModules, DEFAULT_SYNC_MODULES } from '@shared/types';
 import { getItemsManager } from './DatabaseService';
 import { loadSyncConfig, saveSyncConfig } from './SyncConfigStorage';
+import { getCloudDriveService } from './CloudDriveService';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -50,6 +51,33 @@ export interface FirstSyncCheckResult {
   localItemCount: number;
 }
 
+/**
+ * 任务C：从 CloudDriveService 单例读取传输层配置（超时/重试/连接池）。
+ * 该配置是云盘与同步共用的权威来源——ServerAdapter 内部对这些字段做 `?? 默认值` 兜底，
+ * 故此处返回 undefined 即可让适配器回退到内置默认。CloudDriveService 未初始化或读取异常时返回空对象。
+ */
+function readTransportConfig(): {
+  upload_timeout_ms?: number;
+  upload_retry_count?: number;
+  upload_retry_backoff_base_ms?: number;
+  keep_alive?: boolean;
+  max_sockets?: number;
+} {
+  try {
+    const cfg = getCloudDriveService()?.getConfig();
+    if (!cfg) return {};
+    return {
+      upload_timeout_ms: cfg.upload_timeout_ms,
+      upload_retry_count: cfg.upload_retry_count,
+      upload_retry_backoff_base_ms: cfg.upload_retry_backoff_base_ms,
+      keep_alive: cfg.keep_alive,
+      max_sockets: cfg.max_sockets,
+    };
+  } catch {
+    return {};
+  }
+}
+
 // 初始化同步服务
 export async function initializeSyncService(config: SyncServiceConfig): Promise<boolean> {
   try {
@@ -91,10 +119,19 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       };
       currentAdapter = new WebDAVAdapter(webdavConfig);
     } else {
+      // 任务C：从 CloudDriveService 单例读取传输层配置（超时/重试/连接池），
+      // 透传给 ServerAdapter。该适配器同时被网盘 Scheduler 复用做分块上传，
+      // 故传输策略对云盘上传同样生效。读取失败或未初始化时回退到 ServerAdapter 内置默认。
+      const transport = readTransportConfig();
       const serverConfig: ServerConfig = {
         url: config.url,
         apiKey: config.apiKey || '',
         token: config.serverToken,
+        upload_timeout_ms: transport.upload_timeout_ms,
+        upload_retry_count: transport.upload_retry_count,
+        upload_retry_backoff_base_ms: transport.upload_retry_backoff_base_ms,
+        keep_alive: transport.keep_alive,
+        max_sockets: transport.max_sockets,
       };
       const serverAdapter = new ServerAdapter(serverConfig);
 
@@ -359,10 +396,19 @@ export async function testSyncConnection(config: SyncServiceConfig): Promise<boo
       adapter = new WebDAVAdapter(webdavConfig);
       console.log('[SyncService] WebDAV adapter created successfully');
     } else {
+      // 任务C：从 CloudDriveService 单例读取传输层配置（超时/重试/连接池），
+      // 透传给 ServerAdapter。该适配器同时被网盘 Scheduler 复用做分块上传，
+      // 故传输策略对云盘上传同样生效。读取失败或未初始化时回退到 ServerAdapter 内置默认。
+      const transport = readTransportConfig();
       const serverConfig: ServerConfig = {
         url: config.url,
         apiKey: config.apiKey || '',
         token: config.serverToken,
+        upload_timeout_ms: transport.upload_timeout_ms,
+        upload_retry_count: transport.upload_retry_count,
+        upload_retry_backoff_base_ms: transport.upload_retry_backoff_base_ms,
+        keep_alive: transport.keep_alive,
+        max_sockets: transport.max_sockets,
       };
       const serverAdapter = new ServerAdapter(serverConfig);
 

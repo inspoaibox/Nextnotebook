@@ -324,6 +324,12 @@ export interface CloudDriveConfig {
   download_chunk_size: number;        // 下载分块大小（字节，Range 段长）
   download_concurrency: number;       // 并行下载文件数（同一时刻）
   conflict_strategy: CloudConflictStrategy;  // 冲突解决策略
+  // 传输鲁棒性（Phase 3：文件过多时部分直接失败的修复）
+  upload_timeout_ms: number;          // 单次 HTTP 请求超时（毫秒，0 = 不限）
+  upload_retry_count: number;         // 失败后额外重试次数（总尝试 = 1 + 此值）
+  upload_retry_backoff_base_ms: number; // 指数退避基数（毫秒，实际等待 = base * 2^attempt，封顶 30s）
+  keep_alive: boolean;                // 是否复用 TCP 连接（连接池）
+  max_sockets: number;                // 单源最大并发连接数（连接池上限）
 }
 
 // 网盘配置默认值
@@ -354,6 +360,12 @@ export const DEFAULT_CLOUD_DRIVE_CONFIG: CloudDriveConfig = {
   download_chunk_size: 8 * 1024 * 1024, // 8MB（与服务端 upload chunk 对齐）
   download_concurrency: 2,
   conflict_strategy: 'create-copy',
+  // Phase 3 传输鲁棒性默认值
+  upload_timeout_ms: 60000,            // 60s（覆盖大多数分块 RTT，避免无限挂起）
+  upload_retry_count: 3,               // 总尝试 4 次（1 + 3）
+  upload_retry_backoff_base_ms: 1000,  // 退避序列：1s → 2s → 4s（封顶 30s）
+  keep_alive: true,                    // 复用连接，减少握手开销
+  max_sockets: 16,                     // 兼顾并发与服务器压力
 };
 
 // 网盘上传进度（用于 UI 展示）

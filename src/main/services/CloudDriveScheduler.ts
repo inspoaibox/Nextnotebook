@@ -92,6 +92,15 @@ export class CloudDriveScheduler {
   private abortControllers = new Map<string, AbortController>();
 
   /**
+   * 字节级上传进度节流：onUploadProgress 回调按 socket 切片（64KB）触发，
+   * 频次远高于 IPC 推送所需。这里记录每个 itemId 上次推送的字节 / 时间戳，
+   * 节流到 ≤ ~15fps，避免渲染进程被进度事件淹没（任务B）。
+   */
+  private lastUploadEmit = new Map<string, { bytes: number; ts: number }>();
+  private static readonly UPLOAD_EMIT_MIN_INTERVAL_MS = 60;
+  private static readonly UPLOAD_EMIT_MIN_BYTES_RATIO = 0.005; // ≥0.5% 才推送
+
+  /**
    * resume-after-pause 竞态兜底（C2 引入）。
    * pause 触发 abort 后，runUpload 的 finally 是异步释放 inFlight 的
    * （abort 只在下一个分块循环检查点生效，当前 adapter.uploadChunk 的 HTTP
@@ -293,6 +302,14 @@ export class CloudDriveScheduler {
     const config = this.getConfig();
     // small_file_concurrency <= 0 视为不限并发（用一个较大上限避免雪崩）
     const limit = config.small_file_concurrency > 0 ? config.small_file_concurrency : 8;
+    // 任务C「排序」：小文件队列按 size 升序（短作业优先）。更小的文件先跑完，
+    // 更快释放并发槽，让"文件过多"场景下多数文件尽早完成、减少尾部堆积。
+    // 仅在队列长度>1时排序，避免无谓开销。enqueuedAt 作为稳定化次序键。
+    if (this.smallQueue.length > 1) {
+      this.smallQueue.sort(
+        (a, b) => a.size - b.size || a.enqueuedAt - b.enqueuedAt
+      );
+    }
     while (this.smallRunning < limit && this.smallQueue.length > 0) {
       const task = this.smallQueue.shift()!;
       this.smallRunning++;
@@ -308,6 +325,8 @@ export class CloudDriveScheduler {
   private pumpLarge(): void {
     if (this.disposed) return;
     if (this.largeRunning) return;
+    // 大文件队列保持 FIFO（push+shift 即按 enqueuedAt 先进先出），保证公平、
+    // 避免大文件之间因 size 排序导致某个早入队的大文件被长期延后。
     const task = this.largeQueue.shift();
     if (!task) return;
     this.largeRunning = true;
@@ -360,16 +379,65 @@ export class CloudDriveScheduler {
     const signal = controller.signal;
 
     try {
-      if (adapter.hasChunkedUpload?.() === true) {
-        await this.uploadChunked(adapter, itemId, payload, absPath, signal);
-      } else if (adapter.streamUploadFile) {
-        await this.uploadStream(adapter, itemId, payload, absPath, signal);
-      } else {
-        this.markError(itemId, payload, '当前同步后端不支持文件上传');
+      // 有限次重试（任务C）：文件过多/网络抖动时部分分块会失败，原先一次失败即 markError。
+      // 现在用配置的 upload_retry_count 做有界重试，仅在「传输类瞬时错误」上重试，
+      // 指数退避（upload_retry_backoff_base_ms * 2^attempt，封顶 30s）。
+      // uploadChunked/uploadStream 自带断点续传（getUploadStatus），重试不会重传已完成分块。
+      const maxAttempts = Math.max(1, 1 + (config.upload_retry_count | 0));
+      let lastErr: unknown = null;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // 每次重试前检查中止（pause/cancel/dispose）。
+        if (this.disposed || signal.aborted || this.isAborted(itemId)) {
+          break;
+        }
+        try {
+          if (adapter.hasChunkedUpload?.() === true) {
+            await this.uploadChunked(adapter, itemId, payload, absPath, signal);
+          } else if (adapter.streamUploadFile) {
+            await this.uploadStream(adapter, itemId, payload, absPath, signal);
+          } else {
+            // 后端能力缺失：不可重试，直接报错。
+            throw new Error('当前同步后端不支持文件上传');
+          }
+          lastErr = null;
+          break; // 成功，跳出重试循环
+        } catch (err) {
+          lastErr = err;
+          // 主动中止：不重试，不报错（X1：由 abort 触发方推送 paused/removed）。
+          if (signal.aborted || this.isAborted(itemId) || this.disposed) {
+            break;
+          }
+          // 不可重试的错误：哈希不一致、分块被拒、文件消失等「确定性」失败，
+          // 重试也是同样的结果，直接交给下面的 markError。
+          if (!this.isRetryableUploadError(err)) {
+            break;
+          }
+          // 还有重试预算：退避后继续；否则让循环自然结束进入 markError。
+          if (attempt + 1 < maxAttempts) {
+            // 重试期间保持 uploading 状态（进度条停在上次位置），仅日志记录，
+            // 不向 UI 推送 retry 事件——进度展示归 Task B 统一处理，避免改类型外溢。
+            const attemptNo = attempt + 1;
+            const errMsg = err instanceof Error ? err.message : String(err);
+            console.warn(
+              `[CloudDriveScheduler] 上传失败，准备第 ${attemptNo}/${maxAttempts - 1} 次重试: ${itemId}`,
+              errMsg
+            );
+            await this.sleepBackoff(config.upload_retry_backoff_base_ms, attemptNo, signal);
+            // 退避期间用户可能 pause/cancel：被中止则立即停止。
+            if (signal.aborted || this.isAborted(itemId) || this.disposed) {
+              break;
+            }
+          }
+        }
+      }
+
+      // 循环结束后仍有未消费错误 → 标记 error。
+      if (lastErr !== null && !signal.aborted && !this.isAborted(itemId) && !this.disposed) {
+        const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+        this.markError(itemId, payload, msg);
       }
     } catch (err) {
-      // 主动中止（pause/cancel/dispose）：不视为错误，也不推送 error 状态，
-      // 由 abort 触发方负责推送 paused/removed 状态（X1：避免覆盖用户决策）。
+      // 兜底：try 顶层的非上传逻辑异常（极少见，如 payload 二次读取失败）。
       if (signal.aborted || this.isAborted(itemId)) {
         return;
       }
@@ -472,15 +540,45 @@ export class CloudDriveScheduler {
         const bytesRead = fs.readSync(fd, buf, 0, chunkSize, i * chunkSize);
         const data = bytesRead < chunkSize ? buf.slice(0, bytesRead) : buf;
 
-        const res = await adapter.uploadChunk!({ sessionId, chunkIndex: i, data });
+        // 透传 signal：pause/cancel/dispose 时让 doFetch 立即中止在途 HTTP 请求，
+        // 而不是干等当前分块跑完。doFetch 内部已对 408/429/5xx/超时/网络错误做退避重试。
+        //
+        // onUploadProgress（B 任务核心）：分块按 64KB 切片流式发送，每片发完回调本次分块
+        // 累计已发送字节。这里换算成整文件 uploaded_bytes = 之前已完成分块字节 + 本次分块已发送，
+        // 上限 clamp 到 payload.size。从而使单块小文件也能呈现平滑进度（原先 0%→100% 跳变）。
+        // 之前已完成分块数 = uploadedSet 大小（尚未加入 i）。
+        const completedBytesBefore = uploadedSet.size * chunkSize;
+        const arr = Array.from(uploadedSet).sort((a, b) => a - b);
+        const res = await adapter.uploadChunk!({
+          sessionId,
+          chunkIndex: i,
+          data,
+          signal,
+          onUploadProgress: (sentBytes) => {
+            // 当前分块上传中：uploaded_bytes = 已完成分块字节 + 本分块已发送
+            const uploadedBytes = Math.min(
+              payload.size,
+              completedBytesBefore + sentBytes
+            );
+            this.emitUploadBytesProgress(
+              itemId,
+              payload,
+              'uploading',
+              uploadedBytes,
+              arr,
+              totalChunks
+            );
+          },
+        });
         if (!res.accepted && !res.duplicate) {
           throw new Error(`分块 ${i} 被服务端拒绝`);
         }
         uploadedSet.add(i);
-        const arr = Array.from(uploadedSet).sort((a, b) => a - b);
+        arr.push(i);
+        arr.sort((a, b) => a - b);
         this.updatePayload(itemId, { uploaded_chunks: arr });
 
-        // 推送进度
+        // 推送进度（块级：分块完成的里程碑事件）
         this.emitProgressFor(itemId, payload, 'uploading', i + 1 - uploadedChunks.length, {
           uploadedChunks: arr,
           totalChunks,
@@ -556,6 +654,8 @@ export class CloudDriveScheduler {
     uploadedChunks: number[],
     sessionId: string | null
   ): void {
+    // 终态清理节流状态，避免 Map 无限增长；重试时也从全新节流起点开始
+    this.lastUploadEmit.delete(itemId);
     this.updatePayload(itemId, {
       upload_state: 'completed',
       size,
@@ -576,7 +676,71 @@ export class CloudDriveScheduler {
     this.emitProgressFor(itemId, p, 'completed', uploadedChunks.length);
   }
 
+  /**
+   * 判断上传错误是否值得重试（任务C）。
+   * 只对「传输类瞬时错误」重试：网络抖动、连接重置、超时、5xx、429 等。
+   * 确定性错误（哈希不一致、分块被服务端拒绝、文件不存在、后端不支持上传）
+   * 重试结果不变，应直接 markError 让用户感知。
+   */
+  private isRetryableUploadError(err: unknown): boolean {
+    if (err == null) return false;
+    const msg = err instanceof Error ? err.message : String(err);
+    // 主动中止信号：不重试（abort 由上层单独判定，这里兜底）。
+    if (msg === CloudDriveScheduler.ABORT_REASON) return false;
+    // 确定性失败关键字（与 uploadChunked/uploadStream/runUpload 中的抛出文案对齐）。
+    const deterministic = [
+      '不支持文件上传', // 后端能力缺失
+      '分块', // "分块 N 被服务端拒绝"
+      '拒绝',
+      '哈希', // "云端文件哈希与本地不一致"
+      '不一致',
+      '消失', // "文件在上传前已消失"
+      'finalize 失败',
+    ];
+    if (deterministic.some(k => msg.includes(k))) return false;
+    // 其余（fetch reject / 超时 / "Upload chunk N failed: ..." 等）视为可重试。
+    return true;
+  }
+
+  /**
+   * 指数退避休眠（任务C）。
+   * delay = base * 2^(attempt-1)，封顶 30s（与 ServerAdapter.backoffDelay 一致）。
+   * signal 被 abort 时立即 reject，让重试循环快速退出（不消耗重试预算）。
+   */
+  private sleepBackoff(baseMs: number, attempt: number, signal: AbortSignal): Promise<void> {
+    const cap = 30_000;
+    const base = Math.max(0, baseMs | 0);
+    const delay = Math.min(cap, base * Math.pow(2, Math.max(0, attempt - 1)));
+    if (delay <= 0) {
+      return signal.aborted ? Promise.reject(this.abortError()) : Promise.resolve();
+    }
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, delay);
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(this.abortError());
+      };
+      if (signal.aborted) {
+        clearTimeout(timer);
+        reject(this.abortError());
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  /** 构造中止错误（复用 ABORT_REASON 标识，供 runUpload catch 识别） */
+  private abortError(): Error {
+    const e = new Error(CloudDriveScheduler.ABORT_REASON);
+    return e;
+  }
+
   private markError(itemId: string, payload: CloudFilePayload, message: string): void {
+    // 终态清理节流状态（与 markCompleted 对称）
+    this.lastUploadEmit.delete(itemId);
     this.updatePayload(itemId, {
       upload_state: 'error',
       error_message: message,
@@ -651,6 +815,62 @@ export class CloudDriveScheduler {
       this.emitProgress(progress);
     } catch (err) {
       console.error('[CloudDriveScheduler] 推送进度失败:', err);
+    }
+  }
+
+  /**
+   * 字节级上传进度推送（B 任务核心）。
+   * 与 emitProgressFor（块级）并列：emitProgressFor 在分块完成的里程碑触发，
+   * 本方法在分块内部按 64KB 切片触发，使单块小文件也能呈现平滑进度。
+   *
+   * 节流：上传回调可能高频触发（每 64KB 一次），全部直推会造成 IPC 拥塞。
+   * 采用「时间间隔 + 字节比例」双阈值：两者都不满足才跳过；满足任一则推送。
+   * 这避免了「只按时间节流」导致大文件尾段长时间无事件，也避免了「只按比例节流」
+   * 导致小文件事件过密。
+   *
+   * 完成态（uploaded_bytes 接近 size）与首事件（last 无记录）总是直推，避免漏掉
+   * 关键 UI 节点。
+   */
+  private emitUploadBytesProgress(
+    itemId: string,
+    payload: CloudFilePayload,
+    state: CloudUploadState,
+    uploadedBytes: number,
+    uploadedChunks: number[],
+    totalChunks: number
+  ): void {
+    const now = Date.now();
+    const last = this.lastUploadEmit.get(itemId);
+    const isComplete = uploadedBytes >= payload.size;
+    if (last && !isComplete) {
+      const elapsed = now - last.ts;
+      const byteDelta = uploadedBytes - last.bytes;
+      const minBytes = Math.max(
+        1,
+        CloudDriveScheduler.UPLOAD_EMIT_MIN_BYTES_RATIO * payload.size
+      );
+      // 时间够长 或 字节增量够大 才推送
+      if (elapsed < CloudDriveScheduler.UPLOAD_EMIT_MIN_INTERVAL_MS && byteDelta < minBytes) {
+        return;
+      }
+    }
+    this.lastUploadEmit.set(itemId, { bytes: uploadedBytes, ts: now });
+
+    const progress: CloudUploadProgress = {
+      file_id: itemId,
+      filename: payload.filename,
+      relative_path: payload.relative_path,
+      size: payload.size,
+      uploaded_bytes: Math.min(payload.size, uploadedBytes),
+      uploaded_chunks: uploadedChunks.length,
+      total_chunks: totalChunks,
+      state,
+      error_message: state === 'error' ? payload.error_message : null,
+    };
+    try {
+      this.emitProgress(progress);
+    } catch (err) {
+      console.error('[CloudDriveScheduler] 推送字节进度失败:', err);
     }
   }
 

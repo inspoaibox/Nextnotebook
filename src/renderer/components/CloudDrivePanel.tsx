@@ -317,9 +317,14 @@ const CloudDrivePanel: React.FC = () => {
           ) : (
             <div style={{ padding: 8 }}>
               {uploadProgress.map(p => {
-                const percent = p.total_chunks > 0
-                  ? Math.round((p.uploaded_chunks / p.total_chunks) * 100)
-                  : 0;
+                // 优先用字节级进度（uploaded_bytes/size）：单块小文件也能平滑推进，
+                // 不再出现"全程 0% → 突跳 100%"。size 为 0 时回退到分块比例（兼容旧事件）。
+                const ratio = p.size > 0
+                  ? p.uploaded_bytes / p.size
+                  : p.total_chunks > 0
+                    ? p.uploaded_chunks / p.total_chunks
+                    : 0;
+                const percent = Math.max(0, Math.min(100, Math.round(ratio * 100)));
                 return (
                   <div
                     key={p.file_id}

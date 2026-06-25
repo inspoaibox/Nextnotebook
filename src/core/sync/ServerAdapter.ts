@@ -6,6 +6,8 @@ import {
   ServerConfig,
 } from './StorageAdapter';
 import { ItemBase } from '@shared/types';
+import * as http from 'http';
+import * as https from 'https';
 
 // 认证响应类型
 interface AuthResponse {
@@ -38,10 +40,27 @@ export class ServerAdapter implements StorageAdapter {
   private savedCredentials?: { username: string; password: string; syncKey: string };
   private onReloginRequired?: () => void;
 
+  // ====== Phase 3：传输鲁棒性（超时 + 重试 + 连接池） ======
+  // 默认值与服务端 DEFAULT_CLOUD_DRIVE_CONFIG 对齐；ServerConfig 可覆盖。
+  private uploadTimeoutMs: number;
+  private uploadRetryCount: number;
+  private uploadRetryBackoffBaseMs: number;
+  private keepAlive: boolean;
+  private maxSockets: number;
+  /** 按 baseUrl 协议惰性创建的连接池 Agent（http/https 各一）。 */
+  private httpAgent: http.Agent | null = null;
+  private httpsAgent: https.Agent | null = null;
+
   constructor(config: ServerConfig) {
     this.baseUrl = config.url.replace(/\/+$/, '');
     this.apiKey = config.apiKey;
     this.token = config.token;
+    // 传输参数：缺失时回退到内置默认（与桌面端 CloudDriveConfig 默认值一致）
+    this.uploadTimeoutMs = config.upload_timeout_ms ?? 60000;
+    this.uploadRetryCount = config.upload_retry_count ?? 3;
+    this.uploadRetryBackoffBaseMs = config.upload_retry_backoff_base_ms ?? 1000;
+    this.keepAlive = config.keep_alive ?? true;
+    this.maxSockets = config.max_sockets ?? 16;
   }
 
   // 设置 token 刷新回调
@@ -293,20 +312,186 @@ export class ServerAdapter implements StorageAdapter {
     return headers;
   }
 
-  // 通用的 fetch 方法，支持 Electron 主进程
-  private async doFetch(url: string, options: RequestInit): Promise<Response> {
-    // 检查是否在 Electron 主进程中
-    if (typeof process !== 'undefined' && process.versions && process.versions.electron) {
-      try {
-        const { net } = require('electron');
-        if (net && net.fetch) {
-          return await net.fetch(url, options);
-        }
-      } catch (e) {
-        // 回退到全局 fetch
+  /**
+   * 惰性创建并复用连接池 Agent（keepAlive + maxSockets）。
+   * 仅在 Node.js 原生 fetch 下生效（Electron net.fetch 不支持 dispatcher/agent）。
+   */
+  private getAgent(): http.Agent | https.Agent | undefined {
+    if (!this.keepAlive) return undefined;
+    const isHttps = this.baseUrl.startsWith('https://');
+    if (isHttps) {
+      if (!this.httpsAgent) {
+        this.httpsAgent = new https.Agent({
+          keepAlive: true,
+          maxSockets: this.maxSockets,
+        });
+      }
+      return this.httpsAgent;
+    }
+    if (!this.httpAgent) {
+      this.httpAgent = new http.Agent({
+        keepAlive: true,
+        maxSockets: this.maxSockets,
+      });
+    }
+    return this.httpAgent;
+  }
+
+  /**
+   * 判断某错误/响应是否"值得重试"（瞬时性故障）：
+   *  - 网络层错误（fetch reject）
+   *  - 408 / 429 / 5xx
+   * 401（鉴权）由调用方经 safeRefreshToken 处理，不算重试。
+   */
+  private isRetryableStatus(status: number): boolean {
+    return status === 408 || status === 429 || (status >= 500 && status <= 599);
+  }
+
+  /**
+   * 计算指数退避等待时长：base * 2^attempt，封顶 30s。
+   * attempt 从 0 起（首次重试 = attempt 0）。
+   */
+  private backoffDelay(attempt: number): number {
+    const raw = this.uploadRetryBackoffBaseMs * Math.pow(2, attempt);
+    return Math.min(raw, 30000);
+  }
+
+  /**
+   * 单次底层 fetch（含超时）。超时通过 AbortController 实现，并把
+   * 外部 signal（如 pause/cancel）与超时合并到同一个 abort 信号上。
+   *
+   * 注意：options 里的 signal 可能为 undefined；这里保证只有当它被 abort
+   * 时才标记 externalAbort，超时仅做本次请求的取消。
+   */
+  private async doFetchOnce(
+    url: string,
+    options: RequestInit,
+    externalSignal?: AbortSignal
+  ): Promise<Response> {
+    const controller = new AbortController();
+    // 合并外部 abort：监听一次，转发到 controller
+    const onExternalAbort = () => {
+      if (!controller.signal.aborted) controller.abort((externalSignal as any)?.reason);
+    };
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        controller.abort((externalSignal as any)?.reason);
+      } else {
+        externalSignal.addEventListener('abort', onExternalAbort, { once: true });
       }
     }
-    return await fetch(url, options);
+    // 超时定时器
+    let timer: NodeJS.Timeout | undefined;
+    if (this.uploadTimeoutMs > 0) {
+      timer = setTimeout(() => controller.abort(new Error('request timeout')), this.uploadTimeoutMs);
+      if (typeof timer.unref === 'function') timer.unref();
+    }
+
+    const isElectron = typeof process !== 'undefined' && process.versions && process.versions.electron;
+    const agent = this.getAgent();
+    try {
+      // 优先 Electron net.fetch（无 dispatcher 概念，忽略 agent）；
+      // 否则用 Node 原生 fetch 并经 dispatcher 复用连接池。
+      if (isElectron) {
+        try {
+          const { net } = require('electron');
+          if (net && net.fetch) {
+            return await net.fetch(url, { ...options, signal: controller.signal });
+          }
+        } catch {
+          /* 回退到全局 fetch */
+        }
+      }
+      const fetchOpts: any = { ...options, signal: controller.signal };
+      if (agent) {
+        // undici / Node fetch 通过 dispatcher 接收 Agent
+        fetchOpts.dispatcher = agent;
+      }
+      return await fetch(url, fetchOpts);
+    } catch (err) {
+      // 把 abort 原因外抛，区分"外部取消"与"超时"
+      if (controller.signal.aborted) {
+        if (externalSignal?.aborted) throw err;
+        throw new Error('请求超时或被中止');
+      }
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+
+  /**
+   * 通用的 fetch 方法：在单次请求之上叠加超时 + 指数退避重试 + 连接池。
+   *
+   * 重试策略：
+   *   - 仅对瞬时故障重试：网络错误（reject）、408/429/5xx、超时。
+   *   - 总尝试次数 = 1 + uploadRetryCount。
+   *   - 每次失败后等待 backoffDelay(attempt) 再重试。
+   *   - 401 不在此处理（由调用方 request<T>/uploadChunk 走 token 刷新）。
+   *   - 外部 signal 一旦 abort，立即抛出不再重试（响应用户 pause/cancel）。
+   *
+   * 返回的 Response 是最后一次尝试的结果（成功或不可重试的错误响应）。
+   */
+  private async doFetch(
+    url: string,
+    options: RequestInit,
+    externalSignal?: AbortSignal,
+    bodyFactory?: () => BodyInit
+  ): Promise<Response> {
+    const maxAttempts = 1 + Math.max(0, this.uploadRetryCount);
+    let lastError: unknown = null;
+    let lastResponse: Response | null = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      // 外部取消优先，不浪费重试预算
+      if (externalSignal?.aborted) throw new Error('aborted');
+
+      // 流式 body（ReadableStream）只能被消费一次：重试时由 bodyFactory 重新构造，
+      // 例如基于同一 Buffer 切片重新生成进度上报流。非流式 body 无需 bodyFactory。
+      const attemptOpts = bodyFactory ? { ...options, body: bodyFactory() } : options;
+
+      try {
+        const response = await this.doFetchOnce(url, attemptOpts, externalSignal);
+        if (response.ok || !this.isRetryableStatus(response.status)) {
+          return response; // 成功 或 不可重试错误（4xx 除 408/429）→ 立即返回
+        }
+        lastResponse = response;
+        // 可重试的 HTTP 错误：消费 body 释放连接后进入退避
+        try { await response.text(); } catch { /* 忽略 */ }
+      } catch (err) {
+        // 外部主动取消：不重试，直接抛
+        if (externalSignal?.aborted || (err instanceof Error && /aborted/.test(err.message))) {
+          throw err;
+        }
+        lastError = err;
+        lastResponse = null;
+      }
+
+      // 还有下一次尝试才退避等待
+      if (attempt < maxAttempts - 1) {
+        const delay = this.backoffDelay(attempt);
+        await new Promise<void>(resolve => {
+          const t = setTimeout(resolve, delay);
+          if (typeof t.unref === 'function') t.unref();
+          // 等待期间被外部取消：提前唤醒并抛出
+          if (externalSignal) {
+            const onAbort = () => {
+              clearTimeout(t);
+              resolve();
+            };
+            externalSignal.addEventListener('abort', onAbort, { once: true });
+          }
+        });
+        if (externalSignal?.aborted) throw new Error('aborted');
+      }
+    }
+
+    // 所有尝试都失败：优先抛出网络错误，其次构造 Response 不可重试错误
+    if (lastResponse) return lastResponse;
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('请求失败（已耗尽重试次数）');
   }
 
   // 安全的 token 刷新方法，防止并发刷新
@@ -588,23 +773,79 @@ export class ServerAdapter implements StorageAdapter {
     sessionId: string;
     chunkIndex: number;
     data: Buffer;
+    /**
+     * 外部取消信号（来自 scheduler 的 pause/cancel）。注意：必须作为 doFetch
+     * 的第 3 个参数 externalSignal 传入——doFetchOnce 会用自己的
+     * controller.signal 覆盖 options.signal，故 options.signal 无效。
+     */
+    signal?: AbortSignal;
+    /**
+     * 字节级进度回调：分块流式发送时按「本次分块已发送字节」触发。
+     * 调用方据此把进度换算成整文件 uploaded_bytes 并推送 UI，
+     * 使单块小文件也能呈现平滑进度（而非 0%→100% 跳变）。
+     * 对齐 downloadFile.onProgress 语义。
+     */
+    onUploadProgress?: (sentBytes: number) => void;
   }): Promise<{ accepted: boolean; duplicate: boolean }> {
     const path = `/api/resources/upload/${encodeURIComponent(params.sessionId)}/chunk`;
-    const doRequest = (): Promise<Response> =>
-      this.doFetch(`${this.baseUrl}${path}`, {
-        method: 'PUT',
-        headers: {
-          ...this.getHeaders(),
-          // 原始二进制，不能让 Content-Type 停在 application/json
-          'Content-Type': 'application/octet-stream',
-          'X-Chunk-Index': String(params.chunkIndex),
+    const headers = {
+      ...this.getHeaders(),
+      // 原始二进制，不能让 Content-Type 停在 application/json
+      'Content-Type': 'application/octet-stream',
+      'X-Chunk-Index': String(params.chunkIndex),
+    };
+
+    // 当调用方需要进度回调时，构造流式 body：按固定 slice 大小从 Buffer 切片推送，
+    // 每片发送后回调累计已发送字节。ReadableStream 只能消费一次，故用 bodyFactory
+    // 让 doFetch 的重试机制每次重新构造流（基于同一 Buffer，安全）。
+    // 无回调时走快速路径，整块直接作为 body（与历史行为一致，省一次包装）。
+    const useStream = typeof params.onUploadProgress === 'function';
+    const SLICE = 64 * 1024; // 64KB / 片：与底层 socket buffer 量级匹配，回调频次适中
+    const buildBody = (): BodyInit => {
+      const data = params.data;
+      const onProgress = params.onUploadProgress!;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          let offset = 0;
+          const pump = () => {
+            if (offset >= data.byteLength) {
+              controller.close();
+              return;
+            }
+            const end = Math.min(offset + SLICE, data.byteLength);
+            // slice 复制底层内存，避免 controller 入队后原 Buffer 被复用
+            controller.enqueue(new Uint8Array(data.subarray(offset, end)));
+            offset = end;
+            try {
+              onProgress(offset);
+            } catch {
+              /* 进度回调失败不影响传输 */
+            }
+            // 让出微任务，避免大块同步入队阻塞主循环
+            setTimeout(pump, 0);
+          };
+          pump();
         },
-        body: params.data as unknown as BodyInit,
       });
+      return stream as unknown as BodyInit;
+    };
+
+    const doRequest = (): Promise<Response> =>
+      this.doFetch(
+        `${this.baseUrl}${path}`,
+        {
+          method: 'PUT',
+          headers,
+          // 流式时省略 body（交给 bodyFactory 按尝试次数重建）；快速路径直接放 body
+          ...(useStream ? {} : { body: params.data as unknown as BodyInit }),
+        },
+        params.signal,
+        useStream ? buildBody : undefined,
+      );
 
     let response = await doRequest();
 
-    // 与 request<T> 保持一致的 401 重试语义
+    // 与 request<T> 保持一致的 401 重试语义（doFetch 已处理 408/429/5xx + 超时 + 退避）
     if (response.status === 401 && this.refreshToken) {
       const refreshed = await this.safeRefreshToken();
       if (refreshed) {
@@ -633,19 +874,36 @@ export class ServerAdapter implements StorageAdapter {
     location?: string;
   }> {
     const path = `/api/resources/upload/${encodeURIComponent(sessionId)}/complete`;
-    const result = await this.request<{
-      success: boolean;
-      item_id: string;
-      location?: string;
-      size: number;
-      sha256: string;
-    }>('POST', path);
-    return {
-      success: result.success === true,
-      size: result.size,
-      sha256: result.sha256,
-      location: result.location,
-    };
+    try {
+      const result = await this.request<{
+        success: boolean;
+        item_id: string;
+        location?: string;
+        size: number;
+        sha256: string;
+      }>('POST', path);
+      return {
+        success: result.success === true,
+        size: result.size,
+        sha256: result.sha256,
+        location: result.location,
+      };
+    } catch (error) {
+      // 服务端 /complete 非幂等：拼接分块、改名、删 session 一次性完成。
+      // 若本次调用因网络抖动失败，但服务端实际已完成，重试会得到 404（session 已删）。
+      // 这里查一次状态：若已 completed，视为成功，避免误判为失败导致重传整个文件。
+      try {
+        const status = await this.getUploadStatus(sessionId);
+        if (status.completed) {
+          // session 仍在且标记完成——说明刚好在删除前查到，视为成功。
+          // size/sha256 此处拿不到精确值，调用方上传流程本就持有本地 size/sha256，可接受。
+          return { success: true, size: 0, sha256: '' };
+        }
+      } catch {
+        /* 查状态也失败：保持原始错误语义 */
+      }
+      throw error;
+    }
   }
 
   async getUploadStatus(sessionId: string): Promise<{
@@ -772,11 +1030,14 @@ export class ServerAdapter implements StorageAdapter {
       end !== undefined ? `bytes=${params.start}-${end}` : `bytes=${params.start}-`;
 
     const doRequest = (): Promise<Response> =>
-      this.doFetch(`${this.baseUrl}/api/resources/${params.itemId}`, {
-        method: 'GET',
-        headers: { ...this.getHeaders(), Range: rangeHeader },
-        signal: params.signal,
-      });
+      this.doFetch(
+        `${this.baseUrl}/api/resources/${params.itemId}`,
+        {
+          method: 'GET',
+          headers: { ...this.getHeaders(), Range: rangeHeader },
+        },
+        params.signal,
+      );
 
     let response = await doRequest();
     // 401 刷新重试

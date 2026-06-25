@@ -90,11 +90,16 @@ export interface StorageAdapter {
   /**
    * 上传单个分块（幂等：重复块应返回 duplicate:true 而非报错）
    * @param data 该分块原始二进制
+   * @param signal 可选的 AbortSignal：用于超时与上传任务取消（中止后 Promise 应立即 reject）
+   * @param onUploadProgress 可选的字节级进度回调：分块流式发送时按累计已发送字节触发。
+   *   不传时适配器可走快速路径（整块作为 body，无中途进度）。对齐 downloadFile.onProgress 语义。
    */
   uploadChunk?(params: {
     sessionId: string;
     chunkIndex: number;
     data: Buffer;
+    signal?: AbortSignal;
+    onUploadProgress?: (sentBytes: number) => void;
   }): Promise<{ accepted: boolean; duplicate: boolean }>;
 
   /** 完成上传：服务端拼接 + 校验 SHA-256 + 原子落库 */
@@ -197,6 +202,12 @@ export interface ServerConfig {
   url: string;
   apiKey?: string;
   token?: string;
+  // 传输鲁棒性可选配置（Phase 3）。未提供时由 ServerAdapter 用内置默认值。
+  upload_timeout_ms?: number;            // 单次请求超时（毫秒，0 = 不限）
+  upload_retry_count?: number;           // 失败额外重试次数
+  upload_retry_backoff_base_ms?: number; // 指数退避基数（毫秒）
+  keep_alive?: boolean;                  // 复用 TCP 连接
+  max_sockets?: number;                  // 单源最大并发连接数
 }
 
 export type AdapterConfig = WebDAVConfig | ServerConfig;

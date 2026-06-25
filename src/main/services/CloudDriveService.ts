@@ -474,6 +474,32 @@ export class CloudDriveService {
         return;
       }
 
+      // 闸门：扫描/变更事件去重。
+      // 若该文件已存在、已上传完成（upload_state==='completed'）且 size+mtime 均未变，
+      // 则视为内容未变，直接短路——既不重写 payload（避免把已存储的 file_hash 清成 ''），
+      // 也不入队 Scheduler。否则旧逻辑会每次「立即扫描」都重置 file_hash=''，
+      // 导致 Scheduler 的哈希闸门（newHash === payload.file_hash）恒为 false → 全量重传。
+      // 注：size 是主信号，mtime 仅作辅助（按毫秒取整容忍亚毫秒抖动）；
+      //     真正的内容校验仍由首次上传与内容变更路径的流式 SHA-256 兜底。
+      const existing = this.itemsManager.getByIdIncludeDeleted(id);
+      if (existing && existing.deleted_time === null && existing.type === 'cloud_file') {
+        let existingPayload: CloudFilePayload | null = null;
+        try {
+          existingPayload = JSON.parse(existing.payload) as CloudFilePayload;
+        } catch {
+          existingPayload = null;
+        }
+        if (
+          existingPayload &&
+          existingPayload.size === size &&
+          Math.floor(existingPayload.mtime) === Math.floor(mtime) &&
+          existingPayload.upload_state === 'completed'
+        ) {
+          // 已上传且未变化：保留既有 file_hash/upload_state，跳过本次处理。
+          return;
+        }
+      }
+
       const payload: CloudFilePayload = {
         filename: path.basename(absolutePath),
         mime_type: this.guessMime(absolutePath),
