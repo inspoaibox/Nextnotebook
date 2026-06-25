@@ -125,6 +125,16 @@ fun FeaturesSettingsScreen(
                 checked = uiState.transferEnabled,
                 onCheckedChange = { viewModel.setTransferEnabled(it) }
             )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            FeatureSwitch(
+                title = "网盘",
+                subtitle = "云端文件浏览器，支持上传/下载/文件夹管理",
+                icon = Icons.Default.Cloud,
+                checked = uiState.cloudDriveEnabled,
+                onCheckedChange = { viewModel.setCloudDriveEnabled(it) }
+            )
         }
     }
 }

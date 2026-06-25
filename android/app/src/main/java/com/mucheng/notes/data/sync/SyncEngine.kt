@@ -245,6 +245,33 @@ class SyncEngine @Inject constructor(
             )
         }
     }
+
+    /**
+     * 按需下载单个云盘文件（不依赖 configStore.autoDownload 配置）
+     *
+     * 网盘浏览器调用该方法触发单个文件的即时下载，复用引擎内部已注入的
+     * 下载管理器与适配器解析逻辑，避免向调用方暴露 [getAdapter]。
+     */
+    suspend fun downloadCloudFile(cloudFileId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val cfg = config ?: return@withContext Result.failure(IllegalStateException("同步未配置"))
+
+        if (!cfg.enabled) {
+            return@withContext Result.failure(IllegalStateException("同步已禁用"))
+        }
+
+        return@withContext try {
+            val adapter = getAdapter()
+            if (!adapter.hasRangeDownload()) {
+                return@withContext Result.failure(UnsupportedOperationException("当前服务器不支持 Range 下载"))
+            }
+            val item = itemDao.getById(cloudFileId)
+                ?: return@withContext Result.failure(IllegalStateException("文件不存在"))
+            val payload = json.decodeFromString<CloudFilePayload>(item.payload)
+            cloudDriveDownloadManager.download(cloudFileId, payload, adapter)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
     
     /**
      * 推送本地变更到远端（明文同步）

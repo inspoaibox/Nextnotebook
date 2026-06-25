@@ -71,6 +71,7 @@ data class SettingsUiState(
     val vaultEnabled: Boolean = true,
     val aiEnabled: Boolean = true,
     val transferEnabled: Boolean = true,
+    val cloudDriveEnabled: Boolean = true,
     
     // 同步设置
     val syncEnabled: Boolean = false,
@@ -153,6 +154,7 @@ class SettingsViewModel @Inject constructor(
         private const val KEY_VAULT_ENABLED = "vault_enabled"
         private const val KEY_AI_ENABLED = "ai_enabled"
         private const val KEY_TRANSFER_ENABLED = "transfer_enabled"
+        private const val KEY_CLOUD_DRIVE_ENABLED = "cloud_drive_enabled"
         private const val KEY_SYNC_ENABLED = "sync_enabled"
         private const val KEY_SYNC_TYPE = "sync_type"
         private const val KEY_WEBDAV_URL = "webdav_url"
@@ -248,6 +250,7 @@ class SettingsViewModel @Inject constructor(
                 vaultEnabled = prefs.getBoolean(KEY_VAULT_ENABLED, true),
                 aiEnabled = prefs.getBoolean(KEY_AI_ENABLED, true),
                 transferEnabled = prefs.getBoolean(KEY_TRANSFER_ENABLED, true),
+                cloudDriveEnabled = prefs.getBoolean(KEY_CLOUD_DRIVE_ENABLED, true),
                 
                 // 同步设置
                 syncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false),
@@ -326,6 +329,11 @@ class SettingsViewModel @Inject constructor(
     fun setTransferEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_TRANSFER_ENABLED, enabled).apply()
         _uiState.update { it.copy(transferEnabled = enabled) }
+    }
+
+    fun setCloudDriveEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CLOUD_DRIVE_ENABLED, enabled).apply()
+        _uiState.update { it.copy(cloudDriveEnabled = enabled) }
     }
     
     // 同步设置
@@ -1032,6 +1040,8 @@ class SettingsViewModel @Inject constructor(
             "todos" -> _uiState.value.todosEnabled
             "vault" -> _uiState.value.vaultEnabled
             "ai" -> _uiState.value.aiEnabled
+            "transfer" -> _uiState.value.transferEnabled
+            "cloud_drive" -> _uiState.value.cloudDriveEnabled
             else -> true
         }
     }

@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
@@ -32,6 +33,7 @@ import androidx.navigation.navArgument
 import com.mucheng.notes.R
 import com.mucheng.notes.presentation.screens.ai.AIScreen
 import com.mucheng.notes.presentation.screens.bookmarks.BookmarksScreen
+import com.mucheng.notes.presentation.screens.clouddrive.CloudDriveScreen
 import com.mucheng.notes.presentation.screens.excel.ExcelDetailScreen
 import com.mucheng.notes.presentation.screens.notes.NoteDetailScreen
 import com.mucheng.notes.presentation.screens.notes.NotesScreen
@@ -65,6 +67,7 @@ sealed class Screen(
     object AI : Screen("ai", R.string.nav_ai, Icons.Default.SmartToy, "ai")
     object Vault : Screen("vault", R.string.nav_vault, Icons.Default.Lock, "vault")
     object Transfer : Screen("transfer", R.string.nav_transfer, Icons.Default.SwapHoriz, "transfer")
+    object CloudDrive : Screen("cloud_drive", R.string.nav_cloud_drive, Icons.Default.Cloud, "cloud_drive")
     object Settings : Screen("settings", R.string.settings, Icons.Default.Settings)
 }
 
@@ -77,7 +80,8 @@ val featureNavItems = listOf(
     Screen.Todos,
     Screen.AI,
     Screen.Vault,
-    Screen.Transfer
+    Screen.Transfer,
+    Screen.CloudDrive
 )
 
 /**
@@ -90,6 +94,7 @@ private val mainScreenRoutes = listOf(
     Screen.AI.route,
     Screen.Vault.route,
     Screen.Transfer.route,
+    Screen.CloudDrive.route,
     Screen.Settings.route
 )
 
@@ -114,6 +119,7 @@ fun MainNavigation(
             "ai" -> uiState.aiEnabled
             "vault" -> uiState.vaultEnabled
             "transfer" -> uiState.transferEnabled
+            "cloud_drive" -> uiState.cloudDriveEnabled
             else -> true
         }
     }
@@ -225,6 +231,9 @@ fun MainNavigation(
             }
             composable(Screen.Transfer.route) {
                 TransferScreen(navController = navController, bottomPadding = paddingValues)
+            }
+            composable(Screen.CloudDrive.route) {
+                CloudDriveScreen(navController = navController, bottomPadding = paddingValues)
             }
             
             // 设置主页面
