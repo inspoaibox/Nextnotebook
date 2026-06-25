@@ -12,6 +12,7 @@ import android.util.Log
 import io.socket.client.IO
 import io.socket.client.Socket
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -109,22 +110,46 @@ class TransferClient(
     val lanServerStatus: StateFlow<LanServerStatus> = _lanServerStatus.asStateFlow()
     
     // 事件回调
-    private val _messageReceived = MutableSharedFlow<MessageReceivedEvent>()
+    // 注意：之前使用默认配置（replay=0, extraBufferCapacity=0, onBufferOverflow=SUSPEND），
+    // 当消费端（ViewModel，运行在 viewModelScope）较慢时，生产端的 emit 会挂起；
+    // 而生产端（handleLanPacket）运行在「每对端一条协程」的读循环里，
+    // 一旦 emit 挂起就会卡住整条读取循环，后续所有报文都会被阻塞，
+    // 表现为「配对成功后双方互相发消息/文件都无响应」。
+    // 这里增加缓冲并采用 DROP_OLDEST，确保读循环永远不会被消费端拖住。
+    private val _messageReceived = MutableSharedFlow<MessageReceivedEvent>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     val messageReceived: SharedFlow<MessageReceivedEvent> = _messageReceived.asSharedFlow()
-    
-    private val _fileIncoming = MutableSharedFlow<FileIncomingEvent>()
+
+    private val _fileIncoming = MutableSharedFlow<FileIncomingEvent>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     val fileIncoming: SharedFlow<FileIncomingEvent> = _fileIncoming.asSharedFlow()
-    
-    private val _fileChunk = MutableSharedFlow<FileChunkEvent>()
+
+    private val _fileChunk = MutableSharedFlow<FileChunkEvent>(
+        extraBufferCapacity = 128,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     val fileChunk: SharedFlow<FileChunkEvent> = _fileChunk.asSharedFlow()
-    
-    private val _fileComplete = MutableSharedFlow<FileCompleteEvent>()
+
+    private val _fileComplete = MutableSharedFlow<FileCompleteEvent>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     val fileComplete: SharedFlow<FileCompleteEvent> = _fileComplete.asSharedFlow()
-    
-    private val _pairRequest = MutableSharedFlow<PairRequestEvent>()
+
+    private val _pairRequest = MutableSharedFlow<PairRequestEvent>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     val pairRequest: SharedFlow<PairRequestEvent> = _pairRequest.asSharedFlow()
-    
-    private val _pairSuccess = MutableSharedFlow<PairSuccessEvent>()
+
+    private val _pairSuccess = MutableSharedFlow<PairSuccessEvent>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     val pairSuccess: SharedFlow<PairSuccessEvent> = _pairSuccess.asSharedFlow()
 
     /**
@@ -948,6 +973,12 @@ class TransferClient(
         val packet = JSONObject(line)
         val event = packet.optString("event")
         val payload = packet.optJSONObject("payload") ?: JSONObject()
+        Log.d(
+            TAG,
+            "LAN pkt in: peer=${peer.deviceId}, event=$event, " +
+                "target=${payload.optString("targetDeviceId")}, self=$deviceId, " +
+                "lanPeers=${lanPeers.keys}"
+        )
 
         when (event) {
             SocketEvents.DEVICE_REGISTER -> Unit
@@ -1016,7 +1047,13 @@ class TransferClient(
             return
         }
 
-        val targetPeer = lanPeers[targetDeviceId] ?: return
+        val targetPeer = lanPeers[targetDeviceId] ?: run {
+            Log.w(
+                TAG,
+                "Drop MESSAGE_SEND: target=$targetDeviceId not in lanPeers=${lanPeers.keys}, self=$deviceId"
+            )
+            return
+        }
         sendLanPacket(
             peer = targetPeer,
             event = SocketEvents.MESSAGE_RECEIVE,
@@ -1029,7 +1066,11 @@ class TransferClient(
     }
 
     private suspend fun emitLanMessageReceived(peer: LanPeer, payload: JSONObject) {
-        val messageJson = payload.optJSONObject("message") ?: return
+        val messageJson = payload.optJSONObject("message") ?: run {
+            Log.w(TAG, "emitLanMessageReceived: missing 'message' json, payload=$payload")
+            return
+        }
+        Log.d(TAG, "Emit messageReceived: sender=${payload.optString("senderId", peer.deviceId)}")
         _messageReceived.emit(
             MessageReceivedEvent(
                 senderId = payload.optString("senderId", peer.deviceId),
@@ -1058,7 +1099,13 @@ class TransferClient(
             return
         }
 
-        val targetPeer = lanPeers[targetDeviceId] ?: return
+        val targetPeer = lanPeers[targetDeviceId] ?: run {
+            Log.w(
+                TAG,
+                "Drop FILE_START: target=$targetDeviceId not in lanPeers=${lanPeers.keys}, self=$deviceId"
+            )
+            return
+        }
         sendLanPacket(
             peer = targetPeer,
             event = SocketEvents.FILE_INCOMING,
@@ -1071,7 +1118,11 @@ class TransferClient(
     }
 
     private suspend fun emitLanFileIncoming(peer: LanPeer, payload: JSONObject) {
-        val fileInfoJson = payload.optJSONObject("fileInfo") ?: return
+        val fileInfoJson = payload.optJSONObject("fileInfo") ?: run {
+            Log.w(TAG, "emitLanFileIncoming: missing 'fileInfo' json, payload=$payload")
+            return
+        }
+        Log.d(TAG, "Emit fileIncoming: sender=${payload.optString("senderId", peer.deviceId)}, file=${fileInfoJson.optString("filename")}")
         _fileIncoming.emit(
             FileIncomingEvent(
                 senderId = payload.optString("senderId", peer.deviceId),
@@ -1095,7 +1146,13 @@ class TransferClient(
             return
         }
 
-        val targetPeer = lanPeers[targetDeviceId] ?: return
+        val targetPeer = lanPeers[targetDeviceId] ?: run {
+            Log.w(
+                TAG,
+                "Drop FILE_CHUNK: target=$targetDeviceId not in lanPeers=${lanPeers.keys}, self=$deviceId"
+            )
+            return
+        }
         sendLanPacket(
             peer = targetPeer,
             event = SocketEvents.FILE_CHUNK,
@@ -1118,7 +1175,13 @@ class TransferClient(
             return
         }
 
-        val targetPeer = lanPeers[targetDeviceId] ?: return
+        val targetPeer = lanPeers[targetDeviceId] ?: run {
+            Log.w(
+                TAG,
+                "Drop FILE_COMPLETE: target=$targetDeviceId not in lanPeers=${lanPeers.keys}, self=$deviceId"
+            )
+            return
+        }
         sendLanPacket(
             peer = targetPeer,
             event = SocketEvents.FILE_COMPLETE,
@@ -1139,7 +1202,13 @@ class TransferClient(
     }
 
     private fun sendViaAndroidLan(targetDeviceId: String, event: String, payload: JSONObject): Boolean {
-        val peer = lanPeers[targetDeviceId] ?: return false
+        val peer = lanPeers[targetDeviceId] ?: run {
+            Log.w(
+                TAG,
+                "sendViaAndroidLan miss: target=$targetDeviceId not in lanPeers=${lanPeers.keys}, self=$deviceId, event=$event"
+            )
+            return false
+        }
         sendLanPacket(peer, event, payload)
         return true
     }
