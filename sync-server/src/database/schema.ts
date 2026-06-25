@@ -1,7 +1,18 @@
 import Database from 'better-sqlite3';
 
 // 数据库版本号 - 用于迁移
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
+
+// 服务端真实支持的能力声明，供 /api/meta 与数据库初始化共用。
+export const SERVER_CAPABILITIES = [
+  'items',
+  'resources',
+  'changes',
+  'auth',
+  'cloud_drive',
+  'chunked_upload',
+  'range_download',
+];
 
 export function initializeSchema(db: Database.Database): void {
   // items 表 - 存储所有同步数据项
@@ -159,7 +170,7 @@ export function initializeSchema(db: Database.Database): void {
   `);
   
   initMeta.run('version', '1.0', now);
-  initMeta.run('capabilities', JSON.stringify(['items', 'resources', 'changes', 'auth']), now);
+  initMeta.run('capabilities', JSON.stringify(SERVER_CAPABILITIES), now);
   initMeta.run('schema_version', String(SCHEMA_VERSION), now);
 
   // 初始化系统设置（默认开放注册，直到第一个管理员创建）
@@ -195,6 +206,11 @@ export function runMigrations(db: Database.Database): void {
   // 迁移到版本 4：添加 block_count 字段到 rate_limits 表
   if (currentVersion < 4) {
     migrateToV4(db);
+  }
+
+  // 迁移到版本 5：补齐服务端能力声明（网盘 / 分块上传 / Range 下载）
+  if (currentVersion < 5) {
+    migrateToV5(db);
   }
 
   // 更新 schema 版本
@@ -255,4 +271,34 @@ function migrateToV4(db: Database.Database): void {
   if (!hasBlockCount) {
     db.exec('ALTER TABLE rate_limits ADD COLUMN block_count INTEGER DEFAULT 0');
   }
+}
+
+// 迁移到版本 5：补齐 capabilities 元数据，兼容已初始化过的旧服务器数据库
+function migrateToV5(db: Database.Database): void {
+  const now = Date.now();
+  const row = db.prepare('SELECT value FROM metadata WHERE key = ?')
+    .get('capabilities') as { value: string } | undefined;
+
+  let capabilities = SERVER_CAPABILITIES;
+  if (row?.value) {
+    try {
+      const existing = JSON.parse(row.value);
+      if (Array.isArray(existing)) {
+        capabilities = Array.from(new Set([...existing, ...SERVER_CAPABILITIES]));
+      }
+    } catch {
+      capabilities = SERVER_CAPABILITIES;
+    }
+  }
+
+  db.prepare(`
+    INSERT INTO metadata (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?
+  `).run(
+    'capabilities',
+    JSON.stringify(capabilities),
+    now,
+    JSON.stringify(capabilities),
+    now
+  );
 }

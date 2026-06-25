@@ -173,6 +173,9 @@ function renderApp() {
         <div class="nav-item ${currentPage === 'resources' ? 'active' : ''}" onclick="navigate('resources')">
           <span class="icon">📎</span> 资源文件
         </div>
+        <div class="nav-item ${currentPage === 'cloud_drive' ? 'active' : ''}" onclick="navigate('cloud_drive')">
+          <span class="icon">☁️</span> 网盘
+        </div>
         <div class="nav-section">系统</div>
         <div class="nav-item ${currentPage === 'users' ? 'active' : ''}" onclick="navigate('users')">
           <span class="icon">👥</span> 用户管理
@@ -227,7 +230,7 @@ async function loadPage(page) {
   const title = document.getElementById('pageTitle');
   const titles = {
     dashboard: '仪表盘', notes: '笔记管理', excel_notes: 'Excel笔记', folders: '文件夹', todos: '待办事项',
-    bookmarks: '书签管理', vault: '保险库', ai: 'AI 助手', resources: '资源文件',
+    bookmarks: '书签管理', vault: '保险库', ai: 'AI 助手', resources: '资源文件', cloud_drive: '网盘',
     users: '用户管理', settings: '系统设置', logs: '变更日志'
   };
   title.textContent = titles[page] || page;
@@ -244,6 +247,7 @@ async function loadPage(page) {
       case 'vault': await loadItems(content, 'vault_entry', '保险库条目'); break;
       case 'ai': await loadAI(content); break;
       case 'resources': await loadItems(content, 'resource', '资源'); break;
+      case 'cloud_drive': await loadCloudDrive(content); break;
       case 'users': await loadUsers(content); break;
       case 'settings': await loadSettings(content); break;
       case 'logs': await loadLogs(content); break;
@@ -437,6 +441,88 @@ async function loadItems(el, type, label) {
       tbody.appendChild(tr);
     });
   }
+}
+
+// 网盘数据
+async function loadCloudDrive(el) {
+  const [fileData, folderData] = await Promise.all([
+    api('/items/list?type=cloud_file&limit=100'),
+    api('/items/list?type=cloud_folder&limit=100')
+  ]);
+
+  const files = fileData.items || [];
+  const folders = folderData.items || [];
+
+  el.innerHTML = `
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-value">${files.length}</div><div class="stat-label">网盘文件</div></div>
+      <div class="stat-card"><div class="stat-value">${folders.length}</div><div class="stat-label">网盘文件夹</div></div>
+    </div>
+    ${renderCloudDriveTable('网盘文件', files, 'file')}
+    ${renderCloudDriveTable('网盘文件夹', folders, 'folder')}
+  `;
+}
+
+function renderCloudDriveTable(title, items, kind) {
+  return `
+    <div class="card">
+      <div class="card-header">${escapeHtml(title)} (${items.length})</div>
+      <div class="card-body" style="padding:0;">
+        ${items.length === 0 ? '<p style="padding:20px;color:#666;">暂无数据</p>' : `
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:#f8f9fa;">
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">ID</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">名称</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">路径</th>
+                ${kind === 'file' ? '<th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">大小</th><th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">状态</th>' : ''}
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">更新时间</th>
+                <th style="padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map(item => {
+                const payload = parsePayload(item.payload);
+                const itemId = String(item.id ?? '');
+                const itemArg = escapeAttr(escapeJsString(item.id));
+                const name = kind === 'file'
+                  ? (payload.filename || payload.name || itemId.substring(0, 8))
+                  : (payload.name || payload.relative_path || itemId.substring(0, 8));
+                const relativePath = payload.relative_path || '-';
+                const size = Number(payload.size || 0);
+                const state = payload.upload_state || payload.download_state || '-';
+                return `
+                  <tr>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-family:monospace;font-size:12px;">${escapeHtml(itemId.substring(0, 8))}...</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">${escapeHtml(name)}</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(relativePath)}</td>
+                    ${kind === 'file' ? `<td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${escapeHtml(formatFileSize(size))}</td><td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${escapeHtml(state)}</td>` : ''}
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;font-size:13px;color:#666;">${formatTime(item.updated_time)}</td>
+                    <td style="padding:12px;border-bottom:1px solid #e0e0e0;">
+                      <button class="btn btn-sm btn-secondary" onclick="viewItem('${itemArg}')">查看</button>
+                      <button class="btn btn-sm btn-danger" onclick="deleteItem('${itemArg}')">删除</button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '-';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 // 查看指定类型的数据项

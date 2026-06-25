@@ -52,6 +52,7 @@ export interface RemoteMeta {
   version: string;
   capabilities: string[];
   last_sync_time: number | null;
+  key_identifier?: string | null;
 }
 
 // 同步游标
