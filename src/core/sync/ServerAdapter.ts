@@ -352,6 +352,10 @@ export class ServerAdapter implements StorageAdapter {
     return fetchOpts;
   }
 
+  private isElectronRuntime(): boolean {
+    return typeof process !== 'undefined' && !!process.versions?.electron;
+  }
+
   /**
    * 判断某错误/响应是否"值得重试"（瞬时性故障）：
    *  - 网络层错误（fetch reject）
@@ -402,19 +406,26 @@ export class ServerAdapter implements StorageAdapter {
       if (typeof timer.unref === 'function') timer.unref();
     }
 
-    const isElectron = typeof process !== 'undefined' && process.versions && process.versions.electron;
+    const isElectron = this.isElectronRuntime();
     const agent = this.getAgent();
     try {
       // 优先 Electron net.fetch（无 dispatcher 概念，忽略 agent）；
       // 否则用 Node 原生 fetch 并经 dispatcher 复用连接池。
       if (isElectron) {
+        let electronFetch: ((url: string, init?: RequestInit) => Promise<Response>) | null = null;
         try {
           const { net } = require('electron');
           if (net && net.fetch) {
-            return await net.fetch(url, this.withFetchSignal(options, controller.signal));
+            electronFetch = net.fetch.bind(net);
           }
         } catch {
-          /* 回退到全局 fetch */
+          electronFetch = null;
+        }
+        if (electronFetch) {
+          // net.fetch 请求一旦开始，body 可能已被消费。不能在这里 catch 后
+          // 再把同一个 body 交给全局 fetch，否则会触发
+          // "Response body object should not be disturbed or locked"。
+          return await electronFetch(url, this.withFetchSignal(options, controller.signal));
         }
       }
       const fetchOpts: any = this.withFetchSignal(options, controller.signal);
@@ -828,7 +839,13 @@ export class ServerAdapter implements StorageAdapter {
     // 每片发送后回调累计已发送字节。ReadableStream 只能消费一次，故用 bodyFactory
     // 让 doFetch 的重试机制每次重新构造流（基于同一 Buffer，安全）。
     // 无回调时走快速路径，整块直接作为 body（与历史行为一致，省一次包装）。
-    const useStream = typeof params.onUploadProgress === 'function';
+    //
+    // Electron net.fetch 对 ReadableStream 上传 body 不稳定：安装版日志中出现过
+    // "Response body object should not be disturbed or locked"。桌面端改走 Buffer body，
+    // 成功后按分块粒度回调进度，避免请求 body 被锁死后重试/下一块直接失败。
+    const useStream =
+      typeof params.onUploadProgress === 'function' &&
+      !this.isElectronRuntime();
     const SLICE = 64 * 1024; // 64KB / 片：与底层 socket buffer 量级匹配，回调频次适中
     const buildBody = (): BodyInit => {
       const data = params.data;
@@ -902,6 +919,13 @@ export class ServerAdapter implements StorageAdapter {
     }
 
     const result = await response.json();
+    if (!useStream && typeof params.onUploadProgress === 'function') {
+      try {
+        params.onUploadProgress(params.data.byteLength);
+      } catch {
+        /* 进度回调失败不影响传输 */
+      }
+    }
     return {
       accepted: result.accepted === true,
       duplicate: result.duplicate === true,

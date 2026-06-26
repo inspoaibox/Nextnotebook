@@ -43,6 +43,7 @@ import {
   CloudUploadState,
   CloudDownloadProgress,
   CloudDownloadState,
+  ItemBase,
 } from '@shared/types';
 import { StorageAdapter } from '@core/sync/StorageAdapter';
 
@@ -492,6 +493,30 @@ export class CloudDriveScheduler {
 
   // ---------- 分块上传 + 断点续传 ----------
 
+  /**
+   * 分块上传会话属于 resource 层，但服务端创建会话前会通过 item_id
+   * 校验 cloud_file 元数据是否存在。这里先显式 PUT 一次 item，避免文件
+   * 上传快于普通同步推送时，服务端 /api/resources/upload 返回 404。
+   *
+   * 注意：只保证远端存在，不修改本地 sync_status；最终仍由正常同步链路
+   * 用 remoteRev 把本地标记为 clean。
+   */
+  private async ensureRemoteCloudFileItem(adapter: StorageAdapter, itemId: string): Promise<ItemBase> {
+    const item = this.itemsManager.getById(itemId);
+    if (!item || item.type !== 'cloud_file' || item.deleted_time !== null) {
+      throw new Error('创建分块上传会话前找不到有效的网盘文件元数据');
+    }
+
+    const result = await adapter.putItem({
+      ...item,
+      encryption_applied: 0,
+    });
+    if (!result.success) {
+      throw new Error(`创建远端网盘元数据失败${result.error ? `: ${result.error}` : ''}`);
+    }
+    return item;
+  }
+
   private async uploadChunked(
     adapter: StorageAdapter,
     itemId: string,
@@ -517,6 +542,7 @@ export class CloudDriveScheduler {
     const extension = path.extname(payload.filename).replace(/^\./, '') || undefined;
 
     if (!sessionId) {
+      await this.ensureRemoteCloudFileItem(adapter, itemId);
       const created = await adapter.createChunkedUpload!({
         itemId,
         totalSize: payload.size,
@@ -574,6 +600,7 @@ export class CloudDriveScheduler {
         } catch {
           /* 忽略 abort 失败 */
         }
+        await this.ensureRemoteCloudFileItem(adapter, itemId);
         const created = await adapter.createChunkedUpload!({
           itemId,
           totalSize: payload.size,
