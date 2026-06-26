@@ -83,7 +83,14 @@ export class CloudDriveService {
         const raw = fs.readFileSync(this.configPath, 'utf-8');
         const parsed = JSON.parse(raw) as Partial<CloudDriveConfig>;
         // 与默认值合并，保证新增字段有兜底
-        return { ...DEFAULT_CLOUD_DRIVE_CONFIG, ...parsed };
+        const merged = { ...DEFAULT_CLOUD_DRIVE_CONFIG, ...parsed };
+        // 兼容旧版本默认值：若用户仍停留在历史默认 2s + 3s，自动迁移到更快的 0.8s + 0.8s。
+        // 只在精确命中旧默认值时迁移，避免覆盖用户自定义调优。
+        if (merged.stability_threshold === 2000 && merged.debounce_ms === 3000) {
+          merged.stability_threshold = DEFAULT_CLOUD_DRIVE_CONFIG.stability_threshold;
+          merged.debounce_ms = DEFAULT_CLOUD_DRIVE_CONFIG.debounce_ms;
+        }
+        return merged;
       }
     } catch (err) {
       console.error('[CloudDriveService] 读取配置失败，使用默认值:', err);
@@ -285,6 +292,9 @@ export class CloudDriveService {
 
   setMainWindow(win: BrowserWindow | null): void {
     this.mainWindow = win;
+    if (win) {
+      this.emitWatchingChange(this.isWatching());
+    }
   }
 
   private emit(channel: string, payload: unknown): void {
@@ -1092,6 +1102,12 @@ export function initializeCloudDriveService(): void {
   cloudDriveService = new CloudDriveService(itemsManager, userDataPath);
   registerCloudDriveIpcHandlers();
   console.log('[CloudDriveService] 已初始化');
+  const cfg = cloudDriveService.getConfig();
+  if (cfg.watched_root_path) {
+    void cloudDriveService.startWatching().catch(err => {
+      console.warn('[CloudDriveService] 自动启动监听失败:', err);
+    });
+  }
 }
 
 export function getCloudDriveService(): CloudDriveService | null {
@@ -1123,6 +1139,10 @@ export function registerCloudDriveIpcHandlers(): void {
 
   ipcMain.handle('cloud-drive:getConfig', () => {
     return svc().getConfig();
+  });
+
+  ipcMain.handle('cloud-drive:isWatching', () => {
+    return svc().isWatching();
   });
 
   ipcMain.handle('cloud-drive:getLocalStates', () => {

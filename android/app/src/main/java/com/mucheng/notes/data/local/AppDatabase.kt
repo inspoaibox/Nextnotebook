@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.mucheng.notes.data.local.dao.CloudFileLocalPathDao
 import com.mucheng.notes.data.local.dao.ItemDao
 import com.mucheng.notes.data.local.dao.ResourceCacheDao
@@ -21,7 +23,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         ResourceCacheEntity::class,
         CloudFileLocalPathEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +34,22 @@ abstract class AppDatabase : RoomDatabase() {
     
     companion object {
         const val DATABASE_NAME = "mucheng_notes.db"
+
+        /**
+         * v2 -> v3:
+         * cloud_file_local_path 新增 availability 列，用于“仅云端 / 本地 / 离线保留”。
+         * 该表是 Android 端侧表，不参与同步，但不能因为加列导致整库校验失败闪退。
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    ALTER TABLE cloud_file_local_path
+                    ADD COLUMN availability TEXT NOT NULL DEFAULT 'local'
+                    """.trimIndent()
+                )
+            }
+        }
         
         @Volatile
         private var INSTANCE: AppDatabase? = null
@@ -66,6 +84,7 @@ abstract class AppDatabase : RoomDatabase() {
                 DATABASE_NAME
             )
                 .openHelperFactory(factory)
+                .addMigrations(MIGRATION_2_3)
                 .fallbackToDestructiveMigration() // TODO: 实现正式迁移策略
                 .build()
         }

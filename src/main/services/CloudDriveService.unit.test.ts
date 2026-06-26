@@ -64,15 +64,15 @@ describe('CloudDriveService (unit)', () => {
       expect(cfg).toEqual(DEFAULT_CLOUD_DRIVE_CONFIG);
     });
 
-    it('关键默认值符合预期（500MB / 8MB / 30 天 / 2s / 3s / 并发3）', () => {
+    it('关键默认值符合预期（500MB / 8MB / 30 天 / 0.8s / 0.8s / 并发3）', () => {
       const cfg = service.getConfig();
       expect(cfg.max_file_size).toBe(500 * 1024 * 1024);
       expect(cfg.chunk_size).toBe(8 * 1024 * 1024);
       expect(cfg.ignore_hidden).toBe(true);
       expect(cfg.sync_deletions).toBe(true);
       expect(cfg.soft_delete_retention_days).toBe(30);
-      expect(cfg.stability_threshold).toBe(2000);
-      expect(cfg.debounce_ms).toBe(3000);
+      expect(cfg.stability_threshold).toBe(800);
+      expect(cfg.debounce_ms).toBe(800);
       expect(cfg.small_file_concurrency).toBe(3);
       expect(cfg.sync_cursor).toBeNull();
       expect(cfg.watched_root_path).toBeNull();

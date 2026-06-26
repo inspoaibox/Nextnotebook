@@ -107,6 +107,10 @@ export interface UseCloudDriveReturn {
   // ─── 下载同步（第二部分） ─────────────────────────────────────────
   /** 下载进度列表（仅显示需要从云端落盘的任务） */
   downloadProgress: CloudDownloadProgress[];
+  /** 上传速度（bytes/s） */
+  uploadSpeedBps: Record<string, number>;
+  /** 下载速度（bytes/s） */
+  downloadSpeedBps: Record<string, number>;
   /** 本地可用性状态 */
   localStates: Record<string, CloudLocalAvailability>;
   /** 手动触发下载（state='pending' 的条目入队） */
@@ -143,11 +147,15 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     payload: CloudFilePayload | CloudFolderPayload;
   }>>([]);
   const [downloadProgress, setDownloadProgress] = useState<CloudDownloadProgress[]>([]);
+  const [uploadSpeedBps, setUploadSpeedBps] = useState<Record<string, number>>({});
+  const [downloadSpeedBps, setDownloadSpeedBps] = useState<Record<string, number>>({});
   const [localStates, setLocalStates] = useState<Record<string, CloudLocalAvailability>>({});
   const [loading, setLoading] = useState(true);
 
   // 防止重复初始化
   const initializedRef = useRef(false);
+  const uploadSpeedRef = useRef<Record<string, { bytes: number; ts: number }>>({});
+  const downloadSpeedRef = useRef<Record<string, { bytes: number; ts: number }>>({});
 
   // 刷新配置
   const refreshConfig = useCallback(async () => {
@@ -159,6 +167,10 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     try {
       const cfg = await api.cloudDrive.getConfig();
       setConfig(cfg ?? DEFAULT_CLOUD_DRIVE_CONFIG);
+      if (api?.cloudDrive?.isWatching) {
+        const watching = await api.cloudDrive.isWatching();
+        setIsWatching(Boolean(watching));
+      }
     } catch (err) {
       console.error('[useCloudDrive] 获取配置失败:', err);
     } finally {
@@ -188,15 +200,9 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
           snapshotMap.set(it.id, filePayloadToProgress(it.id, it.payload));
         }
         const merged: CloudUploadProgress[] = [];
-        // 快照中的条目：优先用实时事件（如果存在且更新），否则用快照
         for (const [id, snap] of snapshotMap) {
           const live = prev.find(p => p.file_id === id);
-          // 实时进度事件通常比快照更新（包含 uploaded_bytes 精确值），优先采用
           merged.push(live ?? snap);
-        }
-        // 保留实时事件中存在、但快照尚未收录的条目（如刚触发的扫描任务）
-        for (const p of prev) {
-          if (!snapshotMap.has(p.file_id)) merged.push(p);
         }
         return merged;
       });
@@ -218,10 +224,6 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
         for (const [id, snap] of snapshotMap) {
           const live = prev.find(p => p.file_id === id);
           merged.push(live ?? snap);
-        }
-        // 保留实时事件中存在、但快照未收录的条目（如正在排队的下载）
-        for (const p of prev) {
-          if (!snapshotMap.has(p.file_id)) merged.push(p);
         }
         return merged;
       });
@@ -251,6 +253,15 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     const api = getElectronAPI();
     if (api?.cloudDrive?.onUploadProgress) {
       api.cloudDrive.onUploadProgress((progress: CloudUploadProgress) => {
+        const now = Date.now();
+        const last = uploadSpeedRef.current[progress.file_id];
+        if (last && progress.uploaded_bytes >= last.bytes && now > last.ts) {
+          const speed = ((progress.uploaded_bytes - last.bytes) * 1000) / (now - last.ts);
+          if (Number.isFinite(speed) && speed >= 0) {
+            setUploadSpeedBps(prev => ({ ...prev, [progress.file_id]: speed }));
+          }
+        }
+        uploadSpeedRef.current[progress.file_id] = { bytes: progress.uploaded_bytes, ts: now };
         setUploadProgress(prev => {
           const idx = prev.findIndex(p => p.file_id === progress.file_id);
           if (idx >= 0) {
@@ -260,11 +271,23 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
           }
           return [...prev, progress];
         });
+        if (progress.state === 'completed' || progress.state === 'error' || progress.state === 'paused') {
+          setUploadSpeedBps(prev => ({ ...prev, [progress.file_id]: 0 }));
+        }
       });
     }
     // 监听下载进度（主进程通过 IPC 推送）
     if (api?.cloudDrive?.onDownloadProgress) {
       api.cloudDrive.onDownloadProgress((progress: CloudDownloadProgress) => {
+        const now = Date.now();
+        const last = downloadSpeedRef.current[progress.file_id];
+        if (last && progress.downloaded_bytes >= last.bytes && now > last.ts) {
+          const speed = ((progress.downloaded_bytes - last.bytes) * 1000) / (now - last.ts);
+          if (Number.isFinite(speed) && speed >= 0) {
+            setDownloadSpeedBps(prev => ({ ...prev, [progress.file_id]: speed }));
+          }
+        }
+        downloadSpeedRef.current[progress.file_id] = { bytes: progress.downloaded_bytes, ts: now };
         setDownloadProgress(prev => {
           const idx = prev.findIndex(p => p.file_id === progress.file_id);
           if (idx >= 0) {
@@ -281,6 +304,9 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
             if (current === 'local') return prev;
             return { ...prev, [progress.file_id]: 'local' };
           });
+        }
+        if (progress.state === 'completed' || progress.state === 'error' || progress.state === 'paused') {
+          setDownloadSpeedBps(prev => ({ ...prev, [progress.file_id]: 0 }));
         }
       });
     }
@@ -636,6 +662,8 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     uploadProgress,
     cloudItems,
     downloadProgress,
+    uploadSpeedBps,
+    downloadSpeedBps,
     localStates,
     loading,
     selectWatchedFolder,

@@ -351,8 +351,8 @@ export const DEFAULT_CLOUD_DRIVE_CONFIG: CloudDriveConfig = {
   ignore_hidden: true,
   sync_deletions: true,
   soft_delete_retention_days: 30,
-  stability_threshold: 2000,          // 2 秒
-  debounce_ms: 3000,                  // 3 秒
+  stability_threshold: 800,           // 0.8 秒
+  debounce_ms: 800,                   // 0.8 秒
   small_file_concurrency: 3,
   sync_cursor: null,
   // Phase 2 下载默认值

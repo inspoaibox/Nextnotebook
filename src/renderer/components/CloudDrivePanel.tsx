@@ -37,6 +37,11 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2)} ${units[i]}`;
 };
 
+const formatSpeed = (bytesPerSec: number | undefined): string => {
+  if (!bytesPerSec || bytesPerSec <= 0) return '-';
+  return `${formatBytes(bytesPerSec)}/s`;
+};
+
 // 毫秒数格式化（去抖/稳定阈值）
 const formatMs = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)} 秒` : `${ms} 毫秒`);
 
@@ -71,7 +76,7 @@ const CloudDrivePanel: React.FC = () => {
     selectWatchedFolder, startWatching, stopWatching, scanNow, updateConfig,
     retryFailed, retryItem, pauseItem, resumeItem, cancelUpload, clearCompleted,
     downloadFile, pauseDownload, resumeDownload, cancelDownload,
-    retryDownload, retryAllDownloads, clearCompletedDownloads, localStates, setLocalAvailability, setFolderLocalAvailability, openLocalFile, openLocalDirectory,
+    retryDownload, retryAllDownloads, clearCompletedDownloads, uploadSpeedBps, downloadSpeedBps, localStates, setLocalAvailability, setFolderLocalAvailability, openLocalFile, openLocalDirectory,
   } = useCloudDrive();
   const [currentFolderPath, setCurrentFolderPath] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -941,9 +946,13 @@ const CloudDrivePanel: React.FC = () => {
                           {p.state === 'uploading' ? '上传中' : p.state === 'error' ? '失败' : p.state === 'paused' ? '已暂停' : '待上传'}
                         </Tag>
                         <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.filename}</span>
-                        <span style={{ color: '#999', fontSize: 12 }}>{formatBytes(p.size)}</span>
+                        <span style={{ color: '#999', fontSize: 12 }}>
+                          {formatBytes(p.uploaded_bytes)} / {formatBytes(p.size)}
+                        </span>
+                        <span style={{ color: '#999', fontSize: 12 }}>{formatSpeed(uploadSpeedBps[p.file_id])}</span>
+                        <span style={{ color: '#999', fontSize: 12 }}>{percent}%</span>
                       </div>
-                      <Progress percent={percent} size="small" showInfo={false} status={p.state === 'error' ? 'exception' : p.state === 'paused' ? 'normal' : 'active'} />
+                      <Progress percent={percent} size="small" showInfo={false} status={p.state === 'error' ? 'exception' : 'normal'} />
                     </div>
                     <Space size={2} wrap>
                       {p.state === 'error' && <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => retryItem(p.file_id)} />}
@@ -985,9 +994,13 @@ const CloudDrivePanel: React.FC = () => {
                           {p.state === 'downloading' ? '下载中' : p.state === 'error' ? '失败' : p.state === 'paused' ? '已暂停' : '待下载'}
                         </Tag>
                         <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.filename}</span>
-                        <span style={{ color: '#999', fontSize: 12 }}>{formatBytes(p.size)}</span>
+                        <span style={{ color: '#999', fontSize: 12 }}>
+                          {formatBytes(p.downloaded_bytes)} / {formatBytes(p.size)}
+                        </span>
+                        <span style={{ color: '#999', fontSize: 12 }}>{formatSpeed(downloadSpeedBps[p.file_id])}</span>
+                        <span style={{ color: '#999', fontSize: 12 }}>{percent}%</span>
                       </div>
-                      <Progress percent={percent} size="small" showInfo={false} status={p.state === 'error' ? 'exception' : p.state === 'paused' ? 'normal' : 'active'} />
+                      <Progress percent={percent} size="small" showInfo={false} status={p.state === 'error' ? 'exception' : 'normal'} />
                     </div>
                     <Space size={2} wrap>
                       {p.state === 'error' && <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => retryDownload(p.file_id)} />}

@@ -430,6 +430,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Cloud Drive API - 网盘同步
   cloudDrive: {
     getConfig: () => ipcRenderer.invoke('cloud-drive:getConfig'),
+    isWatching: () => ipcRenderer.invoke('cloud-drive:isWatching'),
     getLocalStates: () => ipcRenderer.invoke('cloud-drive:getLocalStates'),
     openLocalFile: (itemId: string) => ipcRenderer.invoke('cloud-drive:openLocalFile', itemId),
     openLocalDirectory: (folderPath: string) => ipcRenderer.invoke('cloud-drive:openLocalDirectory', folderPath),

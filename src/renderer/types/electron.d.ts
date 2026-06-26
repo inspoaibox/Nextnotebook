@@ -423,6 +423,7 @@ export interface McpAPI {
 
 export interface CloudDriveAPI {
   getConfig: () => Promise<unknown>;
+  isWatching: () => Promise<boolean>;
   getLocalStates: () => Promise<Record<string, { availability: 'online_only' | 'local' | 'offline' }>>;
   openLocalFile: (itemId: string) => Promise<boolean>;
   openLocalDirectory: (folderPath: string) => Promise<boolean>;

@@ -490,7 +490,8 @@ async function cloudFetchAllItems(type) {
 function normalizeCloudItem(item) {
   const payload = parsePayload(item.payload);
   const id = String(item.id ?? '');
-  const rawPath = String(payload.relative_path || payload.filename || payload.name || id);
+  const rawPath = String(payload.relative_path || payload.filename || payload.name || id)
+    .replace(/\\/g, '/');
   // 拆分成 segments（去掉空段）
   const segments = String(rawPath || '').split('/').map(s => s.trim()).filter(Boolean);
   const relativePath = segments.join('/');
