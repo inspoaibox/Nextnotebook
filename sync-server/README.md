@@ -439,6 +439,59 @@ server {
 }
 ```
 
+### 宝塔面板反向代理注意
+
+宝塔的站点反向代理配置文件通常位于 `/www/server/panel/vhost/nginx/proxy/...conf`，该文件一般被放进 `server`/`location` 上下文中加载，不能在这里写 `map`。如果把上面的 `map $http_upgrade ...` 粘到宝塔反代配置第一行，Nginx 会报：
+
+```text
+"map" directive is not allowed here
+```
+
+宝塔里有两种处理方式：
+
+1. 简化写法：删除 `map` 块，把反代里的连接头固定写成：
+
+```nginx
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+```
+
+2. 保留 `map`：把 `map $http_upgrade $connection_upgrade { ... }` 放到主配置 `/www/server/nginx/conf/nginx.conf` 的 `http {}` 里面，或放到一个确认会被 `http {}` include 的全局配置文件中；不要放在宝塔站点 proxy 文件里。
+
+宝塔面板“反向代理 - 配置文件”可直接使用下面这一版（假设同步服务器监听 `127.0.0.1:3000`，站点域名由宝塔负责绑定 HTTPS）：
+
+```nginx
+#PROXY-START/
+location ^~ /
+{
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # WebSocket / Socket.IO（快传中继 /transfer 也走这里）
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    # 上传限制：普通资源直传要覆盖 MAX_RESOURCE_SIZE；
+    # 网盘分块上传至少要大于 MAX_UPLOAD_CHUNK_SIZE。
+    client_max_body_size 100M;
+
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 3600s;
+    proxy_read_timeout 3600s;
+
+    proxy_buffering off;
+    proxy_request_buffering off;
+}
+#PROXY-END/
+```
+
+如果你的同步服务器不是本机端口 `3000`，只改 `proxy_pass` 即可，例如 `http://172.17.0.1:3000` 或 `http://内网IP:3000`。
+
 ## Caddy 反向代理配置
 
 Caddy 会自动申请和续期 SSL 证书，配置更简单：
