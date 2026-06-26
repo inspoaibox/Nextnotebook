@@ -440,6 +440,18 @@ export class SyncEngine {
 
             const localItem = this.itemsManager.getByIdIncludeDeleted(remoteItem.id);
 
+            // Bug B 修复：本地已软删除（deleted_time != null）但远端仍存在（未删除）时，
+            // 说明本地删除尚未推送到服务端。此时绝不能 updateFromRemote 把它"复活"，
+            // 也不能判定冲突——本地删除是用户/系统的明确意图。
+            // 保留本地删除态并确保 sync_status='deleted'，让删除尽快推送，远端随之收敛。
+            if (localItem && localItem.deleted_time !== null) {
+              if (localItem.sync_status !== 'deleted') {
+                this.itemsManager.markPendingDelete(localItem.id);
+              }
+              count++;
+              continue;
+            }
+
             if (!localItem) {
               // 本地没有，直接创建
               this.itemsManager.createWithId(remoteItem);
@@ -681,6 +693,22 @@ export class SyncEngine {
       }
     }
 
+    // cloud_file 在本机上传尚未进入 completed 之前，本地 payload 会频繁写入
+    // upload_state / uploaded_chunks / upload_session_id 等传输态字段。
+    // 这些字段会改变 content_hash，但不代表用户产生了一个需要保留的
+    // “本地文本版本”。此时若按通用 modified 分支创建冲突副本，会把同一
+    // 文件的上传进度误判为远端内容冲突，产生莫名其妙的“冲突副本”。
+    if (
+      localItem &&
+      localItem.deleted_time === null &&
+      localItem.sync_status === 'modified' &&
+      change.type === 'cloud_file' &&
+      this.isTransientCloudFileUpload(localItem)
+    ) {
+      console.log(`[SyncEngine] Skip transient cloud_file conflict while upload is not completed: ${change.item_id}`);
+      return { success: true, conflict: false, skipped: true };
+    }
+
     // 检查是否有冲突
     if (localItem && localItem.deleted_time === null && localItem.sync_status === 'modified') {
       return this.handleConflict(localItem, change);
@@ -777,6 +805,21 @@ export class SyncEngine {
     const ext = dotIdx > 0 ? fileName.slice(dotIdx) : '';
     const conflictName = `${base} (冲突副本)${ext}`;
     return dir ? `${dir}${conflictName}` : conflictName;
+  }
+
+  private isTransientCloudFileUpload(item: ItemBase): boolean {
+    if (item.type !== 'cloud_file') return false;
+    try {
+      const payload = JSON.parse(item.payload) as { upload_state?: string };
+      return (
+        payload.upload_state === 'pending' ||
+        payload.upload_state === 'uploading' ||
+        payload.upload_state === 'paused' ||
+        payload.upload_state === 'error'
+      );
+    } catch {
+      return false;
+    }
   }
 
   // 处理冲突

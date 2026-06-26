@@ -100,17 +100,20 @@ class BiometricManagerImpl @Inject constructor(
         negativeButtonText: String,
         callback: (AuthResult) -> Unit
     ) {
+        android.util.Log.d("SecurityDebug", "BiometricManagerImpl.authenticateFromActivity: called")
         val executor = ContextCompat.getMainExecutor(activity)
-        
+
         val biometricPrompt = BiometricPrompt(
             activity,
             executor,
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    android.util.Log.d("SecurityDebug", "BiometricManagerImpl.onAuthenticationSucceeded")
                     callback(AuthResult.Success)
                 }
-                
+
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    android.util.Log.d("SecurityDebug", "BiometricManagerImpl.onAuthenticationError: code=$errorCode, err=$errString")
                     when (errorCode) {
                         BiometricPrompt.ERROR_USER_CANCELED,
                         BiometricPrompt.ERROR_CANCELED -> callback(AuthResult.Cancelled)

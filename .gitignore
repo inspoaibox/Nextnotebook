@@ -16,6 +16,8 @@ win-unpacked/
 # OS
 .DS_Store
 Thumbs.db
+/nul
+/NUL
 
 # Logs
 *.log

@@ -149,8 +149,14 @@ fun VaultScreen(
         (context as? androidx.fragment.app.FragmentActivity)?.let {
             viewModel.setActivity(it)
         }
-        // 刷新锁定设置（从设置页面返回时）
+        // 每次进入密码库页面都重新校验锁定状态
         viewModel.refreshLockSettings()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.lock()
+        }
     }
     
     // 对话框状态
@@ -415,7 +421,9 @@ fun VaultScreen(
             },
             onCopyUsername = { viewModel.copyToClipboard(entry.username, "用户名", false) },
             onCopyPassword = { viewModel.copyToClipboard(entry.password, "密码") },
-            onCopyTotp = { item -> viewModel.copyToClipboard(item.code.code, item.totp.displayName(), false) }
+            onCopyTotp = { item -> viewModel.copyToClipboard(item.code.code, item.totp.displayName(), false) },
+            onCopyUri = { uri -> viewModel.copyToClipboard(uri.uri, if (uri.name.isNotEmpty()) uri.name else "网址", false) },
+            onCopyCustomField = { field -> viewModel.copyToClipboard(field.value, field.name, field.type == "hidden") }
         )
     }
     
@@ -500,7 +508,9 @@ private fun VaultEntryPreviewDialog(
     onEdit: () -> Unit,
     onCopyUsername: () -> Unit,
     onCopyPassword: () -> Unit,
-    onCopyTotp: (TotpDisplayItem) -> Unit
+    onCopyTotp: (TotpDisplayItem) -> Unit,
+    onCopyUri: (VaultUri) -> Unit,
+    onCopyCustomField: (VaultCustomField) -> Unit
 ) {
     var showPassword by remember { mutableStateOf(false) }
     
@@ -557,10 +567,10 @@ private fun VaultEntryPreviewDialog(
                         if (entry.uris.isNotEmpty()) {
                             Text("关联网站", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
                             entry.uris.forEach { uri ->
-                                Text(
-                                    text = if (uri.name.isNotEmpty()) "${uri.name}: ${uri.uri}" else uri.uri,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary
+                                PreviewField(
+                                    label = if (uri.name.isNotEmpty()) uri.name else "网址",
+                                    value = uri.uri,
+                                    onCopy = { onCopyUri(uri) }
                                 )
                             }
                         }
@@ -637,7 +647,8 @@ private fun VaultEntryPreviewDialog(
                     entry.customFields.forEach { field ->
                         PreviewField(
                             label = field.name,
-                            value = if (field.type == "hidden" && !showPassword) "••••••••" else field.value
+                            value = if (field.type == "hidden" && !showPassword) "••••••••" else field.value,
+                            onCopy = { onCopyCustomField(field) }
                         )
                     }
                 }

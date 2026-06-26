@@ -194,6 +194,8 @@ REGISTER_RATE_LIMIT=5                  # 注册尝试限制（每小时）
 
 # 其他配置
 MAX_RESOURCE_SIZE=104857600            # 最大资源文件大小（字节），默认100MB
+MAX_CHUNKED_UPLOAD_SIZE=524288000      # 网盘分块上传单文件上限（字节），默认500MB
+MAX_UPLOAD_CHUNK_SIZE=16777216         # 网盘单块上传硬上限（字节），默认16MB
 CHANGE_LOG_RETENTION_DAYS=7            # 变更日志保留天数
 CORS_ORIGINS=*                         # CORS 允许的源
 
@@ -369,6 +371,8 @@ SECURE_MODE=true
 CORS_ORIGINS=https://sync.yourdomain.com
 JSON_BODY_LIMIT=50mb
 MAX_RESOURCE_SIZE=104857600
+MAX_CHUNKED_UPLOAD_SIZE=524288000
+MAX_UPLOAD_CHUNK_SIZE=16777216
 TRANSFER_RELAY_PATH=/transfer
 ```
 
@@ -376,7 +380,7 @@ TRANSFER_RELAY_PATH=/transfer
 - `TRUST_PROXY=true` 只应在服务确实位于可信 Nginx/Caddy 后面时启用，否则客户端可伪造来源 IP 影响限流和审计。
 - `SECURE_MODE=true` 会要求请求经过 HTTPS。反代必须传递 `X-Forwarded-Proto https`，否则服务端会拒绝请求。
 - 快传中继使用 Socket.IO，`/transfer` 路径必须支持 WebSocket Upgrade。
-- `client_max_body_size` 要大于或等于 `MAX_RESOURCE_SIZE`，否则大附件会先被 Nginx 拒绝。
+- `client_max_body_size` 必须大于实际请求体大小。普通资源直传时要覆盖 `MAX_RESOURCE_SIZE`；网盘分块上传时至少要大于实际单块大小（客户端分块大小会被服务端下调到 `MAX_UPLOAD_CHUNK_SIZE`，默认 16MB）。如果 Nginx 限制小于单块大小，请求会在到达 Node 服务前直接 413，服务端代码无法再下调或恢复。
 
 ```nginx
 map $http_upgrade $connection_upgrade {
@@ -447,10 +451,14 @@ SECURE_MODE=true
 CORS_ORIGINS=https://sync.yourdomain.com
 JSON_BODY_LIMIT=50mb
 MAX_RESOURCE_SIZE=104857600
+MAX_CHUNKED_UPLOAD_SIZE=524288000
+MAX_UPLOAD_CHUNK_SIZE=16777216
 TRANSFER_RELAY_PATH=/transfer
 ```
 
 Caddy 的 `reverse_proxy` 默认支持 WebSocket，不需要额外写 Upgrade 头；但仍要保留 `X-Forwarded-Proto` 和真实 IP 头，供服务端 HTTPS 判断、登录限流和审计日志使用。
+
+注意：`request_body.max_size` 与 Nginx 的 `client_max_body_size` 一样，会在请求进入 Node 服务前生效。普通资源直传要覆盖 `MAX_RESOURCE_SIZE`；网盘分块上传至少要大于实际单块大小（通常不小于 `MAX_UPLOAD_CHUNK_SIZE`，默认 16MB）。否则反代会先返回 413，服务端无法执行分块大小下调逻辑。
 
 ### 基础配置（Caddyfile）
 

@@ -109,7 +109,7 @@ router.post('/upload', (req, res, next) => {
     }
 
     const totalSize = Math.floor(total_size as number);
-    const chunkSize = Math.floor(chunk_size as number);
+    const requestedChunkSize = Math.floor(chunk_size as number);
 
     // 服务端硬上限检查
     if (totalSize > config.maxChunkedUploadSize) {
@@ -119,14 +119,9 @@ router.post('/upload', (req, res, next) => {
         'FILE_TOO_LARGE'
       );
     }
-    // 防止恶意超大分块（单块上限）
-    if (chunkSize > config.maxUploadChunkSize) {
-      throw createError(
-        `Chunk size exceeds server limit (${config.maxUploadChunkSize} bytes)`,
-        413,
-        'CHUNK_TOO_LARGE'
-      );
-    }
+    // 客户端可能配置了更大的分块。这里按服务端硬上限下调并把实际
+    // chunk_size 返回给客户端，桌面端会据此更新会话并按新分块续传。
+    const chunkSize = Math.min(requestedChunkSize, config.maxUploadChunkSize);
 
     // 规范化扩展名：确保以点开头且不含路径分隔符
     let ext = '';
@@ -168,6 +163,8 @@ router.post('/upload', (req, res, next) => {
       sessionId,
       itemId: item_id,
       totalSize,
+      requestedChunkSize,
+      chunkSize,
       totalChunks,
       userId: req.userId,
     });

@@ -9,6 +9,8 @@ import { ItemBase } from '@shared/types';
 import * as http from 'http';
 import * as https from 'https';
 
+type RequestInitWithDuplex = RequestInit & { duplex?: 'half' };
+
 // 认证响应类型
 interface AuthResponse {
   success: boolean;
@@ -337,6 +339,19 @@ export class ServerAdapter implements StorageAdapter {
     return this.httpAgent;
   }
 
+  private withFetchSignal(options: RequestInit, signal: AbortSignal): RequestInitWithDuplex {
+    const fetchOpts: RequestInitWithDuplex = { ...options, signal };
+    const body = fetchOpts.body;
+    if (
+      body &&
+      typeof ReadableStream !== 'undefined' &&
+      body instanceof ReadableStream
+    ) {
+      fetchOpts.duplex = 'half';
+    }
+    return fetchOpts;
+  }
+
   /**
    * 判断某错误/响应是否"值得重试"（瞬时性故障）：
    *  - 网络层错误（fetch reject）
@@ -396,13 +411,13 @@ export class ServerAdapter implements StorageAdapter {
         try {
           const { net } = require('electron');
           if (net && net.fetch) {
-            return await net.fetch(url, { ...options, signal: controller.signal });
+            return await net.fetch(url, this.withFetchSignal(options, controller.signal));
           }
         } catch {
           /* 回退到全局 fetch */
         }
       }
-      const fetchOpts: any = { ...options, signal: controller.signal };
+      const fetchOpts: any = this.withFetchSignal(options, controller.signal);
       if (agent) {
         // undici / Node fetch 通过 dispatcher 接收 Agent
         fetchOpts.dispatcher = agent;
@@ -437,9 +452,13 @@ export class ServerAdapter implements StorageAdapter {
     url: string,
     options: RequestInit,
     externalSignal?: AbortSignal,
-    bodyFactory?: () => BodyInit
+    bodyFactory?: () => BodyInit,
+    maxAttemptsOverride?: number
   ): Promise<Response> {
-    const maxAttempts = 1 + Math.max(0, this.uploadRetryCount);
+    const maxAttempts =
+      maxAttemptsOverride != null
+        ? Math.max(1, maxAttemptsOverride)
+        : 1 + Math.max(0, this.uploadRetryCount);
     let lastError: unknown = null;
     let lastResponse: Response | null = null;
 
@@ -472,14 +491,23 @@ export class ServerAdapter implements StorageAdapter {
       if (attempt < maxAttempts - 1) {
         const delay = this.backoffDelay(attempt);
         await new Promise<void>(resolve => {
-          const t = setTimeout(resolve, delay);
-          if (typeof t.unref === 'function') t.unref();
+          let retryTimer: NodeJS.Timeout | undefined;
+          const cleanup = () => {
+            if (retryTimer) clearTimeout(retryTimer);
+            if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
+          };
+          const onAbort = () => {
+            cleanup();
+            resolve();
+          };
+          const onTimer = () => {
+            cleanup();
+            resolve();
+          };
+          retryTimer = setTimeout(onTimer, delay);
+          if (typeof retryTimer.unref === 'function') retryTimer.unref();
           // 等待期间被外部取消：提前唤醒并抛出
           if (externalSignal) {
-            const onAbort = () => {
-              clearTimeout(t);
-              resolve();
-            };
             externalSignal.addEventListener('abort', onAbort, { once: true });
           }
         });
@@ -792,6 +820,7 @@ export class ServerAdapter implements StorageAdapter {
       ...this.getHeaders(),
       // 原始二进制，不能让 Content-Type 停在 application/json
       'Content-Type': 'application/octet-stream',
+      'Content-Length': String(params.data.byteLength),
       'X-Chunk-Index': String(params.chunkIndex),
     };
 
@@ -804,27 +833,38 @@ export class ServerAdapter implements StorageAdapter {
     const buildBody = (): BodyInit => {
       const data = params.data;
       const onProgress = params.onUploadProgress!;
+      let offset = 0;
+      let cancelled = false;
       const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          let offset = 0;
-          const pump = () => {
-            if (offset >= data.byteLength) {
-              controller.close();
-              return;
-            }
-            const end = Math.min(offset + SLICE, data.byteLength);
-            // slice 复制底层内存，避免 controller 入队后原 Buffer 被复用
-            controller.enqueue(new Uint8Array(data.subarray(offset, end)));
-            offset = end;
-            try {
-              onProgress(offset);
-            } catch {
-              /* 进度回调失败不影响传输 */
-            }
-            // 让出微任务，避免大块同步入队阻塞主循环
-            setTimeout(pump, 0);
-          };
-          pump();
+        pull(controller) {
+          if (cancelled) return;
+          if (params.signal?.aborted) {
+            cancelled = true;
+            controller.error(new Error('aborted'));
+            return;
+          }
+          if (offset >= data.byteLength) {
+            cancelled = true;
+            controller.close();
+            return;
+          }
+
+          const end = Math.min(offset + SLICE, data.byteLength);
+          // slice 复制底层内存，避免 controller 入队后原 Buffer 被复用
+          controller.enqueue(new Uint8Array(data.subarray(offset, end)));
+          offset = end;
+          try {
+            onProgress(offset);
+          } catch {
+            /* 进度回调失败不影响传输 */
+          }
+          if (offset >= data.byteLength) {
+            cancelled = true;
+            controller.close();
+          }
+        },
+        cancel() {
+          cancelled = true;
         },
       });
       return stream as unknown as BodyInit;
@@ -841,6 +881,7 @@ export class ServerAdapter implements StorageAdapter {
         },
         params.signal,
         useStream ? buildBody : undefined,
+        1,
       );
 
     let response = await doRequest();

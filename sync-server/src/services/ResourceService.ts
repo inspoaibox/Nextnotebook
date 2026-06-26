@@ -63,18 +63,21 @@ export class ResourceService {
       return false;
     }
 
-    if (!this.userId) {
-      return true;
-    }
-
-    userService.claimLegacyDataForSingleUser(this.userId);
     const itemId = this.getItemIdFromResourceName(id);
     const db = getDatabase();
     // 兼容任意带二进制内容的 item 类型（resource / cloud_file）。
     // 只要该 id 属于某个二进制类型且归当前用户所有，即视为可访问。
-    const row = db
-      .prepare('SELECT id FROM items WHERE id = ? AND user_id = ?')
-      .get(itemId, this.userId) as { id: string } | undefined;
+    let row: { id: string } | undefined;
+    if (this.userId) {
+      userService.claimLegacyDataForSingleUser(this.userId);
+      row = db
+        .prepare('SELECT id FROM items WHERE id = ? AND user_id = ? AND deleted_time IS NULL')
+        .get(itemId, this.userId) as { id: string } | undefined;
+    } else {
+      row = db
+        .prepare('SELECT id FROM items WHERE id = ? AND deleted_time IS NULL')
+        .get(itemId) as { id: string } | undefined;
+    }
 
     return !!row;
   }
@@ -87,14 +90,18 @@ export class ResourceService {
     if (!this.isValidResourceId(itemId) || itemId.includes('..')) {
       return { ok: false };
     }
-    if (!this.userId) {
-      return { ok: true };
-    }
-    userService.claimLegacyDataForSingleUser(this.userId);
     const db = getDatabase();
-    const row = db
-      .prepare('SELECT id, type FROM items WHERE id = ? AND user_id = ?')
-      .get(itemId, this.userId) as { id: string; type: string } | undefined;
+    let row: { id: string; type: string } | undefined;
+    if (this.userId) {
+      userService.claimLegacyDataForSingleUser(this.userId);
+      row = db
+        .prepare('SELECT id, type FROM items WHERE id = ? AND user_id = ? AND deleted_time IS NULL')
+        .get(itemId, this.userId) as { id: string; type: string } | undefined;
+    } else {
+      row = db
+        .prepare('SELECT id, type FROM items WHERE id = ? AND deleted_time IS NULL')
+        .get(itemId) as { id: string; type: string } | undefined;
+    }
     return row ? { ok: true, type: row.type } : { ok: false };
   }
 

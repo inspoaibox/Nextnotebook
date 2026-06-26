@@ -25,6 +25,7 @@ class AppLockManagerImpl @Inject constructor(
         private const val KEY_PIN_LENGTH = "pin_length"
         private const val KEY_PATTERN_HASH = "pattern_hash"
         private const val KEY_LAST_UNLOCK = "last_unlock"
+        private const val KEY_LAST_BACKGROUND = "last_background"
         private const val KEY_LOCK_TIMEOUT = "lock_timeout"
         
         private const val DEFAULT_TIMEOUT = 5 * 60 * 1000L // 5 分钟
@@ -48,9 +49,28 @@ class AppLockManagerImpl @Inject constructor(
     override fun isLockEnabled(): Boolean {
         return prefs.getBoolean(KEY_LOCK_ENABLED, false)
     }
+
+    override fun hasCredentialConfigured(): Boolean {
+        val lockType = getLockType()
+        // 生物识别只是 PIN 的便捷解锁方式，不能作为独立凭据；
+        // 持久化的 lockType 为 BIOMETRIC 属于历史脏数据，按未配置处理，避免跳过 PIN 设置流程。
+        val configured = when (lockType) {
+            LockType.NONE, LockType.BIOMETRIC -> false
+            LockType.PIN -> !prefs.getString(KEY_PIN_HASH, null).isNullOrBlank()
+            LockType.PATTERN -> !prefs.getString(KEY_PATTERN_HASH, null).isNullOrBlank()
+        }
+        android.util.Log.d(
+            "SecurityDebug",
+            "hasCredentialConfigured: lockType=$lockType, lockEnabled=${isLockEnabled()}, result=$configured"
+        )
+        return configured
+    }
     
     override fun setLockEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_LOCK_ENABLED, enabled).apply()
+        if (!enabled) {
+            prefs.edit().remove(KEY_LAST_BACKGROUND).apply()
+        }
     }
     
     override fun getLockType(): LockType {
@@ -96,16 +116,31 @@ class AppLockManagerImpl @Inject constructor(
     }
     
     override fun shouldLock(): Boolean {
-        if (!isLockEnabled()) return false
-        
+        if (!isLockEnabled() || !hasCredentialConfigured()) return false
+
         val lastUnlock = prefs.getLong(KEY_LAST_UNLOCK, 0)
+        if (lastUnlock == 0L) return true
+
+        val lastBackground = prefs.getLong(KEY_LAST_BACKGROUND, 0)
         val timeout = getLockTimeout()
-        
-        return System.currentTimeMillis() - lastUnlock > timeout
+
+        if (lastBackground <= lastUnlock) {
+            return false
+        }
+
+        return timeout == 0L || System.currentTimeMillis() - lastBackground >= timeout
     }
     
     override fun recordUnlock() {
-        prefs.edit().putLong(KEY_LAST_UNLOCK, System.currentTimeMillis()).apply()
+        prefs.edit()
+            .putLong(KEY_LAST_UNLOCK, System.currentTimeMillis())
+            .putLong(KEY_LAST_BACKGROUND, 0L)
+            .apply()
+    }
+
+    override fun recordBackground() {
+        if (!isLockEnabled() || !hasCredentialConfigured()) return
+        prefs.edit().putLong(KEY_LAST_BACKGROUND, System.currentTimeMillis()).apply()
     }
     
     override fun getLockTimeout(): Long {

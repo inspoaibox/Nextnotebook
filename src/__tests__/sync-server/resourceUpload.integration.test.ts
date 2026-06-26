@@ -458,14 +458,15 @@ describe('参数校验 / 大小限制', () => {
     expect(res.body.error.code).toBe('FILE_TOO_LARGE');
   });
 
-  it('chunk_size 超单块上限 → 413 CHUNK_TOO_LARGE', async () => {
+  it('chunk_size 超单块上限 → 下调到服务端上限并返回实际分块', async () => {
     // MAX_UPLOAD_CHUNK_SIZE=262144
     const res = await request(app)
       .post('/api/resources/upload')
       .set(authHeader(token.accessToken))
       .send({ item_id: ITEM_ID_VALID, total_size: 100_000, chunk_size: 500_000 });
-    expect(res.status).toBe(413);
-    expect(res.body.error.code).toBe('CHUNK_TOO_LARGE');
+    expect(res.status).toBe(200);
+    expect(res.body.chunk_size).toBe(262144);
+    expect(res.body.total_chunks).toBe(1);
   });
 
   it('X-Chunk-Index 越界（>= total_chunks）→ 400', async () => {

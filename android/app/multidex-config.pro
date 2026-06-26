@@ -1,0 +1,6 @@
+-keep class com.mucheng.notes.MuchengNotesApp
+-keep class com.mucheng.notes.Hilt_MuchengNotesApp
+-keep class com.mucheng.notes.MuchengNotesApp_GeneratedInjector
+-keep class com.mucheng.notes.presentation.MainActivity
+-keep class dagger.hilt.internal.aggregatedroot.codegen.** { *; }
+-keep class hilt_aggregated_deps.** { *; }

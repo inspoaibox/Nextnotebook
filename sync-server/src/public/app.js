@@ -467,7 +467,9 @@ async function cloudRefresh() {
     cloudFetchAllItems('cloud_file'),
     cloudFetchAllItems('cloud_folder')
   ]);
-  cloudDriveState.files = (fileData.items || []).map(normalizeCloudItem);
+  cloudDriveState.files = (fileData.items || [])
+    .map(normalizeCloudItem)
+    .filter(item => cloudIsVisibleFile(item));
   cloudDriveState.folders = (folderData.items || []).map(normalizeCloudItem);
   cloudEnsureCurrentPath();
 }
@@ -509,6 +511,12 @@ function normalizeCloudItem(item) {
     mtime: item.updated_time || payload.mtime || 0,
     extension: payload.filename ? (payload.filename.split('.').pop() || '').toLowerCase() : ''
   };
+}
+
+function cloudIsVisibleFile(item) {
+  if (item.type !== 'cloud_file') return true;
+  const state = String(item.payload?.upload_state || '').toLowerCase();
+  return state === 'completed';
 }
 
 function cloudEnsureCurrentPath() {

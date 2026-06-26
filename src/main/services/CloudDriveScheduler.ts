@@ -216,6 +216,17 @@ export class CloudDriveScheduler {
     }
 
     this.inFlight.add(itemId);
+    // 在进入处理流水线时即创建 AbortController，覆盖「哈希计算阶段」。
+    // 此前 controller 仅在 runUpload 中创建，导致哈希计算（大文件可达数秒）期间
+    // pauseItem.abortControllers.get(itemId)?.abort() 命中 undefined → no-op，
+    // 于是 processItem 继续推进并把 upload_state 覆盖为 'uploading'，
+    // 用户的 pause 决策被静默丢弃（呈现为「卡在上传中 0%」+ resumeItem 因状态已变
+    // uploading 而早退「开始无反应」）。提前创建后 isAborted() 可正确返回 true，
+    // 下面的哈希后守卫即可拦截，不再覆盖 paused。runUpload 会复用同一未中止的 controller。
+    const ctrl = this.abortControllers.get(itemId);
+    if (!ctrl || ctrl.signal.aborted) {
+      this.abortControllers.set(itemId, new AbortController());
+    }
     // X1：通知 UI 该文件已进入处理流水线（pending → uploading/completed/error）。
     // 这样 retry/resume 后渲染层无需乐观突变——主进程是唯一状态权威。
     this.emitProgressFor(itemId, payload, 'pending', 0);
@@ -227,12 +238,21 @@ export class CloudDriveScheduler {
       // 若已被中止，processItem 不应再推进任何状态（避免覆盖 paused/removed）。
       if (this.isAborted(itemId)) {
         this.inFlight.delete(itemId);
+        // 与 runUpload 的 finally 对齐：若用户在哈希运行期间点过 resume，
+        // 此处需补 enqueue，否则恢复意图会被静默丢弃（inFlight 已 delete，
+        // 但 runUpload 从未运行 → 它的 finally pendingResume 检查不会触发）。
+        if (this.pendingResume.delete(itemId)) {
+          this.enqueue(itemId);
+        }
         return;
       }
 
       if (newHash === payload.file_hash) {
-        // 内容未变：仅补齐状态（避免遗留 pending）
-        // 重新读取，避免覆盖用户在哈希计算期间触发的 pause。
+        // 仅“本地内容未变化”并不等于“云端已上传完成”。
+        // paused / pending / error 场景下需要继续走下面的续传/重试流水线，
+        // 否则会出现：
+        //   - 暂停在 0% 后点恢复无反应
+        //   - pending/error 项被错误标记为 completed，实际并未上传
         const cur = this.itemsManager.getById(itemId);
         let curState: string | undefined;
         try {
@@ -240,21 +260,18 @@ export class CloudDriveScheduler {
         } catch {
           /* 忽略 */
         }
-        // 用户已 pause/cancel：不要把它覆盖回 completed
-        if (curState === 'paused' || curState === undefined) {
+        if (curState === undefined) {
           this.inFlight.delete(itemId);
           return;
         }
-        if (curState !== 'completed') {
-          this.updatePayload(itemId, {
-            upload_state: 'completed',
-            error_message: null,
-          });
+        if (curState === 'completed') {
+          this.emitProgressFor(itemId, payload, 'completed', 0);
+          this.inFlight.delete(itemId);
+          return;
         }
-        this.emitProgressFor(itemId, payload, 'completed', 0);
-        // 内容未变 → 不进入上传，inFlight 在此释放
-        this.inFlight.delete(itemId);
-        return;
+        // 其余状态（pending/uploading/paused/error）继续向下执行：
+        // 复用已有 file_hash / upload_session_id / uploaded_chunks，
+        // 让 canResume 分支决定是否续传。
       }
 
       // 大小可能变化，重新读取
@@ -262,15 +279,31 @@ export class CloudDriveScheduler {
       const chunkSize = config.chunk_size;
       const totalChunks = chunkSize > 0 ? Math.ceil(size / chunkSize) : 1;
 
-      // 更新 hash + 状态为 uploading，记录分块总数
+      // 断点续传保护：只有当文件内容发生变化（hash 不同）才重置上传会话。
+      // 之前无条件把 upload_session_id 置 null + uploaded_chunks 置 []，
+      // 导致 uploadChunked 里 L509 的"向服务端查询已上传分块"续传分支永远不可达——
+      // 任何重试/重启都从 chunk 0 重传，表现为进度反复从 26%（约 1 个分块边界）倒退。
+      // 现改为：hash 未变且已有会话 → 保留，让 uploadChunked 走续传分支只传未完成的分块。
+      const prevHash = payload.file_hash as string | undefined;
+      const prevSessionId = payload.upload_session_id as string | null | undefined;
+      const prevUploaded = payload.uploaded_chunks as number[] | undefined;
+      const prevSize = payload.size as number | undefined;
+      const contentUnchanged = prevHash != null && prevHash === newHash;
+      const canResume =
+        contentUnchanged &&
+        prevSessionId != null &&
+        Array.isArray(prevUploaded) &&
+        size === prevSize;
+
       this.updatePayload(itemId, {
         file_hash: newHash,
         size,
         chunk_size: chunkSize,
         total_chunks: totalChunks,
         upload_state: 'uploading',
-        upload_session_id: null,
-        uploaded_chunks: [],
+        // 内容未变且有可用会话 → 保留，启用断点续传；否则从零开始
+        upload_session_id: canResume ? prevSessionId! : null,
+        uploaded_chunks: canResume ? prevUploaded! : [],
         error_message: null,
       });
 
@@ -467,8 +500,16 @@ export class CloudDriveScheduler {
     signal: AbortSignal
   ): Promise<void> {
     const config = this.getConfig();
-    const chunkSize = config.chunk_size;
-    const totalChunks = payload.total_chunks > 0 ? payload.total_chunks : Math.ceil(payload.size / chunkSize);
+    let chunkSize = payload.chunk_size > 0 ? payload.chunk_size : config.chunk_size;
+    if (chunkSize <= 0) chunkSize = config.chunk_size > 0 ? config.chunk_size : payload.size;
+    let totalChunks = payload.total_chunks > 0
+      ? payload.total_chunks
+      : Math.max(1, Math.ceil(payload.size / chunkSize));
+    let progressPayload: CloudFilePayload = {
+      ...payload,
+      chunk_size: chunkSize,
+      total_chunks: totalChunks,
+    };
 
     // 1. 创建（或恢复）上传会话
     let sessionId = payload.upload_session_id;
@@ -484,20 +525,45 @@ export class CloudDriveScheduler {
       });
       sessionId = created.sessionId;
       // 服务端可能调整 chunkSize（如对齐到更友好的边界）
+      chunkSize = created.chunkSize;
+      totalChunks = created.totalChunks;
+      uploadedChunks = [];
+      progressPayload = {
+        ...progressPayload,
+        upload_session_id: sessionId,
+        chunk_size: chunkSize,
+        total_chunks: totalChunks,
+        uploaded_chunks: uploadedChunks,
+      };
       this.updatePayload(itemId, {
         upload_session_id: sessionId,
         chunk_size: created.chunkSize,
         total_chunks: created.totalChunks,
+        uploaded_chunks: uploadedChunks,
       });
     } else {
       // 断点续传：向服务端查询已上传分块，避免重传
       try {
         const status = await adapter.getUploadStatus!(sessionId);
+        chunkSize = status.chunkSize || chunkSize;
+        totalChunks = status.totalChunks || totalChunks;
         uploadedChunks = status.uploadedChunks ?? [];
+        progressPayload = {
+          ...progressPayload,
+          upload_session_id: sessionId,
+          chunk_size: chunkSize,
+          total_chunks: totalChunks,
+          uploaded_chunks: uploadedChunks,
+        };
+        this.updatePayload(itemId, {
+          chunk_size: chunkSize,
+          total_chunks: totalChunks,
+          uploaded_chunks: uploadedChunks,
+        });
         if (status.completed) {
           // 会话已完成（例如上次 complete 成功但本地状态没更新）
           // 注意：getUploadStatus 返回的字段名是 totalSize（不是 size）
-          this.markCompleted(itemId, payload, status.totalSize, uploadedChunks, sessionId);
+          this.markCompleted(itemId, progressPayload, status.totalSize, uploadedChunks, sessionId);
           return;
         }
       } catch (err) {
@@ -515,11 +581,21 @@ export class CloudDriveScheduler {
           extension,
         });
         sessionId = created.sessionId;
+        chunkSize = created.chunkSize;
+        totalChunks = created.totalChunks;
         uploadedChunks = [];
+        progressPayload = {
+          ...progressPayload,
+          upload_session_id: sessionId,
+          chunk_size: chunkSize,
+          total_chunks: totalChunks,
+          uploaded_chunks: uploadedChunks,
+        };
         this.updatePayload(itemId, {
           upload_session_id: sessionId,
+          chunk_size: chunkSize,
           uploaded_chunks: [],
-          total_chunks: created.totalChunks,
+          total_chunks: totalChunks,
         });
       }
     }
@@ -562,7 +638,7 @@ export class CloudDriveScheduler {
             );
             this.emitUploadBytesProgress(
               itemId,
-              payload,
+              progressPayload,
               'uploading',
               uploadedBytes,
               arr,
@@ -579,7 +655,7 @@ export class CloudDriveScheduler {
         this.updatePayload(itemId, { uploaded_chunks: arr });
 
         // 推送进度（块级：分块完成的里程碑事件）
-        this.emitProgressFor(itemId, payload, 'uploading', i + 1 - uploadedChunks.length, {
+        this.emitProgressFor(itemId, progressPayload, 'uploading', i + 1 - uploadedChunks.length, {
           uploadedChunks: arr,
           totalChunks,
         });
@@ -608,12 +684,12 @@ export class CloudDriveScheduler {
       } catch {
         /* 忽略清理失败 */
       }
-      this.markError(itemId, payload, '云端文件哈希与本地不一致（传输可能损坏）');
+      this.markError(itemId, progressPayload, '云端文件哈希与本地不一致（传输可能损坏）');
       return;
     }
 
     const finalUploaded = Array.from({ length: totalChunks }, (_, i) => i);
-    this.markCompleted(itemId, payload, completed.size || payload.size, finalUploaded, sessionId);
+    this.markCompleted(itemId, progressPayload, completed.size || payload.size, finalUploaded, sessionId);
   }
 
   // ---------- 流式上传降级（WebDAV）----------
@@ -696,6 +772,12 @@ export class CloudDriveScheduler {
       '不一致',
       '消失', // "文件在上传前已消失"
       'finalize 失败',
+      '413',
+      'CHUNK_TOO_LARGE',
+      'FILE_TOO_LARGE',
+      'Payload Too Large',
+      'too large',
+      'duplex option',
     ];
     if (deterministic.some(k => msg.includes(k))) return false;
     // 其余（fetch reject / 超时 / "Upload chunk N failed: ..." 等）视为可重试。
@@ -841,10 +923,27 @@ export class CloudDriveScheduler {
   ): void {
     const now = Date.now();
     const last = this.lastUploadEmit.get(itemId);
-    const isComplete = uploadedBytes >= payload.size;
+    const confirmedBytesFloor = Math.min(
+      payload.size,
+      uploadedChunks.length * (payload.chunk_size > 0 ? payload.chunk_size : 1)
+    );
+    const rawUploadedBytes = Math.min(payload.size, uploadedBytes);
+    // 进度条必须单调不回退：
+    // uploadChunk 的 bodyFactory 在 retry 时会重新构造同一分块流，
+    // onUploadProgress 因而会从 0 再次上报本分块 sentBytes。
+    // 若直接使用 rawUploadedBytes，首块重试会把 UI 从 ~2% 拉回 ~0%，
+    // 表现为“1%-2% 来回循环横条”。
+    // 这里取 max(last.bytes, confirmed floor, raw bytes)，把瞬时重试折叠成“停住不退”，
+    // 直到该分块真正完成并推进到下一块。
+    const displayedUploadedBytes = Math.max(
+      confirmedBytesFloor,
+      last?.bytes ?? 0,
+      rawUploadedBytes
+    );
+    const isComplete = displayedUploadedBytes >= payload.size;
     if (last && !isComplete) {
       const elapsed = now - last.ts;
-      const byteDelta = uploadedBytes - last.bytes;
+      const byteDelta = displayedUploadedBytes - last.bytes;
       const minBytes = Math.max(
         1,
         CloudDriveScheduler.UPLOAD_EMIT_MIN_BYTES_RATIO * payload.size
@@ -854,14 +953,14 @@ export class CloudDriveScheduler {
         return;
       }
     }
-    this.lastUploadEmit.set(itemId, { bytes: uploadedBytes, ts: now });
+    this.lastUploadEmit.set(itemId, { bytes: displayedUploadedBytes, ts: now });
 
     const progress: CloudUploadProgress = {
       file_id: itemId,
       filename: payload.filename,
       relative_path: payload.relative_path,
       size: payload.size,
-      uploaded_bytes: Math.min(payload.size, uploadedBytes),
+      uploaded_bytes: displayedUploadedBytes,
       uploaded_chunks: uploadedChunks.length,
       total_chunks: totalChunks,
       state,
@@ -1002,6 +1101,46 @@ export class CloudDriveScheduler {
     // 6. 从 inFlight 移除（允许未来同 ID 重新入队；但因 hardDelete 后 Item 不存在，实际不会发生）
     this.inFlight.delete(itemId);
     return ok;
+  }
+
+  /**
+   * 本地文件系统删除专用：停止该 item 的上传流水线，但保留本地 Item。
+   * 后续由 CloudDriveService.softDeleteCloudItem 写入 tombstone，并通过 SyncEngine
+   * 推送到服务端。不能复用 cancelUpload，因为 cancelUpload 会 hardDelete 本地记录，
+   * 导致删除状态无法同步给其他端/服务端。
+   */
+  discardUploadForLocalDelete(itemId: string): void {
+    const t = this.debounceTimers.get(itemId);
+    if (t) {
+      clearTimeout(t);
+      this.debounceTimers.delete(itemId);
+    }
+    this.smallQueue = this.smallQueue.filter(task => task.itemId !== itemId);
+    this.largeQueue = this.largeQueue.filter(task => task.itemId !== itemId);
+    this.pendingResume.delete(itemId);
+    this.lastUploadEmit.delete(itemId);
+
+    this.abortControllers.get(itemId)?.abort();
+
+    const item = this.itemsManager.getById(itemId);
+    if (!item || item.type !== 'cloud_file') return;
+
+    let sessionId: string | null = null;
+    try {
+      const p = JSON.parse(item.payload) as CloudFilePayload;
+      sessionId = p.upload_session_id ?? null;
+    } catch {
+      /* 忽略损坏 payload，软删除仍由上层继续处理 */
+    }
+
+    if (sessionId) {
+      const adapter = this.getAdapter();
+      if (adapter?.abortChunkedUpload) {
+        adapter.abortChunkedUpload(sessionId).catch(err => {
+          console.warn(`[CloudDriveScheduler] abortChunkedUpload(${sessionId}) 失败:`, err);
+        });
+      }
+    }
   }
 
   /**

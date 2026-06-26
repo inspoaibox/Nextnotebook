@@ -401,6 +401,18 @@ export class ItemsManager {
     return result.changes > 0;
   }
 
+  // 标记一个"已软删除但同步状态不是 deleted"的 Item 为待推送删除。
+  // Bug B 场景：本地已 deleted_time!=null，但 sync_status 可能仍是旧值（如 'clean'/'modified'），
+  // 远端拉取时若不处理会被 updateFromRemote 复活。此方法确保删除态尽快推送，不改变 deleted_time。
+  markPendingDelete(id: string): boolean {
+    const result = this.db.run(
+      `UPDATE items SET sync_status = 'deleted', local_rev = local_rev + 1 
+       WHERE id = ? AND deleted_time IS NOT NULL`,
+      [id]
+    );
+    return result.changes > 0;
+  }
+
   // 恢复已删除的 Item
   restore(id: string): boolean {
     const result = this.db.run(

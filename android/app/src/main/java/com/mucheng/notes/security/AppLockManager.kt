@@ -19,6 +19,11 @@ interface AppLockManager {
      * 检查是否启用锁定
      */
     fun isLockEnabled(): Boolean
+
+    /**
+     * 当前是否已配置可用的锁定凭据
+     */
+    fun hasCredentialConfigured(): Boolean
     
     /**
      * 设置是否启用锁定
@@ -69,6 +74,11 @@ interface AppLockManager {
      * 记录解锁时间
      */
     fun recordUnlock()
+
+    /**
+     * 记录应用进入后台的时间
+     */
+    fun recordBackground()
     
     /**
      * 获取锁定超时时间（毫秒）

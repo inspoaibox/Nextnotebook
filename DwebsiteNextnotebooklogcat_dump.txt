@@ -1,0 +1,502 @@
+--------- beginning of main
+06-26 15:54:58.770 29713 29713 W libc    : Access denied finding property "persist.vendor.sys.activitylog"
+06-26 15:54:58.770 29713 29713 I OneTrace: Mark active for pid=29713? true
+06-26 15:54:58.771 29713 29713 D cutils-dev: otrace_set_tracing_enabled? true tag:0
+06-26 15:54:58.771 29713 29713 D cutils-dev: properties changed in otrace_seq_number_changed!
+06-26 15:54:58.776  4195  7490 D SplitScreenAppReader: SPLIT_TOUCH support check:com.android.calllogbackup = false
+--------- beginning of system
+06-26 15:54:58.776  4195  7490 D ActivityTaskManagerServiceExtImpl: preBindApplication record is null
+06-26 15:54:58.776  4195  7490 D RGBNormalizeServer: OplusRGBNormalize feature enabled ? true
+06-26 15:54:58.776  4195  7490 D ResourcesManagerCache: For package com.android.calllogbackup we got cacheList [null] appInfoExt is null ? false hasFeature ? false
+06-26 15:54:58.776  4195  7490 D VRR [OPlusExternalRefreshRateManager]: isPkgTfcEnable: pkgName = com.android.calllogbackup, enable = false
+06-26 15:54:58.776  4195  7490 D VRR [OPlusExternalRefreshRateManager]: getTfcMinFramerate: pkgName = com.android.calllogbackup, min framerate = 0
+06-26 15:54:58.779  5780  5780 D VendorWifiService: onEvent event:9,action:1
+06-26 15:54:58.779 29713 29713 D OplusActivityManager: get AMS extension: android.os.BinderProxy@8c081d3
+06-26 15:54:58.778  5633  5633 D CSM-manager: wifi event:9
+06-26 15:54:58.782 29713 29713 D nativeloader: Load libstats_jni.so using APEX ns com_android_os_statsd for caller /apex/com.android.os.statsd/javalib/framework-statsd.jar: ok
+06-26 15:54:58.783 29713 29713 D CompactWindowAppManager: initCompactApplicationInfo CompactMode: , NormalMode: 
+06-26 15:54:58.784  4195  4950 D OplusWifiPower_TriggerCenter: mComponentCallback: wifistat
+06-26 15:54:58.784 29713 29713 D OplusScrollToTopManager: setIsInWhiteList false
+06-26 15:54:58.785 29713 29713 D OplusViewDebugManager: OplusViewDebugManager Constructor android.view.debug.OplusViewDebugManager@6704409 [mHasViewDebugProperty true] [mHasMsgDebugProperty false] [DEBUG false] [EXTRAINFOENABLE false] [LIGHT_OS false]
+06-26 15:54:58.786  2087  2087 D SensorFeature: name=ssc_screenshot_info ,index = 22
+06-26 15:54:58.786  2087  2087 D SensorFeature: write 41 bytes:6892116446902724,6892117109192099,13322,0
+06-26 15:54:58.787 29713 29713 D CompatChangeReporter: Compat change id reported: 291868760; UID 10062; state: ENABLED
+06-26 15:54:58.788 29713 29713 W libc    : Access denied finding property "ro.odm.prev.product.name"
+06-26 15:54:58.794 29713 29713 D nativeloader: Configuring clns-shared-7 for other apk /system_ext/priv-app/CallLogBackup/CallLogBackup.apk. target_sdk_version=35, uses_libraries=, library_path=/system_ext/priv-app/CallLogBackup/lib/arm64:/system_ext/priv-app/CallLogBackup/CallLogBackup.apk!/lib/arm64-v8a:/system/lib64:/system_ext/lib64, permitted_path=/data:/mnt/expand:/data/user/0/com.android.calllogbackup:/system_ext/priv-app/CallLogBackup:/system/lib64:/system_ext/lib64
+06-26 15:54:58.795 29713 29713 D CompatChangeReporter: Compat change id reported: 202956589; UID 10062; state: ENABLED
+06-26 15:54:58.799 29713 29713 V GraphicsEnvironment: Currently set values for:
+06-26 15:54:58.799 29713 29713 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+06-26 15:54:58.799 29713 29713 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+06-26 15:54:58.799 29713 29713 V GraphicsEnvironment: Global.Settings values are invalid: number of packages: 0, number of values: 0
+06-26 15:54:58.799 29713 29713 D ResourcesManagerExtImpl: applyConfigurationToAppResourcesLocked app.getDisplayId() return callback.displayId:-1
+06-26 15:54:58.801  4195  7490 I ActivityManager: Flag disabled. Ignoring finishAttachApplication from uid: 10062. pid: 29713
+06-26 15:54:58.801 29713 29713 E ANDR-PERF-CLIENT-SYS: death recipent object is fine
+06-26 15:54:58.801 29713 29713 W d.calllogbackup: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. This might not be intended. AIBinder_DeathRecipient_setOnUnlinked should be called first.
+06-26 15:54:58.802  4195  7490 D ActivityManager: Async freezing 29713 com.android.calllogbackup
+06-26 15:54:58.807  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.807  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.828  3350 20963 V Codec2-DumpInput: [processLoop:L697][c2.qti.avc.decoder_190]QueueRead[0] empty, waiting buffer.
+06-26 15:54:58.847  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.847  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.887  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.887  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.927  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.927  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.929  1953 28058 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (12176)(cct, lux, ir)[6442.91, 528.57, 21.500345] (r, g, b, c)[18043.18, 15491.04, 8432.58, 40348.82]                 (pwm, hbm, brl, algo)[0.0 0.0 1844.0 2.0], flag 13322
+06-26 15:54:58.929  4195  4752 D FusionLightNextGen: process end reported = 1, mode: 0, lux 479.9, cct 6748.6, r/g/b/c: 18079.5/15476.3/8479.6/40343.0, R/G/B: 105.0/100.0/89.0, bri 1844.0, match 1.00, ir 0.021015, conf 5.0, ts 6892117096312468
+06-26 15:54:58.967  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.967  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:58.990  7772 29766 D gaia-GaiaConnectChecker: start connect check++
+06-26 15:54:59.007  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.007  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.020  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.020  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.020  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.020  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.020  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.020  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.020  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.020  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.022  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.
+06-26 15:54:59.047  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.047  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.087  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.087  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.099  2021  2223 I SDM     : DisplayBase::CommitThread: Received idle timeout, panel: cmd, timeout: 70000 us
+06-26 15:54:59.099  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.
+06-26 15:54:59.127  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.127  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.166  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.167  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.173  2021  2223 I SDM     : DisplayBase::CommitThread: Received idle timeout, panel: cmd, timeout: 70000 us
+06-26 15:54:59.173  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.
+06-26 15:54:59.207  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.207  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.221  2110  2192 D BatteryChargeControl: bcc get no support from charging protocol
+06-26 15:54:59.247  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.247  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.248  2021  2223 I SDM     : DisplayBase::CommitThread: Received idle timeout, panel: cmd, timeout: 70000 us
+06-26 15:54:59.257  2021 23949 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+06-26 15:54:59.258  2087  2087 D SensorFeature: name=ssc_screenshot_info ,index = 22
+06-26 15:54:59.258  2087  2087 D SensorFeature: write 41 bytes:6892117520213766,6892117570344599,13323,0
+06-26 15:54:59.287  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.287  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.287  3348 13615 E OplusAudioxEffect_AIDL: process() in buffer frameCount 1920, out buffer frameCount 1920 g_audioxprocesscounter 167424
+06-26 15:54:59.327  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.327  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.367  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.367  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.407  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.407  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.447  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.447  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.461  1953 29629 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 528.3,cct 6437.8,brl/algo/ir 1844.0/2.0/21.5,pwm/dc 0.0/0.0,rgbc 18067.367188/15494.001953/8493.445312/40319.714844,ts 6892117521598457,cnt 12179,flag 13323
+06-26 15:54:59.461  1953 28058 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (12181)(cct, lux, ir)[6437.75, 528.25, 21.516741] (r, g, b, c)[18109.70, 15449.64, 8485.15, 40340.08]                 (pwm, hbm, brl, algo)[0.0 0.0 1844.0 2.0], flag 13323
+06-26 15:54:59.473  3350 17263 V Codec2-DumpInput: [processLoop:L697][c2.qti.hevc.decoder_188]QueueRead[0] empty, waiting buffer.
+06-26 15:54:59.487  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.487  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.527  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.527  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.559  2087  2087 D SensorFeature: name=ssc_screenshot_info ,index = 22
+06-26 15:54:59.559  2087  2087 D SensorFeature: write 41 bytes:6892117520213766,6892117882383036,13324,0
+06-26 15:54:59.567  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.567  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.607  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.607  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.609  5344  5495 I SystemUi--Statusbar: OplusNetworkSpeedControllExImpl-->updateNetworkSpeed: isConnected:true,isSwitchOn:true,isSuspend:false
+06-26 15:54:59.611  5344  5495 I SystemUi--Statusbar: OplusNetworkSpeedControllExImpl-->getTotalByte: totalRxBytes:1025281817724,totalTxBytes:433005395445,loopbackTxBytes:177780216554,loopbackRxBytes:177780216887 ,totalBytes:1102726779728
+06-26 15:54:59.613  6656 18990 E midasd  : getTotalFlipsFromSf mCurFrameCount: 130991083
+06-26 15:54:59.625  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.625  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.625  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.625  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.625  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.625  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.625  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.625  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.626  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.
+06-26 15:54:59.647  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.647  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.655  4195  5281 I Osense-BaseDecisionMaker: notifySceneToAthenaPolicy: SCENE_RES_IO_PSI, bundle: Bundle[{ioLevel=3}]
+06-26 15:54:59.655  4195  5281 I Osense-BaseDecisionMaker: scene: SCENE_RES_IO_PSI, excutingPolicy: reentrant
+06-26 15:54:59.655  4195  5281 D Osense-BaseDecisionMaker: invoke reentrant policy
+06-26 15:54:59.661  4195  4859 E AS.AudioService: Unsupported msgId 82
+06-26 15:54:59.687  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.687  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.706  2021  2223 I SDM     : DisplayBase::CommitThread: Received idle timeout, panel: cmd, timeout: 70000 us
+06-26 15:54:59.727  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.727  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.728  1953 28058 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (12186)(cct, lux, ir)[6421.02, 527.60, 21.933968] (r, g, b, c)[18073.41, 15446.68, 8454.71, 40293.53]                 (pwm, hbm, brl, algo)[0.0 0.0 1844.0 2.0], flag 13324
+06-26 15:54:59.761  3345 29482 E TetherController: item stats:wlan2,rmnet_data1, 51207460-87344, 13525978-76004
+06-26 15:54:59.761  3345 29482 E TetherController: item stats:wlan2,rmnet_data2, 2122790-7978, 1405226-8480
+06-26 15:54:59.761  3345 29482 E TetherController: item stats:wlan2,rmnet_data3, 41143402-120110, 22993282-192624
+06-26 15:54:59.761  3345 29482 E TetherController: item stats:wlan2,rmnet_data4, 82131902-419718, 57854444-342818
+06-26 15:54:59.761  3345 29482 E TetherController: item stats:wlan2,rmnet_data5, 33634726-61828, 8579880-62420
+06-26 15:54:59.761  3345 29482 E TetherController: item stats:wlan2,rmnet_data7, 85976640-163056, 26756540-161418
+06-26 15:54:59.761  3345 29482 E TetherController: item stats:wlan2,wlan0, 13980546440-11325154, 570197584-4106668
+06-26 15:54:59.761  3345 29482 E TetherController: get stats over size:7
+06-26 15:54:59.767  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.767  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.807  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.807  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.810  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.
+06-26 15:54:59.847  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.847  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.886  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.887  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.888  4195  9061 I AICCTModule: SensorFilter: brightness threshold 1.4 screenNit is 190.58 ave enviroment lux is 479.68558 luxForNit 117.96856demarcationPoint200.0 result is true
+06-26 15:54:59.889  2021  2223 I SDM     : DisplayBase::CommitThread: Received idle timeout, panel: cmd, timeout: 70000 us
+06-26 15:54:59.893  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_WAKE_IND: 0xFD
+06-26 15:54:59.893  1923  8764 D vendor.qti.bluetooth@1.0-ibs_handler: SerialClockVote: vote for UART CLK ON
+06-26 15:54:59.893  1923  8764 D vendor.qti.bluetooth@1.0-wake_lock: Acquire wakelock is acquired 
+06-26 15:54:59.893  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Writing IBS_WAKE_ACK
+06-26 15:54:59.893  8707  8739 D bluetooth: [rfc_l2cap_if.cc:294] RFCOMM_BufDataInd:  
+06-26 15:54:59.894  8707  8739 D bluetooth: [rfc_l2cap_if.cc:306] RFCOMM_BufDataInd: event 4, p_mcb=0x7784f57de0
+06-26 15:54:59.894  8707  8739 D bt_device_interop: [interop_oplus.cc:613]  interop_oplus_match_addr:[OplusRfcommPtsTestCases] check dd:**:**:**:25:8e return 0
+06-26 15:54:59.894  8707  8739 D bt_device_interop: [interop_oplus.cc:625]  interop_oplus_match_name_impl:[OplusRfcommPtsTestCases] check Monster AC322_XD return 0
+06-26 15:54:59.894  8707  8739 D bt_device_interop: [interop_oplus.cc:802]  interop_oplus_match_ver:[OplusRfcommPtsTestCases] check dd:**:**:**:25:8e return 0
+06-26 15:54:59.894  8707  8739 D bt_device_interop: [interop_oplus.cc:639]  interop_oplus_match_both_name_and_addr_impl:[OplusRfcommPtsTestCases] check Monster AC322_XD-dd:**:**:**:25:8e return 0
+06-26 15:54:59.894  8707  8739 D bt_device_interop: [interop_oplus.cc:665]  interop_oplus_match_both_name_addr_and_ver_impl:[OplusRfcommPtsTestCases] check Monster AC322_XD-dd:**:**:**:25:8e-0e:05d6:22bb return 0
+06-26 15:54:59.894  8707  8739 D bluetooth: [bta_ag_main.cc:844] bta_ag_sm_execute_by_handle: AG state machine event:BTA_AG_RFC_DATA_EVT[0x050b] handle:0x0002
+06-26 15:54:59.894  8707  8739 D bluetooth: [bta_ag_main.cc:811] bta_ag_sm_execute: Execute AG event handle:0x0002 bd_addr:xx:xx:xx:xx:25:8e state:BTA_AG_OPEN_ST(0x2)[0x02] event:BTA_AG_RFC_DATA_EVT[0x050b] result:BTA_AG_SPK_RES[0x00]
+06-26 15:54:59.894  8707  8739 W bta_ag_at: [bta_ag_at.cc:186] bta_ag_process_at: Unmatched command index 30
+06-26 15:54:59.894  8707  8791 D bt_btif_hf: [btif_hf.cc:417] btif_hf_upstreams_evt: HF Upstream event:BTA_AG_AT_UNAT_EVT(0x18)
+06-26 15:54:59.896  8707  8940 D bt_btif_hf: [btif_hf.cc:1441]  AtResponse: response_code= 1 is_atd_received: 0 error_code: 0
+06-26 15:54:59.896  8707  8739 D bluetooth: [bta_ag_main.cc:563] bta_ag_api_result: Audio gateway event for one client handle:2 scb:codec_updated=0, codec_fallback=0, nrec=0sco_codec=2, peer_codec=3, msbc_settings=0, lc3_settings=0, device=xx:xx:xx:xx:25:8e
+06-26 15:54:59.896  8707  8739 D bluetooth: [bta_ag_main.cc:811] bta_ag_sm_execute: Execute AG event handle:0x0002 bd_addr:xx:xx:xx:xx:25:8e state:BTA_AG_OPEN_ST(0x2)[0x02] event:BTA_AG_API_RESULT_EVT[0x0506] result:BTA_AG_UNAT_RES[0x14]
+06-26 15:54:59.896  8707  8739 D bta_ag_cmd: [bta_ag_cmd.cc:1898] bta_ag_hfp_result: HFP connection result:result:BTA_AG_UNAT_RES
+06-26 15:54:59.896  8707  8739 D bt_device_interop: [interop_oplus.cc:613]  interop_oplus_match_addr:[OplusRfcommForbidCombineRfcommData] check dd:**:**:**:25:8e return 0
+06-26 15:54:59.896  8707  8739 D bt_device_interop: [interop_oplus.cc:625]  interop_oplus_match_name_impl:[OplusRfcommForbidCombineRfcommData] check Monster AC322_XD return 0
+06-26 15:54:59.896  8707  8739 D bt_device_interop: [interop_oplus.cc:802]  interop_oplus_match_ver:[OplusRfcommForbidCombineRfcommData] check dd:**:**:**:25:8e return 0
+06-26 15:54:59.896  8707  8739 D bt_device_interop: [interop_oplus.cc:639]  interop_oplus_match_both_name_and_addr_impl:[OplusRfcommForbidCombineRfcommData] check Monster AC322_XD-dd:**:**:**:25:8e return 0
+06-26 15:54:59.896  8707  8739 D bt_device_interop: [interop_oplus.cc:665]  interop_oplus_match_both_name_addr_and_ver_impl:[OplusRfcommForbidCombineRfcommData] check Monster AC322_XD-dd:**:**:**:25:8e-0e:05d6:22bb return 0
+06-26 15:54:59.896  8707  8821 I oplus_bt_dual_sync: stack_down_sync_action: type=5, len=54
+06-26 15:54:59.896  1923  2019 I vendor.qti.bluetooth@1.0-ibs_handler: DeviceWakeUp: Writing IBS_WAKE_IND
+06-26 15:54:59.896  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_WAKE_ACK: 0xFC
+06-26 15:54:59.896  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Signal wack_cond_
+06-26 15:54:59.896  1923  2019 D vendor.qti.bluetooth@1.0-ibs_handler: DeviceWakeUp: Unblocked from waiting for FC, pthread_cond_timedwait ret = 0
+06-26 15:54:59.899  2021 23949 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+06-26 15:54:59.900  2087  2087 D SensorFeature: name=ssc_screenshot_info ,index = 22
+06-26 15:54:59.900  2087  2087 D SensorFeature: write 41 bytes:6892118160926734,6892118211103818,13325,0
+06-26 15:54:59.902  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.902  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.902  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.903  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.904 28297 29733 I Nearby  : (REDACTED) is blocked device type %s, isAuto=%s, isIot=%s, isLatchsky=%s, isChinaWearable=%s, isTv=%s, isWearable=%s (supportWearOs=%s), isChromeOsDevice=%s (supportChromeOs=%s)
+06-26 15:54:59.904  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.904  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.904  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.905  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.905  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.906 28297 29734 I Nearby  : (REDACTED) is blocked device type %s, isAuto=%s, isIot=%s, isLatchsky=%s, isChinaWearable=%s, isTv=%s, isWearable=%s (supportWearOs=%s), isChromeOsDevice=%s (supportChromeOs=%s)
+06-26 15:54:59.906  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.906  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.906  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.906  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.906  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.906  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.906  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.906  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.906  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.906  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.906  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:54:59.907  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.907  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.907  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.907  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.907  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.
+06-26 15:54:59.908  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.908  5344  5495 D BluetoothUtils: Bluetooth device doesn't have exclusive manager
+06-26 15:54:59.927  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.927  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.964  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_SLEEP_IND: 0xFE
+06-26 15:54:59.967  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.967  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:54:59.989  2021  2223 I SDM     : DisplayBase::CommitThread: Received idle timeout, panel: cmd, timeout: 70000 us
+06-26 15:54:59.994  1953 29629 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 528.3,cct 6393.3,brl/algo/ir 1844.0/2.0/21.2,pwm/dc 0.0/0.0,rgbc 18043.175781/15446.681641/8457.479492/40226.605469,ts 6892118169647207,cnt 12189,flag 13325
+06-26 15:54:59.994  1953 28058 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (12191)(cct, lux, ir)[6393.29, 528.34, 21.202082] (r, g, b, c)[18061.32, 15479.21, 8471.31, 40246.97]                 (pwm, hbm, brl, algo)[0.0 0.0 1844.0 2.0], flag 13325
+06-26 15:54:59.999  4195  4761 V AlarmManager: sending alarm Alarm{fdf15 type 3 origWhen 6892118323 whenElapsed 6892118323 android} uid 1000 whenElapsed 6892118323 windowLength 0 maxWhenElapsed 6892118323 repeatInterval 0 action null component null tag TIME_TICK flags 0x9 procName system_server
+06-26 15:55:00.001  5344  5344 I SystemUi--SystemUi--: Clock-->smallTime: 15:55
+06-26 15:55:00.002  5780  5780 D SubsysBroadcastManager: onReceive action:android.intent.action.TIME_TICK
+06-26 15:55:00.004  4195  4761 V AlarmManager: sending alarm Alarm{79c5791 type 3 origWhen 6892118324 whenElapsed 6892118327 android} uid 1000 whenElapsed 6892118327 windowLength 0 maxWhenElapsed 6892118327 repeatInterval 0 action null component null tag TIME_TICK flags 0x9 procName system_server
+06-26 15:55:00.004  4195  4286 D OplusDisplayBrightnessBroadcastReceiver: onReceive action = android.intent.action.TIME_TICK , listeners = [com.android.server.display.ambience.events.event.TimeEvent$TimeChangeReceiver@3fbcba9, com.android.server.display.marvels.module.ORBrightnessMarvelsDataCollector$ScreenStateReceiver@480d476, com.android.server.display.oplus.eyeprotect.manager.AiCurveManager$RhythmBroadcastReceiverWithUpgradeUI@7f9652e]
+06-26 15:55:00.005  5200  5397 D PhoneUsageTime: lastChargeTime=1782460440003 LastChargeDurationTime=5347230
+06-26 15:55:00.006  5200  5397 D PhoneScreenOnTime: lastScrOnTime=1782460440005, ScrOnDurationTime=3809063, StatsScrOnSeconds=0, newDuration=60000
+06-26 15:55:00.006  4195  4286 D OplusDisplayBrightnessBroadcastReceiver: onReceive action = android.intent.action.TIME_TICK , listeners = [com.android.server.display.ambience.events.event.TimeEvent$TimeChangeReceiver@3fbcba9, com.android.server.display.marvels.module.ORBrightnessMarvelsDataCollector$ScreenStateReceiver@480d476, com.android.server.display.oplus.eyeprotect.manager.AiCurveManager$RhythmBroadcastReceiverWithUpgradeUI@7f9652e]
+06-26 15:55:00.007  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.007  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.009  5780  5780 D SubsysBroadcastManager: onReceive action:android.intent.action.TIME_TICK
+06-26 15:55:00.009  4195  7490 W SettingsProvider: notifyForSettingsChange delay for last_charge_time, value: 1782460500008, delta: 4, lastNotifyTimestamp: 5205734878, minInterval: 10
+06-26 15:55:00.009  5200  5410 D PhoneUsageTime: lastChargeTime=1782460500003 LastChargeDurationTime=5407230
+06-26 15:55:00.009  4195  7490 W SettingsProvider: notifyForSettingsChange delay for last_charge_duration_time, value: 5407235, delta: 4, lastNotifyTimestamp: 5205734878, minInterval: 10
+06-26 15:55:00.009  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.009  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.009  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.009  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.009  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.009  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.009  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.009  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.010  5200  5410 D PhoneScreenOnTime: lastScrOnTime=1782460500005, ScrOnDurationTime=3869063, StatsScrOnSeconds=0, newDuration=4
+06-26 15:55:00.010  4195  7490 W SettingsProvider: notifyForSettingsChange delay for last_scr_on_time, value: 1782460500009, delta: 3, lastNotifyTimestamp: 5205734879, minInterval: 10
+06-26 15:55:00.010  4195  7490 W SettingsProvider: notifyForSettingsChange delay for last_charge_scr_on_duration_time, value: 3869067, delta: 4, lastNotifyTimestamp: 5205734879, minInterval: 10
+06-26 15:55:00.010  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.
+06-26 15:55:00.015  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->updateBottomAreaElementUi: reason=updateWorkProfileState, isKgdGlideTipShowing=false, isKeyguardVisible=true
+06-26 15:55:00.015  5344  5344 I SystemUi--Keyguard: OplusBiometricAuthContr-->getFpType udfpsBottomPadding 162.5
+06-26 15:55:00.015  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->fpType 3, isSupportedFpType true
+06-26 15:55:00.015  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->hasLockscreenMagazineTips=false  hasWorkProfile=false  hasLockscreenSignature=true
+06-26 15:55:00.015  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->displayMode LockscreenSignature bottomAreaDisplayConfig BottomAreaDisplayConfig(lockscreenSignatureVisible=true, workProfileVisible=false, lockscreenMagazineVisible=false, notificationCapsulePosition=1, glideTipViewPosition=5, affordanceTipViewPosition=1)
+06-26 15:55:00.015  5344  5344 I SystemUi--Keyguard: OplusBiometricAuthContr-->getFpType udfpsBottomPadding 162.5
+06-26 15:55:00.015  5344  5344 I SystemUi--Keyguard: KeyguardSignatureView-->showSignature reason=signatureVisible
+06-26 15:55:00.015  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->updateNotificationCapsulePosition 1
+06-26 15:55:00.016  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.016  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.016  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.016  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.016  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.016  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.016  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.016  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.021  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->updateBottomAreaElementUi: reason=updateWorkProfileState, isKgdGlideTipShowing=false, isKeyguardVisible=true
+06-26 15:55:00.021  5344  5344 I SystemUi--Keyguard: OplusBiometricAuthContr-->getFpType udfpsBottomPadding 162.5
+06-26 15:55:00.021  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->fpType 3, isSupportedFpType true
+06-26 15:55:00.021  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->hasLockscreenMagazineTips=false  hasWorkProfile=false  hasLockscreenSignature=true
+06-26 15:55:00.021  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->displayMode LockscreenSignature bottomAreaDisplayConfig BottomAreaDisplayConfig(lockscreenSignatureVisible=true, workProfileVisible=false, lockscreenMagazineVisible=false, notificationCapsulePosition=1, glideTipViewPosition=5, affordanceTipViewPosition=1)
+06-26 15:55:00.021  5344  5344 I SystemUi--Keyguard: OplusBiometricAuthContr-->getFpType udfpsBottomPadding 162.5
+06-26 15:55:00.021  5344  5344 I SystemUi--Keyguard: KeyguardSignatureView-->showSignature reason=signatureVisible
+06-26 15:55:00.021  5344  5344 I SystemUi--Keyguard: OplusKeyguardBottomAreaController-->updateNotificationCapsulePosition 1
+06-26 15:55:00.021  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.022 23226 23248 W WeatherS_LocalUtils: No Weather App
+06-26 15:55:00.022 23226 23248 E WeatherS_PrivacyStatementExport: exp version old version  not support export privacy return false
+06-26 15:55:00.022 23226 23248 W WeatherS_ApkSignedCheck: checkCertificateWhiteList: not in inWhiteListandroid.uid.systemui:10215
+06-26 15:55:00.022 23226 23248 I WeatherS_WeatherProvider: query option: 1,callingUid: 10215,name: android.uid.systemui:10215
+06-26 15:55:00.023 23226 28069 W WeatherS_LocalUtils: No Weather App
+06-26 15:55:00.023 23226 28069 E WeatherS_PrivacyStatementExport: exp version old version  not support export privacy return false
+06-26 15:55:00.023 23226 28069 W WeatherS_ApkSignedCheck: checkCertificateWhiteList: not in inWhiteListandroid.uid.systemui:10215
+06-26 15:55:00.023  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.023  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.023  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.023  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.023 23226 28069 I WeatherS_WeatherProvider: query option: 1,callingUid: 10215,name: android.uid.systemui:10215
+06-26 15:55:00.023  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.023  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.023  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.023  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.024 23226 28069 W WeatherS_LocalUtils: No Weather App
+06-26 15:55:00.024 23226 28069 E WeatherS_PrivacyStatementExport: exp version old version  not support export privacy return false
+06-26 15:55:00.024 23226 28069 W WeatherS_ApkSignedCheck: checkCertificateWhiteList: not in inWhiteListandroid.uid.systemui:10215
+06-26 15:55:00.024 23226 28069 I WeatherS_WeatherProvider: query option: 46,callingUid: 10215,name: android.uid.systemui:10215
+06-26 15:55:00.024 23226 28069 D WeatherS_PoolManager:  thread: Thread[pool-1-thread-11,5,main]
+06-26 15:55:00.025 23226 23248 W WeatherS_LocalUtils: No Weather App
+06-26 15:55:00.025 23226 23248 E WeatherS_PrivacyStatementExport: exp version old version  not support export privacy return false
+06-26 15:55:00.025 23226 23248 W WeatherS_ApkSignedCheck: checkCertificateWhiteList: not in inWhiteListandroid.uid.systemui:10215
+06-26 15:55:00.025 23226 23248 I WeatherS_WeatherProvider: query option: 46,callingUid: 10215,name: android.uid.systemui:10215
+06-26 15:55:00.025 23226 23248 D WeatherS_PoolManager:  thread: Thread[pool-1-thread-12,5,main]
+06-26 15:55:00.025  5344 12625 D DualClockUtils: getTimeZoneText: includeName: false
+06-26 15:55:00.025  5344 12625 D DualClockUtils: getTimeZoneText: gmtString: GMT-04:00
+06-26 15:55:00.026  5344 19840 D DualClockUtils: getTimeZoneText: includeName: false
+06-26 15:55:00.026  5344 19840 D DualClockUtils: getTimeZoneText: gmtString: GMT-04:00
+06-26 15:55:00.031  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.033  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.033  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.033  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.033  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.033  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.033  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.033  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.033  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:00.047  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.047  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.062  1926  1926 D healthd : system healthd: battery l=64 v=4023 t=37.8 h=2 st=2 c=147 fc=6100000 cc=623 chg=u
+06-26 15:55:00.071  2110  2110 D vendor.oplus.hardware.charger-V6-service: get_ui_charge_icon_type 0 0 0 0 0
+06-26 15:55:00.087  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.087  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.117  2021  2223 I SDM     : DisplayBase::CommitThread: Received idle timeout, panel: cmd, timeout: 70000 us
+06-26 15:55:00.127  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.127  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.146  1923  8769 I vendor.qti.bluetooth@1.0-ibs_handler: DeviceSleep: TX Awake, Sending SLEEP_IND
+06-26 15:55:00.146  1923  8769 D vendor.qti.bluetooth@1.0-ibs_handler: SerialClockVote: vote for UART CLK OFF
+06-26 15:55:00.152  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.
+06-26 15:55:00.167  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.167  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.207  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.207  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.221  2110  2192 D BatteryChargeControl: bcc get no support from charging protocol
+06-26 15:55:00.230  2021  2223 I SDM     : DisplayBase::CommitThread: Received idle timeout, panel: cmd, timeout: 70000 us
+06-26 15:55:00.231  8707  8739 D bt_shim_hci: [hci_layer.cc:231] transmit_command: Sending command LE_ENERGY_INFO(0xfd59)
+06-26 15:55:00.231  1923  2019 D vendor.qti.bluetooth@1.0-ibs_handler: SerialClockVote: vote for UART CLK ON
+06-26 15:55:00.231  1923  2019 I vendor.qti.bluetooth@1.0-ibs_handler: DeviceWakeUp: Writing IBS_WAKE_IND
+06-26 15:55:00.232  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_WAKE_ACK: 0xFC
+06-26 15:55:00.232  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Signal wack_cond_
+06-26 15:55:00.232  1923  2019 D vendor.qti.bluetooth@1.0-ibs_handler: DeviceWakeUp: Unblocked from waiting for FC, pthread_cond_timedwait ret = 0
+06-26 15:55:00.232  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_WAKE_IND: 0xFD
+06-26 15:55:00.232  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Writing IBS_WAKE_ACK
+06-26 15:55:00.233  8707  8747 D bt_shim_hci: [hci_layer.cc:192] OnTransmitPacketCommandComplete: Received cmd complete for LE_ENERGY_INFO(0xfd59)
+06-26 15:55:00.233  8707  8739 D bt_btm_pm: [btm_pm.cc:980] BTM_PM_ReadBleScanDutyCycle: LE scan_window:224 scan interval:2240
+06-26 15:55:00.233  8707  8739 I bluetooth: [client.cc:1210] IsInStreaming: audio_sender_state_: IDLE, audio_receiver_state_: IDLE
+06-26 15:55:00.233  8707  8739 D bt_bta_dm: [bta_dm_act.cc:1719] bta_dm_obtain_system_context: active_acl_num 1 sniff_acl_num 0 le_acl_num 0 le_adv_num 0 le_scan_duty 10 inquiry false sco false a2dp true le_audio false ctrl_state 0x420001
+06-26 15:55:00.233  8707  9038 I OplusBluetoothSarManager: is same sar state, keep current sar value
+06-26 15:55:00.239  2021 23949 E CwbService: Panel not support apl read or getDisplayPanelAplValue timeout 10ms.
+06-26 15:55:00.240  2087  2087 D SensorFeature: name=ssc_screenshot_info ,index = 22
+06-26 15:55:00.240  2087  2087 D SensorFeature: write 41 bytes:6892118502262255,6892118552436630,13326,0
+06-26 15:55:00.247  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.247  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.260  1953 28058 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (12196)(cct, lux, ir)[6404.21, 527.09, 21.469973] (r, g, b, c)[18028.06, 15458.51, 8460.25, 40249.88]                 (pwm, hbm, brl, algo)[0.0 0.0 1844.0 2.0], flag 13326
+06-26 15:55:00.273  1923  8764 I vendor.qti.bluetooth@1.0-ibs_handler: ProcessIbsCmd: Received IBS_SLEEP_IND: 0xFE
+06-26 15:55:00.287  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.287  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.288  1953 28061 I sensors-hal: handle_sns_std_sensor_event:114, oplus rgb_rear sample: (cct, lux, ir, x, y)[3902, 1, 0, 439, 562]
+06-26 15:55:00.288  1953 28061 I sensors-hal: handle_sns_std_sensor_event:116, oplus rgb_rear sample: (r, g, b, c w)[47, 102, 1, 0, 0]
+06-26 15:55:00.326  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.327  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.367  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.367  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.407  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.407  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.447  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.447  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.482  1923  8769 I vendor.qti.bluetooth@1.0-ibs_handler: DeviceSleep: TX Awake, Sending SLEEP_IND
+06-26 15:55:00.482  1923  8769 D vendor.qti.bluetooth@1.0-ibs_handler: SerialClockVote: vote for UART CLK OFF
+06-26 15:55:00.487  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.487  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.527  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.527  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.541  2087  2087 D SensorFeature: name=ssc_screenshot_info ,index = 22
+06-26 15:55:00.541  2087  2087 D SensorFeature: write 41 bytes:6892118502262255,6892118864083192,13327,0
+06-26 15:55:00.542  1953 29629 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 528.6,cct 6424.0,brl/algo/ir 1844.0/2.0/20.7,pwm/dc 0.0/0.0,rgbc 18088.533203/15425.980469/8465.779297/40296.437500,ts 6892118784693666,cnt 12199,flag 13327
+06-26 15:55:00.542  1953 28058 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (12201)(cct, lux, ir)[6424.05, 528.56, 20.717402] (r, g, b, c)[18015.96, 15431.89, 8474.08, 40223.69]                 (pwm, hbm, brl, algo)[0.0 0.0 1844.0 2.0], flag 13327
+06-26 15:55:00.567  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.567  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.606  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.607  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.632  1923  8752 D vendor.qti.bluetooth@1.0-wake_lock: Release wakelock is released 
+06-26 15:55:00.647  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.647  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.654  2110  2189 D vendor.oplus.hardware.charger-V6-service: ret_value:113, read content:,378,390,4023,4014,147,62,64,1,1,0,500,5013,63,1,4455,600,500,0,3,9500,3,0,1,0,2,0,0,0,1,6007,78,0,0,0,0,0,0,101
+06-26 15:55:00.654  2110  2189 D vendor.oplus.hardware.charger-V6-service: gmtime: 2026-06-26-15-55-00
+06-26 15:55:00.654  2110  2189 D vendor.oplus.hardware.charger-V6-service: usb_online:1, ac_online:-2147483648, wireless_online:-2147483648
+06-26 15:55:00.670  5633  6021 D ScenceManager: onFrontActivityChanged enable:0
+06-26 15:55:00.671  5780  5780 D RadioMessenger: handleMessage Request msgid 2290
+06-26 15:55:00.672  5780  5780 D RadioProxyJ: [PHONE0][459022]> sendSceneMode,scene:7,mode:0
+06-26 15:55:00.672  3474  3511 D QmiVsClient: setSceneMode - enter,state 7,mode 0
+06-26 15:55:00.672  3474  3951 D QmiVsClient: setSceneMode cb - enter
+06-26 15:55:00.672  3474  3511 D VsProxy : handleMessage msg is 4001
+06-26 15:55:00.672  3474  3511 D RadioProxy: setSceneMode : response cb for instance 0
+06-26 15:55:00.673  5780  5916 D RadioProxyJ: [PHONE0][459022]< sendSceneModeResponse 
+06-26 15:55:00.673  5780  5780 D MessengerResponseHandler: handleMessage Response msgid 269
+06-26 15:55:00.673  5633  6026 D ScenceManager: recvSetScenceInd :0
+06-26 15:55:00.687  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.687  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.695  4195  5281 I Osense-BaseDecisionMaker: notifySceneToAthenaPolicy: SCENE_RES_IO_PSI, bundle: Bundle[{ioLevel=3}]
+06-26 15:55:00.695  4195  5281 I Osense-BaseDecisionMaker: scene: SCENE_RES_IO_PSI, excutingPolicy: reentrant
+06-26 15:55:00.695  4195  5281 D Osense-BaseDecisionMaker: invoke reentrant policy
+06-26 15:55:00.727  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.727  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.767  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.767  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.788  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.788  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.788  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.788  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.788  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.788  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.789  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.790  4195  4290 W PackageSettings: writeFreezeToXml ustate isn't instance of PackageUserStateImpl
+06-26 15:55:00.793  1953 28058 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (12206)(cct, lux, ir)[6385.62, 526.51, 22.099213] (r, g, b, c)[18064.34, 15431.89, 8454.71, 40203.33]                 (pwm, hbm, brl, algo)[0.0 0.0 1844.0 2.0], flag 13327
+06-26 15:55:00.807  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.807  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.842  2087  2087 D SensorFeature: name=ssc_screenshot_info ,index = 22
+06-26 15:55:00.842  2087  2087 D SensorFeature: write 41 bytes:6892118502262255,6892119164979442,13328,0
+06-26 15:55:00.847  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.847  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.879  2089  5595 E PerformanceService: storage_feature: open /sys/devices/platform/soc/112b0000.ufshci//virtualtlcbuff fail
+06-26 15:55:00.887  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.887  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.927  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.927  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.967  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:00.967  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:01.007  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:01.007  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:01.017  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:01.018  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:01.018  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:01.018  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:01.018  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:01.018  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:01.018  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:01.018  5344  5532 E Adreno-UNKNOWN: <AttachmentInPersistentGmem:1784>: NOt NULL
+06-26 15:55:01.019  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.
+06-26 15:55:01.025  2042  2124 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: chk_core_online_poll_loop() 700: poll() has timed out for /sys/kernel/msm_performance/events/cpu_hotplug
+06-26 15:55:01.025  2042  2124 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: chk_core_online_poll_loop() 695: Block on poll()
+06-26 15:55:01.047  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:01.047  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:01.058  1953 29629 I sensors-hal: handle_oplus_wise_rgb_event:189, high_pwm_light:lux 526.9,cct 6426.3,brl/algo/ir 1844.0/2.0/21.2,pwm/dc 0.0/0.0,rgbc 18046.199219/15428.937500/8454.712891/40223.691406,ts 6892119119229811,cnt 12209,flag 13328
+06-26 15:55:01.059  1953 28058 I sensors-hal: handle_oplus_wise_rgb_event:161, wise_rgb: (12211)(cct, lux, ir)[6426.27, 526.95, 21.208399] (r, g, b, c)[18043.18, 15414.15, 8429.81, 40162.59]                 (pwm, hbm, brl, algo)[0.0 0.0 1844.0 2.0], flag 13328
+06-26 15:55:01.060  4195  9061 I AICCTModule: SensorFilter: brightness threshold 1.4 screenNit is 190.58 ave enviroment lux is 478.51855 luxForNit 117.85186demarcationPoint200.0 result is true
+06-26 15:55:01.087  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:01.087  3348  3942 D AHAL_Platform_QTI: getBluetoothLatencyMs bt latency: 250
+06-26 15:55:01.098  2021  2223 I SDM     : DisplayBase::CommitThread: Received idle timeout, panel: cmd, timeout: 70000 us
+06-26 15:55:01.098  2042  2090 E PERFHAL-PERFCTRL: PERFHAL-PERFCTRL: verifyAndCreateRequest() 778: Perflock Submit request limit reached.

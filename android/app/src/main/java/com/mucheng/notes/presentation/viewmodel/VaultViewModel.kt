@@ -118,6 +118,9 @@ class VaultViewModel @Inject constructor(
      */
     fun refreshLockSettings() {
         loadVaultLockSettings()
+        if (_uiState.value.vaultLockEnabled) {
+            lock()
+        }
     }
     
     /**
@@ -220,12 +223,16 @@ class VaultViewModel @Inject constructor(
      * 锁定密码库
      */
     fun lock() {
-        _uiState.update { 
+        val vaultLockEnabled = prefs.getBoolean(KEY_VAULT_LOCK_ENABLED, false)
+        val vaultPasswordSet = prefs.getString(KEY_VAULT_PASSWORD, null) != null
+        val shouldRequireAuth = vaultLockEnabled && vaultPasswordSet
+        _uiState.update {
             it.copy(
-                isUnlocked = false, 
-                requiresAuth = true,
-                showPasswordFor = null
-            ) 
+                isUnlocked = !shouldRequireAuth,
+                requiresAuth = shouldRequireAuth,
+                showPasswordFor = null,
+                error = null
+            )
         }
     }
     

@@ -26,6 +26,8 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+        multiDexEnabled = true
+        multiDexKeepProguard = file("multidex-config.pro")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -234,6 +234,15 @@ class SettingsViewModel @Inject constructor(
         val syncIntervalMinutes = prefs.getInt(KEY_SYNC_INTERVAL, 5)
         val syncInterval = SyncInterval.entries.find { it.minutes == syncIntervalMinutes } ?: SyncInterval.FIVE_MINUTES
         
+        val hasLockCredential = appLockManager.hasCredentialConfigured()
+        val effectiveLockType = if (hasLockCredential) appLockManager.getLockType() else LockType.NONE
+        android.util.Log.d(
+            "SecurityDebug",
+            "loadSettings: hasLockCredential=$hasLockCredential, effectiveLockType=$effectiveLockType, " +
+                "lockEnabled=${appLockManager.isLockEnabled()}, " +
+                "biometricEnabled=${biometricManager.isBiometricEnabled()}, " +
+                "biometricAvailable=${biometricManager.canAuthenticate()}"
+        )
         val lockTimeoutMillis = appLockManager.getLockTimeout()
         val lockTimeout = LockTimeout.entries.find { it.millis == lockTimeoutMillis } ?: LockTimeout.FIVE_MINUTES
         
@@ -275,10 +284,10 @@ class SettingsViewModel @Inject constructor(
                 ),
                 
                 // 安全设置 - 应用锁
-                appLockEnabled = appLockManager.isLockEnabled(),
+                appLockEnabled = appLockManager.isLockEnabled() && hasLockCredential,
                 biometricEnabled = biometricManager.isBiometricEnabled(),
                 biometricAvailable = biometricManager.canAuthenticate() == BiometricStatus.AVAILABLE,
-                lockType = appLockManager.getLockType(),
+                lockType = effectiveLockType,
                 lockTimeout = lockTimeout,
                 
                 // 安全设置 - 密码库锁定
@@ -871,16 +880,31 @@ class SettingsViewModel @Inject constructor(
     
     // 安全设置
     fun setAppLockEnabled(enabled: Boolean) {
-        if (enabled && appLockManager.getLockType() == LockType.NONE) {
+        android.util.Log.d(
+            "SecurityDebug",
+            "setAppLockEnabled($enabled): hasCredential=${appLockManager.hasCredentialConfigured()}, " +
+                "lockType=${appLockManager.getLockType()}, lockEnabled=${appLockManager.isLockEnabled()}"
+        )
+        if (enabled && !appLockManager.hasCredentialConfigured()) {
             // 需要先设置 PIN
-            _uiState.update { it.copy(showPinDialog = true) }
+            _uiState.update {
+                it.copy(
+                    showPinDialog = true,
+                    appLockEnabled = false,
+                    lockType = LockType.NONE,
+                    message = "请先设置 PIN，设置完成后应用锁才会生效"
+                )
+            }
         } else {
             appLockManager.setLockEnabled(enabled)
-            _uiState.update { it.copy(appLockEnabled = enabled) }
+            _uiState.update {
+                it.copy(appLockEnabled = enabled && appLockManager.hasCredentialConfigured())
+            }
         }
     }
     
     fun setBiometricEnabled(enabled: Boolean) {
+        android.util.Log.d("SecurityDebug", "setBiometricEnabled($enabled)")
         biometricManager.setBiometricEnabled(enabled)
         _uiState.update { it.copy(biometricEnabled = enabled) }
     }
@@ -899,15 +923,23 @@ class SettingsViewModel @Inject constructor(
         appLockManager.setPin(pin)
         appLockManager.setLockType(LockType.PIN)
         appLockManager.setLockEnabled(true)
+        appLockManager.recordUnlock()
         _uiState.update { it.copy(
             showPinDialog = false,
             appLockEnabled = true,
-            lockType = LockType.PIN
+            lockType = LockType.PIN,
+            message = "应用锁已启用"
         ) }
     }
     
     fun dismissPinDialog() {
-        _uiState.update { it.copy(showPinDialog = false) }
+        _uiState.update {
+            it.copy(
+                showPinDialog = false,
+                appLockEnabled = appLockManager.isLockEnabled() && appLockManager.hasCredentialConfigured(),
+                lockType = if (appLockManager.hasCredentialConfigured()) appLockManager.getLockType() else LockType.NONE
+            )
+        }
     }
     
     // 主题设置
@@ -1056,7 +1088,7 @@ class SettingsViewModel @Inject constructor(
      * 检查应用锁是否启用
      */
     fun isAppLockEnabled(): Boolean {
-        return appLockManager.isLockEnabled() && appLockManager.getLockType() != LockType.NONE
+        return appLockManager.isLockEnabled() && appLockManager.hasCredentialConfigured()
     }
     
     /**
@@ -1232,6 +1264,7 @@ class SettingsViewModel @Inject constructor(
         activity: androidx.fragment.app.FragmentActivity,
         onResult: (Boolean, String?) -> Unit
     ) {
+        android.util.Log.d("SecurityDebug", "authenticateBiometricAndEnable: impl=${biometricManager::class.simpleName}")
         if (biometricManager is BiometricManagerImpl) {
             (biometricManager as BiometricManagerImpl).authenticateFromActivity(
                 activity = activity,
@@ -1239,6 +1272,7 @@ class SettingsViewModel @Inject constructor(
                 subtitle = "请验证以启用生物识别",
                 negativeButtonText = "取消"
             ) { result ->
+                android.util.Log.d("SecurityDebug", "authenticateBiometricAndEnable callback: result=$result")
                 when (result) {
                     is com.mucheng.notes.security.AuthResult.Success -> {
                         setBiometricEnabled(true)

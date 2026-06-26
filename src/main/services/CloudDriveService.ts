@@ -66,6 +66,16 @@ export class CloudDriveService {
   private writingTimers = new Map<string, NodeJS.Timeout>();
   private static readonly WRITING_GUARD_TTL_MS = 5000;
 
+  // ========== 重命名检测（Bug A 修复）==========
+  // chokidar 不发独立 rename 事件，重命名 = unlink(旧名) + add(新名)。
+  // 若两者各自独立处理，旧名软删除、新名当全新文件，会出现"改名后两个文件"，
+  // 且旧名软删除若未及时推送，重开应用会被远端拉取复活并触发冲突副本（Bug B）。
+  // 这里用一个时间窗缓冲：unlink 先记下被删项的 id/size/mtime，延迟一个短窗口再真正软删除；
+  // 若窗口内出现一个 size+mtime 匹配的新文件，判定为重命名 → 迁移旧项（保留 id、改路径），
+  // 而不是删旧建新。
+  private recentUnlinks = new Map<string, { id: string; size: number; mtime: number; ts: number }>();
+  private static readonly RENAME_WINDOW_MS = 1500;
+
   constructor(itemsManager: ItemsManager, userDataPath: string) {
     this.itemsManager = itemsManager;
     this.userDataPath = userDataPath;
@@ -642,6 +652,16 @@ export class CloudDriveService {
         console.log('[CloudDriveService] 初始扫描完成');
         // 初始正向扫描结束后做反向对账：app 离线期间被删除的文件在此补偿清理
         this.reconcileDeletedItems();
+        // 与应用冷启动时 main.ts 中的 retryAll 语义保持一致：
+        // 手动“开始监听”后，也要把当前会话遗留的 pending/error 项重新入队，
+        // 否则 startWatching 期间被 onFileAdded 去重短路的旧任务不会自动续传。
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { getCloudDriveScheduler } = require('./CloudDriveScheduler') as typeof import('./CloudDriveScheduler');
+          getCloudDriveScheduler()?.retryAll();
+        } catch (err) {
+          console.warn('[CloudDriveService] ready 阶段补做 retryAll 失败:', err);
+        }
         this.startConsistencyWatch();
         this.emitWatchingChange(true);
       });
@@ -792,6 +812,30 @@ export class CloudDriveService {
           // 已上传且未变化：保留既有 file_hash/upload_state，跳过本次处理。
           return;
         }
+        // 上传中且内容未变（size+mtime 一致）：绝不能用空 payload 覆盖。
+        // 否则会把已计算的 file_hash 清成 ''、uploaded_chunks 清成 []，
+        // processItem 的哈希闸门因此恒为 false → 从 chunk 0 整个重传，
+        // 表现为进度反复从约 1 个分块边界（如 26%）倒退回 0。
+        // 这里直接跳过，让正在跑的 runUpload 继续，不再重复入队。
+        if (
+          existingPayload &&
+          existingPayload.size === size &&
+          Math.floor(existingPayload.mtime) === Math.floor(mtime) &&
+          (existingPayload.upload_state === 'uploading' ||
+            existingPayload.upload_state === 'pending')
+        ) {
+          return;
+        }
+      }
+
+      // 重命名检测（Bug A）：若存在一个最近被 unlink 且 size+mtime 匹配的旧项，
+      // 则判定为重命名而非新增——迁移旧项到新路径（保留 id、payload），避免"两个文件"。
+      // 这样新文件沿用旧 id，旧名不会被软删除（窗口内已消费），服务端只看到一次 rename。
+      const renamedFromId = this.findRenameMatch(size, mtime);
+      if (renamedFromId) {
+        this.recentUnlinks.delete(renamedFromId);
+        this.applyRename(renamedFromId, absolutePath, rel, size, mtime);
+        return;
       }
 
       const payload: CloudFilePayload = {
@@ -880,6 +924,38 @@ export class CloudDriveService {
       if (this.isExplicitOnlineOnly(id)) {
         return;
       }
+
+      // 重命名检测：先记录 unlink，延迟到时间窗结束再真正软删除。
+      // 取旧项的 size/mtime 作为重命名匹配依据。
+      const existing = this.itemsManager.getByIdIncludeDeleted(id);
+      let existingSize = 0;
+      let existingMtime = 0;
+      if (existing && existing.deleted_time === null && existing.type === 'cloud_file') {
+        try {
+          const p = JSON.parse(existing.payload) as CloudFilePayload;
+          existingSize = p.size ?? 0;
+          existingMtime = p.mtime ?? 0;
+        } catch {
+          /* 忽略 payload 解析失败 */
+        }
+      }
+
+      if (existingSize > 0) {
+        const unlinkTs = Date.now();
+        this.recentUnlinks.set(id, { id, size: existingSize, mtime: existingMtime, ts: unlinkTs });
+        // 延迟真正软删除：若窗口内出现 size+mtime 匹配的 add，则按重命名处理而非删除。
+        setTimeout(() => {
+          const pending = this.recentUnlinks.get(id);
+          // 仅当缓冲项仍是我记录的那次 unlink（未被 add 消费）时才真正软删除。
+          // add 命中会 delete 掉这个条目；若期间又来了一次同名 unlink，ts 不同也不应误删。
+          if (pending && pending.ts === unlinkTs) {
+            this.recentUnlinks.delete(id);
+            this.softDeleteCloudItem(id);
+          }
+        }, CloudDriveService.RENAME_WINDOW_MS);
+        return;
+      }
+
       this.softDeleteCloudItem(id);
     } catch (err) {
       console.error(`[CloudDriveService] onFileUnlinked 失败: ${absolutePath}`, err);
@@ -957,11 +1033,82 @@ export class CloudDriveService {
   }
 
   private softDeleteCloudItem(id: string): void {
+    this.discardUploadForLocalDelete(id);
     const ok = this.itemsManager.softDelete(id);
     if (ok) {
       console.log(`[CloudDriveService] 软删除: ${id}`);
       this.emitItemsChanged(true);
     }
+  }
+
+  private discardUploadForLocalDelete(id: string): void {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getCloudDriveScheduler } = require('./CloudDriveScheduler') as typeof import('./CloudDriveScheduler');
+      getCloudDriveScheduler()?.discardUploadForLocalDelete(id);
+    } catch (err) {
+      console.warn(`[CloudDriveService] 停止本地删除项上传失败: ${id}`, err);
+    }
+  }
+
+  /**
+   * 在最近 unlink 缓冲中找一个 size+mtime 匹配的旧项（重命名来源）。
+   * 匹配标准：size 完全相等 + mtime 毫秒取整相等（容忍亚毫秒抖动）。
+   * 同时过滤掉已过期的缓冲项（超过 RENAME_WINDOW_MS 视为真删除，已由 setTimeout 软删除）。
+   */
+  private findRenameMatch(size: number, mtime: number): string | null {
+    const now = Date.now();
+    let matchId: string | null = null;
+    for (const [id, info] of this.recentUnlinks) {
+      if (now - info.ts > CloudDriveService.RENAME_WINDOW_MS * 2) {
+        // 超时兜底清理（正常情况 setTimeout 已删，这里防重复 match）
+        this.recentUnlinks.delete(id);
+        continue;
+      }
+      if (info.size === size && Math.floor(info.mtime) === Math.floor(mtime)) {
+        matchId = id;
+        break;
+      }
+    }
+    return matchId;
+  }
+
+  /**
+   * 重命名迁移：把旧 id 对应的 cloud_file 迁移到新路径。
+   * 保留旧 id（这样服务端是"同一项更新"而非"删除+新建"），更新 filename/relative_path/size/mtime，
+   * 并触发 Scheduler 重新校验上传（内容哈希未变则不会重传）。
+   */
+  private applyRename(
+    oldId: string,
+    absolutePath: string,
+    rel: string,
+    size: number,
+    mtime: number
+  ): void {
+    const old = this.itemsManager.getByIdIncludeDeleted(oldId);
+    if (!old || old.deleted_time !== null || old.type !== 'cloud_file') {
+      // 旧项已不存在或已真正删除 → 退化为普通新增
+      return;
+    }
+    let oldPayload: CloudFilePayload;
+    try {
+      oldPayload = JSON.parse(old.payload) as CloudFilePayload;
+    } catch {
+      return;
+    }
+    const newPayload: CloudFilePayload = {
+      ...oldPayload,
+      filename: path.basename(absolutePath),
+      parent_folder_id: this.deriveParentFolderId(rel),
+      relative_path: rel,
+      size,
+      mtime,
+      // 保留 file_hash：若内容未变，Scheduler 的哈希闸门会跳过重传；
+      // 若内容变了，Scheduler 会重新计算并覆盖。
+    };
+    console.log(`[CloudDriveService] 重命名: ${oldPayload.relative_path} → ${rel} (id=${oldId})`);
+    this.upsertCloudItem(oldId, 'cloud_file', newPayload, absolutePath);
+    this.notifyScheduler(oldId);
   }
 
   /** 级联软删除：所有 relative_path 以给定前缀开头的子孙项 */
@@ -983,6 +1130,7 @@ export class CloudDriveService {
         // 必须是严格后代（路径分隔符后缀匹配）
         if (rp === normalizedPrefix) continue;
         if (rp.startsWith(normalizedPrefix + '/') || rp.startsWith(normalizedPrefix + '\\')) {
+          this.discardUploadForLocalDelete(row.id);
           changed = this.itemsManager.softDelete(row.id) || changed;
         }
       }
