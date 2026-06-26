@@ -356,7 +356,7 @@ export const DEFAULT_CLOUD_DRIVE_CONFIG: CloudDriveConfig = {
   small_file_concurrency: 3,
   sync_cursor: null,
   // Phase 2 下载默认值
-  auto_download: true,
+  auto_download: false,
   download_chunk_size: 8 * 1024 * 1024, // 8MB（与服务端 upload chunk 对齐）
   download_concurrency: 2,
   conflict_strategy: 'create-copy',
@@ -390,6 +390,13 @@ export interface CloudDownloadProgress {
   downloaded_bytes: number;  // 已下载字节（含断点续传已写入部分）
   state: CloudDownloadState;
   error_message: string | null;
+}
+
+// 本地占位/离线状态（仅本机持久化，不参与同步）
+export type CloudLocalAvailability = 'online_only' | 'local' | 'offline';
+
+export interface CloudLocalState {
+  availability: CloudLocalAvailability;
 }
 
 // 同步模块配置

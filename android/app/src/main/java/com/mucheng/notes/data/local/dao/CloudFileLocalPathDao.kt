@@ -41,6 +41,13 @@ interface CloudFileLocalPathDao {
         errorMessage: String?
     )
 
+    @Query(
+        """UPDATE cloud_file_local_path
+           SET availability = :availability
+           WHERE cloud_file_id = :cloudFileId"""
+    )
+    suspend fun updateAvailability(cloudFileId: String, availability: String)
+
     /** 删除单条（用于云端删除级联清理本地记录）。 */
     @Query("DELETE FROM cloud_file_local_path WHERE cloud_file_id = :cloudFileId")
     suspend fun delete(cloudFileId: String)

@@ -136,6 +136,7 @@ function renderLogin(isSetup = false, setupState = {}) {
 
 // 主应用
 let currentPage = 'dashboard';
+let cloudAutoRefreshTimer = null;
 
 function renderApp() {
   render(`
@@ -203,6 +204,7 @@ function renderApp() {
 }
 
 function navigate(page) {
+  stopCloudAutoRefresh();
   currentPage = page;
   renderApp();
 }
@@ -446,12 +448,15 @@ async function loadItems(el, type, label) {
 // 网盘数据 —— 多级目录树浏览
 // 当前用户范围：服务端按 JWT user_id 隔离，这里只做客户端路径分组
 let cloudDriveState = { currentPath: '', files: [], folders: [], treeExpanded: new Set(['']) };
+let cloudLastSignature = '';
 
 async function loadCloudDrive(el) {
   el.innerHTML = '<div style="text-align:center;padding:40px;color:#666;">加载中...</div>';
   try {
     await cloudRefresh();
+    cloudLastSignature = cloudBuildSignature();
     cloudRender(el);
+    startCloudAutoRefresh();
   } catch (err) {
     el.innerHTML = `<div style="color:#dc3545;padding:20px;">加载失败: ${escapeHtml(err.message)}</div>`;
   }
@@ -464,6 +469,7 @@ async function cloudRefresh() {
   ]);
   cloudDriveState.files = (fileData.items || []).map(normalizeCloudItem);
   cloudDriveState.folders = (folderData.items || []).map(normalizeCloudItem);
+  cloudEnsureCurrentPath();
 }
 
 async function cloudFetchAllItems(type) {
@@ -496,11 +502,68 @@ function normalizeCloudItem(item) {
     relativePath,
     segments,
     parentPath: segments.slice(0, -1).join('/'),
+    parentFolderId: payload.parent_folder_id ?? null,
     size: Number(payload.size || 0),
     state: payload.upload_state || payload.download_state || '',
     mtime: item.updated_time || payload.mtime || 0,
     extension: payload.filename ? (payload.filename.split('.').pop() || '').toLowerCase() : ''
   };
+}
+
+function cloudEnsureCurrentPath() {
+  const current = String(cloudDriveState.currentPath || '').split('/').filter(Boolean).join('/');
+  if (!current) return;
+  if (cloudDriveState.folders.some(folder => folder.relativePath === current)) return;
+  const segs = current.split('/').filter(Boolean);
+  while (segs.length > 0) {
+    segs.pop();
+    const parent = segs.join('/');
+    if (!parent || cloudDriveState.folders.some(folder => folder.relativePath === parent)) {
+      cloudDriveState.currentPath = parent;
+      return;
+    }
+  }
+  cloudDriveState.currentPath = '';
+}
+
+function cloudBuildSignature() {
+  const folders = cloudDriveState.folders
+    .map(folder => `${folder.id}:${folder.relativePath}:${folder.mtime}`)
+    .sort()
+    .join('|');
+  const files = cloudDriveState.files
+    .map(file => `${file.id}:${file.relativePath}:${file.size}:${file.state}:${file.mtime}`)
+    .sort()
+    .join('|');
+  return `${folders}@@${files}`;
+}
+
+function stopCloudAutoRefresh() {
+  if (cloudAutoRefreshTimer) {
+    clearInterval(cloudAutoRefreshTimer);
+    cloudAutoRefreshTimer = null;
+  }
+}
+
+function startCloudAutoRefresh() {
+  stopCloudAutoRefresh();
+  cloudAutoRefreshTimer = setInterval(() => {
+    void cloudAutoRefreshTick();
+  }, 5000);
+}
+
+async function cloudAutoRefreshTick() {
+  if (currentPage !== 'cloud_drive') return;
+  if (document.getElementById('cdModalMask') || document.getElementById('cdOverlay')) return;
+  const prev = cloudLastSignature;
+  await cloudRefresh();
+  const next = cloudBuildSignature();
+  if (next === prev) return;
+  cloudLastSignature = next;
+  const content = document.getElementById('pageContent');
+  if (content) {
+    cloudRender(content);
+  }
 }
 
 function cloudRender(el) {
@@ -605,9 +668,8 @@ function cloudRenderRow(item) {
 }
 
 function cloudRenderTree() {
-  const folders = [...cloudDriveState.folders].sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'zh'));
   const children = cloudBuildTreeIndex();
-  return cloudRenderTreeNode('', 0, children, folders.length + cloudDriveState.files.length);
+  return cloudRenderTreeRoot(children);
 }
 
 function cloudBuildTreeIndex() {
@@ -624,36 +686,19 @@ function cloudBuildTreeIndex() {
   return nodes;
 }
 
-function cloudRenderTreeNode(path, depth, children, totalCount) {
-  const pathKey = path || '';
-  const isActive = cloudDriveState.currentPath === pathKey;
-  const expanded = cloudDriveState.treeExpanded.has(pathKey);
-  const directChildren = children.get(pathKey) || [];
-  const directCount = cloudCountDirect(pathKey);
-  const indent = depth * 14;
-  const toggleIcon = directChildren.length > 0 ? (expanded ? '▾' : '▸') : '•';
+function cloudRenderTreeRoot(children) {
+  const expanded = cloudDriveState.treeExpanded.has('');
+  const rootChildren = children.get('') || [];
+  const toggleIcon = rootChildren.length > 0 ? (expanded ? '▾' : '▸') : '•';
   let html = `
-    <div class="cd-tree-root ${isActive ? 'is-active' : ''}" style="padding-left:${12 + indent}px" onclick="cloudNavigate('${escapeAttr(escapeJsString(pathKey))}')">
-      <button class="cd-tree-toggle" onclick="event.stopPropagation();cloudToggleTree('${escapeAttr(escapeJsString(pathKey))}')">${toggleIcon}</button>
-      <span class="cd-tree-label">根目录${pathKey ? '' : ''}</span>
-      <span class="cd-tree-count">${directCount}</span>
+    <div class="cd-tree-root ${cloudDriveState.currentPath === '' ? 'is-active' : ''}" onclick="cloudNavigate('')">
+      <button class="cd-tree-toggle" onclick="event.stopPropagation();cloudToggleTree('')">${toggleIcon}</button>
+      <span class="cd-tree-label">根目录</span>
+      <span class="cd-tree-count">${cloudCountDirect('')}</span>
     </div>
   `;
   if (!expanded) return html;
-  for (const node of directChildren) {
-    const nodePath = node.relativePath || '';
-    const hasChildren = (children.get(nodePath) || []).length > 0;
-    html += `
-      <div class="cd-tree-node ${cloudDriveState.currentPath === nodePath ? 'is-active' : ''}" style="padding-left:${12 + (depth + 1) * 14}px">
-        <button class="cd-tree-toggle" onclick="cloudToggleTree('${escapeAttr(escapeJsString(nodePath))}')">${hasChildren ? '▾' : '•'}</button>
-        <span class="cd-tree-label" onclick="cloudNavigate('${escapeAttr(escapeJsString(nodePath))}')">${escapeHtml(node.name)}</span>
-        <span class="cd-tree-count">${cloudCountDirect(nodePath)}</span>
-      </div>
-    `;
-    if (hasChildren && cloudDriveState.treeExpanded.has(nodePath)) {
-      html += cloudRenderTreeNodeChildren(nodePath, depth + 1, children);
-    }
-  }
+  html += cloudRenderTreeNodeChildren('', 1, children);
   return html;
 }
 
@@ -663,14 +708,15 @@ function cloudRenderTreeNodeChildren(path, depth, children) {
   for (const node of directChildren) {
     const nodePath = node.relativePath || '';
     const hasChildren = (children.get(nodePath) || []).length > 0;
+    const expanded = cloudDriveState.treeExpanded.has(nodePath);
     html += `
       <div class="cd-tree-node ${cloudDriveState.currentPath === nodePath ? 'is-active' : ''}" style="padding-left:${12 + depth * 14}px">
-        <button class="cd-tree-toggle" onclick="cloudToggleTree('${escapeAttr(escapeJsString(nodePath))}')">${hasChildren ? '▾' : '•'}</button>
+        <button class="cd-tree-toggle" onclick="cloudToggleTree('${escapeAttr(escapeJsString(nodePath))}')">${hasChildren ? (expanded ? '▾' : '▸') : '•'}</button>
         <span class="cd-tree-label" onclick="cloudNavigate('${escapeAttr(escapeJsString(nodePath))}')">${escapeHtml(node.name)}</span>
         <span class="cd-tree-count">${cloudCountDirect(nodePath)}</span>
       </div>
     `;
-    if (hasChildren && cloudDriveState.treeExpanded.has(nodePath)) {
+    if (hasChildren && expanded) {
       html += cloudRenderTreeNodeChildren(nodePath, depth + 1, children);
     }
   }
@@ -690,9 +736,19 @@ function cloudToggleTree(path) {
 }
 
 function cloudCollapseAll() {
-  cloudDriveState.treeExpanded = new Set(['']);
+  cloudDriveState.treeExpanded = new Set();
   const content = document.getElementById('pageContent');
   cloudRender(content);
+}
+
+function cloudExpandAncestors(path) {
+  cloudDriveState.treeExpanded.add('');
+  const segs = String(path || '').split('/').filter(Boolean);
+  let acc = '';
+  for (const seg of segs) {
+    acc = acc ? `${acc}/${seg}` : seg;
+    cloudDriveState.treeExpanded.add(acc);
+  }
 }
 
 function cloudIconFor(ext) {
@@ -707,6 +763,19 @@ function cloudIconFor(ext) {
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '🗜️';
   if (['txt', 'md', 'json', 'js', 'ts', 'html', 'css', 'py', 'java', 'go'].includes(ext)) return '📄';
   return '📄';
+}
+
+function pathExtensionFromName(name) {
+  const value = String(name || '');
+  const dot = value.lastIndexOf('.');
+  if (dot <= 0 || dot === value.length - 1) return '';
+  return value.substring(dot + 1).toLowerCase();
+}
+
+function cloudBinaryResourceName(id, payload) {
+  const filename = String(payload?.filename || '');
+  const ext = pathExtensionFromName(filename);
+  return `${id}${ext ? `.${ext}` : ''}`;
 }
 
 // 取出指定路径下的直接子项（不递归）
@@ -724,6 +793,7 @@ function cloudListAt(path) {
 // 导航
 function cloudNavigate(path) {
   cloudDriveState.currentPath = path || '';
+  cloudExpandAncestors(cloudDriveState.currentPath);
   const content = document.getElementById('pageContent');
   cloudRender(content);
 }
@@ -731,6 +801,7 @@ function cloudNavigate(path) {
 async function cloudRefreshAndRender() {
   try {
     await cloudRefresh();
+    cloudLastSignature = cloudBuildSignature();
     const content = document.getElementById('pageContent');
     cloudRender(content);
     showMsg('已刷新', 'success');
@@ -787,7 +858,7 @@ async function cloudUploadOne(file, base) {
     mime_type: file.type || 'application/octet-stream',
     size: file.size,
     file_hash: '',
-    parent_folder_id: cloudDeriveParent(base),
+    parent_folder_id: cloudParentFolderId(base, true),
     relative_path: relativePath,
     mtime: now,
     upload_state: 'pending',
@@ -795,10 +866,7 @@ async function cloudUploadOne(file, base) {
     total_chunks: totalChunks,
     uploaded_chunks: []
   };
-  await api(`/items/${encodeURIComponent(itemId)}`, {
-    method: 'PUT',
-    body: JSON.stringify({ type: 'cloud_file', payload: JSON.stringify(payload), content_hash: '' })
-  });
+  await cloudPutItem(itemId, 'cloud_file', payload);
 
   // 2) 建上传会话
   const session = await api('/resources/upload', {
@@ -819,14 +887,14 @@ async function cloudUploadOne(file, base) {
   }
 
   // 4) 完成
-  await api(`/upload/${encodeURIComponent(sessionId)}/complete`, { method: 'POST' });
+  await api(`/resources/upload/${encodeURIComponent(sessionId)}/complete`, { method: 'POST' });
   cloudUploadDone(file.name);
 }
 
 function cloudUploadChunk(sessionId, index, blob, totalChunks, label) {
   const headers = { 'Content-Type': 'application/octet-stream', 'X-Chunk-Index': String(index) };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  return fetch(`${API}/upload/${encodeURIComponent(sessionId)}/chunk`, { method: 'PUT', headers, body: blob })
+  return fetch(`${API}/resources/upload/${encodeURIComponent(sessionId)}/chunk`, { method: 'PUT', headers, body: blob })
     .then(async res => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error?.message || `分块 ${index + 1} 上传失败`);
@@ -876,10 +944,42 @@ function cloudGenId() {
   });
 }
 
-// 简单的 parent_folder_id 派生（仅用于 payload 字段兼容，不做强一致校验）
-function cloudDeriveParent(base) {
-  if (!base) return null;
-  return base;
+function cloudFindFolderByPath(path) {
+  const norm = String(path || '').split('/').filter(Boolean).join('/');
+  return cloudDriveState.folders.find(folder => folder.relativePath === norm) || null;
+}
+
+function cloudParentFolderId(parentPath, isFile) {
+  const norm = String(parentPath || '').split('/').filter(Boolean).join('/');
+  if (!norm) return isFile ? 'root' : null;
+  const folder = cloudFindFolderByPath(norm);
+  if (!folder) {
+    throw new Error(`目标目录不存在: ${norm}`);
+  }
+  return folder.id;
+}
+
+async function cloudPayloadHash(payloadJson) {
+  if (window.crypto && crypto.subtle && typeof TextEncoder !== 'undefined') {
+    const data = new TextEncoder().encode(payloadJson);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    const bytes = Array.from(new Uint8Array(digest));
+    return bytes.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+  }
+  let hash = 0;
+  for (let i = 0; i < payloadJson.length; i++) {
+    hash = ((hash << 5) - hash + payloadJson.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(16).padStart(16, '0').substring(0, 16);
+}
+
+async function cloudPutItem(id, type, payload) {
+  const payloadJson = JSON.stringify(payload);
+  const contentHash = await cloudPayloadHash(payloadJson);
+  return api(`/items/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ type, payload: payloadJson, content_hash: contentHash })
+  });
 }
 
 // ========== 网盘操作 ==========
@@ -891,9 +991,9 @@ async function cloudView(id) {
     const item = await api(`/items/${encodeURIComponent(id)}`);
     const payload = parsePayload(item.payload);
     const name = payload.filename || payload.name || id;
-    const ext = (String(name).split('.').pop() || '').toLowerCase();
-    const resName = id + (ext ? '.' + ext : '');
+    const resName = cloudBinaryResourceName(id, payload);
     const url = `${API}/resources/${encodeURIComponent(resName)}?t=${Date.now()}`;
+    const ext = pathExtensionFromName(name);
 
     const head = `
       <div class="cd-info-table">
@@ -934,9 +1034,10 @@ async function cloudView(id) {
 
 // 下载
 async function cloudDownload(id, name) {
-  const ext = (String(name).split('.').pop() || '').toLowerCase();
-  const resName = id + (ext ? '.' + ext : '');
   try {
+    const item = await api(`/items/${encodeURIComponent(id)}`);
+    const payload = parsePayload(item.payload);
+    const resName = cloudBinaryResourceName(id, payload);
     const headers = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const res = await fetch(`${API}/resources/${encodeURIComponent(resName)}`, { headers });
@@ -955,7 +1056,7 @@ async function cloudDownload(id, name) {
   }
 }
 
-// 重命名（文件改 filename+relative_path；文件夹改 name+relative_path，并级联子项路径）
+// 重命名（委托服务端原子更新 relative_path 与子树）
 async function cloudRename(id, oldName, isFolder) {
   const newName = prompt(`请输入新名称：`, oldName);
   if (!newName || newName === oldName) return;
@@ -963,54 +1064,35 @@ async function cloudRename(id, oldName, isFolder) {
   try {
     const item = await api(`/items/${encodeURIComponent(id)}`);
     const payload = parsePayload(item.payload);
+    const oldPath = String(payload.relative_path || payload.filename || payload.name || '');
+    const segs = oldPath.split('/').filter(Boolean);
+    if (segs.length === 0) throw new Error('当前路径无效');
+    segs[segs.length - 1] = newName;
+    const newPath = segs.join('/');
+    const parentPath = newPath.split('/').slice(0, -1).join('/');
     if (isFolder) {
-      const oldPath = payload.relative_path || '';
-      const segs = oldPath.split('/').filter(Boolean);
-      segs[segs.length - 1] = newName;
-      const newPath = segs.join('/');
-      // 级联更新所有子项 relative_path
-      await cloudCascadeRename(oldPath, newPath);
-      payload.name = newName;
-      payload.relative_path = newPath;
+      await api(`/items/${encodeURIComponent(id)}/move`, {
+        method: 'POST',
+        body: JSON.stringify({
+          relative_path: newPath,
+          parent_folder_id: cloudParentFolderId(parentPath, false)
+        })
+      });
     } else {
-      const segs = (payload.relative_path || payload.filename || oldName).split('/');
-      segs[segs.length - 1] = newName;
-      payload.filename = newName;
-      payload.relative_path = segs.join('/');
+      await api(`/items/${encodeURIComponent(id)}/move`, {
+        method: 'POST',
+        body: JSON.stringify({
+          relative_path: newPath,
+          parent_folder_id: cloudParentFolderId(parentPath, true)
+        })
+      });
     }
-    await api(`/items/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ type: item.type, payload: JSON.stringify(payload), content_hash: String(item.content_hash || '') })
-    });
     cloudHideOverlay();
     showMsg('重命名成功', 'success');
     await cloudRefreshAndRender();
   } catch (err) {
     cloudHideOverlay();
     showMsg(err.message, 'error');
-  }
-}
-
-// 级联：把 oldPath 前缀改成 newPath（针对所有 cloud_file / cloud_folder 的"子项"）
-async function cloudCascadeRename(oldPath, newPath) {
-  const all = [...cloudDriveState.files, ...cloudDriveState.folders];
-  for (const it of all) {
-    const p = it.relativePath;
-    // 只处理严格子项（前缀匹配 oldPath/），folder 自身由调用方单独更新
-    if (p.startsWith(oldPath + '/')) {
-      const tail = p.substring(oldPath.length);
-      const newRel = newPath + tail;
-      const payload = { ...it.payload };
-      if (it.type === 'cloud_folder') payload.name = newRel.split('/').pop();
-      else payload.filename = newRel.split('/').pop();
-      payload.relative_path = newRel;
-      try {
-        await api(`/items/${encodeURIComponent(it.id)}`, {
-          method: 'PUT',
-          body: JSON.stringify({ type: it.type, payload: JSON.stringify(payload), content_hash: '' })
-        });
-      } catch (_) { /* 尽力更新 */ }
-    }
   }
 }
 
@@ -1043,20 +1125,13 @@ async function cloudMoveDo(id, oldRelPath) {
     const isFolder = item.type === 'cloud_folder';
     const name = isFolder ? (payload.name || oldRelPath.split('/').pop()) : (payload.filename || oldRelPath.split('/').pop());
     const newRel = target ? `${target}/${name}` : name;
-
-    if (isFolder) {
-      await cloudCascadeRename(oldRelPath, newRel);
-      payload.name = name;
-      payload.relative_path = newRel;
-      payload.parent_folder_id = target || null;
-    } else {
-      payload.filename = name;
-      payload.relative_path = newRel;
-      payload.parent_folder_id = target || null;
-    }
-    await api(`/items/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ type: item.type, payload: JSON.stringify(payload), content_hash: String(item.content_hash || '') })
+    if (target && !cloudFindFolderByPath(target)) throw new Error(`目标目录不存在: ${target}`);
+    await api(`/items/${encodeURIComponent(id)}/move`, {
+      method: 'POST',
+      body: JSON.stringify({
+        relative_path: newRel,
+        parent_folder_id: cloudParentFolderId(target, !isFolder ? true : false)
+      })
     });
     cloudHideOverlay();
     showMsg('移动成功', 'success');
@@ -1099,8 +1174,7 @@ async function cloudDeleteOne(id, isFolder) {
     // 删除二进制资源（允许不存在）
     const item = [...cloudDriveState.files].find(x => x.id === id);
     if (item) {
-      const ext = item.extension;
-      const resName = id + (ext ? '.' + ext : '');
+      const resName = cloudBinaryResourceName(id, item.payload || {});
       try {
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -1108,7 +1182,7 @@ async function cloudDeleteOne(id, isFolder) {
       } catch (_) { /* 容错 */ }
     }
   }
-  await api(`/items/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  await api(`/items/${encodeURIComponent(id)}/soft-delete`, { method: 'POST' });
 }
 
 // 新建文件夹
@@ -1122,13 +1196,10 @@ async function cloudCreateFolderPrompt() {
   try {
     const payload = {
       name,
-      parent_folder_id: base || null,
+      parent_folder_id: cloudParentFolderId(base, false),
       relative_path: rel
     };
-    await api(`/items/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ type: 'cloud_folder', payload: JSON.stringify(payload), content_hash: '' })
-    });
+    await cloudPutItem(id, 'cloud_folder', payload);
     cloudHideOverlay();
     showMsg('创建成功', 'success');
     await cloudRefreshAndRender();

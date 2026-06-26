@@ -395,6 +395,33 @@ describe('CloudDriveService (unit)', () => {
   });
 
   // ============================================================
+  // online_only 删除保护
+  // ============================================================
+  describe('isExplicitOnlineOnly', () => {
+    const isExplicitOnlineOnly = (id: string) =>
+      (service as any).isExplicitOnlineOnly(id) as boolean;
+
+    it('仅在侧表显式记录为 online_only 时返回 true', () => {
+      (service as any).localAvailability = {
+        fileA: 'online_only',
+        fileB: 'offline',
+        fileC: 'local',
+      };
+      expect(isExplicitOnlineOnly('fileA')).toBe(true);
+      expect(isExplicitOnlineOnly('fileB')).toBe(false);
+      expect(isExplicitOnlineOnly('fileC')).toBe(false);
+      expect(isExplicitOnlineOnly('missing')).toBe(false);
+    });
+
+    it('不能因为文件当前不存在就自动推断为 online_only', () => {
+      // 这是本轮修复的核心：unlink / reconcile 时如果靠“文件是否存在”推断，
+      // 用户手动删除会被误判成占位文件，导致旧目录旧文件残留。
+      (service as any).localAvailability = {};
+      expect(isExplicitOnlineOnly('deleted-file')).toBe(false);
+    });
+  });
+
+  // ============================================================
   // guessMime
   // ============================================================
   describe('guessMime', () => {

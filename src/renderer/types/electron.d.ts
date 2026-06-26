@@ -423,6 +423,11 @@ export interface McpAPI {
 
 export interface CloudDriveAPI {
   getConfig: () => Promise<unknown>;
+  getLocalStates: () => Promise<Record<string, { availability: 'online_only' | 'local' | 'offline' }>>;
+  openLocalFile: (itemId: string) => Promise<boolean>;
+  openLocalDirectory: (folderPath: string) => Promise<boolean>;
+  setLocalAvailability: (itemId: string, availability: 'online_only' | 'local' | 'offline') => Promise<boolean>;
+  setFolderLocalAvailability: (folderPath: string, availability: 'online_only' | 'local' | 'offline') => Promise<number>;
   selectWatchedFolder: () => Promise<{ canceled: boolean; path?: string }>;
   startWatching: () => Promise<boolean>;
   stopWatching: () => Promise<boolean>;
@@ -435,6 +440,8 @@ export interface CloudDriveAPI {
   cancelUpload: (itemId: string) => Promise<boolean>;
   clearCompleted: () => Promise<{ cleared: string[] }>;
   listItems: () => Promise<{ items: unknown[] }>;
+  onDownloadProgress: (callback: (progress: unknown) => void) => () => void;
+  onItemsChanged: (callback: () => void) => () => void;
   onUploadProgress: (callback: (progress: unknown) => void) => () => void;
   onWatchingChange: (callback: (watching: boolean) => void) => () => void;
 }

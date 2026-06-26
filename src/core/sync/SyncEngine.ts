@@ -43,6 +43,7 @@ export interface SyncOptions {
   onCloudFileChanged?: (itemId: string) => void;       // 元数据已更新，需触发下载
   onCloudItemDeleted?: (itemId: string) => void;       // 远端删除，需删除本地文件
   onCloudFileConflict?: (itemId: string, conflictPath: string) => void;  // 冲突副本已生成
+  onCloudItemsChanged?: () => void;                    // cloud 元数据已变化，需刷新 UI
 }
 
 export class SyncEngine {
@@ -57,6 +58,7 @@ export class SyncEngine {
   private onCloudFileChanged: ((itemId: string) => void) | null = null;
   private onCloudItemDeleted: ((itemId: string) => void) | null = null;
   private onCloudFileConflict: ((itemId: string, conflictPath: string) => void) | null = null;
+  private onCloudItemsChanged: (() => void) | null = null;
 
   constructor(
     adapter: StorageAdapter,
@@ -85,6 +87,7 @@ export class SyncEngine {
     this.onCloudFileChanged = options.onCloudFileChanged || null;
     this.onCloudItemDeleted = options.onCloudItemDeleted || null;
     this.onCloudFileConflict = options.onCloudFileConflict || null;
+    this.onCloudItemsChanged = options.onCloudItemsChanged || null;
   }
 
   // 设置资源目录
@@ -424,6 +427,13 @@ export class SyncEngine {
                     console.warn(`[SyncEngine] onCloudItemDeleted 回调失败 ${remoteItem.id}:`, err);
                   }
                 }
+                if ((remoteItem.type === 'cloud_file' || remoteItem.type === 'cloud_folder') && this.onCloudItemsChanged) {
+                  try {
+                    this.onCloudItemsChanged();
+                  } catch (err) {
+                    console.warn(`[SyncEngine] onCloudItemsChanged 回调失败 ${remoteItem.id}:`, err);
+                  }
+                }
               }
               continue;
             }
@@ -491,6 +501,13 @@ export class SyncEngine {
                 this.onCloudFileChanged(remoteItem.id);
               } catch (err) {
                 console.warn(`[SyncEngine] onCloudFileChanged 回调失败 ${remoteItem.id}:`, err);
+              }
+            }
+            if ((remoteItem.type === 'cloud_file' || remoteItem.type === 'cloud_folder') && this.onCloudItemsChanged) {
+              try {
+                this.onCloudItemsChanged();
+              } catch (err) {
+                console.warn(`[SyncEngine] onCloudItemsChanged 回调失败 ${remoteItem.id}:`, err);
               }
             }
           } catch (error) {
@@ -644,6 +661,13 @@ export class SyncEngine {
             console.warn(`[SyncEngine] onCloudItemDeleted 回调失败 ${change.item_id}:`, err);
           }
         }
+        if ((change.type === 'cloud_file' || change.type === 'cloud_folder') && this.onCloudItemsChanged) {
+          try {
+            this.onCloudItemsChanged();
+          } catch (err) {
+            console.warn(`[SyncEngine] onCloudItemsChanged 回调失败 ${change.item_id}:`, err);
+          }
+        }
       }
       // 本地没有数据，不需要处理（已删除的数据不需要创建）
       return { success: true, conflict: false };
@@ -706,6 +730,13 @@ export class SyncEngine {
         this.onCloudFileChanged(remoteItem.id);
       } catch (err) {
         console.warn(`[SyncEngine] onCloudFileChanged 回调失败 ${remoteItem.id}:`, err);
+      }
+    }
+    if ((change.type === 'cloud_file' || change.type === 'cloud_folder') && this.onCloudItemsChanged) {
+      try {
+        this.onCloudItemsChanged();
+      } catch (err) {
+        console.warn(`[SyncEngine] onCloudItemsChanged 回调失败 ${remoteItem.id}:`, err);
       }
     }
 

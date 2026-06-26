@@ -13,6 +13,8 @@ import {
   CloudUploadProgress,
   CloudDownloadProgress,
   CloudFilePayload,
+  CloudFolderPayload,
+  CloudLocalAvailability,
 } from '@shared/types';
 
 // 获取 electronAPI（主进程桥接对象）
@@ -69,6 +71,8 @@ export interface UseCloudDriveReturn {
   isWatching: boolean;
   /** 上传进度列表 */
   uploadProgress: CloudUploadProgress[];
+  /** 当前网盘元数据快照（文件 + 文件夹） */
+  cloudItems: Array<{ id: string; type: 'cloud_file' | 'cloud_folder'; payload: CloudFilePayload | CloudFolderPayload }>;
   /** 是否正在加载配置 */
   loading: boolean;
 
@@ -103,6 +107,8 @@ export interface UseCloudDriveReturn {
   // ─── 下载同步（第二部分） ─────────────────────────────────────────
   /** 下载进度列表（仅显示需要从云端落盘的任务） */
   downloadProgress: CloudDownloadProgress[];
+  /** 本地可用性状态 */
+  localStates: Record<string, CloudLocalAvailability>;
   /** 手动触发下载（state='pending' 的条目入队） */
   downloadFile: (itemId: string) => Promise<boolean>;
   /** 暂停下载 */
@@ -117,13 +123,27 @@ export interface UseCloudDriveReturn {
   retryAllDownloads: () => Promise<number>;
   /** 清空已完成下载（仅 UI 语义；不删除云端副本与本地文件） */
   clearCompletedDownloads: () => Promise<string[]>;
+  /** 设置本地可用性（仅云端 / 本地 / 离线保留） */
+  setLocalAvailability: (itemId: string, availability: CloudLocalAvailability) => Promise<boolean>;
+  /** 设置整个文件夹（相对路径前缀）的本地可用性 */
+  setFolderLocalAvailability: (folderPath: string, availability: CloudLocalAvailability) => Promise<number>;
+  /** 打开已经落到本地的文件 */
+  openLocalFile: (itemId: string) => Promise<boolean>;
+  /** 打开本地目录 */
+  openLocalDirectory: (folderPath: string) => Promise<boolean>;
 }
 
 export const useCloudDrive = (): UseCloudDriveReturn => {
   const [config, setConfig] = useState<CloudDriveConfig>(DEFAULT_CLOUD_DRIVE_CONFIG);
   const [isWatching, setIsWatching] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<CloudUploadProgress[]>([]);
+  const [cloudItems, setCloudItems] = useState<Array<{
+    id: string;
+    type: 'cloud_file' | 'cloud_folder';
+    payload: CloudFilePayload | CloudFolderPayload;
+  }>>([]);
   const [downloadProgress, setDownloadProgress] = useState<CloudDownloadProgress[]>([]);
+  const [localStates, setLocalStates] = useState<Record<string, CloudLocalAvailability>>({});
   const [loading, setLoading] = useState(true);
 
   // 防止重复初始化
@@ -152,14 +172,20 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     if (!api?.cloudDrive?.listItems) return;
     try {
       const resp = await api.cloudDrive.listItems();
-      const items: Array<{ id: string; type: string; payload: CloudFilePayload }> = resp?.items ?? [];
+      const items: Array<{
+        id: string;
+        type: 'cloud_file' | 'cloud_folder';
+        payload: CloudFilePayload | CloudFolderPayload;
+      }> = resp?.items ?? [];
+      const fileItems = items.filter(
+        (it): it is { id: string; type: 'cloud_file'; payload: CloudFilePayload } => it.type === 'cloud_file'
+      );
+      setCloudItems(items);
       setUploadProgress(prev => {
         // 主进程快照为准，但保留实时进度事件中已有的最新状态
         const snapshotMap = new Map<string, CloudUploadProgress>();
-        for (const it of items) {
-          if (it.type === 'cloud_file') {
-            snapshotMap.set(it.id, filePayloadToProgress(it.id, it.payload));
-          }
+        for (const it of fileItems) {
+          snapshotMap.set(it.id, filePayloadToProgress(it.id, it.payload));
         }
         const merged: CloudUploadProgress[] = [];
         // 快照中的条目：优先用实时事件（如果存在且更新），否则用快照
@@ -180,8 +206,7 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
       setDownloadProgress(prev => {
         const liveIds = new Set(prev.map(p => p.file_id));
         const snapshotMap = new Map<string, CloudDownloadProgress>();
-        for (const it of items) {
-          if (it.type !== 'cloud_file') continue;
+        for (const it of fileItems) {
           const dl = it.payload.download_state ?? 'pending';
           const isInteresting =
             dl === 'pending' || dl === 'downloading' || dl === 'paused' || dl === 'error' || liveIds.has(it.id);
@@ -200,6 +225,15 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
         }
         return merged;
       });
+
+      if (api?.cloudDrive?.getLocalStates) {
+        const local = await api.cloudDrive.getLocalStates();
+        const next: Record<string, CloudLocalAvailability> = {};
+        for (const [id, state] of Object.entries(local || {})) {
+          next[id] = (state as { availability?: CloudLocalAvailability }).availability || 'local';
+        }
+        setLocalStates(next);
+      }
     } catch (err) {
       console.error('[useCloudDrive] 拉取进度列表失败:', err);
     }
@@ -240,6 +274,19 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
           }
           return [...prev, progress];
         });
+        if (progress.state === 'completed') {
+          setLocalStates(prev => {
+            const current = prev[progress.file_id];
+            if (current === 'offline') return prev;
+            if (current === 'local') return prev;
+            return { ...prev, [progress.file_id]: 'local' };
+          });
+        }
+      });
+    }
+    if (api?.cloudDrive?.onItemsChanged) {
+      api.cloudDrive.onItemsChanged(() => {
+        void refreshProgress();
       });
     }
     // 监听监听状态变化
@@ -249,6 +296,14 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
       });
     }
   }, [refreshConfig, refreshProgress]);
+
+  useEffect(() => {
+    if (!isWatching) return;
+    const timer = setInterval(() => {
+      void refreshProgress();
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [isWatching, refreshProgress]);
 
   // 选择监听根目录
   const selectWatchedFolder = useCallback(async () => {
@@ -519,11 +574,69 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     }
   }, []);
 
+  const setLocalAvailability = useCallback(async (
+    itemId: string,
+    availability: CloudLocalAvailability
+  ): Promise<boolean> => {
+    const api = getElectronAPI();
+    if (!api?.cloudDrive?.setLocalAvailability) return false;
+    try {
+      const ok = await api.cloudDrive.setLocalAvailability(itemId, availability);
+      if (ok) {
+        setLocalStates(prev => ({ ...prev, [itemId]: availability }));
+      }
+      return ok;
+    } catch (err) {
+      console.error('[useCloudDrive] 设置本地可用性失败:', err);
+      return false;
+    }
+  }, []);
+
+  const setFolderLocalAvailability = useCallback(async (
+    folderPath: string,
+    availability: CloudLocalAvailability
+  ): Promise<number> => {
+    const api = getElectronAPI();
+    if (!api?.cloudDrive?.setFolderLocalAvailability) return 0;
+    try {
+      const changed = await api.cloudDrive.setFolderLocalAvailability(folderPath, availability);
+      await refreshProgress();
+      return changed ?? 0;
+    } catch (err) {
+      console.error('[useCloudDrive] 设置文件夹本地可用性失败:', err);
+      return 0;
+    }
+  }, [refreshProgress]);
+
+  const openLocalFile = useCallback(async (itemId: string): Promise<boolean> => {
+    const api = getElectronAPI();
+    if (!api?.cloudDrive?.openLocalFile) return false;
+    try {
+      return await api.cloudDrive.openLocalFile(itemId);
+    } catch (err) {
+      console.error('[useCloudDrive] 打开本地文件失败:', err);
+      return false;
+    }
+  }, []);
+
+  const openLocalDirectory = useCallback(async (folderPath: string): Promise<boolean> => {
+    const api = getElectronAPI();
+    if (!api?.cloudDrive?.openLocalDirectory) return false;
+    try {
+      return await api.cloudDrive.openLocalDirectory(folderPath);
+    } catch (err) {
+      console.error('[useCloudDrive] 打开本地目录失败:', err);
+      return false;
+    }
+  }, []);
+
   return {
     config,
     isWatching,
     uploadProgress,
+    cloudItems,
     downloadProgress,
+    localStates,
     loading,
     selectWatchedFolder,
     startWatching,
@@ -545,5 +658,9 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     retryDownload,
     retryAllDownloads,
     clearCompletedDownloads,
+    setLocalAvailability,
+    setFolderLocalAvailability,
+    openLocalFile,
+    openLocalDirectory,
   };
 };

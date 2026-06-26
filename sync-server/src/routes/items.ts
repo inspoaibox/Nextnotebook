@@ -44,6 +44,21 @@ function validateIncomingItem(item: { id?: unknown; type?: unknown }): void {
   validateItemType(item.type);
 }
 
+function validateCloudRelativePath(relativePath: unknown): string {
+  if (typeof relativePath !== 'string') {
+    throw createError('Invalid relative path', 400);
+  }
+  const normalized = relativePath
+    .split('/')
+    .map(seg => seg.trim())
+    .filter(Boolean)
+    .join('/');
+  if (!normalized) {
+    throw createError('Relative path cannot be empty', 400);
+  }
+  return normalized;
+}
+
 // GET /api/items/all - 全量拉取所有数据项（新客户端首次同步使用）
 router.get('/all', (req, res, next) => {
   try {
@@ -227,6 +242,45 @@ router.delete('/:id', (req, res, next) => {
 
     if (!deleted) {
       throw createError('Item not found', 404);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/items/:id/soft-delete - 软删除数据项（保留三端统一同步语义）
+router.post('/:id/soft-delete', (req, res, next) => {
+  try {
+    validateItemId(req.params.id);
+    const itemService = new ItemService(req.userId);
+    const deleted = itemService.softDeleteItem(req.params.id);
+
+    if (!deleted) {
+      throw createError('Item not found', 404);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/items/:id/move - 原子移动/重命名 cloud_file / cloud_folder
+router.post('/:id/move', (req, res, next) => {
+  try {
+    validateItemId(req.params.id);
+    const relativePath = validateCloudRelativePath(req.body?.relative_path);
+    const parentFolderId =
+      req.body?.parent_folder_id === null || typeof req.body?.parent_folder_id === 'string'
+        ? req.body.parent_folder_id ?? null
+        : null;
+    const itemService = new ItemService(req.userId);
+    const moved = itemService.moveCloudItem(req.params.id, relativePath, parentFolderId);
+
+    if (!moved) {
+      throw createError('Item not found or move failed', 404);
     }
 
     res.json({ success: true });

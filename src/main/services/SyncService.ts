@@ -15,6 +15,7 @@ let syncEngine: SyncEngine | null = null;
 let syncScheduler: SyncScheduler | null = null;
 let currentAdapter: StorageAdapter | null = null;
 let currentServerIdentifier: ServerIdentifier | null = null;
+let cloudDriveSyncTimer: NodeJS.Timeout | null = null;
 
 /**
  * 获取当前同步适配器（网盘 Scheduler 复用同一适配器上传分块）。
@@ -85,6 +86,10 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
     if (syncScheduler) {
       syncScheduler.stop();
       syncScheduler = null;
+    }
+    if (cloudDriveSyncTimer) {
+      clearTimeout(cloudDriveSyncTimer);
+      cloudDriveSyncTimer = null;
     }
 
     if (!config.enabled || !config.url) {
@@ -270,6 +275,15 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
           console.warn('[SyncService] onCloudFileConflict 处理失败:', err);
         }
       },
+      onCloudItemsChanged: () => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { getCloudDriveService } = require('./CloudDriveService') as typeof import('./CloudDriveService');
+          getCloudDriveService()?.notifyItemsChanged();
+        } catch (err) {
+          console.warn('[SyncService] onCloudItemsChanged 处理失败:', err);
+        }
+      },
     };
     syncEngine = new SyncEngine(currentAdapter, itemsManager, syncOptions);
 
@@ -332,6 +346,10 @@ export function stopSyncScheduler(): void {
   if (syncScheduler) {
     syncScheduler.stop();
   }
+  if (cloudDriveSyncTimer) {
+    clearTimeout(cloudDriveSyncTimer);
+    cloudDriveSyncTimer = null;
+  }
 }
 
 // 手动触发同步
@@ -355,6 +373,19 @@ export function notifySyncChange(): void {
   if (syncScheduler) {
     syncScheduler.notifyChange();
   }
+}
+
+export function scheduleCloudDriveSync(delayMs: number = 2000): void {
+  if (!syncScheduler || !currentServerIdentifier || currentServerIdentifier.type !== 'server') {
+    return;
+  }
+  if (cloudDriveSyncTimer) {
+    clearTimeout(cloudDriveSyncTimer);
+  }
+  cloudDriveSyncTimer = setTimeout(() => {
+    cloudDriveSyncTimer = null;
+    void syncScheduler?.triggerSync(false);
+  }, Math.max(0, delayMs | 0));
 }
 
 // 测试连接

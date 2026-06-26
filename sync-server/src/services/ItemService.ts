@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { getDatabase } from '../database';
 import { ItemBase, CountResult } from '../types';
 import { ChangeService } from './ChangeService';
@@ -155,6 +156,128 @@ export class ItemService {
     return true;
   }
 
+  // 软删除数据项
+  softDeleteItem(id: string): boolean {
+    this.prepareUserScope();
+    const db = getDatabase();
+    const existing = this.getItem(id);
+    if (!existing || existing.deleted_time !== null) {
+      return false;
+    }
+    const now = Date.now();
+    let stmt;
+    let result;
+
+    if (this.userId) {
+      stmt = db.prepare(
+        `UPDATE items
+         SET deleted_time = ?, updated_time = ?, sync_status = 'deleted'
+         WHERE id = ? AND user_id = ? AND deleted_time IS NULL`
+      );
+      result = stmt.run(now, now, id, this.userId);
+    } else {
+      stmt = db.prepare(
+        `UPDATE items
+         SET deleted_time = ?, updated_time = ?, sync_status = 'deleted'
+         WHERE id = ? AND deleted_time IS NULL`
+      );
+      result = stmt.run(now, now, id);
+    }
+
+    if (result.changes <= 0) {
+      return false;
+    }
+
+    this.changeService.recordChange({
+      item_id: id,
+      type: existing.type,
+      updated_time: now,
+      deleted_time: now,
+      content_hash: existing.content_hash,
+    }, this.userId);
+
+    return true;
+  }
+
+  moveCloudItem(id: string, newRelativePath: string, newParentFolderId: string | null): boolean {
+    this.prepareUserScope();
+    const db = getDatabase();
+    const existing = this.getItem(id);
+    if (!existing || existing.deleted_time !== null) {
+      return false;
+    }
+    if (existing.type !== 'cloud_file' && existing.type !== 'cloud_folder') {
+      return false;
+    }
+
+    const now = Date.now();
+    const remoteRev = now.toString();
+    const oldPayload = this.parsePayload(existing.payload);
+    const oldRelativePath = String(oldPayload.relative_path || '');
+    const normalizedNewRelativePath = this.normalizeCloudPath(newRelativePath);
+    if (!normalizedNewRelativePath) {
+      return false;
+    }
+
+    const updates: Array<{ item: ItemBase; payload: any }> = [];
+    const rootPayload = { ...oldPayload };
+    if (existing.type === 'cloud_folder') {
+      rootPayload.name = normalizedNewRelativePath.split('/').pop() || rootPayload.name;
+      rootPayload.parent_folder_id = newParentFolderId;
+    } else {
+      rootPayload.filename = normalizedNewRelativePath.split('/').pop() || rootPayload.filename;
+      rootPayload.parent_folder_id = newParentFolderId ?? 'root';
+    }
+    rootPayload.relative_path = normalizedNewRelativePath;
+    updates.push({ item: existing, payload: rootPayload });
+
+    if (existing.type === 'cloud_folder') {
+      const descendants = this.getCloudDescendants(oldRelativePath);
+      for (const descendant of descendants) {
+        const descendantPayload = this.parsePayload(descendant.payload);
+        const currentRelativePath = String(descendantPayload.relative_path || '');
+        if (!currentRelativePath.startsWith(oldRelativePath + '/')) continue;
+        const suffix = currentRelativePath.substring(oldRelativePath.length);
+        descendantPayload.relative_path = normalizedNewRelativePath + suffix;
+        if (descendant.type === 'cloud_folder') {
+          descendantPayload.name =
+            descendantPayload.relative_path.split('/').pop() || descendantPayload.name;
+        } else if (descendant.type === 'cloud_file') {
+          descendantPayload.filename =
+            descendantPayload.relative_path.split('/').pop() || descendantPayload.filename;
+        }
+        updates.push({ item: descendant, payload: descendantPayload });
+      }
+    }
+
+    const transaction = db.transaction(() => {
+      for (const entry of updates) {
+        const payloadStr = JSON.stringify(entry.payload);
+        const contentHash = this.computeContentHash(payloadStr);
+        db.prepare(`
+          UPDATE items SET
+            payload = ?,
+            content_hash = ?,
+            remote_rev = ?,
+            updated_time = ?,
+            sync_status = 'clean'
+          WHERE id = ?
+        `).run(payloadStr, contentHash, remoteRev, now, entry.item.id);
+
+        this.changeService.recordChange({
+          item_id: entry.item.id,
+          type: entry.item.type,
+          updated_time: now,
+          deleted_time: null,
+          content_hash: contentHash,
+        }, this.userId);
+      }
+    });
+
+    transaction();
+    return true;
+  }
+
   // 批量操作
   batchPut(items: Array<Partial<ItemBase> & { id: string; type: string; payload: string; content_hash: string }>): { success: boolean; results: Array<{ id: string; remoteRev: string }> } {
     const db = getDatabase();
@@ -282,5 +405,48 @@ export class ItemService {
     } catch {
       // 删除磁盘文件失败不应阻断行清理流程；行删除后即变为孤儿，留待人工清理
     }
+  }
+
+  private parsePayload(payload: string): any {
+    try {
+      return JSON.parse(payload || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  private normalizeCloudPath(relativePath: string): string {
+    return String(relativePath || '')
+      .split('/')
+      .map(seg => seg.trim())
+      .filter(Boolean)
+      .join('/');
+  }
+
+  private computeContentHash(payload: string): string {
+    return crypto.createHash('sha256').update(payload).digest('hex').substring(0, 16);
+  }
+
+  private getCloudDescendants(prefix: string): ItemBase[] {
+    const db = getDatabase();
+    const escapedPrefix = `${prefix.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}/`;
+    let stmt;
+    if (this.userId) {
+      stmt = db.prepare(`
+        SELECT * FROM items
+        WHERE user_id = ?
+          AND deleted_time IS NULL
+          AND type IN ('cloud_file', 'cloud_folder')
+          AND payload LIKE ?
+      `);
+      return stmt.all(this.userId, `%\"relative_path\":\"${escapedPrefix}%`) as ItemBase[];
+    }
+    stmt = db.prepare(`
+      SELECT * FROM items
+      WHERE deleted_time IS NULL
+        AND type IN ('cloud_file', 'cloud_folder')
+        AND payload LIKE ?
+    `);
+    return stmt.all(`%\"relative_path\":\"${escapedPrefix}%`) as ItemBase[];
   }
 }

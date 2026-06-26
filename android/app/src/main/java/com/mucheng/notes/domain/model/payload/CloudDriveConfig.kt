@@ -41,7 +41,7 @@ data class CloudDriveConfig(
     @SerialName("debounce_ms") val debounceMs: Long = 3000L,
     @SerialName("small_file_concurrency") val smallFileConcurrency: Int = 3,
     @SerialName("sync_cursor") val syncCursor: String? = null,
-    @SerialName("auto_download") val autoDownload: Boolean = true,
+    @SerialName("auto_download") val autoDownload: Boolean = false,
     @SerialName("download_chunk_size") val downloadChunkSize: Long = CHUNK_SIZE_DEFAULT,
     @SerialName("download_concurrency") val downloadConcurrency: Int = 2,
     @SerialName("conflict_strategy") val conflictStrategy: String = CloudConflictStrategy.CREATE_COPY.value

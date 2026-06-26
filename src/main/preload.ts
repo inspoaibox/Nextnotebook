@@ -430,6 +430,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Cloud Drive API - 网盘同步
   cloudDrive: {
     getConfig: () => ipcRenderer.invoke('cloud-drive:getConfig'),
+    getLocalStates: () => ipcRenderer.invoke('cloud-drive:getLocalStates'),
+    openLocalFile: (itemId: string) => ipcRenderer.invoke('cloud-drive:openLocalFile', itemId),
+    openLocalDirectory: (folderPath: string) => ipcRenderer.invoke('cloud-drive:openLocalDirectory', folderPath),
+    setLocalAvailability: (itemId: string, availability: 'online_only' | 'local' | 'offline') =>
+      ipcRenderer.invoke('cloud-drive:setLocalAvailability', itemId, availability),
+    setFolderLocalAvailability: (folderPath: string, availability: 'online_only' | 'local' | 'offline') =>
+      ipcRenderer.invoke('cloud-drive:setFolderLocalAvailability', folderPath, availability),
     selectWatchedFolder: () => ipcRenderer.invoke('cloud-drive:selectWatchedFolder'),
     startWatching: () => ipcRenderer.invoke('cloud-drive:startWatching'),
     stopWatching: () => ipcRenderer.invoke('cloud-drive:stopWatching'),
@@ -462,6 +469,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (_event: unknown, progress: unknown) => callback(progress);
       ipcRenderer.on('cloud-drive:downloadProgress', handler);
       return () => ipcRenderer.removeListener('cloud-drive:downloadProgress', handler);
+    },
+    onItemsChanged: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('cloud-drive:itemsChanged', handler);
+      return () => ipcRenderer.removeListener('cloud-drive:itemsChanged', handler);
     },
     // 监听监听状态变化
     onWatchingChange: (callback: (watching: boolean) => void) => {

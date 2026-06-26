@@ -55,5 +55,15 @@ data class CloudFileLocalPathEntity(
 
     /** 最后一次下载失败的错误信息 */
     @ColumnInfo(name = "error_message")
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+
+    /** 本地可用性：local（普通本地）、offline（离线保留） */
+    @ColumnInfo(name = "availability")
+    val availability: String = CloudLocalAvailabilityValues.LOCAL
 )
+
+object CloudLocalAvailabilityValues {
+    const val ONLINE_ONLY = "online_only"
+    const val LOCAL = "local"
+    const val OFFLINE = "offline"
+}

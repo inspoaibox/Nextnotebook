@@ -19,6 +19,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.mucheng.notes.data.cloud.CloudDownloadProgress
 import com.mucheng.notes.data.cloud.CloudUploadProgress
+import com.mucheng.notes.data.local.entity.CloudLocalAvailabilityValues
 import com.mucheng.notes.domain.model.payload.CloudDownloadState
 import com.mucheng.notes.domain.model.payload.CloudUploadState
 import com.mucheng.notes.presentation.viewmodel.CloudDriveItem
@@ -63,6 +65,8 @@ fun CloudDriveScreen(
     // 对话框状态
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var pendingDeleteItem by remember { mutableStateOf<CloudDriveItem?>(null) }
+    var menuItem by remember { mutableStateOf<CloudDriveItem?>(null) }
+    var folderMenuItem by remember { mutableStateOf<CloudDriveItem?>(null) }
 
     // SAF 多选文件上传
     val uploadLauncher = rememberLauncherForActivityResult(
@@ -100,6 +104,16 @@ fun CloudDriveScreen(
                     // 上传文件
                     IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) {
                         Icon(Icons.Default.Upload, contentDescription = "上传文件")
+                    }
+                    IconButton(onClick = {
+                        viewModel.setFolderLocalAvailability(uiState.currentFolderId, CloudLocalAvailabilityValues.OFFLINE)
+                    }) {
+                        Icon(Icons.Default.Cloud, contentDescription = "当前目录全部离线")
+                    }
+                    IconButton(onClick = {
+                        viewModel.setFolderLocalAvailability(uiState.currentFolderId, CloudLocalAvailabilityValues.ONLINE_ONLY)
+                    }) {
+                        Icon(Icons.Default.Delete, contentDescription = "当前目录全部释放")
                     }
                     // 新建文件夹
                     IconButton(onClick = { showNewFolderDialog = true }) {
@@ -170,14 +184,20 @@ fun CloudDriveScreen(
                 ) {
                     items(uiState.items, key = { it.entity.id }) { item ->
                         if (item.isFolder) {
-                            FolderRow(item = item) {
-                                viewModel.openFolder(item.entity.id, item.name)
-                            }
+                            FolderRow(
+                                item = item,
+                                onClick = {
+                                    viewModel.openFolder(item.entity.id, item.name)
+                                },
+                                onLongClick = { folderMenuItem = item }
+                            )
                         } else {
                             FileRow(
                                 item = item,
                                 uploadProgress = uiState.uploadProgress[item.entity.id],
                                 downloadProgress = uiState.downloadProgress[item.entity.id],
+                                localAvailability = uiState.localAvailability[item.entity.id]
+                                    ?: CloudLocalAvailabilityValues.ONLINE_ONLY,
                                 onClick = {
                                     scope.launch {
                                         if (viewModel.isDownloaded(item.entity.id)) {
@@ -187,6 +207,7 @@ fun CloudDriveScreen(
                                         }
                                     }
                                 },
+                                onLongClick = { menuItem = item },
                                 onDelete = { pendingDeleteItem = item }
                             )
                         }
@@ -243,14 +264,79 @@ fun CloudDriveScreen(
             }
         )
     }
+
+    menuItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { menuItem = null },
+            title = { Text(item.name) },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        scope.launch {
+                            if (viewModel.isDownloaded(item.entity.id)) {
+                                viewModel.openDownloadedFile(item.entity.id)
+                            } else {
+                                viewModel.downloadFile(item.entity.id)
+                            }
+                            menuItem = null
+                        }
+                    }) { Text("下载并打开") }
+                    TextButton(onClick = {
+                        viewModel.setLocalAvailability(item.entity.id, CloudLocalAvailabilityValues.OFFLINE)
+                        menuItem = null
+                    }) { Text("离线保存") }
+                    TextButton(onClick = {
+                        viewModel.setLocalAvailability(item.entity.id, CloudLocalAvailabilityValues.ONLINE_ONLY)
+                        menuItem = null
+                    }) { Text("释放空间") }
+                    TextButton(onClick = {
+                        pendingDeleteItem = item
+                        menuItem = null
+                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { menuItem = null }) { Text("关闭") }
+            }
+        )
+    }
+
+    folderMenuItem?.let {
+        AlertDialog(
+            onDismissRequest = { folderMenuItem = null },
+            title = { Text(it.name) },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        viewModel.setFolderLocalAvailability(it.entity.id, CloudLocalAvailabilityValues.OFFLINE)
+                        folderMenuItem = null
+                    }) { Text("该文件夹离线保存") }
+                    TextButton(onClick = {
+                        viewModel.setFolderLocalAvailability(it.entity.id, CloudLocalAvailabilityValues.ONLINE_ONLY)
+                        folderMenuItem = null
+                    }) { Text("该文件夹释放空间") }
+                    TextButton(onClick = {
+                        pendingDeleteItem = it
+                        folderMenuItem = null
+                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { folderMenuItem = null }) { Text("关闭") }
+            }
+        )
+    }
 }
 
 @Composable
-private fun FolderRow(item: CloudDriveItem, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun FolderRow(item: CloudDriveItem, onClick: () -> Unit, onLongClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -269,18 +355,21 @@ private fun FolderRow(item: CloudDriveItem, onClick: () -> Unit) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun FileRow(
     item: CloudDriveItem,
     uploadProgress: CloudUploadProgress?,
     downloadProgress: CloudDownloadProgress?,
+    localAvailability: String,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -310,6 +399,15 @@ private fun FileRow(
                     color = MaterialTheme.colorScheme.outline,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    when (localAvailability) {
+                        CloudLocalAvailabilityValues.OFFLINE -> "离线保留"
+                        CloudLocalAvailabilityValues.LOCAL -> "本地可用"
+                        else -> "仅云端"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
             IconButton(onClick = onDelete) {

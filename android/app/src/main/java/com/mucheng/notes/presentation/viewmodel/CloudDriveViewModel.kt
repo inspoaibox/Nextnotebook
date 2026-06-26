@@ -26,6 +26,7 @@ import com.mucheng.notes.data.cloud.CloudDriveUploadManager
 import com.mucheng.notes.data.cloud.CloudDownloadProgress
 import com.mucheng.notes.data.cloud.CloudUploadProgress
 import com.mucheng.notes.data.local.dao.CloudFileLocalPathDao
+import com.mucheng.notes.data.local.entity.CloudLocalAvailabilityValues
 import com.mucheng.notes.data.local.entity.ItemEntity
 import com.mucheng.notes.data.sync.SyncEngine
 import com.mucheng.notes.domain.model.ItemType
@@ -72,6 +73,7 @@ data class CloudDriveUiState(
     val items: List<CloudDriveItem> = emptyList(),
     val uploadProgress: Map<String, CloudUploadProgress> = emptyMap(),
     val downloadProgress: Map<String, CloudDownloadProgress> = emptyMap(),
+    val localAvailability: Map<String, String> = emptyMap(),
     val isLoading: Boolean = false,
     val syncError: String? = null,
     val snackbarMessage: String? = null,
@@ -134,6 +136,10 @@ class CloudDriveViewModel @Inject constructor(
                 _uiState.update { it.copy(downloadProgress = progress) }
             }
         }
+
+        viewModelScope.launch {
+            refreshLocalAvailability()
+        }
     }
 
     /** 进入屏幕/授权变更时刷新当前文件夹内容 */
@@ -142,6 +148,7 @@ class CloudDriveViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, syncError = null) }
             val folderId = _uiState.value.currentFolderId
             val items = loadItems(folderId)
+            refreshLocalAvailability()
             _uiState.update { it.copy(items = items, isLoading = false) }
         }
     }
@@ -325,6 +332,11 @@ class CloudDriveViewModel @Inject constructor(
         }
     }
 
+    private suspend fun refreshLocalAvailability() = withContext(Dispatchers.IO) {
+        val local = localPathDao.getAll().associate { it.cloudFileId to it.availability }
+        _uiState.update { it.copy(localAvailability = local) }
+    }
+
     /** 按需下载单个文件（不依赖 autoDownload 配置） */
     fun downloadFile(cloudFileId: String) {
         viewModelScope.launch {
@@ -337,6 +349,93 @@ class CloudDriveViewModel @Inject constructor(
                     it.copy(snackbarMessage = "下载失败：${e.message ?: "未知错误"}")
                 }
             }
+            refreshLocalAvailability()
+            refresh()
+        }
+    }
+
+    fun setLocalAvailability(cloudFileId: String, availability: String) {
+        viewModelScope.launch {
+            when (availability) {
+                CloudLocalAvailabilityValues.ONLINE_ONLY -> {
+                    cleanupLocalCloudArtifacts(cloudFileId)
+                    _uiState.update { it.copy(snackbarMessage = "已释放本地空间") }
+                }
+                CloudLocalAvailabilityValues.LOCAL,
+                CloudLocalAvailabilityValues.OFFLINE -> {
+                    val result = syncEngine.downloadCloudFile(cloudFileId)
+                    _uiState.update {
+                        it.copy(
+                            snackbarMessage = if (result.isSuccess) {
+                                if (availability == CloudLocalAvailabilityValues.OFFLINE) "已保存为离线文件" else "已下载到本机"
+                            } else {
+                                "下载失败：${result.exceptionOrNull()?.message ?: "未知错误"}"
+                            }
+                        )
+                    }
+                    if (result.isFailure) {
+                        refreshLocalAvailability()
+                        return@launch
+                    }
+                    val record = localPathDao.getByCloudFileId(cloudFileId)
+                    if (record != null) {
+                        localPathDao.updateAvailability(cloudFileId, availability)
+                    }
+                }
+            }
+            refreshLocalAvailability()
+            refresh()
+        }
+    }
+
+    fun setFolderLocalAvailability(folderId: String, availability: String) {
+        viewModelScope.launch {
+            val targetPath = relativeFolderPath(folderId)
+            val files = itemRepository.getByTypeOnce(ItemType.CLOUD_FILE)
+            var changed = 0
+            for (entity in files) {
+                if (entity.deletedTime != null) continue
+                val payload = runCatching {
+                    json.decodeFromString<CloudFilePayload>(entity.payload)
+                }.getOrNull() ?: continue
+                val rel = payload.relativePath
+                val inFolder = if (targetPath.isBlank()) {
+                    true
+                } else {
+                    rel == targetPath || rel.startsWith("$targetPath/")
+                }
+                if (!inFolder) continue
+                when (availability) {
+                    CloudLocalAvailabilityValues.ONLINE_ONLY -> {
+                        cleanupLocalCloudArtifacts(entity.id)
+                        changed++
+                    }
+                    CloudLocalAvailabilityValues.LOCAL,
+                    CloudLocalAvailabilityValues.OFFLINE -> {
+                        val result = syncEngine.downloadCloudFile(entity.id)
+                        if (result.isSuccess) {
+                            localPathDao.getByCloudFileId(entity.id)?.let {
+                                localPathDao.updateAvailability(entity.id, availability)
+                            }
+                            changed++
+                        }
+                    }
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    snackbarMessage = if (changed > 0) {
+                        if (availability == CloudLocalAvailabilityValues.ONLINE_ONLY) {
+                            "已释放 $changed 个文件的本地空间"
+                        } else {
+                            "已为 $changed 个文件设置离线保存"
+                        }
+                    } else {
+                        "当前目录没有可更新的文件"
+                    }
+                )
+            }
+            refreshLocalAvailability()
             refresh()
         }
     }
