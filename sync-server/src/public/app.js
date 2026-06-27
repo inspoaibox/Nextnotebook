@@ -447,7 +447,13 @@ async function loadItems(el, type, label) {
 
 // 网盘数据 —— 多级目录树浏览
 // 当前用户范围：服务端按 JWT user_id 隔离，这里只做客户端路径分组
-let cloudDriveState = { currentPath: '', files: [], folders: [], treeExpanded: new Set(['']) };
+let cloudDriveState = {
+  currentPath: '',
+  files: [],
+  folders: [],
+  treeExpanded: new Set(['']),
+  viewMode: sessionStorage.getItem('cloudDriveViewMode') || 'grid'
+};
 let cloudLastSignature = '';
 
 async function loadCloudDrive(el) {
@@ -576,11 +582,12 @@ async function cloudAutoRefreshTick() {
 }
 
 function cloudRender(el) {
-  const { currentPath } = cloudDriveState;
+  const { currentPath, viewMode } = cloudDriveState;
   const list = cloudListAt(currentPath);
   const folders = list.filter(x => x.type === 'cloud_folder').sort((a, b) => a.name.localeCompare(b.name, 'zh'));
   const files = list.filter(x => x.type === 'cloud_file').sort((a, b) => a.name.localeCompare(b.name, 'zh'));
   const allRows = [...folders, ...files];
+  const mode = viewMode === 'list' ? 'list' : 'grid';
 
   el.innerHTML = `
     <div class="cd-toolbar">
@@ -611,16 +618,31 @@ function cloudRender(el) {
             <div class="cd-pane-title">${escapeHtml(currentPath || '根目录')}</div>
             <div class="cd-pane-subtitle">${escapeHtml(`${allRows.length} 项`)}</div>
           </div>
+          <div class="cd-view-toggle" role="group" aria-label="网盘视图">
+            <button class="${mode === 'grid' ? 'is-active' : ''}" onclick="cloudSetViewMode('grid')">网格</button>
+            <button class="${mode === 'list' ? 'is-active' : ''}" onclick="cloudSetViewMode('list')">列表</button>
+          </div>
         </div>
-        <div style="padding:0;">
-          ${allRows.length === 0
-            ? '<div class="cd-empty">此目录为空</div>'
-            : allRows.map(cloudRenderRow).join('')}
-        </div>
+        ${cloudRenderContent(allRows, mode)}
       </div>
     </div>
   `;
   cloudBindDrop();
+}
+
+function cloudRenderContent(items, mode) {
+  if (items.length === 0) return '<div class="cd-empty">此目录为空</div>';
+  if (mode === 'grid') {
+    return `<div class="cd-grid">${items.map(cloudRenderCard).join('')}</div>`;
+  }
+  return `<div style="padding:0;">${items.map(cloudRenderRow).join('')}</div>`;
+}
+
+function cloudSetViewMode(mode) {
+  cloudDriveState.viewMode = mode === 'list' ? 'list' : 'grid';
+  sessionStorage.setItem('cloudDriveViewMode', cloudDriveState.viewMode);
+  const content = document.getElementById('pageContent');
+  if (content) cloudRender(content);
 }
 
 function cloudRenderBreadcrumb(currentPath) {
@@ -673,6 +695,45 @@ function cloudRenderRow(item) {
         <button class="btn btn-sm btn-secondary" onclick="cloudMovePrompt('${arg}','${escapeAttr(escapeJsString(item.relativePath))}')">移动</button>
         <button class="btn btn-sm btn-danger" onclick="cloudDelete('${arg}',false,'${nameArg}')">删除</button>
       </span>
+    </div>`;
+}
+
+function cloudRenderCard(item) {
+  const isFolder = item.type === 'cloud_folder';
+  const icon = isFolder ? '📁' : cloudIconFor(item.extension);
+  const arg = escapeAttr(escapeJsString(item.id));
+  const nameArg = escapeAttr(escapeJsString(item.name));
+  const meta = isFolder ? (item.state || '文件夹') : `${formatFileSize(item.size)}${item.state ? ` · ${item.state}` : ''}`;
+  if (isFolder) {
+    const pathArg = escapeAttr(escapeJsString(item.relativePath));
+    return `
+      <div class="cd-card-item is-folder" ondblclick="cloudNavigate('${pathArg}')" onclick="cloudNavigate('${pathArg}')">
+        <div class="cd-card-main">
+          <span class="cd-card-icon">${icon}</span>
+          <span class="cd-card-name">${escapeHtml(item.name)}</span>
+        </div>
+        <div class="cd-card-meta">${escapeHtml(meta)}</div>
+        <div class="cd-card-actions">
+          <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();cloudRename('${arg}','${nameArg}',true)">重命名</button>
+          <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();cloudMovePrompt('${arg}','${escapeAttr(escapeJsString(item.relativePath))}')">移动</button>
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();cloudDelete('${arg}',true,'${nameArg}')">删除</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="cd-card-item">
+      <div class="cd-card-main">
+        <span class="cd-card-icon">${icon}</span>
+        <span class="cd-card-name">${escapeHtml(item.name)}</span>
+      </div>
+      <div class="cd-card-meta">${escapeHtml(meta)}</div>
+      <div class="cd-card-actions">
+        <button class="btn btn-sm btn-secondary" onclick="cloudView('${arg}')">查看</button>
+        <button class="btn btn-sm btn-secondary" onclick="cloudDownload('${arg}','${nameArg}')">下载</button>
+        <button class="btn btn-sm btn-secondary" onclick="cloudRename('${arg}','${nameArg}',false)">重命名</button>
+        <button class="btn btn-sm btn-secondary" onclick="cloudMovePrompt('${arg}','${escapeAttr(escapeJsString(item.relativePath))}')">移动</button>
+        <button class="btn btn-sm btn-danger" onclick="cloudDelete('${arg}',false,'${nameArg}')">删除</button>
+      </div>
     </div>`;
 }
 
@@ -785,6 +846,16 @@ function cloudBinaryResourceName(id, payload) {
   const filename = String(payload?.filename || '');
   const ext = pathExtensionFromName(filename);
   return `${id}${ext ? `.${ext}` : ''}`;
+}
+
+function cloudResourceUrl(resName, opts = {}) {
+  const params = new URLSearchParams();
+  if (token) params.set('access_token', token);
+  if (opts.download) params.set('download', '1');
+  if (opts.filename) params.set('filename', opts.filename);
+  if (opts.cacheBust) params.set('t', String(Date.now()));
+  const query = params.toString();
+  return `${API}/resources/${encodeURIComponent(resName)}${query ? `?${query}` : ''}`;
 }
 
 // 取出指定路径下的直接子项（不递归）
@@ -1001,7 +1072,7 @@ async function cloudView(id) {
     const payload = parsePayload(item.payload);
     const name = payload.filename || payload.name || id;
     const resName = cloudBinaryResourceName(id, payload);
-    const url = `${API}/resources/${encodeURIComponent(resName)}?t=${Date.now()}`;
+    const url = cloudResourceUrl(resName, { cacheBust: true });
     const ext = pathExtensionFromName(name);
 
     const head = `
@@ -1044,22 +1115,18 @@ async function cloudView(id) {
 // 下载
 async function cloudDownload(id, name) {
   try {
-    const item = await api(`/items/${encodeURIComponent(id)}`);
-    const payload = parsePayload(item.payload);
+    const cached = [...cloudDriveState.files, ...cloudDriveState.folders].find(item => item.id === id);
+    const payload = cached?.payload || parsePayload((await api(`/items/${encodeURIComponent(id)}`)).payload);
     const resName = cloudBinaryResourceName(id, payload);
-    const headers = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${API}/resources/${encodeURIComponent(resName)}`, { headers });
-    if (!res.ok) throw new Error(`下载失败 (${res.status})`);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    const filename = name || payload.filename || payload.name || id;
+    const url = cloudResourceUrl(resName, { download: true, filename });
     const a = document.createElement('a');
     a.href = url;
-    a.download = name || id;
+    a.download = filename;
+    a.rel = 'noopener';
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (err) {
     showMsg(err.message, 'error');
   }

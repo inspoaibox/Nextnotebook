@@ -128,6 +128,8 @@ export class CloudDriveScheduler {
   private downloadAbortControllers = new Map<string, AbortController>();
   /** 下载侧 resume-after-pause 竞态兜底（与上传 pendingResume 同理） */
   private pendingDownloadResume = new Set<string>();
+  /** 同步连接尚未建立时的上传延迟重试，避免启动竞态把任务直接打失败 */
+  private adapterRetryTimers = new Map<string, NodeJS.Timeout>();
 
   /**
    * 判断某 itemId 是否已被主动中止（pause/cancel/dispose）。
@@ -213,6 +215,15 @@ export class CloudDriveScheduler {
 
     // 文件可能已被删除（去抖期间 unlink）
     if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) {
+      return;
+    }
+
+    if (!this.getAdapter()) {
+      if (this.hasConfiguredServerSync()) {
+        this.markPendingForAdapterRetry(itemId, payload);
+      } else {
+        this.markError(itemId, payload, '尚未建立同步连接（请先在设置中连接自建服务器）');
+      }
       return;
     }
 
@@ -400,7 +411,11 @@ export class CloudDriveScheduler {
 
     const adapter = this.getAdapter();
     if (!adapter) {
-      this.markError(itemId, payload, '尚未建立同步连接（请先在设置中连接服务器）');
+      if (this.hasConfiguredServerSync()) {
+        this.markPendingForAdapterRetry(itemId, payload);
+      } else {
+        this.markError(itemId, payload, '尚未建立同步连接（请先在设置中连接自建服务器）');
+      }
       return;
     }
 
@@ -866,6 +881,49 @@ export class CloudDriveScheduler {
       this.itemsManager.update(itemId, patch);
     } catch (err) {
       console.error(`[CloudDriveScheduler] 更新 payload 失败: ${itemId}`, err);
+    }
+  }
+
+  /**
+   * 冷启动时监听初始扫描可能早于同步适配器初始化完成。
+   * 这不是上传失败，保持 pending 并延迟重试，避免 UI 永久停在 0%。
+   */
+  private markPendingForAdapterRetry(itemId: string, payload: CloudFilePayload): void {
+    const pendingPayload = {
+      ...payload,
+      upload_state: 'pending' as const,
+      error_message: null,
+    };
+    this.updatePayload(itemId, {
+      upload_state: 'pending',
+      error_message: null,
+    });
+    this.emitProgressFor(itemId, pendingPayload, 'pending', 0);
+    if (this.adapterRetryTimers.has(itemId)) return;
+
+    const timer = setTimeout(() => {
+      this.adapterRetryTimers.delete(itemId);
+      if (!this.disposed) {
+        this.enqueue(itemId);
+      }
+    }, 3000);
+    if (typeof timer.unref === 'function') timer.unref();
+    this.adapterRetryTimers.set(itemId, timer);
+  }
+
+  private hasConfiguredServerSync(): boolean {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { loadSyncConfig } = require('./SyncConfigStorage') as typeof import('./SyncConfigStorage');
+      const config = loadSyncConfig();
+      return (
+        config?.enabled === true &&
+        config?.type === 'server' &&
+        typeof config?.url === 'string' &&
+        config.url.length > 0
+      );
+    } catch {
+      return false;
     }
   }
 
@@ -1700,6 +1758,10 @@ export class CloudDriveScheduler {
       clearTimeout(timer);
     }
     this.debounceTimers.clear();
+    for (const timer of this.adapterRetryTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.adapterRetryTimers.clear();
     this.smallQueue = [];
     this.largeQueue = [];
     // C4：中止所有在途上传，使 runUpload 循环尽快退出。

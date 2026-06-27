@@ -544,12 +544,13 @@ private fun QrCodeImage(
 @Composable
 private fun TransferImagePreview(
     localPath: String?,
+    previewKey: String,
     isSent: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val bitmap = remember(localPath) {
+    val bitmap = remember(localPath, previewKey) {
         localPath?.let { path ->
             runCatching {
                 if (path.startsWith("content://")) {
@@ -573,7 +574,7 @@ private fun TransferImagePreview(
                     MaterialTheme.colorScheme.surface
                 }
             )
-            .clickable(enabled = bitmap != null, onClick = onClick)
+            .clickable(enabled = localPath != null, onClick = onClick)
     ) {
         if (bitmap != null) {
             Image(
@@ -881,7 +882,7 @@ private fun ChatView(
     
     // 文件选择器
     val filePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { onSendFile(it) }
     }
@@ -974,7 +975,7 @@ private fun ChatView(
                     .padding(8.dp)
             ) {
                 // 附件按钮
-                IconButton(onClick = { filePickerLauncher.launch("*/*") }) {
+                IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
                     Icon(Icons.Default.AttachFile, contentDescription = "发送文件")
                 }
                 
@@ -1076,6 +1077,12 @@ private fun MessageBubble(
                         if (isImageMessage) {
                             TransferImagePreview(
                                 localPath = fileEntity?.localPath,
+                                previewKey = listOf(
+                                    fileEntity?.id,
+                                    fileEntity?.status,
+                                    fileEntity?.progress,
+                                    fileEntity?.completedAt
+                                ).joinToString(":"),
                                 isSent = isSent,
                                 onClick = {
                                     if (canOpenFile) {

@@ -16,6 +16,7 @@
 package com.mucheng.notes.presentation.screens.clouddrive
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -61,6 +62,10 @@ fun CloudDriveScreen(
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    BackHandler(enabled = !uiState.isAtRoot) {
+        viewModel.navigateUp()
+    }
 
     // 对话框状态
     var showNewFolderDialog by remember { mutableStateOf(false) }
@@ -187,7 +192,7 @@ fun CloudDriveScreen(
                             FolderRow(
                                 item = item,
                                 onClick = {
-                                    viewModel.openFolder(item.entity.id, item.name)
+                                    viewModel.openFolder(item.entity.id, item.name, item.relativePath)
                                 },
                                 onLongClick = { folderMenuItem = item }
                             )
@@ -309,11 +314,19 @@ fun CloudDriveScreen(
             text = {
                 Column {
                     TextButton(onClick = {
-                        viewModel.setFolderLocalAvailability(it.entity.id, CloudLocalAvailabilityValues.OFFLINE)
+                        viewModel.setFolderLocalAvailability(
+                            it.entity.id,
+                            CloudLocalAvailabilityValues.OFFLINE,
+                            it.relativePath
+                        )
                         folderMenuItem = null
                     }) { Text("该文件夹离线保存") }
                     TextButton(onClick = {
-                        viewModel.setFolderLocalAvailability(it.entity.id, CloudLocalAvailabilityValues.ONLINE_ONLY)
+                        viewModel.setFolderLocalAvailability(
+                            it.entity.id,
+                            CloudLocalAvailabilityValues.ONLINE_ONLY,
+                            it.relativePath
+                        )
                         folderMenuItem = null
                     }) { Text("该文件夹释放空间") }
                     TextButton(onClick = {

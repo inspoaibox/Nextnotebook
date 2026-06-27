@@ -50,6 +50,14 @@ function getMimeType(id: string): string {
   return MIME_BY_EXTENSION[ext] || 'application/octet-stream';
 }
 
+function contentDispositionAttachment(filename: string): string {
+  const fallback = path.basename(filename || 'download')
+    .replace(/[\r\n"]/g, '_')
+    .replace(/[^\x20-\x7E]/g, '_') || 'download';
+  const encoded = encodeURIComponent(path.basename(filename || 'download'));
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 /**
  * 解析 Range 请求头，返回 {start, end}（end 为闭区间）。
  * 仅支持单段 bytes=start-end / bytes=start- / bytes=-suffix 三种形式。
@@ -111,6 +119,10 @@ router.get('/:id', (req, res, next) => {
 
     const totalSize = stat.size;
     const contentType = getMimeType(req.params.id);
+    if (req.query.download === '1') {
+      const filename = typeof req.query.filename === 'string' ? req.query.filename : req.params.id;
+      res.setHeader('Content-Disposition', contentDispositionAttachment(filename));
+    }
 
     // 始终声明支持断点续传，客户端据此决定是否复用已下载部分
     res.setHeader('Accept-Ranges', 'bytes');

@@ -421,6 +421,7 @@ class TransferViewModel @Inject constructor(
             try {
                 val preFileId = UUID.randomUUID().toString()
                 val contentResolver = getApplication<Application>().contentResolver
+                takePersistableReadPermission(uri)
                 val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
                 val messageType = if (isImageFile("", mimeType, uri.toString())) MessageType.IMAGE else MessageType.FILE
 
@@ -922,6 +923,10 @@ class TransferViewModel @Inject constructor(
                 val openMimeType = resolveMimeType(file.filename, file.mimeType, localPath)
                 if (localPath.startsWith("content://")) {
                     val uri = android.net.Uri.parse(localPath)
+                    if (!canReadUri(context, uri)) {
+                        android.widget.Toast.makeText(context, "文件不可读取或已被系统清理", android.widget.Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
                     openUriWithMime(context, uri, openMimeType, isApkFile(file.filename, file.mimeType, localPath))
                     return@launch
                 }
@@ -963,6 +968,18 @@ class TransferViewModel @Inject constructor(
         return listOf(filename, localPath.orEmpty()).any { it.lowercase().endsWith(".apk") }
     }
 
+    private fun takePersistableReadPermission(uri: android.net.Uri) {
+        if (uri.scheme != "content") return
+        runCatching {
+            getApplication<Application>().contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }.onFailure {
+            android.util.Log.d("TransferViewModel", "Uri read permission is not persistable: $uri")
+        }
+    }
+
     private fun resolveMimeType(filename: String, mimeType: String?, localPath: String? = null): String {
         if (isApkFile(filename, mimeType, localPath)) {
             return "application/vnd.android.package-archive"
@@ -977,9 +994,27 @@ class TransferViewModel @Inject constructor(
             candidate.endsWith(".png") -> "image/png"
             candidate.endsWith(".gif") -> "image/gif"
             candidate.endsWith(".webp") -> "image/webp"
+            candidate.endsWith(".bmp") -> "image/bmp"
+            candidate.endsWith(".heic") -> "image/heic"
+            candidate.endsWith(".heif") -> "image/heif"
             candidate.endsWith(".pdf") -> "application/pdf"
             candidate.endsWith(".txt") -> "text/plain"
+            candidate.endsWith(".md") -> "text/markdown"
+            candidate.endsWith(".csv") -> "text/csv"
+            candidate.endsWith(".json") -> "application/json"
+            candidate.endsWith(".doc") -> "application/msword"
+            candidate.endsWith(".docx") -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            candidate.endsWith(".xls") -> "application/vnd.ms-excel"
+            candidate.endsWith(".xlsx") -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            candidate.endsWith(".ppt") -> "application/vnd.ms-powerpoint"
+            candidate.endsWith(".pptx") -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             candidate.endsWith(".zip") -> "application/zip"
+            candidate.endsWith(".rar") -> "application/vnd.rar"
+            candidate.endsWith(".7z") -> "application/x-7z-compressed"
+            candidate.endsWith(".mp4") -> "video/mp4"
+            candidate.endsWith(".mov") -> "video/quicktime"
+            candidate.endsWith(".mp3") -> "audio/mpeg"
+            candidate.endsWith(".wav") -> "audio/wav"
             candidate.endsWith(".apk") -> "application/vnd.android.package-archive"
             else -> mimeType?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
         }
@@ -991,6 +1026,9 @@ class TransferViewModel @Inject constructor(
         title: String
     ) {
         val chooser = android.content.Intent.createChooser(intent, title).apply {
+            intent.data?.let { uri ->
+                clipData = android.content.ClipData.newUri(context.contentResolver, "transfer-file", uri)
+            }
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -998,6 +1036,30 @@ class TransferViewModel @Inject constructor(
             context.startActivity(chooser)
         } catch (e: android.content.ActivityNotFoundException) {
             android.widget.Toast.makeText(context, "没有可打开此文件的应用", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun canReadUri(context: android.content.Context, uri: android.net.Uri): Boolean {
+        return runCatching {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { true } == true
+        }.getOrDefault(false)
+    }
+
+    private fun grantReadPermissionToHandlers(
+        context: android.content.Context,
+        intent: android.content.Intent,
+        uri: android.net.Uri
+    ) {
+        val handlers = context.packageManager.queryIntentActivities(
+            intent,
+            android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+        )
+        for (handler in handlers) {
+            context.grantUriPermission(
+                handler.activityInfo.packageName,
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
         }
     }
 
@@ -1011,18 +1073,21 @@ class TransferViewModel @Inject constructor(
             android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 putExtra(android.content.Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                clipData = android.content.ClipData.newUri(context.contentResolver, "transfer-file", uri)
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
         } else {
             android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, mimeType)
+                clipData = android.content.ClipData.newUri(context.contentResolver, "transfer-file", uri)
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
         }
 
         try {
+            grantReadPermissionToHandlers(context, intent, uri)
             if (isApk) {
                 context.startActivity(intent)
             } else {

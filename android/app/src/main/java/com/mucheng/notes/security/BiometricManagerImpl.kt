@@ -79,6 +79,10 @@ class BiometricManagerImpl @Inject constructor(
                 }
             }
         )
+
+        continuation.invokeOnCancellation {
+            biometricPrompt.cancelAuthentication()
+        }
         
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)

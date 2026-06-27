@@ -827,13 +827,18 @@ export class ServerAdapter implements StorageAdapter {
     onUploadProgress?: (sentBytes: number) => void;
   }): Promise<{ accepted: boolean; duplicate: boolean }> {
     const path = `/api/resources/upload/${encodeURIComponent(params.sessionId)}/chunk`;
-    const headers = {
+    const isElectron = this.isElectronRuntime();
+    const headers: Record<string, string> = {
       ...this.getHeaders(),
       // 原始二进制，不能让 Content-Type 停在 application/json
       'Content-Type': 'application/octet-stream',
-      'Content-Length': String(params.data.byteLength),
       'X-Chunk-Index': String(params.chunkIndex),
     };
+    if (!isElectron) {
+      // Electron net.fetch 使用 Chromium 网络栈，Content-Length 属于浏览器侧
+      // 自动管理的请求头；手动设置会导致 net::ERR_INVALID_ARGUMENT。
+      headers['Content-Length'] = String(params.data.byteLength);
+    }
 
     // 当调用方需要进度回调时，构造流式 body：按固定 slice 大小从 Buffer 切片推送，
     // 每片发送后回调累计已发送字节。ReadableStream 只能消费一次，故用 bodyFactory
@@ -845,7 +850,7 @@ export class ServerAdapter implements StorageAdapter {
     // 成功后按分块粒度回调进度，避免请求 body 被锁死后重试/下一块直接失败。
     const useStream =
       typeof params.onUploadProgress === 'function' &&
-      !this.isElectronRuntime();
+      !isElectron;
     const SLICE = 64 * 1024; // 64KB / 片：与底层 socket buffer 量级匹配，回调频次适中
     const buildBody = (): BodyInit => {
       const data = params.data;
@@ -894,7 +899,16 @@ export class ServerAdapter implements StorageAdapter {
           method: 'PUT',
           headers,
           // 流式时省略 body（交给 bodyFactory 按尝试次数重建）；快速路径直接放 body
-          ...(useStream ? {} : { body: params.data as unknown as BodyInit }),
+          ...(useStream
+            ? {}
+            : {
+                body: (isElectron
+                  ? params.data.buffer.slice(
+                      params.data.byteOffset,
+                      params.data.byteOffset + params.data.byteLength
+                    )
+                  : params.data) as unknown as BodyInit,
+              }),
         },
         params.signal,
         useStream ? buildBody : undefined,

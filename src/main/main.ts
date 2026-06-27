@@ -12,7 +12,12 @@ import {
   stopCloudDriveScheduler,
   getCloudDriveScheduler,
 } from './services/CloudDriveScheduler';
-import { registerSyncIpcHandlers } from './services/SyncService';
+import {
+  registerSyncIpcHandlers,
+  initializeSyncService,
+  startSyncScheduler,
+  SyncServiceConfig,
+} from './services/SyncService';
 import { imageService, ProcessOptions } from './services/ImageService';
 import {
   pdfService,
@@ -152,6 +157,30 @@ function getIconPath(): string {
       return path.join(resourcesPath, 'icons/icon.png');
     }
   }
+}
+
+function toSyncServiceConfig(config: Record<string, any>): SyncServiceConfig | null {
+  if (!config.enabled || !config.url) {
+    return null;
+  }
+  return {
+    enabled: Boolean(config.enabled),
+    type: config.type === 'webdav' ? 'webdav' : 'server',
+    url: String(config.url),
+    syncPath: config.sync_path || '/mucheng-notes',
+    username: config.username,
+    password: config.password,
+    apiKey: config.api_key,
+    serverToken: config.server_token,
+    serverRefreshToken: config.server_refresh_token,
+    serverTokenExpires: config.server_token_expires,
+    serverSyncKey: config.server_sync_key,
+    serverUsername: config.server_username,
+    serverPassword: config.server_password,
+    syncInterval: Number(config.sync_interval) || 300,
+    syncModules: config.sync_modules,
+    lastSyncTime: config.last_sync_time,
+  };
 }
 
 function createWindow(): void {
@@ -466,6 +495,23 @@ app.whenReady().then(async () => {
     console.log('Cloud Drive service initialized');
   } catch (err) {
     console.error('Failed to initialize Cloud Drive service:', err);
+  }
+
+  // 主进程冷启动时先恢复同步连接，避免网盘 retryAll 早于 adapter ready 导致上传卡在 0%。
+  try {
+    const persistedSyncConfig = loadSyncConfig();
+    const syncConfig = persistedSyncConfig ? toSyncServiceConfig(persistedSyncConfig) : null;
+    if (syncConfig) {
+      const initialized = await initializeSyncService(syncConfig);
+      if (initialized) {
+        startSyncScheduler();
+        console.log('[Main] Restored sync service from persisted config');
+      } else {
+        console.warn('[Main] Failed to restore sync service from persisted config');
+      }
+    }
+  } catch (err) {
+    console.error('[Main] Failed to restore persisted sync service:', err);
   }
 
   // 初始化网盘上传调度器（去抖 + 哈希比对 + 分块上传队列）

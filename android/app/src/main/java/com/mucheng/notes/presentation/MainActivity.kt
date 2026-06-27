@@ -2,6 +2,7 @@ package com.mucheng.notes.presentation
 
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.window.OnBackInvokedDispatcher
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -32,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     // Activity 级别的 SettingsViewModel，所有子组件共享
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val isLockedState = mutableStateOf(false)
+    private val lockSessionState = mutableStateOf(0)
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,9 +57,11 @@ class MainActivity : AppCompatActivity() {
             MuchengNotesTheme {
                 MainApp(
                     isLocked = isLockedState.value,
+                    lockSessionId = lockSessionState.value,
                     onUnlock = {
                         appLockManager.recordUnlock()
                         isLockedState.value = false
+                        updateSecureWindowFlag()
                     },
                     settingsViewModel = settingsViewModel
                 )
@@ -83,25 +87,51 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun handleBackPressed() {
+        if (isLockedState.value) {
+            return
+        }
         // 自定义返回处理
         finish()
     }
 
     private fun refreshLockState() {
-        isLockedState.value = appLockManager.shouldLock()
+        val shouldLock = appLockManager.shouldLock()
+        if (shouldLock && !isLockedState.value) {
+            lockSessionState.value = lockSessionState.value + 1
+            isLockedState.value = true
+        } else if (!isLockedState.value) {
+            isLockedState.value = false
+        }
+        updateSecureWindowFlag()
+    }
+
+    private fun updateSecureWindowFlag() {
+        val protectedByAppLock = appLockManager.isLockEnabled() && appLockManager.hasCredentialConfigured()
+        if (protectedByAppLock || isLockedState.value) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE
+            )
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
 }
 
 @Composable
 fun MainApp(
     isLocked: Boolean,
+    lockSessionId: Int,
     onUnlock: () -> Unit,
     settingsViewModel: SettingsViewModel
 ) {
     if (isLocked) {
-        LockScreen(onUnlocked = {
-            onUnlock()
-        })
+        LockScreen(
+            lockSessionId = lockSessionId,
+            onUnlocked = {
+                onUnlock()
+            }
+        )
     } else {
         val navController = rememberNavController()
         // 直接使用 MainNavigation，传入共享的 SettingsViewModel

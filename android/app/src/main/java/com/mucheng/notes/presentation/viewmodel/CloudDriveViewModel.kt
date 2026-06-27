@@ -22,6 +22,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.mucheng.notes.data.cloud.CloudDriveConfigStore
 import com.mucheng.notes.data.cloud.CloudDriveDownloadManager
 import com.mucheng.notes.data.cloud.CloudDriveFolderPicker
+import com.mucheng.notes.data.cloud.CloudDrivePathIdentity
 import com.mucheng.notes.data.cloud.CloudDriveUploadManager
 import com.mucheng.notes.data.cloud.CloudDownloadProgress
 import com.mucheng.notes.data.cloud.CloudUploadProgress
@@ -57,6 +58,8 @@ data class CloudDriveItem(
     val mimeType: String,
     val mtime: Long,
     val isFolder: Boolean,
+    val relativePath: String = "",
+    val parentFolderId: String? = null,
 )
 
 /**
@@ -65,6 +68,7 @@ data class CloudDriveItem(
 data class CloudDriveFolderStackEntry(
     val folderId: String,
     val name: String,
+    val relativePath: String = "",
 )
 
 data class CloudDriveUiState(
@@ -154,10 +158,16 @@ class CloudDriveViewModel @Inject constructor(
     }
 
     /** 打开一个子文件夹（入栈） */
-    fun openFolder(folderId: String, name: String) {
+    fun openFolder(folderId: String, name: String, relativePath: String = "") {
         viewModelScope.launch {
             _uiState.update { state ->
-                state.copy(stack = state.stack + CloudDriveFolderStackEntry(folderId, name))
+                state.copy(
+                    stack = state.stack + CloudDriveFolderStackEntry(
+                        folderId = folderId,
+                        name = name,
+                        relativePath = normalizeCloudPath(relativePath),
+                    )
+                )
             }
             _uiState.update { it.copy(isLoading = true) }
             val items = loadItems(folderId)
@@ -224,12 +234,18 @@ class CloudDriveViewModel @Inject constructor(
             // 与桌面端 onFolderAdded 写入的 relative_path 保持一致（云端路径前缀）
             val folderRelPath = relativeFolderPath(parentFolderId)
             val relativePath = if (folderRelPath.isBlank()) name.trim() else "$folderRelPath/${name.trim()}"
+            val folderId = CloudDrivePathIdentity.deriveId(relativePath)
             val payload = CloudFolderPayload(
                 name = name.trim(),
-                parentFolderId = parentFolderId,
+                parentFolderId = CloudDrivePathIdentity.deriveParentFolderId(relativePath),
                 relativePath = relativePath,
             )
-            itemRepository.create(ItemType.CLOUD_FOLDER, json.encodeToString(payload))
+            val payloadJson = json.encodeToString(payload)
+            if (itemRepository.getById(folderId) != null) {
+                itemRepository.update(folderId, payloadJson)
+            } else {
+                itemRepository.createWithId(folderId, ItemType.CLOUD_FOLDER, payloadJson)
+            }
             syncEngine.sync()
             _uiState.update { it.copy(snackbarMessage = "已新建文件夹「${name.trim()}」") }
             refresh()
@@ -267,12 +283,21 @@ class CloudDriveViewModel @Inject constructor(
 
     /**
      * 在内存中收集 [folderId] 的全部子孙 item id（不含 [folderId] 本身）。
-     * 广度优先遍历：加载所有未删除的 CLOUD_FOLDER / CLOUD_FILE，按 parentFolderId
-     * 建立父→子映射，从 [folderId] 向下展开。
+     * 广度优先遍历：加载所有未删除的 CLOUD_FOLDER / CLOUD_FILE。
+     * 兼容两条链路：
+     * - 旧 Android 本地创建项：按 parentFolderId 建立父→子映射；
+     * - 桌面端/服务端生成项：按 relative_path 前缀识别子树。
      */
     private suspend fun collectDescendantIds(folderId: String): List<String> = withContext(Dispatchers.IO) {
         val folders = itemRepository.getByTypeOnce(ItemType.CLOUD_FOLDER)
         val files = itemRepository.getByTypeOnce(ItemType.CLOUD_FILE)
+        val targetFolderPath = normalizeCloudPath(
+            folders.firstOrNull { it.id == folderId && it.deletedTime == null }?.let { entity ->
+                runCatching {
+                    json.decodeFromString<CloudFolderPayload>(entity.payload).relativePath
+                }.getOrNull()
+            }.orEmpty()
+        )
 
         // 建立 parentFolderId -> 子 item id 列表 的映射（同时覆盖文件夹与文件两类）
         val childrenByParent = mutableMapOf<String, MutableList<String>>()
@@ -307,7 +332,30 @@ class CloudDriveViewModel @Inject constructor(
             result.add(current)
             childrenByParent[current]?.let { queue.addAll(it) }
         }
-        result
+
+        if (targetFolderPath.isNotBlank()) {
+            val prefix = "$targetFolderPath/"
+            for (entity in folders) {
+                if (entity.id == folderId || entity.deletedTime != null) continue
+                val payload = runCatching {
+                    json.decodeFromString<CloudFolderPayload>(entity.payload)
+                }.getOrNull() ?: continue
+                if (normalizeCloudPath(payload.relativePath).startsWith(prefix)) {
+                    result.add(entity.id)
+                }
+            }
+            for (entity in files) {
+                if (entity.deletedTime != null) continue
+                val payload = runCatching {
+                    json.decodeFromString<CloudFilePayload>(entity.payload)
+                }.getOrNull() ?: continue
+                if (normalizeCloudPath(payload.relativePath).startsWith(prefix)) {
+                    result.add(entity.id)
+                }
+            }
+        }
+
+        result.distinct()
     }
 
     /**
@@ -388,9 +436,9 @@ class CloudDriveViewModel @Inject constructor(
         }
     }
 
-    fun setFolderLocalAvailability(folderId: String, availability: String) {
+    fun setFolderLocalAvailability(folderId: String, availability: String, relativePath: String = "") {
         viewModelScope.launch {
-            val targetPath = relativeFolderPath(folderId)
+            val targetPath = normalizeCloudPath(relativePath).ifBlank { normalizeCloudPath(relativeFolderPath(folderId)) }
             val files = itemRepository.getByTypeOnce(ItemType.CLOUD_FILE)
             var changed = 0
             for (entity in files) {
@@ -398,7 +446,7 @@ class CloudDriveViewModel @Inject constructor(
                 val payload = runCatching {
                     json.decodeFromString<CloudFilePayload>(entity.payload)
                 }.getOrNull() ?: continue
-                val rel = payload.relativePath
+                val rel = normalizeCloudPath(payload.relativePath)
                 val inFolder = if (targetPath.isBlank()) {
                     true
                 } else {
@@ -510,10 +558,13 @@ class CloudDriveViewModel @Inject constructor(
 
     /**
      * 从本地数据中读取指定文件夹下的所有未删除项，
-     * 按 parent_folder_id 在内存里过滤（DAO 的 getByFolderId 存在 key 不匹配问题）。
+     * 优先按 relative_path 还原目录结构；缺失路径的旧数据再回退到 parent_folder_id。
+     *
+     * 这与桌面端/云服务端页面保持一致：目录展示以 payload.relative_path 为准。
      */
     private suspend fun loadItems(folderId: String): List<CloudDriveItem> = withContext(Dispatchers.IO) {
         val targetParent = folderId
+        val targetFolderPath = normalizeCloudPath(relativeFolderPath(folderId))
         val folders = itemRepository.getByTypeOnce(ItemType.CLOUD_FOLDER)
         val files = itemRepository.getByTypeOnce(ItemType.CLOUD_FILE)
 
@@ -522,17 +573,28 @@ class CloudDriveViewModel @Inject constructor(
             val payload = runCatching {
                 json.decodeFromString<CloudFolderPayload>(entity.payload)
             }.getOrNull() ?: return@mapNotNull null
-            // parent_folder_id 为 null 时视为根目录
-            val belongsToRoot = payload.parentFolderId == null && targetParent == "root"
-            val belongsToFolder = payload.parentFolderId == targetParent
-            if (!belongsToRoot && !belongsToFolder) return@mapNotNull null
+            val explicitPath = normalizeCloudPath(payload.relativePath)
+            val folderRelPath = explicitPath.ifBlank { normalizeCloudPath(payload.name) }
+            val belongsByPath = explicitPath.isNotBlank() &&
+                parentCloudPath(explicitPath) == targetFolderPath
+            val belongsById = when {
+                targetParent == "root" -> payload.parentFolderId == null || payload.parentFolderId == "root"
+                else -> payload.parentFolderId == targetParent
+            }
+            if (explicitPath.isNotBlank()) {
+                if (!belongsByPath) return@mapNotNull null
+            } else if (!belongsById) {
+                return@mapNotNull null
+            }
             CloudDriveItem(
                 entity = entity,
-                name = payload.name.ifBlank { "(未命名文件夹)" },
+                name = payload.name.ifBlank { baseCloudName(folderRelPath).ifBlank { "(未命名文件夹)" } },
                 size = 0L,
                 mimeType = "",
                 mtime = entity.updatedTime,
                 isFolder = true,
+                relativePath = folderRelPath,
+                parentFolderId = payload.parentFolderId,
             )
         }
 
@@ -541,18 +603,28 @@ class CloudDriveViewModel @Inject constructor(
             val payload = runCatching {
                 json.decodeFromString<CloudFilePayload>(entity.payload)
             }.getOrNull() ?: return@mapNotNull null
-            // 文件的 parentFolderId 默认 "root"
-            val belongsToRoot = targetParent == "root" &&
-                (payload.parentFolderId == "root" || payload.parentFolderId.isBlank())
-            val belongsToFolder = payload.parentFolderId == targetParent
-            if (!belongsToRoot && !belongsToFolder) return@mapNotNull null
+            val explicitPath = normalizeCloudPath(payload.relativePath)
+            val fileRelPath = explicitPath.ifBlank { normalizeCloudPath(payload.filename) }
+            val belongsByPath = explicitPath.isNotBlank() &&
+                parentCloudPath(explicitPath) == targetFolderPath
+            val belongsById = when {
+                targetParent == "root" -> payload.parentFolderId == "root" || payload.parentFolderId.isBlank()
+                else -> payload.parentFolderId == targetParent
+            }
+            if (explicitPath.isNotBlank()) {
+                if (!belongsByPath) return@mapNotNull null
+            } else if (!belongsById) {
+                return@mapNotNull null
+            }
             CloudDriveItem(
                 entity = entity,
-                name = payload.filename.ifBlank { "(未命名文件)" },
+                name = payload.filename.ifBlank { baseCloudName(fileRelPath).ifBlank { "(未命名文件)" } },
                 size = payload.size,
                 mimeType = payload.mimeType,
                 mtime = payload.mtime.takeIf { it > 0 } ?: entity.updatedTime,
                 isFolder = false,
+                relativePath = fileRelPath,
+                parentFolderId = payload.parentFolderId,
             )
         }
 
@@ -626,15 +698,21 @@ class CloudDriveViewModel @Inject constructor(
             if (copyErr != null) return@withContext copyErr
 
             // 5. 创建 CLOUD_FILE 记录
+            val cloudFileId = CloudDrivePathIdentity.deriveId(relativePath)
             val payload = CloudFilePayload(
                 filename = filename,
                 mimeType = mimeType,
                 size = target.length().takeIf { it > 0 } ?: size,
-                parentFolderId = parentFolderId,
+                parentFolderId = CloudDrivePathIdentity.deriveParentFolderId(relativePath),
                 relativePath = relativePath,
                 mtime = System.currentTimeMillis(),
             )
-            itemRepository.create(ItemType.CLOUD_FILE, json.encodeToString(payload))
+            val payloadJson = json.encodeToString(payload)
+            if (itemRepository.getById(cloudFileId) != null) {
+                itemRepository.update(cloudFileId, payloadJson)
+            } else {
+                itemRepository.createWithId(cloudFileId, ItemType.CLOUD_FILE, payloadJson)
+            }
             null
         }
 
@@ -646,6 +724,17 @@ class CloudDriveViewModel @Inject constructor(
         if (folderId == "root") return@withContext ""
         // 顺栈查找名字链
         val stack = _uiState.value.stack
+        stack.firstOrNull { it.folderId == folderId && it.relativePath.isNotBlank() }?.let {
+            return@withContext it.relativePath
+        }
+        val folderPayload = itemRepository.getById(folderId)?.let { entity ->
+            runCatching {
+                json.decodeFromString<CloudFolderPayload>(entity.payload)
+            }.getOrNull()
+        }
+        normalizeCloudPath(folderPayload?.relativePath.orEmpty()).takeIf { it.isNotBlank() }?.let {
+            return@withContext it
+        }
         // 栈里每层 name 即目录名；若 folderId 命中栈中某层，则取到那层的路径
         val builder = StringBuilder()
         for (entry in stack) {
@@ -653,8 +742,26 @@ class CloudDriveViewModel @Inject constructor(
             builder.append(entry.name)
             if (entry.folderId == folderId) break
         }
-        builder.toString()
+        normalizeCloudPath(builder.toString())
     }
+
+    private fun normalizeCloudPath(path: String): String =
+        path.replace('\\', '/')
+            .trim()
+            .trim('/')
+            .split('/')
+            .filter { it.isNotBlank() }
+            .joinToString("/")
+
+    private fun parentCloudPath(path: String): String {
+        val normalized = normalizeCloudPath(path)
+        if (normalized.isBlank()) return ""
+        val slash = normalized.lastIndexOf('/')
+        return if (slash < 0) "" else normalized.substring(0, slash)
+    }
+
+    private fun baseCloudName(path: String): String =
+        normalizeCloudPath(path).substringAfterLast('/')
 
     private fun guessMimeFromExtension(filename: String): String {
         val lower = filename.lowercase()

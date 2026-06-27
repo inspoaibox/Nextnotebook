@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mucheng.notes.R
@@ -59,21 +60,30 @@ import com.mucheng.notes.security.LockType
  */
 @Composable
 fun LockScreen(
+    lockSessionId: Int,
     onUnlocked: () -> Unit,
     viewModel: LockScreenViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    BackHandler(enabled = true) {
+        // 锁屏状态下禁止返回键/返回手势绕过验证。
+    }
+
+    LaunchedEffect(lockSessionId) {
+        viewModel.startLockSession(lockSessionId)
+    }
     
     // 设置 Activity 用于生物识别
-    LaunchedEffect(Unit) {
+    LaunchedEffect(lockSessionId) {
         (context as? FragmentActivity)?.let { activity ->
-            viewModel.setActivity(activity)
+            viewModel.setActivity(activity, lockSessionId)
         }
     }
     
     LaunchedEffect(uiState.isUnlocked) {
-        if (uiState.isUnlocked) {
+        if (uiState.isUnlocked && viewModel.isCurrentSessionUnlocked(lockSessionId)) {
             onUnlocked()
         }
     }
@@ -115,14 +125,14 @@ fun LockScreen(
                         error = uiState.error,
                         onPinChange = { viewModel.onPinChange(it) },
                         onBiometricClick = if (uiState.biometricAvailable) {
-                            { viewModel.authenticateWithBiometric() }
+                            { viewModel.authenticateWithBiometric(lockSessionId) }
                         } else null
                     )
                 }
                 LockType.BIOMETRIC -> {
                     BiometricPrompt(
                         error = uiState.error,
-                        onRetry = { viewModel.authenticateWithBiometric() },
+                        onRetry = { viewModel.authenticateWithBiometric(lockSessionId) },
                         onUsePinClick = { viewModel.switchToPinMode() }
                     )
                 }

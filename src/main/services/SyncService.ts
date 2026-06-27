@@ -327,6 +327,16 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       },
     });
 
+    try {
+      // 同步连接建立后补偿网盘启动竞态：初始扫描可能早于 adapter ready。
+      // 此时 retryAll 会把 pending/error 的云盘上传重新入队。
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getCloudDriveScheduler } = require('./CloudDriveScheduler') as typeof import('./CloudDriveScheduler');
+      getCloudDriveScheduler()?.retryAll();
+    } catch (err) {
+      console.warn('[SyncService] 同步连接建立后触发网盘重试失败:', err);
+    }
+
     return true;
   } catch (error) {
     console.error('Failed to initialize sync service:', error);

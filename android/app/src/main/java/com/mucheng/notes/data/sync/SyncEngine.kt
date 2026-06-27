@@ -3,6 +3,7 @@ package com.mucheng.notes.data.sync
 import android.content.Context
 import android.content.SharedPreferences
 import com.mucheng.notes.data.cloud.CloudDriveConfigStore
+import com.mucheng.notes.data.cloud.CloudDriveDirectoryScanner
 import com.mucheng.notes.data.cloud.CloudDriveDownloadManager
 import com.mucheng.notes.data.cloud.CloudDriveUploadManager
 import com.mucheng.notes.data.local.dao.ItemDao
@@ -45,6 +46,7 @@ class SyncEngine @Inject constructor(
     private val cloudDriveDownloadManager: CloudDriveDownloadManager,
     private val cloudDriveUploadManager: CloudDriveUploadManager,
     private val cloudDriveConfigStore: CloudDriveConfigStore,
+    private val cloudDriveDirectoryScanner: CloudDriveDirectoryScanner,
     @ApplicationContext private val context: Context
 ) {
     private val json = Json {
@@ -215,6 +217,20 @@ class SyncEngine @Inject constructor(
         
         try {
             android.util.Log.d("SyncEngine", "Starting sync...")
+
+            if (cfg.type == "server" && cfg.syncModules.cloudDrive) {
+                val scanResult = cloudDriveDirectoryScanner.scanAndReconcile()
+                if (scanResult.error != null) {
+                    android.util.Log.w("SyncEngine", "Cloud drive scan skipped/failed: ${scanResult.error}")
+                } else if (scanResult.changed > 0) {
+                    android.util.Log.d(
+                        "SyncEngine",
+                        "Cloud drive scan reconciled: files=${scanResult.scannedFiles}, " +
+                            "folders=${scanResult.scannedFolders}, changed=${scanResult.changed}, " +
+                            "deleted=${scanResult.deleted}, skipped=${scanResult.skipped}"
+                    )
+                }
+            }
             
             // 1. Push 本地变更
             val pushResult = pushChanges(cfg)
@@ -323,15 +339,29 @@ class SyncEngine @Inject constructor(
                 // 随后我们需要用最新 payload 覆盖待上传快照。
                 var itemToUpload = item.copy(encryptionApplied = 0)
 
-                // 如果是云盘文件类型，先执行二进制分块上传。
+                // 如果是云盘文件类型，先确保服务端已有 item 元数据，再执行二进制分块上传。
+                // 服务端 /api/resources/upload 会校验 item 归属；手机端新文件首次同步时，
+                // 远端还没有该 cloud_file，因此需要先 PUT 一次占位元数据，随后分块完成后
+                // 再 PUT 含真实 file_hash / size / upload_state=completed 的最终元数据。
+                //
                 // 上传管理器内部会：流式读 SAF 文件 → 分块上传 → 服务端合并 →
                 // SHA-256 校验 → 回写 ItemEntity.payload（含真实 file_hash / size /
                 // upload_state=completed）并把 sync_status 置为 "modified"、local_rev+1。
-                // 这是一次"真实变更"，触发的 push 是期望行为（其它端要据此判断是否需要
-                // 下载）。注意：必须在上传成功后用最新 payload 覆盖 itemToUpload，
-                // 否则下面的 putItem 推上去的会是旧的（PENDING、无 file_hash）payload。
+                // 注意：必须在上传成功后用最新 payload 覆盖 itemToUpload，否则下面的
+                // putItem 推上去的会是旧的（PENDING、无 file_hash）payload。
                 if (item.type == "cloud_file" && adapter.hasChunkedUpload()) {
                     try {
+                        if (adapter.getItem(item.id) == null) {
+                            val preflight = adapter.putItem(itemToUpload)
+                            if (preflight.isFailure) {
+                                errors.add(
+                                    "Failed to create remote cloud file metadata for item ${item.id}: " +
+                                        (preflight.exceptionOrNull()?.message ?: "unknown error")
+                                )
+                                continue
+                            }
+                        }
+
                         val payload = json.decodeFromString<CloudFilePayload>(item.payload)
                         val uploadResult = cloudDriveUploadManager.upload(item.id, payload, adapter)
                         if (uploadResult.isFailure) {

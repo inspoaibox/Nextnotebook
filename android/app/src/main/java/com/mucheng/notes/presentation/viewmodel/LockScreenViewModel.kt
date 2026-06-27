@@ -25,6 +25,7 @@ data class LockScreenUiState(
     val error: String? = null,
     val isUnlocked: Boolean = false,
     val biometricAvailable: Boolean = false,
+    val isBiometricAuthenticating: Boolean = false,
     val attempts: Int = 0,
     val pinLength: Int = 4
 )
@@ -49,24 +50,49 @@ class LockScreenViewModel @Inject constructor(
     
     private var activity: FragmentActivity? = null
     private var pinLength: Int = MIN_PIN_LENGTH
+    private var activeLockSessionId: Int? = null
+    private var autoBiometricSessionId: Int? = null
     
     init {
         initializeLockScreen()
+    }
+
+    /**
+     * 每次 Activity 判定需要重新锁定时都会传入新的 sessionId。
+     * ViewModel 会跨 Compose 重建保留，必须在新锁屏会话开始时清掉上一次
+     * 成功解锁留下的 isUnlocked=true，否则重新进入锁屏会被直接放行。
+     */
+    fun startLockSession(sessionId: Int) {
+        if (activeLockSessionId == sessionId) return
+        activeLockSessionId = sessionId
+        autoBiometricSessionId = null
+        initializeLockScreen()
+    }
+
+    fun isCurrentSessionUnlocked(sessionId: Int): Boolean {
+        return activeLockSessionId == sessionId && _uiState.value.isUnlocked
     }
     
     /**
      * 设置 Activity（用于生物识别）
      */
-    fun setActivity(activity: FragmentActivity) {
+    fun setActivity(activity: FragmentActivity, sessionId: Int) {
         this.activity = activity
+        if (activeLockSessionId != sessionId) {
+            startLockSession(sessionId)
+        }
+
         // 如果启用了生物识别且可用，自动触发
         val biometricEnabled = biometricManager.isBiometricEnabled()
         val biometricAvailable = biometricManager.canAuthenticate() == BiometricStatus.AVAILABLE
-        if (biometricEnabled && biometricAvailable) {
+        if (biometricEnabled && biometricAvailable && autoBiometricSessionId != sessionId) {
+            autoBiometricSessionId = sessionId
             // 延迟一点触发，确保 UI 已经准备好
             viewModelScope.launch {
                 kotlinx.coroutines.delay(300)
-                authenticateWithBiometric()
+                if (activeLockSessionId == sessionId && !_uiState.value.isUnlocked) {
+                    authenticateWithBiometric(sessionId)
+                }
             }
         }
     }
@@ -85,7 +111,12 @@ class LockScreenViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 lockType = if (biometricEnabled && biometricAvailable) LockType.BIOMETRIC else lockType,
+                enteredPin = "",
+                error = null,
+                isUnlocked = false,
                 biometricAvailable = biometricAvailable && biometricEnabled,
+                isBiometricAuthenticating = false,
+                attempts = 0,
                 pinLength = pinLength
             )
         }
@@ -159,8 +190,19 @@ class LockScreenViewModel @Inject constructor(
     /**
      * 使用生物识别认证
      */
-    fun authenticateWithBiometric() {
+    fun authenticateWithBiometric(sessionId: Int? = activeLockSessionId) {
+        val lockSessionId = sessionId ?: return
+        if (activeLockSessionId != lockSessionId) return
+        if (_uiState.value.isUnlocked || _uiState.value.isBiometricAuthenticating) return
+
         val currentActivity = activity ?: return
+
+        _uiState.update {
+            it.copy(
+                error = null,
+                isBiometricAuthenticating = true
+            )
+        }
         
         viewModelScope.launch {
             val result = biometricManager.authenticate(
@@ -169,19 +211,41 @@ class LockScreenViewModel @Inject constructor(
                 subtitle = "使用指纹或面部解锁",
                 negativeButtonText = "使用密码"
             )
+
+            if (activeLockSessionId != lockSessionId) {
+                _uiState.update { it.copy(isBiometricAuthenticating = false) }
+                return@launch
+            }
             
             when (result) {
                 is AuthResult.Success -> {
                     appLockManager.recordUnlock()
-                    _uiState.update { it.copy(isUnlocked = true) }
+                    _uiState.update {
+                        it.copy(
+                            isUnlocked = true,
+                            isBiometricAuthenticating = false,
+                            error = null
+                        )
+                    }
                 }
                 is AuthResult.Error -> {
-                    _uiState.update { it.copy(error = result.message) }
+                    _uiState.update {
+                        it.copy(
+                            error = result.message,
+                            isBiometricAuthenticating = false
+                        )
+                    }
                 }
                 is AuthResult.Cancelled -> {
-                    // 用户取消，不做处理
+                    _uiState.update {
+                        it.copy(
+                            error = null,
+                            isBiometricAuthenticating = false
+                        )
+                    }
                 }
                 is AuthResult.Fallback -> {
+                    _uiState.update { it.copy(isBiometricAuthenticating = false) }
                     // 用户选择使用密码
                     switchToPinMode()
                 }
@@ -197,7 +261,8 @@ class LockScreenViewModel @Inject constructor(
             it.copy(
                 lockType = LockType.PIN,
                 enteredPin = "",
-                error = null
+                error = null,
+                isBiometricAuthenticating = false
             )
         }
     }
