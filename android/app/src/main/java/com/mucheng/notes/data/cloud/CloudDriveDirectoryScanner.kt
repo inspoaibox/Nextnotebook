@@ -200,7 +200,7 @@ class CloudDriveDirectoryScanner @Inject constructor(
         val mtime = file.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis()
         val existingPayload = existing
             ?.takeIf { it.type == ItemType.CLOUD_FILE.value && it.deletedTime == null }
-            ?.let { runCatching { json.decodeFromString<CloudFilePayload>(it.payload) }.getOrNull() }
+            ?.let { runCatching { CloudFilePayload.fromJson(json, it.payload) }.getOrNull() }
         val localRecord = localPathDao.getByCloudFileId(id)
 
         val downloadedCacheUnchanged = existing != null &&
@@ -324,7 +324,7 @@ class CloudDriveDirectoryScanner @Inject constructor(
         val activeFilesByPath = activeFiles.associateBy { entity ->
             runCatching {
                 CloudDrivePathIdentity.normalize(
-                    json.decodeFromString<CloudFilePayload>(entity.payload).relativePath
+                    CloudFilePayload.fromJson(json, entity.payload).relativePath
                 )
             }.getOrDefault("")
         }.filterKeys { it.isNotBlank() }
@@ -361,7 +361,7 @@ class CloudDriveDirectoryScanner @Inject constructor(
                 val prefix = "$relPath/"
                 for (file in activeFiles) {
                     val payload = runCatching {
-                        json.decodeFromString<CloudFilePayload>(file.payload)
+                        CloudFilePayload.fromJson(json, file.payload)
                     }.getOrNull() ?: continue
                     if (CloudDrivePathIdentity.normalize(payload.relativePath).startsWith(prefix)) {
                         localPathDao.delete(file.id)
@@ -383,7 +383,7 @@ class CloudDriveDirectoryScanner @Inject constructor(
                 }
                 for (file in activeFiles) {
                     val payload = runCatching {
-                        json.decodeFromString<CloudFilePayload>(file.payload)
+                        CloudFilePayload.fromJson(json, file.payload)
                     }.getOrNull() ?: continue
                     if (CloudDrivePathIdentity.normalize(payload.relativePath).startsWith(prefix)) {
                         idsToDelete.add(file.id)
@@ -410,7 +410,7 @@ class CloudDriveDirectoryScanner @Inject constructor(
         for (file in activeFiles) {
             if (file.deletedTime != null || file.type != ItemType.CLOUD_FILE.value) continue
             val payload = runCatching {
-                json.decodeFromString<CloudFilePayload>(file.payload)
+                CloudFilePayload.fromJson(json, file.payload)
             }.getOrNull() ?: continue
             if (!CloudDrivePathIdentity.normalize(payload.relativePath).startsWith(prefix)) continue
             hasDescendantFile = true
@@ -423,7 +423,7 @@ class CloudDriveDirectoryScanner @Inject constructor(
         val files = itemDao.getByTypeOnce(ItemType.CLOUD_FILE.value).mapNotNull { entity ->
             val relPath = runCatching {
                 CloudDrivePathIdentity.normalize(
-                    json.decodeFromString<CloudFilePayload>(entity.payload).relativePath
+                    CloudFilePayload.fromJson(json, entity.payload).relativePath
                 )
             }.getOrNull().orEmpty()
             relPath.takeIf { it.isNotBlank() }?.let { it to entity }

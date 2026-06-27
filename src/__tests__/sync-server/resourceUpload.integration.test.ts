@@ -206,6 +206,14 @@ describe('POST /upload + PUT /chunk + GET /status + POST /complete 全链路', (
     expect(complete.body.size).toBe(600);
     expect(complete.body.sha256).toBe(sha256OfChunks(chunks));
     expect(complete.body.location).toBe(`${ITEM_ID}.bin`);
+
+    const probe = await request(app)
+      .get(`/api/resources/${ITEM_ID}`)
+      .set(authHeader(token.accessToken))
+      .set('Range', 'bytes=0-0');
+    expect(probe.status).toBe(206);
+    expect(probe.headers['content-range']).toBe('bytes 0-0/600');
+    expect(probe.headers['content-type']).toContain('application/octet-stream');
   });
 
   it('重复上传同一分块返回 duplicate=true（幂等）', async () => {

@@ -322,7 +322,7 @@ class CloudDriveViewModel @Inject constructor(
         for (entity in files) {
             if (entity.deletedTime != null) continue
             val payload = runCatching {
-                json.decodeFromString<CloudFilePayload>(entity.payload)
+                CloudFilePayload.fromJson(json, entity.payload)
             }.getOrNull() ?: continue
             val parent = payload.parentFolderId
             if (parent.isNotBlank()) {
@@ -355,7 +355,7 @@ class CloudDriveViewModel @Inject constructor(
             for (entity in files) {
                 if (entity.deletedTime != null) continue
                 val payload = runCatching {
-                    json.decodeFromString<CloudFilePayload>(entity.payload)
+                    CloudFilePayload.fromJson(json, entity.payload)
                 }.getOrNull() ?: continue
                 if (normalizeCloudPath(payload.relativePath).startsWith(prefix)) {
                     result.add(entity.id)
@@ -389,7 +389,7 @@ class CloudDriveViewModel @Inject constructor(
         val item = itemRepository.getById(itemId) ?: return
         val payload = runCatching {
             when (item.type) {
-                ItemType.CLOUD_FILE.value -> json.decodeFromString<CloudFilePayload>(item.payload)
+                ItemType.CLOUD_FILE.value -> CloudFilePayload.fromJson(json, item.payload)
                 ItemType.CLOUD_FOLDER.value -> json.decodeFromString<CloudFolderPayload>(item.payload)
                 else -> null
             }
@@ -505,7 +505,7 @@ class CloudDriveViewModel @Inject constructor(
             for (entity in files) {
                 if (entity.deletedTime != null) continue
                 val payload = runCatching {
-                    json.decodeFromString<CloudFilePayload>(entity.payload)
+                    CloudFilePayload.fromJson(json, entity.payload)
                 }.getOrNull() ?: continue
                 val rel = normalizeCloudPath(payload.relativePath)
                 val inFolder = if (targetPath.isBlank()) {
@@ -571,7 +571,7 @@ class CloudDriveViewModel @Inject constructor(
             return@withContext
         }
         val item = itemRepository.getById(cloudFileId)
-        val payload = item?.let { runCatching { json.decodeFromString<CloudFilePayload>(it.payload) }.getOrNull() }
+        val payload = item?.let { runCatching { CloudFilePayload.fromJson(json, it.payload) }.getOrNull() }
         val filename = payload?.filename.orEmpty()
         val mimeType = payload?.mimeType.takeIf { !it.isNullOrBlank() } ?: "application/octet-stream"
         val isApk = mimeType == "application/vnd.android.package-archive" ||
@@ -628,12 +628,15 @@ class CloudDriveViewModel @Inject constructor(
         val targetFolderPath = normalizeCloudPath(relativeFolderPath(folderId))
         val folders = itemRepository.getByTypeOnce(ItemType.CLOUD_FOLDER)
         val files = itemRepository.getByTypeOnce(ItemType.CLOUD_FILE)
+        var parsedFolders = 0
+        var parsedFiles = 0
 
         val folderItems = folders.mapNotNull { entity ->
             if (entity.deletedTime != null) return@mapNotNull null
             val payload = runCatching {
                 json.decodeFromString<CloudFolderPayload>(entity.payload)
             }.getOrNull() ?: return@mapNotNull null
+            parsedFolders++
             val explicitPath = normalizeCloudPath(payload.relativePath)
             val folderRelPath = explicitPath.ifBlank { normalizeCloudPath(payload.name) }
             val belongsByPath = explicitPath.isNotBlank() &&
@@ -662,8 +665,9 @@ class CloudDriveViewModel @Inject constructor(
         val fileItems = files.mapNotNull { entity ->
             if (entity.deletedTime != null) return@mapNotNull null
             val payload = runCatching {
-                json.decodeFromString<CloudFilePayload>(entity.payload)
+                CloudFilePayload.fromJson(json, entity.payload)
             }.getOrNull() ?: return@mapNotNull null
+            parsedFiles++
             val explicitPath = normalizeCloudPath(payload.relativePath)
             val fileRelPath = explicitPath.ifBlank { normalizeCloudPath(payload.filename) }
             val belongsByPath = explicitPath.isNotBlank() &&
@@ -686,6 +690,25 @@ class CloudDriveViewModel @Inject constructor(
                 isFolder = false,
                 relativePath = fileRelPath,
                 parentFolderId = payload.parentFolderId,
+            )
+        }
+
+        android.util.Log.d(
+            "CloudDriveViewModel",
+            "loadItems folderId=$folderId targetPath='$targetFolderPath' " +
+                "folders=${folders.size}/$parsedFolders matched=${folderItems.size}, " +
+                "files=${files.size}/$parsedFiles matched=${fileItems.size}"
+        )
+        if (fileItems.isEmpty() && parsedFiles > 0) {
+            val sample = files.asSequence().mapNotNull { entity ->
+                runCatching {
+                    val payload = CloudFilePayload.fromJson(json, entity.payload)
+                    "${payload.filename}@${normalizeCloudPath(payload.relativePath)} parent=${payload.parentFolderId}"
+                }.getOrNull()
+            }.take(5).joinToString(" | ")
+            android.util.Log.w(
+                "CloudDriveViewModel",
+                "No files matched current folder. sampleCloudFiles=$sample"
             )
         }
 

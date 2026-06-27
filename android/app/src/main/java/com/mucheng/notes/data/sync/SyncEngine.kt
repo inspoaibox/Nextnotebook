@@ -21,6 +21,7 @@ import com.mucheng.notes.data.remote.ServerAdapterImpl
 import com.mucheng.notes.domain.model.ItemType
 import com.mucheng.notes.domain.model.SyncConfig
 import com.mucheng.notes.domain.model.SyncModuleTypes
+import com.mucheng.notes.domain.model.SyncModules
 import com.mucheng.notes.domain.model.SyncResult
 import com.mucheng.notes.domain.model.payload.CloudFilePayload
 import com.mucheng.notes.domain.model.payload.CloudFolderPayload
@@ -288,12 +289,30 @@ class SyncEngine @Inject constructor(
         val adapter = getAdapter()
         return try {
             var count = 0
+            var skippedLocalModified = 0
+            var skippedPendingDelete = 0
+            var restoredPendingDelete = 0
             val remoteItems = adapter.listAllItems()
                 .filter { it.type == ItemType.CLOUD_FILE.value || it.type == ItemType.CLOUD_FOLDER.value }
+            val remoteFolders = remoteItems.count { it.type == ItemType.CLOUD_FOLDER.value }
+            val remoteFiles = remoteItems.count { it.type == ItemType.CLOUD_FILE.value }
 
             for (remoteItem in remoteItems) {
                 val localItem = itemDao.getById(remoteItem.id)
-                if (localItem?.syncStatus == "modified" || localItem?.syncStatus == "deleted") {
+                if (localItem?.syncStatus == "modified") {
+                    skippedLocalModified++
+                    continue
+                }
+
+                if (localItem?.syncStatus == "deleted") {
+                    val localDeleteTime = localItem.deletedTime ?: localItem.updatedTime
+                    if (remoteItem.deletedTime == null && remoteItem.updatedTime > localDeleteTime) {
+                        itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                        count++
+                        restoredPendingDelete++
+                    } else {
+                        skippedPendingDelete++
+                    }
                     continue
                 }
 
@@ -313,9 +332,12 @@ class SyncEngine @Inject constructor(
                     count++
                 }
             }
-            if (count > 0) {
-                android.util.Log.d("SyncEngine", "Cloud drive metadata backfilled: $count")
-            }
+            android.util.Log.d(
+                "SyncEngine",
+                "Cloud drive metadata backfill: remoteFolders=$remoteFolders, remoteFiles=$remoteFiles, " +
+                    "upserted=$count, restoredPendingDelete=$restoredPendingDelete, " +
+                    "skippedModified=$skippedLocalModified, skippedPendingDelete=$skippedPendingDelete"
+            )
             count
         } catch (e: Exception) {
             android.util.Log.w("SyncEngine", "Cloud drive metadata backfill skipped: ${e.message}")
@@ -330,7 +352,8 @@ class SyncEngine @Inject constructor(
      * 下载管理器与适配器解析逻辑，避免向调用方暴露 [getAdapter]。
      */
     suspend fun downloadCloudFile(cloudFileId: String): Result<Unit> = withContext(Dispatchers.IO) {
-        val cfg = config ?: return@withContext Result.failure(IllegalStateException("同步未配置"))
+        val cfg = ensureConfiguredFromStoredSettings()
+            ?: return@withContext Result.failure(IllegalStateException("同步未配置"))
 
         if (!cfg.enabled) {
             return@withContext Result.failure(IllegalStateException("同步已禁用"))
@@ -347,11 +370,55 @@ class SyncEngine @Inject constructor(
             }
             val item = itemDao.getById(cloudFileId)
                 ?: return@withContext Result.failure(IllegalStateException("文件不存在"))
-            val payload = json.decodeFromString<CloudFilePayload>(item.payload)
+            val payload = CloudFilePayload.fromJson(json, item.payload)
             cloudDriveDownloadManager.download(cloudFileId, payload, adapter)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private suspend fun ensureConfiguredFromStoredSettings(): SyncConfig? {
+        val current = config
+        if (current != null && (current.type != "server" || serverAdapter != null)) {
+            return current
+        }
+
+        val loaded = loadSyncConfigFromPreferences() ?: return null
+        setConfig(loaded)
+        return loaded
+    }
+
+    private fun loadSyncConfigFromPreferences(): SyncConfig? {
+        val appPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        val syncEnabled = appPrefs.getBoolean("sync_enabled", false)
+        val syncType = appPrefs.getString("sync_type", "webdav") ?: "webdav"
+        val webdavUrl = appPrefs.getString("webdav_url", "") ?: ""
+        if (webdavUrl.isBlank()) return null
+
+        return SyncConfig(
+            enabled = syncEnabled,
+            type = syncType,
+            url = webdavUrl,
+            syncPath = appPrefs.getString("sync_path", "/mucheng-notes") ?: "/mucheng-notes",
+            username = appPrefs.getString("username", null),
+            password = SecureSyncStorage.getString(context, "password"),
+            apiKey = appPrefs.getString("api_key", null),
+            syncModules = SyncModules(
+                notes = appPrefs.getBoolean("sync_notes", true),
+                bookmarks = appPrefs.getBoolean("sync_bookmarks", true),
+                vault = appPrefs.getBoolean("sync_vault", true),
+                diagrams = appPrefs.getBoolean("sync_diagrams", true),
+                todos = appPrefs.getBoolean("sync_todos", true),
+                ai = appPrefs.getBoolean("sync_ai", true),
+                cloudDrive = appPrefs.getBoolean("sync_cloud_drive", true),
+            ),
+            serverUsername = appPrefs.getString("server_username", null),
+            serverPassword = SecureSyncStorage.getString(context, "server_password"),
+            serverSyncKey = SecureSyncStorage.getString(context, "server_sync_key"),
+            serverToken = SecureSyncStorage.getString(context, "server_token"),
+            serverRefreshToken = SecureSyncStorage.getString(context, "server_refresh_token"),
+            serverTokenExpires = SecureSyncStorage.getLong(context, "server_token_expires")?.takeIf { it > 0 },
+        )
     }
     
     /**
@@ -368,6 +435,13 @@ class SyncEngine @Inject constructor(
         val errors = mutableListOf<String>()
         for (item in pendingItems) {
             if (item.syncStatus == "deleted") {
+                if ((item.type == ItemType.CLOUD_FILE.value || item.type == ItemType.CLOUD_FOLDER.value) &&
+                    shouldRestoreRemoteCloudItemInsteadOfDeleting(item, adapter)
+                ) {
+                    count++
+                    continue
+                }
+
                 // 删除远端项目
                 if (adapter.deleteItem(item.id)) {
                     // 如果是资源类型，同时删除远端资源文件
@@ -424,7 +498,7 @@ class SyncEngine @Inject constructor(
                             }
                         }
 
-                        val payload = json.decodeFromString<CloudFilePayload>(item.payload)
+                        val payload = CloudFilePayload.fromJson(json, item.payload)
                         val uploadResult = cloudDriveUploadManager.upload(item.id, payload, adapter)
                         if (uploadResult.isFailure) {
                             val cause = uploadResult.exceptionOrNull()?.message ?: "unknown error"
@@ -497,6 +571,34 @@ class SyncEngine @Inject constructor(
         }
         
         return PushResult(count, errors)
+    }
+
+    private suspend fun shouldRestoreRemoteCloudItemInsteadOfDeleting(
+        localDeletedItem: ItemEntity,
+        adapter: WebDAVAdapter
+    ): Boolean {
+        val localDeleteTime = localDeletedItem.deletedTime ?: localDeletedItem.updatedTime
+        val remoteItem = try {
+            adapter.getItem(localDeletedItem.id)
+        } catch (e: Exception) {
+            android.util.Log.w(
+                "SyncEngine",
+                "Skip stale cloud delete check for ${localDeletedItem.id}: ${e.message}"
+            )
+            null
+        }
+
+        if (remoteItem == null || remoteItem.deletedTime != null) return false
+        if (remoteItem.updatedTime <= localDeleteTime) return false
+
+        itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+        android.util.Log.w(
+            "SyncEngine",
+            "Restored cloud item from newer remote before pushing stale delete: " +
+                "id=${localDeletedItem.id}, type=${localDeletedItem.type}, " +
+                "remoteUpdated=${remoteItem.updatedTime}, localDelete=$localDeleteTime"
+        )
+        return true
     }
     
     /**
@@ -628,7 +730,7 @@ class SyncEngine @Inject constructor(
                             adapter.hasRangeDownload()
                         ) {
                             try {
-                                val payload = json.decodeFromString<CloudFilePayload>(remoteItem.payload)
+                                val payload = CloudFilePayload.fromJson(json, remoteItem.payload)
                                 val downloadResult = cloudDriveDownloadManager.download(
                                     remoteItem.id, payload, adapter
                                 )
@@ -759,7 +861,7 @@ class SyncEngine @Inject constructor(
                     adapter.hasRangeDownload()
                 ) {
                     try {
-                        val payload = json.decodeFromString<CloudFilePayload>(remoteItem.payload)
+                        val payload = CloudFilePayload.fromJson(json, remoteItem.payload)
                         val downloadResult = cloudDriveDownloadManager.download(
                             remoteItem.id, payload, adapter
                         )
@@ -847,7 +949,7 @@ class SyncEngine @Inject constructor(
         }
         val files = itemDao.getByTypeOnce(ItemType.CLOUD_FILE.value).filter { item ->
             runCatching {
-                CloudDrivePathIdentity.normalize(json.decodeFromString<CloudFilePayload>(item.payload).relativePath)
+                CloudDrivePathIdentity.normalize(CloudFilePayload.fromJson(json, item.payload).relativePath)
             }.getOrDefault("").startsWith(prefix)
         }
 
@@ -872,7 +974,7 @@ class SyncEngine @Inject constructor(
         if (item.type != ItemType.CLOUD_FILE.value) return
 
         val payload = runCatching {
-            json.decodeFromString<CloudFilePayload>(item.payload)
+            CloudFilePayload.fromJson(json, item.payload)
         }.getOrNull()
         val record = cloudFileLocalPathDao.getByCloudFileId(item.id)
         if (record != null) {

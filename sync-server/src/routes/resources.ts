@@ -118,7 +118,7 @@ router.get('/:id', (req, res, next) => {
     }
 
     const totalSize = stat.size;
-    const contentType = getMimeType(req.params.id);
+    const contentType = getMimeType(path.basename(filePath));
     if (req.query.download === '1') {
       const filename = typeof req.query.filename === 'string' ? req.query.filename : req.params.id;
       res.setHeader('Content-Disposition', contentDispositionAttachment(filename));

@@ -53,6 +53,46 @@ export class ResourceService {
     return path.join(dir, id);
   }
 
+  private getResourceDirsForId(id: string): string[] {
+    const subDir = id.substring(0, 2);
+    const dirs: string[] = [];
+    if (this.userId) {
+      dirs.push(path.join(this.resourceDir, 'users', this.userId, subDir));
+    }
+    dirs.push(path.join(this.resourceDir, subDir));
+    dirs.push(path.join(this.resourceDir, 'shared', subDir));
+    return Array.from(new Set(dirs));
+  }
+
+  private findExistingResourcePath(id: string): string | null {
+    for (const dir of this.getResourceDirsForId(id)) {
+      const exactPath = path.join(dir, id);
+      if (fs.existsSync(exactPath)) {
+        return exactPath;
+      }
+
+      if (!fs.existsSync(dir)) {
+        continue;
+      }
+
+      const candidates = fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((entry) =>
+          entry.isFile() &&
+          entry.name.startsWith(`${id}.`) &&
+          !entry.name.includes('.assembling.')
+        )
+        .map((entry) => path.join(dir, entry.name))
+        .sort();
+
+      if (candidates.length > 0) {
+        return candidates[0];
+      }
+    }
+
+    return null;
+  }
+
   private getItemIdFromResourceName(id: string): string {
     const ext = path.extname(id);
     return ext ? id.slice(0, -ext.length) : id;
@@ -144,26 +184,7 @@ export class ResourceService {
       return null;
     }
 
-    // 首先尝试用户目录
-    const userPath = this.getResourcePath(id);
-    if (fs.existsSync(userPath)) {
-      return userPath;
-    }
-
-    // 向后兼容：尝试旧的共享目录结构
-    const subDir = id.substring(0, 2);
-    const legacyPath = path.join(this.resourceDir, subDir, id);
-    if (fs.existsSync(legacyPath)) {
-      return legacyPath;
-    }
-
-    // 尝试 shared 目录
-    const sharedPath = path.join(this.resourceDir, 'shared', subDir, id);
-    if (fs.existsSync(sharedPath)) {
-      return sharedPath;
-    }
-
-    return null;
+    return this.findExistingResourcePath(id);
   }
 
   // 保存资源文件
@@ -183,29 +204,10 @@ export class ResourceService {
       return false;
     }
 
-    // 首先尝试用户目录
-    const userPath = this.getResourcePath(id);
-    if (fs.existsSync(userPath)) {
-      fs.unlinkSync(userPath);
-      return true;
-    }
-
-    // 向后兼容：尝试旧的共享目录结构
-    const subDir = id.substring(0, 2);
-    const legacyPath = path.join(this.resourceDir, subDir, id);
-    if (fs.existsSync(legacyPath)) {
-      fs.unlinkSync(legacyPath);
-      return true;
-    }
-
-    // 尝试 shared 目录
-    const sharedPath = path.join(this.resourceDir, 'shared', subDir, id);
-    if (fs.existsSync(sharedPath)) {
-      fs.unlinkSync(sharedPath);
-      return true;
-    }
-
-    return false;
+    const filePath = this.findExistingResourcePath(id);
+    if (!filePath) return false;
+    fs.unlinkSync(filePath);
+    return true;
   }
 
   // 获取存储统计
