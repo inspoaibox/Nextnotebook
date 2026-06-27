@@ -125,6 +125,7 @@ fun MainApp(
     onUnlock: () -> Unit,
     settingsViewModel: SettingsViewModel
 ) {
+    val navController = rememberNavController()
     if (isLocked) {
         LockScreen(
             lockSessionId = lockSessionId,
@@ -133,7 +134,6 @@ fun MainApp(
             }
         )
     } else {
-        val navController = rememberNavController()
         // 直接使用 MainNavigation，传入共享的 SettingsViewModel
         MainNavigation(navController = navController, settingsViewModel = settingsViewModel)
     }

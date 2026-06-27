@@ -27,14 +27,17 @@ import com.mucheng.notes.data.cloud.CloudDriveUploadManager
 import com.mucheng.notes.data.cloud.CloudDownloadProgress
 import com.mucheng.notes.data.cloud.CloudUploadProgress
 import com.mucheng.notes.data.local.dao.CloudFileLocalPathDao
+import com.mucheng.notes.data.local.entity.CloudFileLocalPathEntity
 import com.mucheng.notes.data.local.entity.CloudLocalAvailabilityValues
 import com.mucheng.notes.data.local.entity.ItemEntity
 import com.mucheng.notes.data.sync.SyncEngine
 import com.mucheng.notes.domain.model.ItemType
 import com.mucheng.notes.domain.model.SyncResult
+import com.mucheng.notes.domain.model.payload.CloudDownloadState
 import com.mucheng.notes.domain.model.payload.CloudFilePayload
 import com.mucheng.notes.domain.model.payload.CloudFolderPayload
 import com.mucheng.notes.domain.repository.ItemRepository
+import com.mucheng.notes.domain.repository.SyncRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -100,6 +103,7 @@ class CloudDriveViewModel @Inject constructor(
     application: Application,
     private val syncEngine: SyncEngine,
     private val itemRepository: ItemRepository,
+    private val syncRepository: SyncRepository,
     private val configStore: CloudDriveConfigStore,
     private val folderPicker: CloudDriveFolderPicker,
     private val uploadManager: CloudDriveUploadManager,
@@ -212,7 +216,7 @@ class CloudDriveViewModel @Inject constructor(
 
             // 有新增 → 触发同步
             if (successCount > 0) {
-                val result = syncEngine.sync()
+                val result = syncRepository.sync()
                 _uiState.update { it.copy(syncError = result.error) }
             }
 
@@ -246,7 +250,7 @@ class CloudDriveViewModel @Inject constructor(
             } else {
                 itemRepository.createWithId(folderId, ItemType.CLOUD_FOLDER, payloadJson)
             }
-            syncEngine.sync()
+            syncRepository.sync()
             _uiState.update { it.copy(snackbarMessage = "已新建文件夹「${name.trim()}」") }
             refresh()
         }
@@ -275,7 +279,7 @@ class CloudDriveViewModel @Inject constructor(
                     itemRepository.softDelete(targetId)
                 }
             }
-            syncEngine.sync()
+            syncRepository.sync()
             _uiState.update { it.copy(snackbarMessage = "已删除") }
             refresh()
         }
@@ -366,18 +370,71 @@ class CloudDriveViewModel @Inject constructor(
      * 仅对 cloud_file 生效；cloud_folder 与其它类型直接跳过。
      */
     private suspend fun cleanupLocalCloudArtifacts(itemId: String) {
-        val item = itemRepository.getById(itemId) ?: return
-        if (item.type != ItemType.CLOUD_FILE.value) return
+        deleteLocalCloudDocument(itemId, removeSideTable = true)
+    }
 
+    private suspend fun releaseLocalCloudArtifacts(itemId: String) {
+        deleteLocalCloudDocument(itemId, removeSideTable = false)
         val record = localPathDao.getByCloudFileId(itemId)
         if (record != null) {
-            runCatching {
-                DocumentFile.fromSingleUri(getApplication(), Uri.parse(record.documentUri))
-                    ?.takeIf { it.exists() }
-                    ?.delete()
-            }
-            localPathDao.delete(itemId)
+            localPathDao.updateAvailability(itemId, CloudLocalAvailabilityValues.ONLINE_ONLY)
         }
+    }
+
+    private suspend fun deleteLocalCloudDocument(itemId: String, removeSideTable: Boolean) {
+        val item = itemRepository.getById(itemId) ?: return
+        val payload = runCatching {
+            when (item.type) {
+                ItemType.CLOUD_FILE.value -> json.decodeFromString<CloudFilePayload>(item.payload)
+                ItemType.CLOUD_FOLDER.value -> json.decodeFromString<CloudFolderPayload>(item.payload)
+                else -> null
+            }
+        }.getOrNull()
+
+        when (item.type) {
+            ItemType.CLOUD_FILE.value -> {
+                val record = localPathDao.getByCloudFileId(itemId)
+                if (record != null) {
+                    runCatching {
+                        DocumentFile.fromSingleUri(getApplication(), Uri.parse(record.documentUri))
+                            ?.takeIf { it.exists() }
+                            ?.delete()
+                    }
+                    if (removeSideTable) {
+                        localPathDao.delete(itemId)
+                    }
+                }
+
+                val relativePath = normalizeCloudPath((payload as? CloudFilePayload)?.relativePath.orEmpty())
+                if (relativePath.isNotBlank()) {
+                    runCatching {
+                        folderPicker.findRelativeDocumentFile(relativePath)
+                            ?.takeIf { it.exists() && it.isFile }
+                            ?.delete()
+                    }
+                }
+            }
+
+            ItemType.CLOUD_FOLDER.value -> {
+                val relativePath = normalizeCloudPath((payload as? CloudFolderPayload)?.relativePath.orEmpty())
+                if (relativePath.isNotBlank()) {
+                    runCatching {
+                        folderPicker.findRelativeDocumentFile(relativePath)
+                            ?.takeIf { it.exists() && it.isDirectory }
+                            ?.let { deleteDocumentTree(it) }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun deleteDocumentTree(file: DocumentFile) {
+        if (file.isDirectory) {
+            file.listFiles().forEach { child ->
+                deleteDocumentTree(child)
+            }
+        }
+        runCatching { file.delete() }
     }
 
     private suspend fun refreshLocalAvailability() = withContext(Dispatchers.IO) {
@@ -406,7 +463,7 @@ class CloudDriveViewModel @Inject constructor(
         viewModelScope.launch {
             when (availability) {
                 CloudLocalAvailabilityValues.ONLINE_ONLY -> {
-                    cleanupLocalCloudArtifacts(cloudFileId)
+                    releaseLocalCloudArtifacts(cloudFileId)
                     _uiState.update { it.copy(snackbarMessage = "已释放本地空间") }
                 }
                 CloudLocalAvailabilityValues.LOCAL,
@@ -455,7 +512,7 @@ class CloudDriveViewModel @Inject constructor(
                 if (!inFolder) continue
                 when (availability) {
                     CloudLocalAvailabilityValues.ONLINE_ONLY -> {
-                        cleanupLocalCloudArtifacts(entity.id)
+                        releaseLocalCloudArtifacts(entity.id)
                         changed++
                     }
                     CloudLocalAvailabilityValues.LOCAL,
@@ -713,6 +770,18 @@ class CloudDriveViewModel @Inject constructor(
             } else {
                 itemRepository.createWithId(cloudFileId, ItemType.CLOUD_FILE, payloadJson)
             }
+            localPathDao.upsert(
+                CloudFileLocalPathEntity(
+                    cloudFileId = cloudFileId,
+                    documentUri = target.uri.toString(),
+                    relativePath = relativePath,
+                    downloadedSize = payload.size,
+                    state = CloudDownloadState.COMPLETED.value,
+                    fileHashVerified = null,
+                    downloadedAt = payload.mtime,
+                    availability = CloudLocalAvailabilityValues.LOCAL,
+                )
+            )
             null
         }
 

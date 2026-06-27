@@ -108,6 +108,23 @@ class CloudDriveFolderPicker @Inject constructor(
         return buildRelative(root, relativePath)
     }
 
+    /**
+     * 在根目录下按相对路径查找文件/目录，不创建任何中间目录或目标文件。
+     */
+    fun findRelativeDocumentFile(relativePath: String): DocumentFile? {
+        val root = resolveRootDocumentFile() ?: return null
+        if (relativePath.isBlank() || relativePath == "/") return null
+        val normalized = relativePath.trimStart('/').trimEnd('/')
+        val parts = normalized.split('/').filter { it.isNotBlank() }
+        if (parts.isEmpty()) return null
+
+        var current = root
+        for (part in parts) {
+            current = current.findFile(part) ?: return null
+        }
+        return current
+    }
+
     private fun buildRelative(root: DocumentFile, relativePath: String): DocumentFile? {
         if (relativePath.isBlank() || relativePath == "/") {
             // 不应出现空相对路径写入文件；返回根目录让上层报错

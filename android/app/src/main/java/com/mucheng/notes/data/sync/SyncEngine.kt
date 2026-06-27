@@ -2,10 +2,15 @@ package com.mucheng.notes.data.sync
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import com.mucheng.notes.data.cloud.CloudDriveConfigStore
 import com.mucheng.notes.data.cloud.CloudDriveDirectoryScanner
 import com.mucheng.notes.data.cloud.CloudDriveDownloadManager
+import com.mucheng.notes.data.cloud.CloudDriveFolderPicker
+import com.mucheng.notes.data.cloud.CloudDrivePathIdentity
 import com.mucheng.notes.data.cloud.CloudDriveUploadManager
+import com.mucheng.notes.data.local.dao.CloudFileLocalPathDao
 import com.mucheng.notes.data.local.dao.ItemDao
 import com.mucheng.notes.data.local.dao.ResourceCacheDao
 import com.mucheng.notes.data.local.entity.ItemEntity
@@ -18,6 +23,7 @@ import com.mucheng.notes.domain.model.SyncConfig
 import com.mucheng.notes.domain.model.SyncModuleTypes
 import com.mucheng.notes.domain.model.SyncResult
 import com.mucheng.notes.domain.model.payload.CloudFilePayload
+import com.mucheng.notes.domain.model.payload.CloudFolderPayload
 import com.mucheng.notes.domain.model.payload.ResourcePayload
 import com.mucheng.notes.security.SecureSyncStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -47,6 +53,8 @@ class SyncEngine @Inject constructor(
     private val cloudDriveUploadManager: CloudDriveUploadManager,
     private val cloudDriveConfigStore: CloudDriveConfigStore,
     private val cloudDriveDirectoryScanner: CloudDriveDirectoryScanner,
+    private val cloudDriveFolderPicker: CloudDriveFolderPicker,
+    private val cloudFileLocalPathDao: CloudFileLocalPathDao,
     @ApplicationContext private val context: Context
 ) {
     private val json = Json {
@@ -219,6 +227,8 @@ class SyncEngine @Inject constructor(
             android.util.Log.d("SyncEngine", "Starting sync...")
 
             if (cfg.type == "server" && cfg.syncModules.cloudDrive) {
+                pulled += backfillCloudDriveMetadata(cfg)
+
                 val scanResult = cloudDriveDirectoryScanner.scanAndReconcile()
                 if (scanResult.error != null) {
                     android.util.Log.w("SyncEngine", "Cloud drive scan skipped/failed: ${scanResult.error}")
@@ -234,13 +244,17 @@ class SyncEngine @Inject constructor(
             
             // 1. Push 本地变更
             val pushResult = pushChanges(cfg)
-            pushed = pushResult.count
+            pushed += pushResult.count
             errors.addAll(pushResult.errors)
             
             // 2. Pull 远端变更
             val pullResult = pullChanges(cfg)
-            pulled = pullResult.count
+            pulled += pullResult.count
             conflicts = pullResult.conflicts
+
+            if (cfg.type == "server" && cfg.syncModules.cloudDrive) {
+                pulled += backfillCloudDriveMetadata(cfg)
+            }
             
             android.util.Log.d("SyncEngine", "Sync completed: pushed=$pushed, pulled=$pulled, conflicts=$conflicts")
             
@@ -259,6 +273,53 @@ class SyncEngine @Inject constructor(
                 error = e.message ?: "同步失败",
                 duration = System.currentTimeMillis() - startTime
             )
+        }
+    }
+
+    /**
+     * 网盘元数据补全。
+     *
+     * 普通增量同步依赖全局 cursor；如果某台手机在网盘模块启用前已经推进过 cursor，
+     * 云端既有的 cloud_file/cloud_folder 不会再次出现在 /api/changes 中。这里从
+     * /api/items/all 只补齐网盘元数据，不下载二进制，也不覆盖本地 modified 项。
+     */
+    private suspend fun backfillCloudDriveMetadata(cfg: SyncConfig): Int {
+        if (cfg.type != "server" || !cfg.syncModules.cloudDrive) return 0
+        val adapter = getAdapter()
+        return try {
+            var count = 0
+            val remoteItems = adapter.listAllItems()
+                .filter { it.type == ItemType.CLOUD_FILE.value || it.type == ItemType.CLOUD_FOLDER.value }
+
+            for (remoteItem in remoteItems) {
+                val localItem = itemDao.getById(remoteItem.id)
+                if (localItem?.syncStatus == "modified" || localItem?.syncStatus == "deleted") {
+                    continue
+                }
+
+                if (remoteItem.deletedTime != null) {
+                    if (localItem != null && localItem.deletedTime == null) {
+                        itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                        count++
+                    }
+                    continue
+                }
+
+                if (localItem == null ||
+                    localItem.deletedTime != remoteItem.deletedTime ||
+                    localItem.contentHash != remoteItem.contentHash
+                ) {
+                    itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                    count++
+                }
+            }
+            if (count > 0) {
+                android.util.Log.d("SyncEngine", "Cloud drive metadata backfilled: $count")
+            }
+            count
+        } catch (e: Exception) {
+            android.util.Log.w("SyncEngine", "Cloud drive metadata backfill skipped: ${e.message}")
+            0
         }
     }
 
@@ -351,7 +412,8 @@ class SyncEngine @Inject constructor(
                 // putItem 推上去的会是旧的（PENDING、无 file_hash）payload。
                 if (item.type == "cloud_file" && adapter.hasChunkedUpload()) {
                     try {
-                        if (adapter.getItem(item.id) == null) {
+                        val remoteItem = adapter.getItem(item.id)
+                        if (remoteItem == null || remoteItem.deletedTime != null) {
                             val preflight = adapter.putItem(itemToUpload)
                             if (preflight.isFailure) {
                                 errors.add(
@@ -498,11 +560,16 @@ class SyncEngine @Inject constructor(
 
                 for (remoteItem in filteredItems) {
                     try {
-                        // 跳过已删除的 item
                         if (remoteItem.deletedTime != null) {
-                            val localItem = itemDao.getById(remoteItem.id)
-                            if (localItem != null) {
-                                itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                            if (applyRemoteDeletedItem(
+                                    itemId = remoteItem.id,
+                                    deletedTime = remoteItem.deletedTime,
+                                    updatedTime = remoteItem.updatedTime,
+                                    contentHash = remoteItem.contentHash,
+                                    remoteItem = remoteItem
+                                )
+                            ) {
+                                count++
                             }
                             continue
                         }
@@ -613,16 +680,42 @@ class SyncEngine @Inject constructor(
 
                 val remoteItem = adapter.getItem(change.itemId)
                 if (remoteItem == null) {
+                    if (change.deletedTime != null) {
+                        if (applyRemoteDeletedItem(
+                                itemId = change.itemId,
+                                deletedTime = change.deletedTime,
+                                updatedTime = change.updatedTime,
+                                contentHash = change.contentHash,
+                                remoteItem = null
+                            )
+                        ) {
+                            count++
+                        }
+                        continue
+                    }
                     android.util.Log.w("SyncEngine", "Remote item ${change.itemId} not found, skipping")
                     continue
                 }
 
                 val localItem = itemDao.getById(remoteItem.id)
 
+                if (remoteItem.deletedTime != null) {
+                    if (applyRemoteDeletedItem(
+                            itemId = remoteItem.id,
+                            deletedTime = remoteItem.deletedTime,
+                            updatedTime = remoteItem.updatedTime,
+                            contentHash = remoteItem.contentHash,
+                            remoteItem = remoteItem
+                        )
+                    ) {
+                        count++
+                    }
+                    continue
+                }
+
                 if (localItem != null && localItem.syncStatus == "clean") {
                     val hashMatches = localItem.contentHash == change.contentHash
-                    val deletedStatusMatches = (localItem.deletedTime == null) == (remoteItem.deletedTime == null)
-                    if (hashMatches && deletedStatusMatches) continue
+                    if (hashMatches) continue
                 }
 
                 if (localItem != null && localItem.syncStatus == "modified") {
@@ -699,6 +792,106 @@ class SyncEngine @Inject constructor(
 
         android.util.Log.d("SyncEngine", "Pull completed: count=$count, conflicts=$conflicts")
         return PullResult(count, conflicts)
+    }
+
+    /**
+     * 应用远端删除。
+     *
+     * 服务端软删会保留 deleted_time，客户端必须保留 clean tombstone 才能稳定收敛。
+     * 同时兼容历史硬删：change 有 deleted_time 但 /api/items/:id 已经 404 时，
+     * 仍用本地已有 item 落删除，避免“云端已删、手机还显示”。
+     */
+    private suspend fun applyRemoteDeletedItem(
+        itemId: String,
+        deletedTime: Long,
+        updatedTime: Long,
+        contentHash: String,
+        remoteItem: ItemEntity?
+    ): Boolean {
+        val localItem = itemDao.getById(itemId)
+        val baseItem = remoteItem ?: localItem ?: return false
+        val itemsToDelete = collectCloudDeletedItems(baseItem)
+        var changed = false
+
+        for (item in itemsToDelete) {
+            cleanupLocalCloudArtifactsForRemoteDelete(item)
+            val source = if (item.id == itemId && remoteItem != null) remoteItem else item
+            val tombstone = source.copy(
+                deletedTime = if (item.id == itemId) deletedTime else (item.deletedTime ?: deletedTime),
+                updatedTime = if (item.id == itemId) updatedTime else item.updatedTime,
+                contentHash = if (item.id == itemId) contentHash else item.contentHash,
+                syncStatus = "clean"
+            )
+            if (item.deletedTime == null || item.syncStatus != "clean") {
+                changed = true
+            }
+            itemDao.upsert(tombstone)
+        }
+
+        return changed
+    }
+
+    private suspend fun collectCloudDeletedItems(root: ItemEntity): List<ItemEntity> {
+        if (root.type != ItemType.CLOUD_FOLDER.value) return listOf(root)
+
+        val rootPath = runCatching {
+            CloudDrivePathIdentity.normalize(json.decodeFromString<CloudFolderPayload>(root.payload).relativePath)
+        }.getOrDefault("")
+        if (rootPath.isBlank()) return listOf(root)
+
+        val prefix = "$rootPath/"
+        val folders = itemDao.getByTypeOnce(ItemType.CLOUD_FOLDER.value).filter { item ->
+            item.id != root.id && runCatching {
+                CloudDrivePathIdentity.normalize(json.decodeFromString<CloudFolderPayload>(item.payload).relativePath)
+            }.getOrDefault("").startsWith(prefix)
+        }
+        val files = itemDao.getByTypeOnce(ItemType.CLOUD_FILE.value).filter { item ->
+            runCatching {
+                CloudDrivePathIdentity.normalize(json.decodeFromString<CloudFilePayload>(item.payload).relativePath)
+            }.getOrDefault("").startsWith(prefix)
+        }
+
+        return listOf(root) + folders + files
+    }
+
+    private suspend fun cleanupLocalCloudArtifactsForRemoteDelete(item: ItemEntity) {
+        if (item.type == ItemType.CLOUD_FOLDER.value) {
+            val relativePath = runCatching {
+                CloudDrivePathIdentity.normalize(json.decodeFromString<CloudFolderPayload>(item.payload).relativePath)
+            }.getOrDefault("")
+            if (relativePath.isNotBlank()) {
+                runCatching {
+                    cloudDriveFolderPicker.findRelativeDocumentFile(relativePath)
+                        ?.takeIf { it.exists() && it.isDirectory }
+                        ?.delete()
+                }
+            }
+            return
+        }
+
+        if (item.type != ItemType.CLOUD_FILE.value) return
+
+        val payload = runCatching {
+            json.decodeFromString<CloudFilePayload>(item.payload)
+        }.getOrNull()
+        val record = cloudFileLocalPathDao.getByCloudFileId(item.id)
+        if (record != null) {
+            runCatching {
+                DocumentFile.fromSingleUri(context, Uri.parse(record.documentUri))
+                    ?.takeIf { it.exists() }
+                    ?.delete()
+            }
+            cloudFileLocalPathDao.delete(item.id)
+        }
+
+        val relativePath = CloudDrivePathIdentity.normalize(payload?.relativePath.orEmpty())
+        if (relativePath.isNotBlank()) {
+            runCatching {
+                cloudDriveFolderPicker.findRelativeDocumentFile(relativePath)
+                    ?.takeIf { it.exists() && it.isFile }
+                    ?.delete()
+            }
+        }
     }
     
     /**

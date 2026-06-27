@@ -8,13 +8,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Layout, Button, Tooltip, Tag, Empty, Progress, Row, Col, Space,
-  Drawer, Form, InputNumber, Switch, Input, Divider, Popconfirm, message, Dropdown, Checkbox,
+  Drawer, Form, InputNumber, Switch, Input, Divider, Popconfirm, message, Dropdown, Checkbox, Segmented,
 } from 'antd';
 import {
   FolderOpenOutlined, PlayCircleOutlined, PauseCircleOutlined,
   ReloadOutlined, CloudOutlined, InboxOutlined, SettingOutlined,
   ClearOutlined, CaretRightOutlined, PauseOutlined, CloseOutlined,
   ExclamationCircleOutlined, EyeOutlined, FolderOutlined, FileOutlined, MoreOutlined, DownOutlined,
+  AppstoreOutlined, UnorderedListOutlined, CloudDownloadOutlined,
 } from '@ant-design/icons';
 import { useCloudDrive } from '../hooks/useCloudDrive';
 import { useSettings } from '../contexts/SettingsContext';
@@ -81,6 +82,10 @@ const CloudDrivePanel: React.FC = () => {
   const [currentFolderPath, setCurrentFolderPath] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [transferExpanded, setTransferExpanded] = useState(false);
+  const [cloudViewMode, setCloudViewMode] = useState<'grid' | 'list'>(() => {
+    const saved = localStorage.getItem('cloud-drive-view-mode');
+    return saved === 'list' ? 'list' : 'grid';
+  });
 
   // 高级设置抽屉
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -331,6 +336,11 @@ const CloudDrivePanel: React.FC = () => {
     }
   };
 
+  const handleCloudViewModeChange = (value: 'grid' | 'list') => {
+    setCloudViewMode(value);
+    localStorage.setItem('cloud-drive-view-mode', value);
+  };
+
   const toggleSelection = (id: string, checked: boolean) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -408,6 +418,152 @@ const CloudDrivePanel: React.FC = () => {
   const subColor = isDarkMode ? '#aaa' : '#666';
   const selectedAll = visibleItemIds.length > 0 && selectedIds.length === visibleItemIds.length;
   const selectedPartial = selectedIds.length > 0 && selectedIds.length < visibleItemIds.length;
+  const contentGridColumns = '36px minmax(0, 1fr) 96px minmax(112px, 180px) 148px';
+
+  const renderFileStatusTags = (
+    availability: CloudLocalAvailability,
+    uploadState: CloudFilePayload['upload_state'],
+    downloadState: CloudFilePayload['download_state']
+  ) => (
+    <Space size={4} wrap>
+      <Tag color={availabilityColor(availability)} style={{ marginInlineEnd: 0 }}>{availabilityLabel(availability)}</Tag>
+      {uploadState !== 'completed' && (
+        <Tag
+          color={
+            uploadState === 'uploading'
+              ? 'processing'
+              : uploadState === 'error'
+                ? 'error'
+                : uploadState === 'paused'
+                  ? 'warning'
+                  : 'default'
+          }
+          style={{ marginInlineEnd: 0 }}
+        >
+          {uploadState === 'uploading'
+            ? '上传中'
+            : uploadState === 'error'
+              ? '上传失败'
+              : uploadState === 'paused'
+                ? '上传暂停'
+                : '待上传'}
+        </Tag>
+      )}
+      {downloadState && downloadState !== 'completed' && (
+        <Tag
+          color={
+            downloadState === 'downloading'
+              ? 'processing'
+              : downloadState === 'error'
+                ? 'error'
+                : downloadState === 'paused'
+                  ? 'warning'
+                  : 'default'
+          }
+          style={{ marginInlineEnd: 0 }}
+        >
+          {downloadState === 'downloading'
+            ? '下载中'
+            : downloadState === 'error'
+              ? '下载失败'
+              : downloadState === 'paused'
+                ? '下载暂停'
+                : '待下载'}
+        </Tag>
+      )}
+    </Space>
+  );
+
+  const renderFolderActions = (folder: typeof visibleFolders[number]) => (
+    <Space size={2} wrap>
+      <Tooltip title="打开">
+        <Button size="small" type="text" aria-label="打开" icon={<FolderOpenOutlined />} onClick={() => setCurrentFolderPath(folder.relativePath)} />
+      </Tooltip>
+      <Tooltip title="打开本地目录">
+        <Button size="small" type="text" aria-label="打开本地目录" icon={<FolderOutlined />} onClick={() => handleOpenLocalDirectory(folder.relativePath)} />
+      </Tooltip>
+      <Tooltip title="该目录离线">
+        <Button size="small" type="text" aria-label="该目录离线" icon={<InboxOutlined />} onClick={() => handleSetFolderLocalAvailability('offline', folder.relativePath)} />
+      </Tooltip>
+      <Tooltip title="释放空间">
+        <Button size="small" type="text" aria-label="释放空间" icon={<ClearOutlined />} onClick={() => handleSetFolderLocalAvailability('online_only', folder.relativePath)} />
+      </Tooltip>
+      <Dropdown
+        trigger={['click']}
+        menu={{
+          items: [
+            { key: 'folder-open', label: '打开目录', onClick: () => setCurrentFolderPath(folder.relativePath) },
+            { key: 'folder-local-open', label: '打开本地目录', onClick: () => void handleOpenLocalDirectory(folder.relativePath) },
+            { key: 'folder-offline', label: '该目录离线', onClick: () => void handleSetFolderLocalAvailability('offline', folder.relativePath) },
+            { key: 'folder-release', label: '释放空间', onClick: () => void handleSetFolderLocalAvailability('online_only', folder.relativePath) },
+          ],
+        }}
+      >
+        <Button size="small" type="text" aria-label="更多" icon={<MoreOutlined />} />
+      </Dropdown>
+    </Space>
+  );
+
+  const renderFileActions = (
+    file: typeof visibleFiles[number],
+    availability: CloudLocalAvailability,
+    downloadState: CloudFilePayload['download_state']
+  ) => (
+    <Space size={2} wrap>
+      {availability === 'online_only' ? (
+        <Tooltip title="下载到本机">
+          <Button size="small" type="text" aria-label="下载到本机" icon={<CloudDownloadOutlined />} onClick={() => handleSetLocalAvailability(file.id, 'local')} />
+        </Tooltip>
+      ) : (
+        <>
+          <Tooltip title="打开">
+            <Button size="small" type="text" aria-label="打开" icon={<EyeOutlined />} onClick={() => handleOpenLocalFile(file.id)} />
+          </Tooltip>
+          <Tooltip title="释放空间">
+            <Button size="small" type="text" aria-label="释放空间" icon={<ClearOutlined />} onClick={() => handleSetLocalAvailability(file.id, 'online_only')} />
+          </Tooltip>
+        </>
+      )}
+      {availability !== 'offline' && (
+        <Tooltip title="离线保留">
+          <Button size="small" type="text" aria-label="离线保留" icon={<InboxOutlined />} onClick={() => handleSetLocalAvailability(file.id, 'offline')} />
+        </Tooltip>
+      )}
+      {downloadState === 'error' && (
+        <Tooltip title="重试下载">
+          <Button size="small" type="text" aria-label="重试下载" icon={<ReloadOutlined />} onClick={() => retryDownload(file.id)} />
+        </Tooltip>
+      )}
+      {downloadState === 'downloading' && (
+        <Tooltip title="暂停下载">
+          <Button size="small" type="text" aria-label="暂停下载" icon={<PauseOutlined />} onClick={() => pauseDownload(file.id)} />
+        </Tooltip>
+      )}
+      {downloadState === 'paused' && (
+        <Tooltip title="继续下载">
+          <Button size="small" type="text" aria-label="继续下载" icon={<CaretRightOutlined />} onClick={() => resumeDownload(file.id)} />
+        </Tooltip>
+      )}
+      <Dropdown
+        trigger={['click']}
+        menu={{
+          items: [
+            ...(availability !== 'online_only'
+              ? [{ key: 'file-open', label: '打开', onClick: () => void handleOpenLocalFile(file.id) }]
+              : [{ key: 'file-download', label: '下载到本机', onClick: () => void handleSetLocalAvailability(file.id, 'local') }]),
+            ...(availability !== 'offline'
+              ? [{ key: 'file-offline', label: '离线保留', onClick: () => void handleSetLocalAvailability(file.id, 'offline') }]
+              : []),
+            ...(availability !== 'online_only'
+              ? [{ key: 'file-release', label: '释放空间', onClick: () => void handleSetLocalAvailability(file.id, 'online_only') }]
+              : []),
+          ],
+        }}
+      >
+        <Button size="small" type="text" aria-label="更多" icon={<MoreOutlined />} />
+      </Dropdown>
+    </Space>
+  );
 
   return (
     <Content style={{ background: isDarkMode ? '#141414' : '#fafafa', height: '100%', overflow: 'auto' }}>
@@ -487,19 +643,19 @@ const CloudDrivePanel: React.FC = () => {
             </Space>
             <Space wrap>
               {currentFolderPath && (
-                <Button size="small" onClick={() => setCurrentFolderPath(parentCloudPath(currentFolderPath))}>
-                  返回上级
-                </Button>
+                <Tooltip title="返回上级">
+                  <Button size="small" icon={<CaretRightOutlined style={{ transform: 'rotate(180deg)' }} />} onClick={() => setCurrentFolderPath(parentCloudPath(currentFolderPath))} />
+                </Tooltip>
               )}
-              <Button size="small" onClick={() => handleOpenLocalDirectory(currentFolderPath)}>
-                打开本地目录
-              </Button>
-              <Button size="small" onClick={() => handleSetFolderLocalAvailability('offline', currentFolderPath)}>
-                当前目录离线
-              </Button>
-              <Button size="small" onClick={() => handleSetFolderLocalAvailability('online_only', currentFolderPath)}>
-                当前目录释放
-              </Button>
+              <Tooltip title="打开本地目录">
+                <Button size="small" icon={<FolderOutlined />} onClick={() => handleOpenLocalDirectory(currentFolderPath)} />
+              </Tooltip>
+              <Tooltip title="该目录离线">
+                <Button size="small" icon={<InboxOutlined />} onClick={() => handleSetFolderLocalAvailability('offline', currentFolderPath)} />
+              </Tooltip>
+              <Tooltip title="释放空间">
+                <Button size="small" icon={<ClearOutlined />} onClick={() => handleSetFolderLocalAvailability('online_only', currentFolderPath)} />
+              </Tooltip>
             </Space>
           </div>
 
@@ -578,9 +734,20 @@ const CloudDrivePanel: React.FC = () => {
                         </React.Fragment>
                       ))}
                     </Space>
-                    <span style={{ color: subColor, fontSize: 12 }}>
-                      {visibleFolders.length} 个文件夹，{visibleFiles.length} 个文件
-                    </span>
+                    <Space size={8} wrap>
+                      <span style={{ color: subColor, fontSize: 12 }}>
+                        {visibleFolders.length} 个文件夹，{visibleFiles.length} 个文件
+                      </span>
+                      <Segmented
+                        size="small"
+                        value={cloudViewMode}
+                        onChange={value => handleCloudViewModeChange(value as 'grid' | 'list')}
+                        options={[
+                          { value: 'grid', icon: <AppstoreOutlined /> },
+                          { value: 'list', icon: <UnorderedListOutlined /> },
+                        ]}
+                      />
+                    </Space>
                   </div>
                   <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                     <Checkbox
@@ -605,30 +772,179 @@ const CloudDrivePanel: React.FC = () => {
                       </Button>
                     </Space>
                   </div>
-                  <div
-                    style={{
-                      marginTop: 10,
-                      paddingTop: 8,
-                      borderTop: `1px solid ${rowBorder}`,
-                      display: 'grid',
-                      gridTemplateColumns: '36px minmax(0, 1fr) 110px 120px 240px',
-                      gap: 8,
-                      alignItems: 'center',
-                      color: subColor,
-                      fontSize: 12,
-                    }}
-                  >
-                    <span />
-                    <span>名称</span>
-                    <span>大小</span>
-                    <span>状态</span>
-                    <span>操作</span>
-                  </div>
+                  {cloudViewMode === 'list' && (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        paddingTop: 8,
+                        borderTop: `1px solid ${rowBorder}`,
+                        display: 'grid',
+                        gridTemplateColumns: contentGridColumns,
+                        gap: 8,
+                        alignItems: 'center',
+                        color: subColor,
+                        fontSize: 12,
+                      }}
+                    >
+                      <span />
+                      <span>名称</span>
+                      <span>大小</span>
+                      <span>状态</span>
+                      <span>操作</span>
+                    </div>
+                  )}
                 </div>
 
                 {visibleFolders.length === 0 && visibleFiles.length === 0 ? (
                   <div style={{ padding: 32 }}>
                     <Empty description={currentFolderPath ? '该目录暂无内容' : '网盘目录为空'} />
+                  </div>
+                ) : cloudViewMode === 'grid' ? (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))',
+                      gap: 10,
+                      padding: 12,
+                    }}
+                  >
+                    {visibleFolders.map(folder => (
+                      <Dropdown
+                        key={folder.id}
+                        trigger={['contextMenu']}
+                        menu={{
+                          items: [
+                            { key: 'open', label: '打开目录', onClick: () => setCurrentFolderPath(folder.relativePath) },
+                            { key: 'local-open', label: '打开本地目录', onClick: () => void handleOpenLocalDirectory(folder.relativePath) },
+                            { key: 'offline', label: '该目录离线', onClick: () => void handleSetFolderLocalAvailability('offline', folder.relativePath) },
+                            { key: 'release', label: '释放空间', onClick: () => void handleSetFolderLocalAvailability('online_only', folder.relativePath) },
+                          ],
+                        }}
+                      >
+                        <div
+                          onDoubleClick={() => setCurrentFolderPath(folder.relativePath)}
+                          style={{
+                            border: `1px solid ${cardBorder}`,
+                            borderRadius: 8,
+                            background: selectedIdSet.has(folder.id)
+                              ? (isDarkMode ? '#111b26' : '#e6f4ff')
+                              : cardBg,
+                            padding: 10,
+                            minWidth: 0,
+                            cursor: 'default',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                            <FolderOutlined style={{ color: '#1890ff', fontSize: 28, marginTop: 2 }} />
+                            <Checkbox
+                              checked={selectedIdSet.has(folder.id)}
+                              onChange={e => toggleSelection(folder.id, e.target.checked)}
+                              onClick={e => e.stopPropagation()}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCurrentFolderPath(folder.relativePath)}
+                            style={{
+                              border: 0,
+                              background: 'transparent',
+                              padding: '8px 0 0',
+                              margin: 0,
+                              width: '100%',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              color: isDarkMode ? '#f0f0f0' : '#222',
+                              minWidth: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                wordBreak: 'break-all',
+                                fontWeight: 500,
+                                lineHeight: 1.35,
+                                minHeight: 36,
+                              }}
+                            >
+                              {folder.name}
+                            </span>
+                          </button>
+                          <div style={{ marginTop: 8 }}>
+                            <Tag color="default" style={{ marginInlineEnd: 0 }}>目录</Tag>
+                          </div>
+                          <div style={{ marginTop: 8 }}>{renderFolderActions(folder)}</div>
+                        </div>
+                      </Dropdown>
+                    ))}
+
+                    {visibleFiles.map(file => {
+                      const availability = localStates[file.id] ?? 'online_only';
+                      const uploadState = uploadStateMap.get(file.id)?.state ?? file.uploadState;
+                      const downloadProgressItem = downloadStateMap.get(file.id);
+                      const downloadState = downloadProgressItem?.state ?? file.downloadState;
+                      return (
+                        <Dropdown
+                          key={file.id}
+                          trigger={['contextMenu']}
+                          menu={{
+                            items: [
+                              ...(availability !== 'online_only'
+                                ? [{ key: 'open', label: '打开', onClick: () => void handleOpenLocalFile(file.id) }]
+                                : [{ key: 'download', label: '下载到本机', onClick: () => void handleSetLocalAvailability(file.id, 'local') }]),
+                              ...(availability !== 'offline'
+                                ? [{ key: 'offline', label: '离线保留', onClick: () => void handleSetLocalAvailability(file.id, 'offline') }]
+                                : []),
+                              ...(availability !== 'online_only'
+                                ? [{ key: 'release', label: '释放空间', onClick: () => void handleSetLocalAvailability(file.id, 'online_only') }]
+                                : []),
+                            ],
+                          }}
+                        >
+                          <div
+                            onDoubleClick={() => availability === 'online_only' ? handleSetLocalAvailability(file.id, 'local') : handleOpenLocalFile(file.id)}
+                            style={{
+                              border: `1px solid ${cardBorder}`,
+                              borderRadius: 8,
+                              background: selectedIdSet.has(file.id)
+                                ? (isDarkMode ? '#111b26' : '#e6f4ff')
+                                : cardBg,
+                              padding: 10,
+                              minWidth: 0,
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                              <FileOutlined style={{ color: '#999', fontSize: 28, marginTop: 2 }} />
+                              <Checkbox
+                                checked={selectedIdSet.has(file.id)}
+                                onChange={e => toggleSelection(file.id, e.target.checked)}
+                                onClick={e => e.stopPropagation()}
+                              />
+                            </div>
+                            <div
+                              style={{
+                                marginTop: 8,
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                wordBreak: 'break-all',
+                                fontWeight: 500,
+                                lineHeight: 1.35,
+                                minHeight: 36,
+                              }}
+                            >
+                              {file.filename}
+                            </div>
+                            <div style={{ marginTop: 6, color: '#999', fontSize: 12 }}>{formatBytes(file.size)}</div>
+                            <div style={{ marginTop: 8 }}>{renderFileStatusTags(availability, uploadState, downloadState)}</div>
+                            <div style={{ marginTop: 8 }}>{renderFileActions(file, availability, downloadState)}</div>
+                          </div>
+                        </Dropdown>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div>
@@ -650,7 +966,7 @@ const CloudDrivePanel: React.FC = () => {
                             padding: '6px 12px',
                             borderBottom: `1px solid ${rowBorder}`,
                             display: 'grid',
-                            gridTemplateColumns: '36px minmax(0, 1fr) 110px 120px 240px',
+                            gridTemplateColumns: contentGridColumns,
                             alignItems: 'center',
                             gap: 8,
                           }}
@@ -683,33 +999,7 @@ const CloudDrivePanel: React.FC = () => {
                           </button>
                           <span style={{ color: '#999', fontSize: 12 }}>-</span>
                           <Tag color="default" style={{ width: 'fit-content', marginInlineEnd: 0 }}>目录</Tag>
-                          <Space size={2} wrap>
-                            <Button size="small" type="text" onClick={() => setCurrentFolderPath(folder.relativePath)}>
-                              打开
-                            </Button>
-                            <Button size="small" type="text" onClick={() => handleOpenLocalDirectory(folder.relativePath)}>
-                              打开本地目录
-                            </Button>
-                            <Button size="small" type="text" onClick={() => handleSetFolderLocalAvailability('offline', folder.relativePath)}>
-                              该目录离线
-                            </Button>
-                            <Button size="small" type="text" onClick={() => handleSetFolderLocalAvailability('online_only', folder.relativePath)}>
-                              释放空间
-                            </Button>
-                            <Dropdown
-                              trigger={['click']}
-                              menu={{
-                                items: [
-                                  { key: 'folder-open', label: '打开目录', onClick: () => setCurrentFolderPath(folder.relativePath) },
-                                  { key: 'folder-local-open', label: '打开本地目录', onClick: () => void handleOpenLocalDirectory(folder.relativePath) },
-                                  { key: 'folder-offline', label: '该目录离线', onClick: () => void handleSetFolderLocalAvailability('offline', folder.relativePath) },
-                                  { key: 'folder-release', label: '释放空间', onClick: () => void handleSetFolderLocalAvailability('online_only', folder.relativePath) },
-                                ],
-                              }}
-                            >
-                              <Button size="small" type="text" icon={<MoreOutlined />} />
-                            </Dropdown>
-                          </Space>
+                          {renderFolderActions(folder)}
                         </div>
                       </Dropdown>
                     ))}
@@ -742,7 +1032,7 @@ const CloudDrivePanel: React.FC = () => {
                             padding: '6px 12px',
                             borderBottom: `1px solid ${rowBorder}`,
                             display: 'grid',
-                            gridTemplateColumns: '36px minmax(0, 1fr) 110px 120px 240px',
+                            gridTemplateColumns: contentGridColumns,
                             alignItems: 'center',
                             gap: 8,
                           }}
@@ -761,101 +1051,8 @@ const CloudDrivePanel: React.FC = () => {
                               </div>
                             </div>
                             <span style={{ color: '#999', fontSize: 12 }}>{formatBytes(file.size)}</span>
-                            <Space size={4} wrap>
-                              <Tag color={availabilityColor(availability)} style={{ marginInlineEnd: 0 }}>{availabilityLabel(availability)}</Tag>
-                              {uploadState !== 'completed' && (
-                                <Tag
-                                  color={
-                                    uploadState === 'uploading'
-                                      ? 'processing'
-                                      : uploadState === 'error'
-                                        ? 'error'
-                                        : uploadState === 'paused'
-                                          ? 'warning'
-                                          : 'default'
-                                  }
-                                  style={{ marginInlineEnd: 0 }}
-                                >
-                                  {uploadState === 'uploading'
-                                    ? '上传中'
-                                    : uploadState === 'error'
-                                      ? '上传失败'
-                                      : uploadState === 'paused'
-                                        ? '上传暂停'
-                                        : '待上传'}
-                                </Tag>
-                              )}
-                              {downloadState && downloadState !== 'completed' && (
-                                <Tag
-                                  color={
-                                    downloadState === 'downloading'
-                                      ? 'processing'
-                                      : downloadState === 'error'
-                                        ? 'error'
-                                        : downloadState === 'paused'
-                                          ? 'warning'
-                                          : 'default'
-                                  }
-                                  style={{ marginInlineEnd: 0 }}
-                                >
-                                  {downloadState === 'downloading'
-                                    ? '下载中'
-                                    : downloadState === 'error'
-                                      ? '下载失败'
-                                      : downloadState === 'paused'
-                                        ? '下载暂停'
-                                        : '待下载'}
-                                </Tag>
-                              )}
-                            </Space>
-                            <Space size={2} wrap>
-                                {availability === 'online_only' ? (
-                                  <Button size="small" type="text" onClick={() => handleSetLocalAvailability(file.id, 'local')}>
-                                    下载到本机
-                                  </Button>
-                                ) : (
-                                  <>
-                                    <Button size="small" type="text" icon={<EyeOutlined />} onClick={() => handleOpenLocalFile(file.id)}>
-                                      打开
-                                    </Button>
-                                    <Button size="small" type="text" onClick={() => handleSetLocalAvailability(file.id, 'online_only')}>
-                                      释放空间
-                                    </Button>
-                                  </>
-                                )}
-                                {availability !== 'offline' && (
-                                  <Button size="small" type="text" onClick={() => handleSetLocalAvailability(file.id, 'offline')}>
-                                    离线保留
-                                  </Button>
-                                )}
-                                {downloadState === 'error' && (
-                                  <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => retryDownload(file.id)} />
-                                )}
-                                {downloadState === 'downloading' && (
-                                  <Button size="small" type="text" icon={<PauseOutlined />} onClick={() => pauseDownload(file.id)} />
-                                )}
-                                {downloadState === 'paused' && (
-                                  <Button size="small" type="text" icon={<CaretRightOutlined />} onClick={() => resumeDownload(file.id)} />
-                                )}
-                                <Dropdown
-                                  trigger={['click']}
-                                  menu={{
-                                    items: [
-                                      ...(availability !== 'online_only'
-                                        ? [{ key: 'file-open', label: '打开', onClick: () => void handleOpenLocalFile(file.id) }]
-                                        : [{ key: 'file-download', label: '下载到本机', onClick: () => void handleSetLocalAvailability(file.id, 'local') }]),
-                                      ...(availability !== 'offline'
-                                        ? [{ key: 'file-offline', label: '离线保留', onClick: () => void handleSetLocalAvailability(file.id, 'offline') }]
-                                        : []),
-                                      ...(availability !== 'online_only'
-                                        ? [{ key: 'file-release', label: '释放空间', onClick: () => void handleSetLocalAvailability(file.id, 'online_only') }]
-                                        : []),
-                                    ],
-                                  }}
-                                >
-                                  <Button size="small" type="text" icon={<MoreOutlined />} />
-                                </Dropdown>
-                            </Space>
+                            {renderFileStatusTags(availability, uploadState, downloadState)}
+                            {renderFileActions(file, availability, downloadState)}
                           </div>
                         </Dropdown>
                       );

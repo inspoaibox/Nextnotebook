@@ -727,7 +727,7 @@ export class ServerAdapter implements StorageAdapter {
 
   async deleteItem(id: string): Promise<boolean> {
     try {
-      await this.request<void>('DELETE', `/api/items/${id}`);
+      await this.request<void>('POST', `/api/items/${id}/soft-delete`);
       return true;
     } catch (error) {
       console.error(`Failed to delete item ${id}:`, error);

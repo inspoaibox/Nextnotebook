@@ -527,7 +527,7 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
     }
     
     override suspend fun deleteItem(id: String): Boolean {
-        return request("DELETE", "/api/items/$id") { true } ?: false
+        return request("POST", "/api/items/$id/soft-delete") { true } ?: false
     }
     
     override suspend fun listChanges(cursor: String?, limit: Int): ChangeListResult {

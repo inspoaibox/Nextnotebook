@@ -77,7 +77,8 @@ class SyncRepositoryImpl @Inject constructor(
             vault = prefs.getBoolean("sync_vault", true),
             diagrams = prefs.getBoolean("sync_diagrams", true),
             todos = prefs.getBoolean("sync_todos", true),
-            ai = prefs.getBoolean("sync_ai", true)
+            ai = prefs.getBoolean("sync_ai", true),
+            cloudDrive = prefs.getBoolean("sync_cloud_drive", true)
         )
         
         return SyncConfig(

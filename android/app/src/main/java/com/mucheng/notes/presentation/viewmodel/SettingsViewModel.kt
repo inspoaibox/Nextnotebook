@@ -17,6 +17,7 @@ import com.mucheng.notes.domain.model.SyncModules
 import com.mucheng.notes.domain.model.SyncStatus
 import com.mucheng.notes.domain.model.payload.CloudConflictStrategy
 import com.mucheng.notes.domain.model.payload.CloudDriveConfig
+import com.mucheng.notes.domain.repository.SyncRepository
 import com.mucheng.notes.security.AppLockManager
 import com.mucheng.notes.security.AuthResult
 import com.mucheng.notes.security.BiometricManager
@@ -128,7 +129,7 @@ data class SettingsUiState(
     val cloudDriveAuthorized: Boolean = false, // SAF 是否已授权
     val cloudDriveWatchedRootPath: String = "", // 已授权的根目录展示名（来自 treeUri 解析）
     val cloudDriveConflictStrategy: CloudConflictStrategy = CloudConflictStrategy.CREATE_COPY,
-    val cloudDriveAutoDownload: Boolean = true,
+    val cloudDriveAutoDownload: Boolean = false,
     val cloudDriveConfig: CloudDriveConfig = CloudDriveConfig(), // 完整配置快照（供需要扩展字段的 UI 读取）
     val cloudDriveSupported: Boolean = false
 )
@@ -142,6 +143,7 @@ class SettingsViewModel @Inject constructor(
     private val appLockManager: AppLockManager,
     private val biometricManager: BiometricManager,
     private val syncEngine: SyncEngine,
+    private val syncRepository: SyncRepository,
     private val itemRepository: com.mucheng.notes.domain.repository.ItemRepository,
     private val cloudDriveConfigStore: CloudDriveConfigStore,
     private val cloudDriveFolderPicker: CloudDriveFolderPicker,
@@ -173,6 +175,7 @@ class SettingsViewModel @Inject constructor(
         private const val KEY_SYNC_DIAGRAMS = "sync_diagrams"
         private const val KEY_SYNC_TODOS = "sync_todos"
         private const val KEY_SYNC_AI = "sync_ai"
+        private const val KEY_SYNC_CLOUD_DRIVE = "sync_cloud_drive"
         private const val KEY_LOCK_TIMEOUT = "lock_timeout"
         private const val KEY_FOLLOW_SYSTEM_THEME = "follow_system_theme"
         private const val KEY_DARK_MODE = "dark_mode"
@@ -280,7 +283,8 @@ class SettingsViewModel @Inject constructor(
                     vault = prefs.getBoolean(KEY_SYNC_VAULT, true),
                     diagrams = prefs.getBoolean(KEY_SYNC_DIAGRAMS, true),
                     todos = prefs.getBoolean(KEY_SYNC_TODOS, true),
-                    ai = prefs.getBoolean(KEY_SYNC_AI, true)
+                    ai = prefs.getBoolean(KEY_SYNC_AI, true),
+                    cloudDrive = prefs.getBoolean(KEY_SYNC_CLOUD_DRIVE, true)
                 ),
                 
                 // 安全设置 - 应用锁
@@ -571,6 +575,7 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(message = "WebDAV 模式不支持网盘同步，请切换到自建服务器") }
                 return
             }
+            prefs.edit().putBoolean(KEY_SYNC_CLOUD_DRIVE, enabled).apply()
             _uiState.update { state ->
                 state.copy(syncModules = state.syncModules.copy(cloudDrive = enabled))
             }
@@ -836,9 +841,7 @@ class SettingsViewModel @Inject constructor(
                     serverTokenExpires = _uiState.value.serverTokenExpires
                 )
                 
-                // 设置同步配置并执行同步
-                syncEngine.setConfig(syncConfig)
-                val result = syncEngine.sync()
+                val result = syncRepository.sync()
                 
                 if (result.success) {
                     val now = System.currentTimeMillis()

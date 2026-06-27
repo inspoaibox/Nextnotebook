@@ -68,10 +68,11 @@ class CloudDriveDirectoryScanner @Inject constructor(
         val currentEntries = linkedSetOf<String>()
         val stats = MutableStats()
         val existingPathIndex = buildExistingPathIndex()
+        val previousEntries = loadSnapshot()
 
         try {
-            walk(root, "", currentEntries, stats, existingPathIndex, depth = 0)
-            val deleted = reconcileDeleted(currentEntries)
+            walk(root, "", currentEntries, stats, existingPathIndex, previousEntries, depth = 0)
+            val deleted = reconcileDeleted(currentEntries, previousEntries)
             saveSnapshot(currentEntries)
             CloudDriveScanResult(
                 scannedFiles = stats.files,
@@ -97,6 +98,7 @@ class CloudDriveDirectoryScanner @Inject constructor(
         currentEntries: MutableSet<String>,
         stats: MutableStats,
         existingPathIndex: ExistingPathIndex,
+        previousEntries: Set<String>,
         depth: Int,
     ) {
         if (depth > MAX_DEPTH) return
@@ -121,10 +123,14 @@ class CloudDriveDirectoryScanner @Inject constructor(
 
             when {
                 child.isDirectory -> {
-                    currentEntries.add(entryKey(ItemType.CLOUD_FOLDER.value, relPath))
                     stats.folders++
-                    if (upsertFolder(relPath, name, existingPathIndex)) stats.changed++
-                    walk(child, relPath, currentEntries, stats, existingPathIndex, depth + 1)
+                    val folderKey = entryKey(ItemType.CLOUD_FOLDER.value, relPath)
+                    val shouldTrack = upsertFolder(relPath, name, existingPathIndex, previousEntries)
+                    if (shouldTrack.changed) stats.changed++
+                    if (shouldTrack.trackDeletion) {
+                        currentEntries.add(folderKey)
+                    }
+                    walk(child, relPath, currentEntries, stats, existingPathIndex, previousEntries, depth + 1)
                 }
 
                 child.isFile -> {
@@ -133,9 +139,13 @@ class CloudDriveDirectoryScanner @Inject constructor(
                         stats.skipped++
                         continue
                     }
-                    currentEntries.add(entryKey(ItemType.CLOUD_FILE.value, relPath))
                     stats.files++
-                    if (upsertFile(child, relPath, name, size, existingPathIndex)) stats.changed++
+                    val fileKey = entryKey(ItemType.CLOUD_FILE.value, relPath)
+                    val result = upsertFile(child, relPath, name, size, existingPathIndex, previousEntries)
+                    if (result.changed) stats.changed++
+                    if (result.trackDeletion) {
+                        currentEntries.add(fileKey)
+                    }
                 }
 
                 else -> stats.skipped++
@@ -147,16 +157,33 @@ class CloudDriveDirectoryScanner @Inject constructor(
         relativePath: String,
         name: String,
         existingPathIndex: ExistingPathIndex,
-    ): Boolean {
+        previousEntries: Set<String>,
+    ): ScanUpsertResult {
         val id = CloudDrivePathIdentity.deriveId(relativePath)
         val existing = itemDao.getById(id) ?: existingPathIndex.folders[relativePath]
+        val key = entryKey(ItemType.CLOUD_FOLDER.value, relativePath)
+        val trackDeletion = existing == null ||
+            existing.syncStatus == "modified" ||
+            key in previousEntries
+
+        if (existing != null &&
+            existing.deletedTime == null &&
+            existing.syncStatus == "clean" &&
+            key !in previousEntries
+        ) {
+            return ScanUpsertResult(changed = false, trackDeletion = false)
+        }
+
         val payload = CloudFolderPayload(
             name = name,
             parentFolderId = CloudDrivePathIdentity.deriveParentFolderId(relativePath),
             relativePath = relativePath,
         )
         val payloadJson = json.encodeToString(payload)
-        return upsertCloudItem(id, ItemType.CLOUD_FOLDER.value, payloadJson, existing)
+        return ScanUpsertResult(
+            changed = upsertCloudItem(id, ItemType.CLOUD_FOLDER.value, payloadJson, existing),
+            trackDeletion = trackDeletion,
+        )
     }
 
     private suspend fun upsertFile(
@@ -165,20 +192,47 @@ class CloudDriveDirectoryScanner @Inject constructor(
         name: String,
         size: Long,
         existingPathIndex: ExistingPathIndex,
-    ): Boolean {
+        previousEntries: Set<String>,
+    ): ScanUpsertResult {
         val id = CloudDrivePathIdentity.deriveId(relativePath)
         val existing = itemDao.getById(id) ?: existingPathIndex.files[relativePath]
+        val key = entryKey(ItemType.CLOUD_FILE.value, relativePath)
         val mtime = file.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis()
         val existingPayload = existing
             ?.takeIf { it.type == ItemType.CLOUD_FILE.value && it.deletedTime == null }
             ?.let { runCatching { json.decodeFromString<CloudFilePayload>(it.payload) }.getOrNull() }
+        val localRecord = localPathDao.getByCloudFileId(id)
+
+        val downloadedCacheUnchanged = existing != null &&
+            existing.deletedTime == null &&
+            existing.syncStatus == "clean" &&
+            existingPayload != null &&
+            localRecord != null &&
+            localRecord.documentUri == file.uri.toString() &&
+            localRecord.state == CloudDownloadState.COMPLETED.value &&
+            (localRecord.downloadedAt == null || mtime <= localRecord.downloadedAt + MTIME_TOLERANCE_MS) &&
+            existingPayload.size == size &&
+            (existingPayload.fileHash.isBlank() ||
+                localRecord.fileHashVerified?.takeIf { it.isNotBlank() }?.equals(
+                    existingPayload.fileHash,
+                    ignoreCase = true
+                ) == true)
+
+        if (downloadedCacheUnchanged) {
+            return ScanUpsertResult(changed = false, trackDeletion = false)
+        }
+
+        val trackDeletion = existing == null ||
+            existing.syncStatus == "modified" ||
+            key in previousEntries ||
+            localRecord == null
 
         if (existingPayload != null &&
             existingPayload.size == size &&
             abs(existingPayload.mtime - mtime) < MTIME_TOLERANCE_MS &&
             existingPayload.uploadState in STABLE_UPLOAD_STATES
         ) {
-            return false
+            return ScanUpsertResult(changed = false, trackDeletion = trackDeletion)
         }
 
         val payload = CloudFilePayload(
@@ -201,7 +255,10 @@ class CloudDriveDirectoryScanner @Inject constructor(
             downloadError = null,
         )
         val payloadJson = json.encodeToString(payload)
-        return upsertCloudItem(id, ItemType.CLOUD_FILE.value, payloadJson, existing)
+        return ScanUpsertResult(
+            changed = upsertCloudItem(id, ItemType.CLOUD_FILE.value, payloadJson, existing),
+            trackDeletion = trackDeletion,
+        )
     }
 
     private suspend fun upsertCloudItem(
@@ -253,8 +310,10 @@ class CloudDriveDirectoryScanner @Inject constructor(
         return true
     }
 
-    private suspend fun reconcileDeleted(currentEntries: Set<String>): Int {
-        val previousEntries = loadSnapshot()
+    private suspend fun reconcileDeleted(
+        currentEntries: Set<String>,
+        previousEntries: Set<String>,
+    ): Int {
         if (previousEntries.isEmpty() || !configStore.current.syncDeletions) return 0
 
         val missing = previousEntries - currentEntries
@@ -276,6 +335,7 @@ class CloudDriveDirectoryScanner @Inject constructor(
                 )
             }.getOrDefault("")
         }.filterKeys { it.isNotBlank() }
+        val localPathRecordsById = localPathDao.getAll().associateBy { it.cloudFileId }
         val idsToDelete = linkedSetOf<String>()
 
         for (entry in missing) {
@@ -285,6 +345,30 @@ class CloudDriveDirectoryScanner @Inject constructor(
                 if (type == ItemType.CLOUD_FILE.value) activeFilesByPath[relPath] else activeFoldersByPath[relPath]
             ) ?: continue
             if (item.deletedTime != null || item.type != type) continue
+
+            if (type == ItemType.CLOUD_FILE.value &&
+                item.syncStatus == "clean" &&
+                localPathRecordsById.containsKey(item.id)
+            ) {
+                localPathDao.delete(item.id)
+                continue
+            }
+
+            if (type == ItemType.CLOUD_FOLDER.value &&
+                item.syncStatus == "clean" &&
+                folderMissingIsOnlyDownloadedCache(relPath, activeFiles, localPathRecordsById.keys)
+            ) {
+                val prefix = "$relPath/"
+                for (file in activeFiles) {
+                    val payload = runCatching {
+                        json.decodeFromString<CloudFilePayload>(file.payload)
+                    }.getOrNull() ?: continue
+                    if (CloudDrivePathIdentity.normalize(payload.relativePath).startsWith(prefix)) {
+                        localPathDao.delete(file.id)
+                    }
+                }
+                continue
+            }
 
             idsToDelete.add(item.id)
             if (type == ItemType.CLOUD_FOLDER.value) {
@@ -314,6 +398,25 @@ class CloudDriveDirectoryScanner @Inject constructor(
             itemDao.softDelete(id, now)
         }
         return idsToDelete.size
+    }
+
+    private fun folderMissingIsOnlyDownloadedCache(
+        folderRelPath: String,
+        activeFiles: List<ItemEntity>,
+        localPathIds: Set<String>,
+    ): Boolean {
+        val prefix = "$folderRelPath/"
+        var hasDescendantFile = false
+        for (file in activeFiles) {
+            if (file.deletedTime != null || file.type != ItemType.CLOUD_FILE.value) continue
+            val payload = runCatching {
+                json.decodeFromString<CloudFilePayload>(file.payload)
+            }.getOrNull() ?: continue
+            if (!CloudDrivePathIdentity.normalize(payload.relativePath).startsWith(prefix)) continue
+            hasDescendantFile = true
+            if (file.id !in localPathIds) return false
+        }
+        return hasDescendantFile
     }
 
     private suspend fun buildExistingPathIndex(): ExistingPathIndex {
@@ -402,6 +505,11 @@ class CloudDriveDirectoryScanner @Inject constructor(
     private data class ExistingPathIndex(
         val files: Map<String, ItemEntity>,
         val folders: Map<String, ItemEntity>,
+    )
+
+    private data class ScanUpsertResult(
+        val changed: Boolean,
+        val trackDeletion: Boolean,
     )
 
     companion object {
