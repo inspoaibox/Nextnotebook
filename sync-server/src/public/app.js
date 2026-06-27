@@ -520,9 +520,9 @@ function normalizeCloudItem(item) {
 }
 
 function cloudIsVisibleFile(item) {
-  if (item.type !== 'cloud_file') return true;
-  const state = String(item.payload?.upload_state || '').toLowerCase();
-  return state === 'completed';
+  // 网盘应当展示所有已上传到服务端的文件，不再按 upload_state 过滤隐藏。
+  // 未完成字节上传的文件仍会带 state 徽标（pending/error）显示，方便排查。
+  return true;
 }
 
 function cloudEnsureCurrentPath() {
