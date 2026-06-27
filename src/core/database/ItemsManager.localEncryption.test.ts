@@ -150,4 +150,100 @@ describe('ItemsManager local payload encryption', () => {
     expect(isLocalPayloadEncrypted(raw!.payload)).toBe(false);
     expect(raw!.payload).toContain('photo.jpg');
   });
+
+  it('marks unconfirmed cloud items for sync without touching confirmed or non-cloud items', () => {
+    const cloudFolder: ItemBase = {
+      id: 'cloud-folder-missing-rev',
+      type: 'cloud_folder',
+      created_time: 1,
+      updated_time: 1,
+      deleted_time: null,
+      payload: JSON.stringify({ name: 'Important', parent_folder_id: 'root', relative_path: 'Important' }),
+      content_hash: 'folder-hash',
+      sync_status: 'clean',
+      local_rev: 3,
+      remote_rev: null,
+      encryption_applied: 0,
+      schema_version: 1,
+    };
+    const confirmedCloudFile: ItemBase = {
+      ...cloudFolder,
+      id: 'confirmed-cloud-file',
+      type: 'cloud_file',
+      payload: JSON.stringify({ filename: 'done.xlsx', parent_folder_id: 'root', relative_path: 'done.xlsx' }),
+      content_hash: 'file-hash',
+      local_rev: 4,
+      remote_rev: 'remote-rev',
+    };
+    const noteWithoutRemoteRev: ItemBase = {
+      ...cloudFolder,
+      id: 'note-without-remote-rev',
+      type: 'note',
+      payload: JSON.stringify({ title: 'Local note', content: '' }),
+      content_hash: 'note-hash',
+      local_rev: 5,
+    };
+
+    for (const item of [cloudFolder, confirmedCloudFile, noteWithoutRemoteRev]) {
+      dbManager.run(
+        `INSERT INTO items (id, type, created_time, updated_time, deleted_time, payload,
+         content_hash, sync_status, local_rev, remote_rev, encryption_applied, schema_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          item.id, item.type, item.created_time, item.updated_time, item.deleted_time,
+          item.payload, item.content_hash, item.sync_status, item.local_rev, item.remote_rev,
+          item.encryption_applied, item.schema_version,
+        ]
+      );
+    }
+
+    expect(itemsManager.markUnconfirmedCloudItemsForSync()).toBe(1);
+
+    const repaired = dbManager.get<ItemBase>('SELECT * FROM items WHERE id = ?', [cloudFolder.id]);
+    const confirmed = dbManager.get<ItemBase>('SELECT * FROM items WHERE id = ?', [confirmedCloudFile.id]);
+    const note = dbManager.get<ItemBase>('SELECT * FROM items WHERE id = ?', [noteWithoutRemoteRev.id]);
+
+    expect(repaired!.sync_status).toBe('modified');
+    expect(repaired!.local_rev).toBe(4);
+    expect(repaired!.remote_rev).toBeNull();
+    expect(confirmed!.sync_status).toBe('clean');
+    expect(confirmed!.local_rev).toBe(4);
+    expect(note!.sync_status).toBe('clean');
+    expect(note!.local_rev).toBe(5);
+  });
+
+  it('marks one unconfirmed cloud item by id', () => {
+    const cloudFolder: ItemBase = {
+      id: 'single-cloud-folder-missing-rev',
+      type: 'cloud_folder',
+      created_time: 1,
+      updated_time: 1,
+      deleted_time: null,
+      payload: JSON.stringify({ name: 'Important', parent_folder_id: 'root', relative_path: 'Important' }),
+      content_hash: 'folder-hash',
+      sync_status: 'clean',
+      local_rev: 1,
+      remote_rev: null,
+      encryption_applied: 0,
+      schema_version: 1,
+    };
+
+    dbManager.run(
+      `INSERT INTO items (id, type, created_time, updated_time, deleted_time, payload,
+       content_hash, sync_status, local_rev, remote_rev, encryption_applied, schema_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        cloudFolder.id, cloudFolder.type, cloudFolder.created_time, cloudFolder.updated_time,
+        cloudFolder.deleted_time, cloudFolder.payload, cloudFolder.content_hash, cloudFolder.sync_status,
+        cloudFolder.local_rev, cloudFolder.remote_rev, cloudFolder.encryption_applied, cloudFolder.schema_version,
+      ]
+    );
+
+    expect(itemsManager.markUnconfirmedCloudItemForSync(cloudFolder.id)).toBe(true);
+    expect(itemsManager.markUnconfirmedCloudItemForSync(cloudFolder.id)).toBe(false);
+
+    const repaired = dbManager.get<ItemBase>('SELECT * FROM items WHERE id = ?', [cloudFolder.id]);
+    expect(repaired!.sync_status).toBe('modified');
+    expect(repaired!.local_rev).toBe(2);
+  });
 });

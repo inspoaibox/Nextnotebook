@@ -355,6 +355,14 @@ export class CloudDriveService {
     this.emitItemsChanged(false);
   }
 
+  private repairUnconfirmedCloudItems(): void {
+    const repaired = this.itemsManager.markUnconfirmedCloudItemsForSync();
+    if (repaired <= 0) return;
+
+    console.warn(`[CloudDriveService] 修复 ${repaired} 个未确认远端版本的网盘元数据，重新同步`);
+    this.emitItemsChanged(true);
+  }
+
   // ========== 下载回环抑制（P2-4）==========
 
   /**
@@ -592,6 +600,8 @@ export class CloudDriveService {
   }
 
   private ensureSnapshotConsistency(force: boolean = false): void {
+    this.repairUnconfirmedCloudItems();
+
     const root = this.config.watched_root_path;
     if (!root || !fs.existsSync(root)) return;
     const now = Date.now();
@@ -1024,6 +1034,13 @@ export class CloudDriveService {
     } else {
       // 已存在且未删除：更新（ItemsManager.update 内部会做 content_hash 去重）
       if (existing.content_hash === payloadHash) {
+        if (existing.sync_status === 'clean' && existing.remote_rev === null) {
+          const repaired = this.itemsManager.markUnconfirmedCloudItemForSync(id);
+          if (repaired) {
+            console.warn(`[CloudDriveService] 修复未确认远端版本的 ${type}: ${payload.relative_path ?? id}`);
+            this.emitItemsChanged(true);
+          }
+        }
         return;
       }
       this.itemsManager.update(id, payload);

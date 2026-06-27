@@ -467,6 +467,32 @@ export class ItemsManager {
     return result.changes > 0;
   }
 
+  markUnconfirmedCloudItemForSync(id: string): boolean {
+    const result = this.db.run(
+      `UPDATE items
+       SET sync_status = 'modified', local_rev = local_rev + 1
+       WHERE id = ?
+         AND type IN ('cloud_file', 'cloud_folder')
+         AND deleted_time IS NULL
+         AND sync_status = 'clean'
+         AND remote_rev IS NULL`,
+      [id]
+    );
+    return result.changes > 0;
+  }
+
+  markUnconfirmedCloudItemsForSync(): number {
+    const result = this.db.run(
+      `UPDATE items
+       SET sync_status = 'modified', local_rev = local_rev + 1
+       WHERE type IN ('cloud_file', 'cloud_folder')
+         AND deleted_time IS NULL
+         AND sync_status = 'clean'
+         AND remote_rev IS NULL`
+    );
+    return result.changes;
+  }
+
   // 强制标记所有数据为待同步（用于首次同步或强制重新同步）
   markAllForSync(): number {
     const result = this.db.run(
