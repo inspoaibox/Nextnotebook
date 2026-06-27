@@ -992,9 +992,9 @@ export class CloudDriveService {
     const payloadHash = this.computePayloadHash(payloadStr);
 
     if (!existing) {
-      // 新建（带固定 ID）。create 不支持自定义 ID 之外的 deleted_time，
-      // 因此直接构造完整 ItemBase 走 createWithId（sync_status='clean' 由同步层改）。
-      // 但 cloud_drive 同步走自己游标，这里用 'modified' 标记本地变更。
+      // 新建（带固定 ID）。不能走 createWithId：它是远端拉取专用入口，
+      // 会强制把 sync_status 写成 clean。网盘本地扫描发现的新文件/目录
+      // 必须保持 modified，否则空目录和未进入上传调度的文件不会被元数据同步推到云端。
       const item: ItemBase = {
         id,
         type,
@@ -1009,7 +1009,7 @@ export class CloudDriveService {
         encryption_applied: 0,
         schema_version: 1,
       };
-      this.itemsManager.createWithId(item);
+      this.itemsManager.upsertFromPlainItem(item, 'modified');
       console.log(`[CloudDriveService] 新增 ${type}: ${payload.relative_path ?? ''} -> ${id}`);
       this.emitItemsChanged(true);
     } else if (existing.deleted_time !== null) {
@@ -1179,21 +1179,45 @@ export class CloudDriveService {
    * 返回 UI 所需的 cloud_file/cloud_folder 摘要列表。
    * 用于渲染层（重新）构建进度面板：包括 pending/uploading/paused/error/completed 全部状态。
    */
-  listCloudItemsForUi(): Array<{ id: string; type: string; payload: CloudFilePayload | CloudFolderPayload }> {
+  listCloudItemsForUi(): Array<{
+    id: string;
+    type: string;
+    payload: CloudFilePayload | CloudFolderPayload;
+    sync_status: ItemBase['sync_status'];
+    remote_rev: string | null;
+  }> {
     this.ensureSnapshotConsistency();
     const files = this.itemsManager.getByType('cloud_file');
     const folders = this.itemsManager.getByType('cloud_folder');
-    const out: Array<{ id: string; type: string; payload: CloudFilePayload | CloudFolderPayload }> = [];
+    const out: Array<{
+      id: string;
+      type: string;
+      payload: CloudFilePayload | CloudFolderPayload;
+      sync_status: ItemBase['sync_status'];
+      remote_rev: string | null;
+    }> = [];
     for (const f of files) {
       try {
-        out.push({ id: f.id, type: 'cloud_file', payload: JSON.parse(f.payload) as CloudFilePayload });
+        out.push({
+          id: f.id,
+          type: 'cloud_file',
+          payload: JSON.parse(f.payload) as CloudFilePayload,
+          sync_status: f.sync_status,
+          remote_rev: f.remote_rev,
+        });
       } catch {
         /* 跳过损坏 payload */
       }
     }
     for (const fo of folders) {
       try {
-        out.push({ id: fo.id, type: 'cloud_folder', payload: JSON.parse(fo.payload) as CloudFolderPayload });
+        out.push({
+          id: fo.id,
+          type: 'cloud_folder',
+          payload: JSON.parse(fo.payload) as CloudFolderPayload,
+          sync_status: fo.sync_status,
+          remote_rev: fo.remote_rev,
+        });
       } catch {
         /* 跳过 */
       }

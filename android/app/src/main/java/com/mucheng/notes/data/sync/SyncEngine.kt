@@ -64,7 +64,17 @@ class SyncEngine @Inject constructor(
         isLenient = true  // 允许更宽松的 JSON 解析
         coerceInputValues = true  // 将缺失的字段填充为默认值
     }
-    
+
+    /**
+     * 冲突副本后缀。用于：
+     * - addConflictSuffixToPayload 给显示名/relativePath 加后缀
+     * - isStaleOrphanConflictCopy 识别陈旧孤儿副本（避免对 path-derived id 做正则误判）
+     * - isLocalStaleConflictCopy 在 pull 阶段去重，防止冲突副本自我繁殖
+     *
+     * 必须与桌面端 CONFLICT_SUFFIX 保持一致。
+     */
+    private val CONFLICT_SUFFIX = " (冲突副本)"
+
     // 资源缓存目录
     private val resourceCacheDir: File by lazy {
         File(context.cacheDir, "resources").also { 
@@ -505,6 +515,19 @@ class SyncEngine @Inject constructor(
                             continue
                         }
 
+                        // 兜底：若这是陈旧的冲突副本（UUID id 且本地 SAF 源缺失/为空），
+                        // 直接丢弃而不是抛 "Cannot determine local size"。
+                        // 这通常出现在历史数据（relativePath 未派生）升级后仍残留的孤儿记录。
+                        if (isStaleOrphanConflictCopy(item, payload)) {
+                            android.util.Log.w(
+                                "SyncEngine",
+                                "Drop stale orphan conflict copy on push: id=${item.id}, " +
+                                    "relPath=${payload.relativePath}"
+                            )
+                            itemDao.hardDelete(item.id)
+                            continue
+                        }
+
                         val uploadResult = cloudDriveUploadManager.upload(item.id, payload, adapter)
                         if (uploadResult.isFailure) {
                             val cause = uploadResult.exceptionOrNull()?.message ?: "unknown error"
@@ -612,6 +635,77 @@ class SyncEngine @Inject constructor(
         val localSize = localSource?.length()?.takeIf { it > 0L } ?: 0L
 
         return localSource == null || (localSize <= 0L && localPayload.size <= 0L)
+    }
+
+    /**
+     * 判定一个待上传的 cloud_file 是否为"陈旧孤儿冲突副本"。
+     *
+     * 触发条件（同时满足）：
+     * 1. filename / relativePath 含冲突后缀 " (冲突副本)"——这是
+     *    [addConflictSuffixToPayload] 产出的冲突副本的独有特征，正常的
+     *    path-derived 记录不会有此后缀（不能用 UUID 形态判定，因为
+     *    [CloudDrivePathIdentity.deriveId] 也会把 path-derived id 规整成
+     *    UUID 字形）；
+     * 2. SAF 源无法解析、或解析出 0 字节空文件——说明没有真实本地内容可上传。
+     *
+     * 此类记录大多来自历史 Bug（relativePath 未派生）的残留，强传会抛
+     * "Cannot determine local size" 并把错误塞进结果。这里在 push 入口直接丢弃，
+     * 避免无限错误循环。注意：新版本已派生独立 relativePath 并物理拷贝字节，
+     * 不会再落入此分支。
+     */
+    private fun isStaleOrphanConflictCopy(
+        item: ItemEntity,
+        payload: CloudFilePayload
+    ): Boolean {
+        val hasConflictSuffix = payload.filename.contains(CONFLICT_SUFFIX) ||
+            payload.relativePath.contains(CONFLICT_SUFFIX)
+        if (!hasConflictSuffix) return false
+
+        if (payload.relativePath.isBlank()) return true
+
+        val source = runCatching {
+            cloudDriveFolderPicker.findRelativeDocumentFile(payload.relativePath)
+        }.getOrNull()
+        if (source == null || !source.exists() || !source.isFile) return true
+        val length = runCatching { source.length() }.getOrDefault(-1L)
+        if (length <= 0L && payload.size <= 0L) return true
+        return false
+    }
+
+    /**
+     * pull 阶段的冲突去重判定：本地这条记录本身是不是一个"陈旧冲突副本"。
+     *
+     * 背景：旧版本生成的冲突副本会沿用原 relativePath（甚至 id 形如 UUID），
+     * 当远端同一 id 下发新版本时，pull 会把本地副本再次 [createConflictCopy]，
+     * 产生 "副本的副本的副本..." —— 这正是网盘根目录堆出几十个 "(冲突副本)" 的根因。
+     *
+     * 判定依据仍然是 CONFLICT_SUFFIX：path-derived id 也形如 UUID，不能用 UUID
+     * 正则区分；只有 payload 中的后缀是安全判别符。普通类型（note/...）的标题
+     * 中后缀不可靠（用户可能真的起名带括号），这里只针对 cloud_file/cloud_folder，
+     * 检查 filename/relativePath 两个字段。
+     *
+     * 命中时调用方应：跳过 [createConflictCopy]，直接用远端记录覆盖本地
+     * （syncStatus="clean"），可选 hardDelete 本地陈旧副本。
+     */
+    private fun isLocalStaleConflictCopy(item: ItemEntity): Boolean {
+        if (item.type != "cloud_file" && item.type != "cloud_folder") return false
+        return try {
+            when (item.type) {
+                "cloud_file" -> {
+                    val p = CloudFilePayload.fromJson(json, item.payload)
+                    p.filename.contains(CONFLICT_SUFFIX) ||
+                        p.relativePath.contains(CONFLICT_SUFFIX)
+                }
+                "cloud_folder" -> {
+                    val p = json.decodeFromString<CloudFolderPayload>(item.payload)
+                    p.name.contains(CONFLICT_SUFFIX) ||
+                        p.relativePath.contains(CONFLICT_SUFFIX)
+                }
+                else -> false
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private suspend fun shouldRestoreRemoteCloudItemInsteadOfDeleting(
@@ -726,10 +820,18 @@ class SyncEngine @Inject constructor(
                         } else if (localItem.contentHash != remoteItem.contentHash) {
                             // 内容不同，检查冲突
                             if (localItem.syncStatus == "modified") {
-                                val conflictItem = createConflictCopy(localItem)
-                                itemDao.upsert(conflictItem)
-                                itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
-                                conflicts++
+                                if (isLocalStaleConflictCopy(localItem)) {
+                                    // 本地本身就是陈旧冲突副本（relativePath/filename
+                                    // 含后缀）：不要再派生 "副本的副本"，直接用远端覆盖。
+                                    itemDao.hardDelete(localItem.id)
+                                    itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                                    conflicts++
+                                } else {
+                                    val conflictItem = createConflictCopy(localItem)
+                                    itemDao.upsert(conflictItem)
+                                    itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                                    conflicts++
+                                }
                             } else {
                                 itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
                             }
@@ -862,6 +964,14 @@ class SyncEngine @Inject constructor(
                 }
 
                 if (localItem != null && localItem.syncStatus == "modified") {
+                    if (isLocalStaleConflictCopy(localItem)) {
+                        // 本地本身就是陈旧冲突副本：跳过派生，直接用远端覆盖
+                        itemDao.hardDelete(localItem.id)
+                        itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
+                        count++
+                        conflicts++
+                        continue
+                    }
                     val conflictItem = createConflictCopy(localItem)
                     itemDao.upsert(conflictItem)
                     itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
@@ -1038,30 +1148,139 @@ class SyncEngine @Inject constructor(
     }
     
     /**
-     * 创建冲突副本
+     * 创建冲突副本。
+     *
+     * 对 cloud_file/cloud_folder：除了给显示名加后缀，还会派生独立的 relativePath，
+     * 并把原始物理文件（或文件夹）的字节复制到新的 SAF 路径。否则冲突副本会沿用
+     * 原 relativePath，导致上传时找不到可用的本地源（Cannot determine local size），
+     * 也会被 DirectoryScanner 当成孤儿记录反复触发冲突，越积越多。
      */
-    private fun createConflictCopy(item: ItemEntity): ItemEntity {
-        // 修改 payload 添加冲突后缀
+    private suspend fun createConflictCopy(item: ItemEntity): ItemEntity {
+        // 修改 payload：添加后缀 + 派生独立 relativePath
         val modifiedPayload = addConflictSuffixToPayload(item.payload, item.type)
-        
-        return item.copy(
+
+        val conflictItem = item.copy(
             id = UUID.randomUUID().toString(),
             payload = modifiedPayload,
             syncStatus = "modified",
             localRev = 1,
             remoteRev = null
         )
+
+        // cloud_file/cloud_folder：把原始字节/目录复制到新 relativePath，
+        // 这样上传与扫描才能解析到真实的本地源。复制失败不阻断冲突副本的创建，
+        // 由 push 阶段的源校验兜底（不再因找不到源而无限报错）。
+        if (item.type == "cloud_file" || item.type == "cloud_folder") {
+            copyConflictPhysicalSource(item, conflictItem)
+        }
+
+        return conflictItem
     }
-    
+
     /**
-     * 为 payload 添加冲突后缀
+     * 把原始 cloud_file/cloud_folder 的物理文件/目录复制到冲突副本的新 relativePath。
+     * 对应桌面端 CloudDriveService.handleCloudFileConflict。
+     */
+    private suspend fun copyConflictPhysicalSource(
+        original: ItemEntity,
+        conflict: ItemEntity
+    ) = withContext(Dispatchers.IO) {
+        val originalRelPath = when (original.type) {
+            "cloud_file" -> CloudFilePayload.fromJson(json, original.payload).relativePath
+            "cloud_folder" -> json.decodeFromString<CloudFolderPayload>(original.payload).relativePath
+            else -> return@withContext
+        }
+        val conflictRelPath = when (original.type) {
+            "cloud_file" -> CloudFilePayload.fromJson(json, conflict.payload).relativePath
+            "cloud_folder" -> json.decodeFromString<CloudFolderPayload>(conflict.payload).relativePath
+            else -> return@withContext
+        }
+        if (originalRelPath.isBlank() || conflictRelPath.isBlank() || originalRelPath == conflictRelPath) {
+            return@withContext
+        }
+
+        try {
+            val source = cloudDriveFolderPicker.findRelativeDocumentFile(originalRelPath)
+            if (source == null || !source.exists()) {
+                // 原文件已不在本地（被改名/删除是产生冲突的常见原因）。
+                // 此时冲突副本只是占位：远端会随后下发新版本，本地无需复制字节。
+                android.util.Log.d(
+                    "SyncEngine",
+                    "copyConflictPhysicalSource: original source gone for ${original.id}, skip copy"
+                )
+                return@withContext
+            }
+
+            if (original.type == "cloud_folder") {
+                // 复制整个目录树到冲突副本的新 relativePath
+                copyConflictDirectoryTree(source, conflictRelPath)
+            } else {
+                // cloud_file：构建目标文件并复制字节
+                val target = cloudDriveFolderPicker.buildRelativeDocumentFile(conflictRelPath)
+                if (target == null || !target.exists()) {
+                    android.util.Log.w(
+                        "SyncEngine",
+                        "copyConflictPhysicalSource: cannot build target for $conflictRelPath"
+                    )
+                    return@withContext
+                }
+                cloudDriveFolderPicker.copyDocumentBytes(source, target)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(
+                "SyncEngine",
+                "copyConflictPhysicalSource failed for ${original.id}: ${e.message}"
+            )
+        }
+    }
+
+    /**
+     * 递归把源目录及其内容复制到 [conflictRelPath]。
+     */
+    private suspend fun copyConflictDirectoryTree(
+        sourceDir: DocumentFile,
+        conflictRelPath: String
+    ) = withContext(Dispatchers.IO) {
+        val targetRoot = cloudDriveFolderPicker.buildRelativeDirectory(conflictRelPath) ?: run {
+            android.util.Log.w(
+                "SyncEngine",
+                "copyConflictDirectoryTree: cannot build target dir $conflictRelPath"
+            )
+            return@withContext
+        }
+        copyDocumentTree(sourceDir, targetRoot)
+    }
+
+    private suspend fun copyDocumentTree(source: DocumentFile, target: DocumentFile): Unit {
+        for (child in source.listFiles()) {
+            val childName = child.name
+            if (childName.isNullOrEmpty()) continue
+            if (child.isDirectory) {
+                val childTarget = target.createDirectory(childName) ?: continue
+                copyDocumentTree(child, childTarget)
+            } else if (child.isFile) {
+                val childTarget = target.createFile(
+                    child.type ?: "application/octet-stream",
+                    childName
+                ) ?: continue
+                cloudDriveFolderPicker.copyDocumentBytes(child, childTarget)
+            }
+        }
+    }
+
+    /**
+     * 为 payload 添加冲突后缀。
+     *
+     * 普通类型（note/bookmark/vault/...）只修改标题字段。
+     * cloud_file/cloud_folder 除了显示名加后缀，还必须派生独立 relativePath，
+     * 否则冲突副本与原文件会指向同一物理路径。
      */
     private fun addConflictSuffixToPayload(payload: String, type: String): String {
-        val suffix = " (冲突副本)"
+        val suffix = CONFLICT_SUFFIX
         return try {
             val jsonElement = json.parseToJsonElement(payload)
             val mutableMap = jsonElement.jsonObject.toMutableMap()
-            
+
             // 根据类型确定标题字段
             val titleField = when (type) {
                 "note", "folder", "tag", "bookmark_folder", "vault_folder",
@@ -1077,21 +1296,60 @@ class SyncEngine @Inject constructor(
                 "cloud_folder" -> "name"
                 else -> "title"
             }
-            
+
             // 修改标题字段
             val currentTitle = mutableMap[titleField]?.let { element ->
                 if (element is JsonPrimitive && element.isString) {
                     element.content
                 } else ""
             } ?: ""
-            
-            mutableMap[titleField] = JsonPrimitive(currentTitle + suffix)
-            
+
+            val newTitle = currentTitle + suffix
+            mutableMap[titleField] = JsonPrimitive(newTitle)
+
+            // cloud_file/cloud_folder：必须同时派生独立 relativePath。
+            // 桌面端 deriveConflictPath 的等价实现：目录/文件名后缀插到扩展名前。
+            if (type == "cloud_file" || type == "cloud_folder") {
+                val relPathField = "relative_path"
+                val currentRelPath = mutableMap[relPathField]?.let { element ->
+                    if (element is JsonPrimitive && element.isString) element.content else ""
+                } ?: ""
+                if (currentRelPath.isNotBlank()) {
+                    val conflictRelPath = deriveConflictRelativePath(currentRelPath)
+                    mutableMap[relPathField] = JsonPrimitive(conflictRelPath)
+                    // cloud_file 的 filename 也应与新的 relativePath 末端保持一致
+                    if (type == "cloud_file") {
+                        mutableMap["filename"] = JsonPrimitive(
+                            conflictRelPath.substringAfterLast('/').ifBlank { newTitle }
+                        )
+                    }
+                }
+            }
+
             json.encodeToString(JsonObject.serializer(), JsonObject(mutableMap))
         } catch (e: Exception) {
             // 解析失败，返回原始 payload
             payload
         }
+    }
+
+    /**
+     * 派生冲突副本的 relativePath，避免覆盖原文件。
+     * 对应桌面端 SyncEngine.deriveConflictPath：
+     *   "docs/file.pdf" -> "docs/file (冲突副本).pdf"
+     *   "docs/folder"   -> "docs/folder (冲突副本)"
+     */
+    private fun deriveConflictRelativePath(relativePath: String): String {
+        val suffix = CONFLICT_SUFFIX
+        val lastSlash = maxOf(relativePath.lastIndexOf('/'), relativePath.lastIndexOf('\\'))
+        val dir = if (lastSlash >= 0) relativePath.substring(0, lastSlash + 1) else ""
+        val fileName = if (lastSlash >= 0) relativePath.substring(lastSlash + 1) else relativePath
+
+        val dotIdx = fileName.lastIndexOf('.')
+        val base = if (dotIdx > 0) fileName.substring(0, dotIdx) else fileName
+        val ext = if (dotIdx > 0) fileName.substring(dotIdx) else ""
+        val conflictName = "$base$suffix$ext"
+        return if (dir.isNotEmpty()) "$dir$conflictName" else conflictName
     }
 
 }

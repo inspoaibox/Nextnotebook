@@ -155,6 +155,73 @@ class CloudDriveFolderPicker @Inject constructor(
         return current.findFile(fileName) ?: current.createFile("application/octet-stream", fileName)
     }
 
+    /**
+     * 在根目录下按相对路径创建/定位一个目录。
+     *
+     * 与 [buildRelativeDocumentFile] 类似，会逐级创建中间目录，
+     * 但最后一段视作目录名，使用 [DocumentFile.createDirectory]。
+     * 用于冲突副本物理拷贝时为目录类型的云端条目新建副本目录树。
+     *
+     * @param relativePath 相对根目录的 POSIX 风格路径，最后一段为目录名
+     * @return 目标目录的 DocumentFile；中途任一目录创建失败返回 null
+     */
+    fun buildRelativeDirectory(relativePath: String): DocumentFile? {
+        val root = resolveRootDocumentFile() ?: return null
+        if (relativePath.isBlank() || relativePath == "/") return null
+        val normalized = relativePath.trimStart('/').trimEnd('/')
+        val parts = normalized.split('/').filter { it.isNotBlank() }
+        if (parts.isEmpty()) return null
+
+        var current = root
+        for (name in parts) {
+            current = current.findFile(name)?.let { existing ->
+                if (existing.isDirectory) existing else {
+                    // 同名但非目录，无法继续
+                    Log.w(TAG, "buildRelativeDirectory: $name is not a directory, abort")
+                    return null
+                }
+            } ?: current.createDirectory(name) ?: run {
+                Log.w(TAG, "buildRelativeDirectory: failed to create dir $name")
+                return null
+            }
+        }
+        return current
+    }
+
+    /**
+     * 将 [source] 的字节流复制到 [target]（均为 SAF DocumentFile）。
+     *
+     * 用于冲突副本物理拷贝：源是用户原有的本地文件，目标是已通过
+     * [buildRelativeDocumentFile] 新建的冲突副本文件。使用 ContentResolver
+     * 打开输入/输出流并以缓冲区逐块拷贝。
+     *
+     * @return true 表示拷贝完成；任一流无法打开或读写异常返回 false
+     */
+    fun copyDocumentBytes(source: DocumentFile, target: DocumentFile): Boolean {
+        return try {
+            val input = context.contentResolver.openInputStream(source.uri)
+            if (input == null) {
+                Log.w(TAG, "copyDocumentBytes: cannot open input stream for ${source.uri}")
+                return false
+            }
+            input.use { src ->
+                val output = context.contentResolver.openOutputStream(target.uri)
+                if (output == null) {
+                    Log.w(TAG, "copyDocumentBytes: cannot open output stream for ${target.uri}")
+                    return false
+                }
+                output.use { dst ->
+                    src.copyTo(dst)
+                    dst.flush()
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "copyDocumentBytes failed: ${e.message}")
+            false
+        }
+    }
+
     companion object {
         private const val TAG = "CloudDriveFolderPicker"
     }

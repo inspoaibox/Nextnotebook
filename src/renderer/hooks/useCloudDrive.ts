@@ -15,6 +15,7 @@ import {
   CloudFilePayload,
   CloudFolderPayload,
   CloudLocalAvailability,
+  SyncStatus,
 } from '@shared/types';
 
 // 获取 electronAPI（主进程桥接对象）
@@ -72,7 +73,7 @@ export interface UseCloudDriveReturn {
   /** 上传进度列表 */
   uploadProgress: CloudUploadProgress[];
   /** 当前网盘元数据快照（文件 + 文件夹） */
-  cloudItems: Array<{ id: string; type: 'cloud_file' | 'cloud_folder'; payload: CloudFilePayload | CloudFolderPayload }>;
+  cloudItems: CloudDriveItemSnapshot[];
   /** 是否正在加载配置 */
   loading: boolean;
 
@@ -137,15 +138,19 @@ export interface UseCloudDriveReturn {
   openLocalDirectory: (folderPath: string) => Promise<boolean>;
 }
 
+export interface CloudDriveItemSnapshot {
+  id: string;
+  type: 'cloud_file' | 'cloud_folder';
+  payload: CloudFilePayload | CloudFolderPayload;
+  sync_status?: SyncStatus;
+  remote_rev?: string | null;
+}
+
 export const useCloudDrive = (): UseCloudDriveReturn => {
   const [config, setConfig] = useState<CloudDriveConfig>(DEFAULT_CLOUD_DRIVE_CONFIG);
   const [isWatching, setIsWatching] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<CloudUploadProgress[]>([]);
-  const [cloudItems, setCloudItems] = useState<Array<{
-    id: string;
-    type: 'cloud_file' | 'cloud_folder';
-    payload: CloudFilePayload | CloudFolderPayload;
-  }>>([]);
+  const [cloudItems, setCloudItems] = useState<CloudDriveItemSnapshot[]>([]);
   const [downloadProgress, setDownloadProgress] = useState<CloudDownloadProgress[]>([]);
   const [uploadSpeedBps, setUploadSpeedBps] = useState<Record<string, number>>({});
   const [downloadSpeedBps, setDownloadSpeedBps] = useState<Record<string, number>>({});
@@ -184,13 +189,9 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     if (!api?.cloudDrive?.listItems) return;
     try {
       const resp = await api.cloudDrive.listItems();
-      const items: Array<{
-        id: string;
-        type: 'cloud_file' | 'cloud_folder';
-        payload: CloudFilePayload | CloudFolderPayload;
-      }> = resp?.items ?? [];
+      const items: CloudDriveItemSnapshot[] = resp?.items ?? [];
       const fileItems = items.filter(
-        (it): it is { id: string; type: 'cloud_file'; payload: CloudFilePayload } => it.type === 'cloud_file'
+        (it): it is CloudDriveItemSnapshot & { type: 'cloud_file'; payload: CloudFilePayload } => it.type === 'cloud_file'
       );
       setCloudItems(items);
       setUploadProgress(prev => {

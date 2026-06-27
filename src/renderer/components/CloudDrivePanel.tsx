@@ -25,6 +25,7 @@ import {
   CloudLocalAvailability,
   CloudFilePayload,
   CloudFolderPayload,
+  SyncStatus,
 } from '@shared/types';
 
 const { Content } = Layout;
@@ -69,6 +70,26 @@ const availabilityColor = (value: CloudLocalAvailability | undefined): 'default'
 
 const availabilityLabel = (value: CloudLocalAvailability | undefined): string =>
   value === 'online_only' ? '仅云端' : value === 'offline' ? '离线保留' : '本地可用';
+
+const isCloudSynced = (syncStatus: SyncStatus | undefined, remoteRev: string | null | undefined): boolean =>
+  syncStatus === 'clean' && Boolean(remoteRev);
+
+const cloudSyncTag = (syncStatus: SyncStatus | undefined, remoteRev: string | null | undefined): { color: string; label: string } => {
+  if (syncStatus === 'modified') return { color: 'warning', label: '待同步' };
+  if (syncStatus === 'deleted') return { color: 'warning', label: '删除待同步' };
+  if (syncStatus === 'conflict') return { color: 'error', label: '同步冲突' };
+  if (syncStatus === 'clean' && remoteRev) return { color: 'blue', label: '云端已同步' };
+  return { color: 'default', label: '云端待确认' };
+};
+
+const presenceLabel = (
+  availability: CloudLocalAvailability,
+  syncStatus: SyncStatus | undefined,
+  remoteRev: string | null | undefined
+): string => {
+  if (availability === 'online_only') return '仅云端';
+  return isCloudSynced(syncStatus, remoteRev) ? '本地+云端' : '仅本地';
+};
 
 const CloudDrivePanel: React.FC = () => {
   const { isDarkMode } = useSettings();
@@ -153,7 +174,7 @@ const CloudDrivePanel: React.FC = () => {
 
   const folderEntries = useMemo(() => {
     const folders = cloudItems
-      .filter((item): item is { id: string; type: 'cloud_folder'; payload: CloudFolderPayload } => item.type === 'cloud_folder')
+      .filter((item): item is typeof item & { type: 'cloud_folder'; payload: CloudFolderPayload } => item.type === 'cloud_folder')
       .map(item => {
         const relativePath = normalizeCloudPath(item.payload.relative_path);
         return {
@@ -161,6 +182,8 @@ const CloudDrivePanel: React.FC = () => {
           name: item.payload.name || baseCloudName(relativePath),
           relativePath,
           parentPath: parentCloudPath(relativePath),
+          syncStatus: item.sync_status,
+          remoteRev: item.remote_rev,
         };
       });
     folders.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'zh-CN'));
@@ -181,7 +204,7 @@ const CloudDrivePanel: React.FC = () => {
 
   const fileEntries = useMemo(() => {
     const files = cloudItems
-      .filter((item): item is { id: string; type: 'cloud_file'; payload: CloudFilePayload } => item.type === 'cloud_file')
+      .filter((item): item is typeof item & { type: 'cloud_file'; payload: CloudFilePayload } => item.type === 'cloud_file')
       .map(item => ({
         id: item.id,
         filename: item.payload.filename,
@@ -190,6 +213,8 @@ const CloudDrivePanel: React.FC = () => {
         size: item.payload.size,
         uploadState: item.payload.upload_state,
         downloadState: item.payload.download_state,
+        syncStatus: item.sync_status,
+        remoteRev: item.remote_rev,
       }));
     files.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'zh-CN'));
     return files;
@@ -419,10 +444,17 @@ const CloudDrivePanel: React.FC = () => {
   const renderFileStatusTags = (
     availability: CloudLocalAvailability,
     uploadState: CloudFilePayload['upload_state'],
-    downloadState: CloudFilePayload['download_state']
-  ) => (
-    <Space size={4} wrap>
-      <Tag color={availabilityColor(availability)} style={{ marginInlineEnd: 0 }}>{availabilityLabel(availability)}</Tag>
+    downloadState: CloudFilePayload['download_state'],
+    syncStatus: SyncStatus | undefined,
+    remoteRev: string | null | undefined
+  ) => {
+    const syncTag = cloudSyncTag(syncStatus, remoteRev);
+    return (
+      <Space size={4} wrap>
+      <Tag color={availabilityColor(availability)} style={{ marginInlineEnd: 0 }}>
+        {presenceLabel(availability, syncStatus, remoteRev)}
+      </Tag>
+      <Tag color={syncTag.color} style={{ marginInlineEnd: 0 }}>{syncTag.label}</Tag>
       {uploadState !== 'completed' && (
         <Tag
           color={
@@ -468,7 +500,18 @@ const CloudDrivePanel: React.FC = () => {
         </Tag>
       )}
     </Space>
-  );
+    );
+  };
+
+  const renderFolderStatusTags = (folder: typeof visibleFolders[number]) => {
+    const syncTag = cloudSyncTag(folder.syncStatus, folder.remoteRev);
+    return (
+      <Space size={4} wrap>
+        <Tag color="default" style={{ marginInlineEnd: 0 }}>目录</Tag>
+        <Tag color={syncTag.color} style={{ marginInlineEnd: 0 }}>{syncTag.label}</Tag>
+      </Space>
+    );
+  };
 
   const renderFolderActions = (folder: typeof visibleFolders[number]) => (
     <Space size={2} wrap>
@@ -878,9 +921,7 @@ const CloudDrivePanel: React.FC = () => {
                               {folder.name}
                             </span>
                           </button>
-                          <div style={{ marginTop: 8 }}>
-                            <Tag color="default" style={{ marginInlineEnd: 0 }}>目录</Tag>
-                          </div>
+                          <div style={{ marginTop: 8 }}>{renderFolderStatusTags(folder)}</div>
                           <div style={{ marginTop: 8 }}>{renderFolderActions(folder)}</div>
                         </div>
                       </Dropdown>
@@ -945,7 +986,9 @@ const CloudDrivePanel: React.FC = () => {
                               {file.filename}
                             </div>
                             <div style={{ marginTop: 6, color: '#999', fontSize: 12 }}>{formatBytes(file.size)}</div>
-                            <div style={{ marginTop: 8 }}>{renderFileStatusTags(availability, uploadState, downloadState)}</div>
+                            <div style={{ marginTop: 8 }}>
+                              {renderFileStatusTags(availability, uploadState, downloadState, file.syncStatus, file.remoteRev)}
+                            </div>
                             <div style={{ marginTop: 8 }}>{renderFileActions(file, availability, downloadState)}</div>
                           </div>
                         </Dropdown>
@@ -1004,7 +1047,7 @@ const CloudDrivePanel: React.FC = () => {
                             </div>
                           </button>
                           <span style={{ color: '#999', fontSize: 12 }}>-</span>
-                          <Tag color="default" style={{ width: 'fit-content', marginInlineEnd: 0 }}>目录</Tag>
+                          {renderFolderStatusTags(folder)}
                           {renderFolderActions(folder)}
                         </div>
                       </Dropdown>
@@ -1057,7 +1100,7 @@ const CloudDrivePanel: React.FC = () => {
                               </div>
                             </div>
                             <span style={{ color: '#999', fontSize: 12 }}>{formatBytes(file.size)}</span>
-                            {renderFileStatusTags(availability, uploadState, downloadState)}
+                            {renderFileStatusTags(availability, uploadState, downloadState, file.syncStatus, file.remoteRev)}
                             {renderFileActions(file, availability, downloadState)}
                           </div>
                         </Dropdown>
