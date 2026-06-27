@@ -253,6 +253,10 @@ class SettingsViewModel @Inject constructor(
         val loadedSyncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false)
         android.util.Log.d("SettingsViewModel", "loadSettings: syncEnabled=$loadedSyncEnabled")
         
+        val loadedSyncType = prefs.getString(KEY_SYNC_TYPE, "webdav") ?: "webdav"
+        val cloudDriveSupported = loadedSyncType == "server"
+        val cloudDriveFeatureEnabled = cloudDriveSupported && prefs.getBoolean(KEY_CLOUD_DRIVE_ENABLED, true)
+
         _uiState.update { state ->
             state.copy(
                 // 标记加载完成
@@ -265,11 +269,11 @@ class SettingsViewModel @Inject constructor(
                 vaultEnabled = prefs.getBoolean(KEY_VAULT_ENABLED, true),
                 aiEnabled = prefs.getBoolean(KEY_AI_ENABLED, true),
                 transferEnabled = prefs.getBoolean(KEY_TRANSFER_ENABLED, true),
-                cloudDriveEnabled = prefs.getBoolean(KEY_CLOUD_DRIVE_ENABLED, true),
+                cloudDriveEnabled = cloudDriveFeatureEnabled,
                 
                 // 同步设置
                 syncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false),
-                syncType = prefs.getString(KEY_SYNC_TYPE, "webdav") ?: "webdav",
+                syncType = loadedSyncType,
                 webdavUrl = prefs.getString(KEY_WEBDAV_URL, "") ?: "",
                 username = prefs.getString(KEY_USERNAME, "") ?: "",
                 password = SecureSyncStorage.getString(context, KEY_PASSWORD) ?: "",
@@ -284,7 +288,7 @@ class SettingsViewModel @Inject constructor(
                     diagrams = prefs.getBoolean(KEY_SYNC_DIAGRAMS, true),
                     todos = prefs.getBoolean(KEY_SYNC_TODOS, true),
                     ai = prefs.getBoolean(KEY_SYNC_AI, true),
-                    cloudDrive = prefs.getBoolean(KEY_SYNC_CLOUD_DRIVE, true)
+                    cloudDrive = cloudDriveFeatureEnabled && prefs.getBoolean(KEY_SYNC_CLOUD_DRIVE, true)
                 ),
                 
                 // 安全设置 - 应用锁
@@ -317,7 +321,7 @@ class SettingsViewModel @Inject constructor(
                 serverTokenExpires = SecureSyncStorage.getLong(context, KEY_SERVER_TOKEN_EXPIRES)?.takeIf { it > 0 },
                 serverLoggedIn = SecureSyncStorage.getString(context, KEY_SERVER_TOKEN) != null,
                 serverLoginUser = prefs.getString(KEY_SERVER_USERNAME, null),
-                cloudDriveSupported = (prefs.getString(KEY_SYNC_TYPE, "webdav") ?: "webdav") == "server"
+                cloudDriveSupported = cloudDriveSupported
             )
         }
     }
@@ -353,8 +357,16 @@ class SettingsViewModel @Inject constructor(
             _uiState.update { it.copy(message = "网盘功能仅支持自建同步服务器") }
             return
         }
-        prefs.edit().putBoolean(KEY_CLOUD_DRIVE_ENABLED, enabled).apply()
-        _uiState.update { it.copy(cloudDriveEnabled = enabled) }
+        prefs.edit()
+            .putBoolean(KEY_CLOUD_DRIVE_ENABLED, enabled)
+            .putBoolean(KEY_SYNC_CLOUD_DRIVE, enabled)
+            .apply()
+        _uiState.update { state ->
+            state.copy(
+                cloudDriveEnabled = enabled,
+                syncModules = state.syncModules.copy(cloudDrive = enabled)
+            )
+        }
     }
     
     // 同步设置
@@ -364,18 +376,18 @@ class SettingsViewModel @Inject constructor(
     }
     
     fun setSyncType(type: String) {
-        prefs.edit().putString(KEY_SYNC_TYPE, type).apply()
+        val supportsCloudDrive = type == "server"
+        val nextCloudDriveEnabled = supportsCloudDrive && prefs.getBoolean(KEY_CLOUD_DRIVE_ENABLED, true)
+        prefs.edit()
+            .putString(KEY_SYNC_TYPE, type)
+            .putBoolean(KEY_SYNC_CLOUD_DRIVE, nextCloudDriveEnabled)
+            .apply()
         _uiState.update { state ->
-            val supportsCloudDrive = type == "server"
-            val nextModules = if (supportsCloudDrive) {
-                state.syncModules
-            } else {
-                state.syncModules.copy(cloudDrive = false)
-            }
+            val nextModules = state.syncModules.copy(cloudDrive = nextCloudDriveEnabled)
             state.copy(
                 syncType = type,
                 cloudDriveSupported = supportsCloudDrive,
-                cloudDriveEnabled = if (supportsCloudDrive) state.cloudDriveEnabled else false,
+                cloudDriveEnabled = nextCloudDriveEnabled,
                 syncModules = nextModules,
                 message = if (supportsCloudDrive) state.message else "网盘功能仅支持自建同步服务器"
             )

@@ -123,17 +123,32 @@ fun CloudDriveScreen(
                 },
                 actions = {
                     // 上传文件
-                    IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) {
+                    IconButton(
+                        onClick = { uploadLauncher.launch(arrayOf("*/*")) },
+                        enabled = uiState.authorized
+                    ) {
                         Icon(Icons.Default.Upload, contentDescription = "上传文件")
                     }
-                    IconButton(onClick = {
-                        viewModel.setFolderLocalAvailability(uiState.currentFolderId, CloudLocalAvailabilityValues.OFFLINE)
-                    }) {
+                    IconButton(
+                        onClick = {
+                            viewModel.setFolderLocalAvailability(
+                                uiState.currentFolderId,
+                                CloudLocalAvailabilityValues.OFFLINE
+                            )
+                        },
+                        enabled = uiState.authorized
+                    ) {
                         Icon(Icons.Default.Cloud, contentDescription = "当前目录全部离线")
                     }
-                    IconButton(onClick = {
-                        viewModel.setFolderLocalAvailability(uiState.currentFolderId, CloudLocalAvailabilityValues.ONLINE_ONLY)
-                    }) {
+                    IconButton(
+                        onClick = {
+                            viewModel.setFolderLocalAvailability(
+                                uiState.currentFolderId,
+                                CloudLocalAvailabilityValues.ONLINE_ONLY
+                            )
+                        },
+                        enabled = uiState.authorized
+                    ) {
                         Icon(Icons.Default.Delete, contentDescription = "当前目录全部释放")
                     }
                     // 新建文件夹
@@ -145,41 +160,17 @@ fun CloudDriveScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { uploadLauncher.launch(arrayOf("*/*")) },
-                modifier = Modifier.padding(bottom = bottomPadding.calculateBottomPadding())
-            ) {
-                Icon(Icons.Default.Upload, contentDescription = "上传文件")
+            if (uiState.authorized) {
+                FloatingActionButton(
+                    onClick = { uploadLauncher.launch(arrayOf("*/*")) },
+                    modifier = Modifier.padding(bottom = bottomPadding.calculateBottomPadding())
+                ) {
+                    Icon(Icons.Default.Upload, contentDescription = "上传文件")
+                }
             }
         }
     ) { paddingValues ->
         when {
-            // 未授权：提示先去设置授权
-            !uiState.authorized -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.Cloud,
-                            contentDescription = null,
-                            modifier = Modifier.size(56.dp),
-                            tint = MaterialTheme.colorScheme.outline
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            "请先在设置中授权网盘目录",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
             // 空且非加载中：空状态
             uiState.items.isEmpty() && !uiState.isLoading -> {
                 Box(
@@ -189,7 +180,11 @@ fun CloudDriveScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "当前文件夹为空",
+                        if (uiState.authorized) {
+                            "当前文件夹为空"
+                        } else {
+                            "当前文件夹为空；授权本机目录后可上传或下载到设备"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -203,6 +198,38 @@ fun CloudDriveScreen(
                         .fillMaxSize()
                         .padding(paddingValues)
                 ) {
+                    if (!uiState.authorized) {
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Cloud,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.outline
+                                    )
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        "已显示云端目录；授权本机目录后可上传、下载或离线保存",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     items(uiState.items, key = { it.entity.id }) { item ->
                         if (item.isFolder) {
                             FolderRow(

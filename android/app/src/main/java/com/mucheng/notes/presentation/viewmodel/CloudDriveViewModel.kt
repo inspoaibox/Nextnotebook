@@ -43,6 +43,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -129,8 +130,15 @@ class CloudDriveViewModel @Inject constructor(
             configStore.configFlow.collect { cfg ->
                 val authorized = cfg.watchedRootPath != null && folderPicker.resolveRootDocumentFile() != null
                 _uiState.update { it.copy(authorized = authorized) }
-                refresh()
+                reloadCurrentFolder(showLoading = false)
             }
+        }
+
+        viewModelScope.launch {
+            itemRepository.getByTypes(listOf(ItemType.CLOUD_FOLDER, ItemType.CLOUD_FILE))
+                .collectLatest {
+                    reloadCurrentFolder(showLoading = false)
+                }
         }
 
         viewModelScope.launch {
@@ -153,11 +161,7 @@ class CloudDriveViewModel @Inject constructor(
     /** 进入屏幕/授权变更时刷新当前文件夹内容 */
     fun refresh() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, syncError = null) }
-            val folderId = _uiState.value.currentFolderId
-            val items = loadItems(folderId)
-            refreshLocalAvailability()
-            _uiState.update { it.copy(items = items, isLoading = false) }
+            reloadCurrentFolder(showLoading = true)
         }
     }
 
@@ -690,6 +694,21 @@ class CloudDriveViewModel @Inject constructor(
             compareByDescending<CloudDriveItem> { it.isFolder }
                 .thenBy { it.name.lowercase() }
         )
+    }
+
+    private suspend fun reloadCurrentFolder(showLoading: Boolean) {
+        if (showLoading) {
+            _uiState.update { it.copy(isLoading = true, syncError = null) }
+        }
+        val folderId = _uiState.value.currentFolderId
+        val items = loadItems(folderId)
+        refreshLocalAvailability()
+        _uiState.update {
+            it.copy(
+                items = items,
+                isLoading = false
+            )
+        }
     }
 
     /**
