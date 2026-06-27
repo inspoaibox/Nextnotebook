@@ -122,6 +122,28 @@ export class ResourceService {
     return !!row;
   }
 
+  private canDeleteResource(id: string): boolean {
+    if (!this.isValidResourceId(id)) {
+      return false;
+    }
+
+    const itemId = this.getItemIdFromResourceName(id);
+    const db = getDatabase();
+    let row: { id: string } | undefined;
+    if (this.userId) {
+      userService.claimLegacyDataForSingleUser(this.userId);
+      row = db
+        .prepare('SELECT id FROM items WHERE id = ? AND user_id = ?')
+        .get(itemId, this.userId) as { id: string } | undefined;
+    } else {
+      row = db
+        .prepare('SELECT id FROM items WHERE id = ?')
+        .get(itemId) as { id: string } | undefined;
+    }
+
+    return !!row;
+  }
+
   /**
    * 校验当前用户是否拥有指定 item（按 id），并返回其类型。
    * 用于分块上传：上传前确认 item 元数据已存在且归属当前用户，再落盘二进制。
@@ -200,7 +222,7 @@ export class ResourceService {
 
   // 删除资源文件
   deleteResource(id: string): boolean {
-    if (!this.canAccessResource(id)) {
+    if (!this.canDeleteResource(id)) {
       return false;
     }
 
