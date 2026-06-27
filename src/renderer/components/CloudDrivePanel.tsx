@@ -8,13 +8,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Layout, Button, Tooltip, Tag, Empty, Progress, Row, Col, Space,
-  Drawer, Form, InputNumber, Switch, Input, Divider, Popconfirm, message, Dropdown, Checkbox, Segmented,
+  Drawer, Form, InputNumber, Switch, Input, Divider, Popconfirm, message, Dropdown, Checkbox, Segmented, Badge,
 } from 'antd';
 import {
   FolderOpenOutlined, PlayCircleOutlined, PauseCircleOutlined,
   ReloadOutlined, CloudOutlined, InboxOutlined, SettingOutlined,
   ClearOutlined, CaretRightOutlined, PauseOutlined, CloseOutlined,
-  ExclamationCircleOutlined, EyeOutlined, FolderOutlined, FileOutlined, MoreOutlined, DownOutlined,
+  ExclamationCircleOutlined, EyeOutlined, FolderOutlined, FileOutlined, MoreOutlined,
   AppstoreOutlined, UnorderedListOutlined, CloudDownloadOutlined,
 } from '@ant-design/icons';
 import { useCloudDrive } from '../hooks/useCloudDrive';
@@ -81,7 +81,7 @@ const CloudDrivePanel: React.FC = () => {
   } = useCloudDrive();
   const [currentFolderPath, setCurrentFolderPath] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [transferExpanded, setTransferExpanded] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [cloudViewMode, setCloudViewMode] = useState<'grid' | 'list'>(() => {
     const saved = localStorage.getItem('cloud-drive-view-mode');
     return saved === 'list' ? 'list' : 'grid';
@@ -132,6 +132,8 @@ const CloudDrivePanel: React.FC = () => {
     [downloadProgress, localStates]
   );
   const hasActiveTransfers = activeUploadProgress.length > 0 || actionableDownloadProgress.length > 0;
+  const transferTotal = activeUploadProgress.length + actionableDownloadProgress.length;
+  const transferErrorCount = stats.errorCount + downloadStats.errorCount;
 
   const uploadStateMap = useMemo(() => {
     const map = new Map<string, typeof uploadProgress[number]>();
@@ -382,12 +384,6 @@ const CloudDrivePanel: React.FC = () => {
   useEffect(() => {
     setSelectedIds(prev => prev.filter(id => visibleItemIds.includes(id)));
   }, [visibleItemIds]);
-
-  useEffect(() => {
-    if (!hasActiveTransfers) {
-      setTransferExpanded(false);
-    }
-  }, [hasActiveTransfers]);
 
   // 高级设置：保存
   const handleSaveAdvanced = async () => {
@@ -747,6 +743,16 @@ const CloudDrivePanel: React.FC = () => {
                           { value: 'list', icon: <UnorderedListOutlined /> },
                         ]}
                       />
+                      <Tooltip title="传输队列">
+                        <Badge count={transferTotal} size="small" color={transferErrorCount > 0 ? '#ff4d4f' : undefined}>
+                          <Button
+                            size="small"
+                            type={hasActiveTransfers ? 'primary' : 'default'}
+                            icon={<CloudOutlined />}
+                            onClick={() => setTransferOpen(true)}
+                          />
+                        </Badge>
+                      </Tooltip>
                     </Space>
                   </div>
                   <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -1064,166 +1070,141 @@ const CloudDrivePanel: React.FC = () => {
           </Row>
         </div>
 
-        {(activeUploadProgress.length > 0 || actionableDownloadProgress.length > 0) && (
-          <div
-            style={{
-              marginTop: 12,
-              background: cardBg,
-              border: `1px solid ${cardBorder}`,
-              borderRadius: 8,
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                padding: '10px 12px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}
-            >
-              <Space wrap size={6}>
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<DownOutlined style={{ transform: transferExpanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />}
-                  onClick={() => setTransferExpanded(prev => !prev)}
+      </div>
+
+      <Drawer
+        title="传输队列"
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        width={520}
+        extra={
+          <Space wrap size={6}>
+            <Button size="small" icon={<ReloadOutlined />} onClick={handleRetryFailed} disabled={stats.errorCount === 0}>
+              重试上传
+            </Button>
+            <Button size="small" icon={<ReloadOutlined />} onClick={handleRetryFailedDownloads} disabled={downloadStats.errorCount === 0}>
+              重试下载
+            </Button>
+          </Space>
+        }
+      >
+        <Space wrap size={6} style={{ marginBottom: 12 }}>
+          {activeUploadProgress.length > 0 && <Tag>{`待上传 ${stats.pendingCount + stats.pausedCount}`}</Tag>}
+          {stats.uploadingCount > 0 && <Tag color="processing">{`上传中 ${stats.uploadingCount}`}</Tag>}
+          {actionableDownloadProgress.length > 0 && <Tag>{`待下载 ${actionableDownloadProgress.filter(p => p.state === 'pending' || p.state === 'paused').length}`}</Tag>}
+          {downloadStats.downloadingCount > 0 && <Tag color="processing">{`下载中 ${downloadStats.downloadingCount}`}</Tag>}
+          {stats.errorCount > 0 && <Tag color="error">{`上传失败 ${stats.errorCount}`}</Tag>}
+          {downloadStats.errorCount > 0 && <Tag color="error">{`下载失败 ${downloadStats.errorCount}`}</Tag>}
+        </Space>
+
+        {!hasActiveTransfers ? (
+          <Empty description="当前没有传输任务" />
+        ) : (
+          <div style={{ border: `1px solid ${cardBorder}`, borderRadius: 8, overflow: 'hidden' }}>
+            {activeUploadProgress.map(p => {
+              const ratio = p.size > 0
+                ? p.uploaded_bytes / p.size
+                : p.total_chunks > 0
+                  ? p.uploaded_chunks / p.total_chunks
+                  : 0;
+              const percent = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+              return (
+                <div
+                  key={`upload-${p.file_id}`}
+                  style={{
+                    padding: '8px 10px',
+                    borderBottom: `1px solid ${rowBorder}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}
                 >
-                  传输队列
-                </Button>
-                {activeUploadProgress.length > 0 && <Tag>{`待上传 ${stats.pendingCount + stats.pausedCount}`}</Tag>}
-                {stats.uploadingCount > 0 && <Tag color="processing">{`上传中 ${stats.uploadingCount}`}</Tag>}
-                {actionableDownloadProgress.length > 0 && <Tag>{`待下载 ${actionableDownloadProgress.filter(p => p.state === 'pending' || p.state === 'paused').length}`}</Tag>}
-                {downloadStats.downloadingCount > 0 && <Tag color="processing">{`下载中 ${downloadStats.downloadingCount}`}</Tag>}
-                {stats.errorCount > 0 && <Tag color="error">{`上传失败 ${stats.errorCount}`}</Tag>}
-                {downloadStats.errorCount > 0 && <Tag color="error">{`下载失败 ${downloadStats.errorCount}`}</Tag>}
-              </Space>
-              <Space wrap size={6}>
-                <Button size="small" icon={<ReloadOutlined />} onClick={handleRetryFailed} disabled={stats.errorCount === 0}>
-                  重试上传
-                </Button>
-                <Button size="small" icon={<ReloadOutlined />} onClick={handleRetryFailedDownloads} disabled={downloadStats.errorCount === 0}>
-                  重试下载
-                </Button>
-                <Button size="small" onClick={() => handleSetFolderLocalAvailability('offline')}>
-                  全部离线
-                </Button>
-                <Button size="small" onClick={() => handleSetFolderLocalAvailability('online_only')}>
-                  全部释放
-                </Button>
-              </Space>
-            </div>
-
-            {transferExpanded && (
-              <div style={{ maxHeight: 220, overflow: 'auto', borderTop: `1px solid ${rowBorder}` }}>
-              {activeUploadProgress.map(p => {
-                const ratio = p.size > 0
-                  ? p.uploaded_bytes / p.size
-                  : p.total_chunks > 0
-                    ? p.uploaded_chunks / p.total_chunks
-                    : 0;
-                const percent = Math.max(0, Math.min(100, Math.round(ratio * 100)));
-                return (
-                  <div
-                    key={`upload-${p.file_id}`}
-                    style={{
-                      padding: '8px 12px',
-                      borderBottom: `1px solid ${rowBorder}`,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 12,
-                    }}
-                  >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Tag color={p.state === 'error' ? 'error' : p.state === 'uploading' ? 'processing' : p.state === 'paused' ? 'warning' : 'default'}>
-                          {p.state === 'uploading' ? '上传中' : p.state === 'error' ? '失败' : p.state === 'paused' ? '已暂停' : '待上传'}
-                        </Tag>
-                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.filename}</span>
-                        <span style={{ color: '#999', fontSize: 12 }}>
-                          {formatBytes(p.uploaded_bytes)} / {formatBytes(p.size)}
-                        </span>
-                        <span style={{ color: '#999', fontSize: 12 }}>{formatSpeed(uploadSpeedBps[p.file_id])}</span>
-                        <span style={{ color: '#999', fontSize: 12 }}>{percent}%</span>
-                      </div>
-                      <Progress percent={percent} size="small" showInfo={false} status={p.state === 'error' ? 'exception' : 'normal'} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <Tag color={p.state === 'error' ? 'error' : p.state === 'uploading' ? 'processing' : p.state === 'paused' ? 'warning' : 'default'} style={{ marginInlineEnd: 0 }}>
+                        {p.state === 'uploading' ? '上传中' : p.state === 'error' ? '失败' : p.state === 'paused' ? '已暂停' : '待上传'}
+                      </Tag>
+                      <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{p.filename}</span>
                     </div>
-                    <Space size={2} wrap>
-                      {p.state === 'error' && <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => retryItem(p.file_id)} />}
-                      {(p.state === 'uploading' || p.state === 'pending') && <Button size="small" type="text" icon={<PauseOutlined />} onClick={() => pauseItem(p.file_id)} />}
-                      {p.state === 'paused' && <Button size="small" type="text" icon={<CaretRightOutlined />} onClick={() => resumeItem(p.file_id)} />}
-                      <Popconfirm
-                        title="取消该任务？"
-                        description="将删除本地元数据并中止上传。"
-                        icon={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
-                        onConfirm={() => handleCancel(p.file_id)}
-                        okText="取消任务"
-                        cancelText="保留"
-                        okButtonProps={{ danger: true }}
-                      >
-                        <Button size="small" type="text" danger icon={<CloseOutlined />} />
-                      </Popconfirm>
-                    </Space>
-                  </div>
-                );
-              })}
-
-              {actionableDownloadProgress.map(p => {
-                const percent = p.size > 0 ? Math.max(0, Math.min(100, Math.round((p.downloaded_bytes / p.size) * 100))) : 0;
-                return (
-                  <div
-                    key={`download-${p.file_id}`}
-                    style={{
-                      padding: '8px 12px',
-                      borderBottom: `1px solid ${rowBorder}`,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 12,
-                    }}
-                  >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Tag color={p.state === 'error' ? 'error' : p.state === 'downloading' ? 'processing' : p.state === 'paused' ? 'warning' : 'default'}>
-                          {p.state === 'downloading' ? '下载中' : p.state === 'error' ? '失败' : p.state === 'paused' ? '已暂停' : '待下载'}
-                        </Tag>
-                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.filename}</span>
-                        <span style={{ color: '#999', fontSize: 12 }}>
-                          {formatBytes(p.downloaded_bytes)} / {formatBytes(p.size)}
-                        </span>
-                        <span style={{ color: '#999', fontSize: 12 }}>{formatSpeed(downloadSpeedBps[p.file_id])}</span>
-                        <span style={{ color: '#999', fontSize: 12 }}>{percent}%</span>
-                      </div>
-                      <Progress percent={percent} size="small" showInfo={false} status={p.state === 'error' ? 'exception' : 'normal'} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, color: '#999', fontSize: 12 }}>
+                      <span>{formatBytes(p.uploaded_bytes)} / {formatBytes(p.size)}</span>
+                      <span>{formatSpeed(uploadSpeedBps[p.file_id])}</span>
+                      <span>{percent}%</span>
                     </div>
-                    <Space size={2} wrap>
-                      {p.state === 'error' && <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => retryDownload(p.file_id)} />}
-                      {p.state === 'pending' && <Button size="small" type="text" icon={<CaretRightOutlined />} onClick={() => downloadFile(p.file_id)} />}
-                      {p.state === 'downloading' && <Button size="small" type="text" icon={<PauseOutlined />} onClick={() => pauseDownload(p.file_id)} />}
-                      {p.state === 'paused' && <Button size="small" type="text" icon={<CaretRightOutlined />} onClick={() => resumeDownload(p.file_id)} />}
-                      <Popconfirm
-                        title="取消该下载？"
-                        description="将删除已下载的部分文件，本地元数据保留。"
-                        icon={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
-                        onConfirm={() => handleCancelDownload(p.file_id)}
-                        okText="取消下载"
-                        cancelText="保留"
-                        okButtonProps={{ danger: true }}
-                      >
-                        <Button size="small" type="text" danger icon={<CloseOutlined />} />
-                      </Popconfirm>
-                    </Space>
+                    <Progress percent={percent} size="small" showInfo={false} status={p.state === 'error' ? 'exception' : 'normal'} />
                   </div>
-                );
-              })}
-              </div>
-            )}
+                  <Space size={2} wrap>
+                    {p.state === 'error' && <Tooltip title="重试"><Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => retryItem(p.file_id)} /></Tooltip>}
+                    {(p.state === 'uploading' || p.state === 'pending') && <Tooltip title="暂停"><Button size="small" type="text" icon={<PauseOutlined />} onClick={() => pauseItem(p.file_id)} /></Tooltip>}
+                    {p.state === 'paused' && <Tooltip title="继续"><Button size="small" type="text" icon={<CaretRightOutlined />} onClick={() => resumeItem(p.file_id)} /></Tooltip>}
+                    <Popconfirm
+                      title="取消该任务？"
+                      description="将删除本地元数据并中止上传。"
+                      icon={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
+                      onConfirm={() => handleCancel(p.file_id)}
+                      okText="取消任务"
+                      cancelText="保留"
+                      okButtonProps={{ danger: true }}
+                    >
+                      <Tooltip title="取消"><Button size="small" type="text" danger icon={<CloseOutlined />} /></Tooltip>
+                    </Popconfirm>
+                  </Space>
+                </div>
+              );
+            })}
+
+            {actionableDownloadProgress.map(p => {
+              const percent = p.size > 0 ? Math.max(0, Math.min(100, Math.round((p.downloaded_bytes / p.size) * 100))) : 0;
+              return (
+                <div
+                  key={`download-${p.file_id}`}
+                  style={{
+                    padding: '8px 10px',
+                    borderBottom: `1px solid ${rowBorder}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <Tag color={p.state === 'error' ? 'error' : p.state === 'downloading' ? 'processing' : p.state === 'paused' ? 'warning' : 'default'} style={{ marginInlineEnd: 0 }}>
+                        {p.state === 'downloading' ? '下载中' : p.state === 'error' ? '失败' : p.state === 'paused' ? '已暂停' : '待下载'}
+                      </Tag>
+                      <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{p.filename}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, color: '#999', fontSize: 12 }}>
+                      <span>{formatBytes(p.downloaded_bytes)} / {formatBytes(p.size)}</span>
+                      <span>{formatSpeed(downloadSpeedBps[p.file_id])}</span>
+                      <span>{percent}%</span>
+                    </div>
+                    <Progress percent={percent} size="small" showInfo={false} status={p.state === 'error' ? 'exception' : 'normal'} />
+                  </div>
+                  <Space size={2} wrap>
+                    {p.state === 'error' && <Tooltip title="重试"><Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => retryDownload(p.file_id)} /></Tooltip>}
+                    {p.state === 'pending' && <Tooltip title="下载"><Button size="small" type="text" icon={<CaretRightOutlined />} onClick={() => downloadFile(p.file_id)} /></Tooltip>}
+                    {p.state === 'downloading' && <Tooltip title="暂停"><Button size="small" type="text" icon={<PauseOutlined />} onClick={() => pauseDownload(p.file_id)} /></Tooltip>}
+                    {p.state === 'paused' && <Tooltip title="继续"><Button size="small" type="text" icon={<CaretRightOutlined />} onClick={() => resumeDownload(p.file_id)} /></Tooltip>}
+                    <Popconfirm
+                      title="取消该下载？"
+                      description="将删除已下载的部分文件，本地元数据保留。"
+                      icon={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />}
+                      onConfirm={() => handleCancelDownload(p.file_id)}
+                      okText="取消下载"
+                      cancelText="保留"
+                      okButtonProps={{ danger: true }}
+                    >
+                      <Tooltip title="取消"><Button size="small" type="text" danger icon={<CloseOutlined />} /></Tooltip>
+                    </Popconfirm>
+                  </Space>
+                </div>
+              );
+            })}
           </div>
         )}
-      </div>
+      </Drawer>
 
       {/* 高级设置抽屉 */}
       <Drawer

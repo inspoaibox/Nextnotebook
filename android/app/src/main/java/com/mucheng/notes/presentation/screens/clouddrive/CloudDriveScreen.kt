@@ -480,6 +480,8 @@ private fun FileRow(
             Spacer(Modifier.height(8.dp))
             ProgressRow(
                 filename = p.filename,
+                transferredBytes = p.uploadedBytes,
+                totalBytes = p.totalBytes,
                 fraction = p.fraction,
                 stateText = uploadStateLabel(p.state),
                 errorMessage = p.errorMessage,
@@ -492,6 +494,8 @@ private fun FileRow(
             Spacer(Modifier.height(8.dp))
             ProgressRow(
                 filename = p.filename,
+                transferredBytes = p.downloadedBytes,
+                totalBytes = p.totalBytes,
                 fraction = p.fraction,
                 stateText = downloadStateLabel(p.state),
                 errorMessage = p.errorMessage,
@@ -504,6 +508,8 @@ private fun FileRow(
 @Composable
 private fun ProgressRow(
     filename: String,
+    transferredBytes: Long,
+    totalBytes: Long,
     fraction: Float,
     stateText: String,
     errorMessage: String?,
@@ -519,7 +525,7 @@ private fun ProgressRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                stateText,
+                buildProgressText(stateText, transferredBytes, totalBytes, fraction),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (isError) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.outline
@@ -585,6 +591,20 @@ private fun formatFileSize(bytes: Long): String {
     }
     return if (idx == 0) "${bytes} B"
     else String.format(Locale.getDefault(), "%.1f %s", size, units[idx])
+}
+
+private fun buildProgressText(
+    stateText: String,
+    transferredBytes: Long,
+    totalBytes: Long,
+    fraction: Float
+): String {
+    val percent = if (totalBytes > 0L) {
+        "${(fraction.coerceIn(0f, 1f) * 100).toInt()}%"
+    } else {
+        "--"
+    }
+    return "$stateText · ${formatFileSize(transferredBytes)} / ${formatFileSize(totalBytes)} · $percent"
 }
 
 private fun formatDate(epochMillis: Long): String =

@@ -648,6 +648,8 @@ private fun CloudDriveSyncSection(
             uploadProgress.values.forEach { progress ->
                 CloudProgressRow(
                     filename = progress.filename,
+                    transferredBytes = progress.uploadedBytes,
+                    totalBytes = progress.totalBytes,
                     fraction = progress.fraction,
                     stateText = uploadStateLabel(progress.state),
                     errorMessage = progress.errorMessage,
@@ -675,6 +677,8 @@ private fun CloudDriveSyncSection(
             downloadProgress.values.forEach { progress ->
                 CloudProgressRow(
                     filename = progress.filename,
+                    transferredBytes = progress.downloadedBytes,
+                    totalBytes = progress.totalBytes,
                     fraction = progress.fraction,
                     stateText = downloadStateLabel(progress.state),
                     errorMessage = progress.errorMessage,
@@ -689,6 +693,8 @@ private fun CloudDriveSyncSection(
 @Composable
 private fun CloudProgressRow(
     filename: String,
+    transferredBytes: Long,
+    totalBytes: Long,
     fraction: Float,
     stateText: String,
     errorMessage: String?,
@@ -703,7 +709,7 @@ private fun CloudProgressRow(
                 maxLines = 1
             )
             Text(
-                stateText,
+                buildCloudProgressText(stateText, transferredBytes, totalBytes, fraction),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (isError) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.outline
@@ -733,6 +739,32 @@ private fun conflictStrategyLabel(strategy: CloudConflictStrategy): String = whe
     CloudConflictStrategy.NEWEST_WINS -> "以最新为准"
     CloudConflictStrategy.CREATE_COPY -> "创建副本"
     CloudConflictStrategy.SKIP -> "跳过冲突项"
+}
+
+private fun buildCloudProgressText(
+    stateText: String,
+    transferredBytes: Long,
+    totalBytes: Long,
+    fraction: Float
+): String {
+    val percent = if (totalBytes > 0L) {
+        "${(fraction.coerceIn(0f, 1f) * 100).toInt()}%"
+    } else {
+        "--"
+    }
+    return "$stateText · ${formatCloudFileSize(transferredBytes)} / ${formatCloudFileSize(totalBytes)} · $percent"
+}
+
+private fun formatCloudFileSize(bytes: Long): String {
+    if (bytes <= 0L) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    var size = bytes.toDouble()
+    var idx = 0
+    while (size >= 1024 && idx < units.lastIndex) {
+        size /= 1024
+        idx++
+    }
+    return if (idx == 0) "${bytes} B" else String.format(java.util.Locale.getDefault(), "%.1f %s", size, units[idx])
 }
 
 private fun uploadStateLabel(state: CloudUploadState): String = when (state) {

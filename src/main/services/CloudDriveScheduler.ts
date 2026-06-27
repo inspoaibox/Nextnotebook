@@ -781,6 +781,7 @@ export class CloudDriveScheduler {
       upload_session_id: sessionId,
       error_message: null,
     });
+    this.scheduleMetadataSync(500);
     // 重新读取 payload 以反映最新 size
     const fresh = this.itemsManager.getById(itemId);
     let p = payload;
@@ -869,6 +870,7 @@ export class CloudDriveScheduler {
       upload_state: 'error',
       error_message: message,
     });
+    this.scheduleMetadataSync(500);
     this.emitProgressFor(itemId, payload, 'error', 0);
     console.error(`[CloudDriveScheduler] 上传失败 ${payload.relative_path}: ${message}`);
   }
@@ -876,11 +878,46 @@ export class CloudDriveScheduler {
   // ========== 工具 ==========
 
   /** 合并更新 payload（ItemsManager.update 会做 content_hash 去重） */
-  private updatePayload(itemId: string, patch: Partial<CloudFilePayload>): void {
+  private updatePayload(
+    itemId: string,
+    patch: Partial<CloudFilePayload>,
+    options: { localOnly?: boolean } = {}
+  ): void {
     try {
+      if (options.localOnly) {
+        const item = this.itemsManager.getById(itemId);
+        if (!item || item.type !== 'cloud_file') return;
+        const current = JSON.parse(item.payload) as CloudFilePayload;
+        const nextPayload = JSON.stringify({ ...current, ...patch });
+        this.itemsManager.upsertFromPlainItem({
+          ...item,
+          payload: nextPayload,
+          // 下载状态是设备本地状态，不能改变远端内容哈希，也不能触发 push。
+          content_hash: item.content_hash,
+          sync_status: 'clean',
+        }, 'clean');
+        return;
+      }
       this.itemsManager.update(itemId, patch);
     } catch (err) {
       console.error(`[CloudDriveScheduler] 更新 payload 失败: ${itemId}`, err);
+    }
+  }
+
+  private scheduleMetadataSync(delayMs: number = 800): void {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getCloudDriveService } = require('./CloudDriveService') as typeof import('./CloudDriveService');
+      getCloudDriveService()?.notifyItemsChanged();
+    } catch (err) {
+      console.warn('[CloudDriveScheduler] 通知网盘列表刷新失败:', err);
+    }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { scheduleCloudDriveSync } = require('./SyncService') as typeof import('./SyncService');
+      scheduleCloudDriveSync(delayMs);
+    } catch (err) {
+      console.warn('[CloudDriveScheduler] 触发网盘元数据同步失败:', err);
     }
   }
 
@@ -1331,7 +1368,7 @@ export class CloudDriveScheduler {
       this.updatePayload(itemId, {
         download_state: 'pending',
         download_error: null,
-      });
+      }, { localOnly: true });
       const task: QueueTask = { itemId, size, enqueuedAt: Date.now() };
       this.downloadQueue.push(task);
       this.pumpDownload();
@@ -1421,7 +1458,7 @@ export class CloudDriveScheduler {
     this.updatePayload(itemId, {
       download_state: 'downloading',
       download_error: null,
-    });
+    }, { localOnly: true });
     payload = { ...payload, download_state: 'downloading', download_error: null };
     this.emitDownloadProgressFor(itemId, payload, 'downloading', startOffset);
 
@@ -1453,7 +1490,7 @@ export class CloudDriveScheduler {
           });
           written += res.bytesWritten;
           // 持久化进度，便于崩溃后恢复续传
-          this.updatePayload(itemId, { downloaded_size: written });
+          this.updatePayload(itemId, { downloaded_size: written }, { localOnly: true });
           this.emitDownloadProgressFor(
             itemId,
             payload,
@@ -1470,7 +1507,7 @@ export class CloudDriveScheduler {
           } catch {
             /* 忽略截断失败 */
           }
-          this.updatePayload(itemId, { downloaded_size: 0 });
+          this.updatePayload(itemId, { downloaded_size: 0 }, { localOnly: true });
           written = 0;
         }
         const res = await adapter.downloadFile({
@@ -1484,7 +1521,7 @@ export class CloudDriveScheduler {
           },
         });
         written += res.bytesWritten;
-        this.updatePayload(itemId, { downloaded_size: written });
+        this.updatePayload(itemId, { downloaded_size: written }, { localOnly: true });
       }
 
       if (this.disposed || signal.aborted) {
@@ -1497,7 +1534,7 @@ export class CloudDriveScheduler {
         const finalHash = await this.computeFileHash(absPath);
         if (finalHash !== payload.file_hash) {
           // 损坏：重置进度让用户能重试（整文件重下，因无法定位损坏分块）
-          this.updatePayload(itemId, { downloaded_size: 0 });
+          this.updatePayload(itemId, { downloaded_size: 0 }, { localOnly: true });
           this.markDownloadError(itemId, payload, '下载文件哈希与云端不一致（传输可能损坏），请重试');
           return;
         }
@@ -1528,7 +1565,7 @@ export class CloudDriveScheduler {
       downloaded_size: size,
       downloaded_at: Date.now(),
       download_error: null,
-    });
+    }, { localOnly: true });
     const fresh = this.itemsManager.getById(itemId);
     let p = payload;
     if (fresh) {
@@ -1549,7 +1586,7 @@ export class CloudDriveScheduler {
     this.updatePayload(itemId, {
       download_state: 'error',
       download_error: message,
-    });
+    }, { localOnly: true });
     this.emitDownloadProgressFor(
       itemId,
       { ...payload, download_state: 'error', download_error: message },
@@ -1642,7 +1679,7 @@ export class CloudDriveScheduler {
     try {
       const p = JSON.parse(item.payload) as CloudFilePayload;
       if (p.download_state === 'completed') return false;
-      this.updatePayload(itemId, { download_state: 'paused', download_error: null });
+      this.updatePayload(itemId, { download_state: 'paused', download_error: null }, { localOnly: true });
       this.emitDownloadProgressFor(
         itemId,
         { ...p, download_state: 'paused' },
@@ -1715,7 +1752,7 @@ export class CloudDriveScheduler {
       download_state: 'paused',
       downloaded_size: 0,
       download_error: null,
-    });
+    }, { localOnly: true });
     this.downloadInFlight.delete(itemId);
     return true;
   }

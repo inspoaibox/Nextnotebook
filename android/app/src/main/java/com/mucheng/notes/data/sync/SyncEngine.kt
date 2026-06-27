@@ -499,6 +499,12 @@ class SyncEngine @Inject constructor(
                         }
 
                         val payload = CloudFilePayload.fromJson(json, item.payload)
+                        if (shouldAdoptRemoteCloudFileInsteadOfUploading(item, payload, remoteItem)) {
+                            itemDao.upsert(remoteItem!!.copy(syncStatus = "clean"))
+                            count++
+                            continue
+                        }
+
                         val uploadResult = cloudDriveUploadManager.upload(item.id, payload, adapter)
                         if (uploadResult.isFailure) {
                             val cause = uploadResult.exceptionOrNull()?.message ?: "unknown error"
@@ -571,6 +577,41 @@ class SyncEngine @Inject constructor(
         }
         
         return PushResult(count, errors)
+    }
+
+    /**
+     * 防止仅云端占位/下载缓存状态被误当成“本地新增文件”上传。
+     *
+     * 若本地 cloud_file 处于 modified，但 SAF 目录中没有真实可上传源文件，且远端已经有
+     * 有效二进制元数据，则说明这不是一个需要上传的本地变更。此时采用远端记录并标 clean，
+     * 避免同步阶段创建 0B 源文件后报 Cannot determine local size。
+     */
+    private suspend fun shouldAdoptRemoteCloudFileInsteadOfUploading(
+        localItem: ItemEntity,
+        localPayload: CloudFilePayload,
+        remoteItem: ItemEntity?
+    ): Boolean {
+        if (remoteItem == null || remoteItem.deletedTime != null || remoteItem.type != ItemType.CLOUD_FILE.value) {
+            return false
+        }
+
+        val remotePayload = runCatching {
+            CloudFilePayload.fromJson(json, remoteItem.payload)
+        }.getOrNull() ?: return false
+        val remoteHasBinary = remotePayload.fileHash.isNotBlank() || remotePayload.size > 0L
+        if (!remoteHasBinary) return false
+
+        val localRecord = cloudFileLocalPathDao.getByCloudFileId(localItem.id)
+        val verifiedDownload = localRecord?.state == "completed" &&
+            remotePayload.fileHash.isNotBlank() &&
+            localRecord.fileHashVerified?.equals(remotePayload.fileHash, ignoreCase = true) == true
+        if (verifiedDownload) return true
+
+        val localSource = cloudDriveFolderPicker.findRelativeDocumentFile(localPayload.relativePath)
+            ?.takeIf { it.exists() && it.isFile }
+        val localSize = localSource?.length()?.takeIf { it > 0L } ?: 0L
+
+        return localSource == null || (localSize <= 0L && localPayload.size <= 0L)
     }
 
     private suspend fun shouldRestoreRemoteCloudItemInsteadOfDeleting(

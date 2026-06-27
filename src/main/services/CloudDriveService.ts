@@ -155,11 +155,9 @@ export class CloudDriveService {
       const stored = this.localAvailability[file.id];
       const exists = !!absPath && fs.existsSync(absPath);
       out[file.id] = {
-        availability: stored
-          ? stored
-          : exists
-            ? 'local'
-            : 'online_only',
+        availability: exists
+          ? (stored === 'offline' ? 'offline' : 'local')
+          : 'online_only',
       };
     }
     return out;
@@ -184,9 +182,10 @@ export class CloudDriveService {
 
   private getEffectiveAvailability(itemId: string): CloudLocalAvailability {
     const stored = this.localAvailability[itemId];
-    if (stored) return stored;
     const absPath = this.getAbsolutePathForCloudFile(itemId);
-    return absPath && fs.existsSync(absPath) ? 'local' : 'online_only';
+    const exists = !!absPath && fs.existsSync(absPath);
+    if (!exists) return 'online_only';
+    return stored === 'offline' ? 'offline' : 'local';
   }
 
   /**

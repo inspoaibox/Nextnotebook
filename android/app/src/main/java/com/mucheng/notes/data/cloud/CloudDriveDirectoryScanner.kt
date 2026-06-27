@@ -203,6 +203,18 @@ class CloudDriveDirectoryScanner @Inject constructor(
             ?.let { runCatching { CloudFilePayload.fromJson(json, it.payload) }.getOrNull() }
         val localRecord = localPathDao.getByCloudFileId(id)
 
+        val staleOnlineOnlyPlaceholder = existing != null &&
+            existing.deletedTime == null &&
+            existing.syncStatus == "clean" &&
+            existingPayload != null &&
+            localRecord == null &&
+            size <= 0L &&
+            (existingPayload.fileHash.isNotBlank() || existingPayload.size > 0L)
+        if (staleOnlineOnlyPlaceholder) {
+            runCatching { file.delete() }
+            return ScanUpsertResult(changed = false, trackDeletion = false)
+        }
+
         val downloadedCacheUnchanged = existing != null &&
             existing.deletedTime == null &&
             existing.syncStatus == "clean" &&

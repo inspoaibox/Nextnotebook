@@ -304,6 +304,7 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
             if (current === 'local') return prev;
             return { ...prev, [progress.file_id]: 'local' };
           });
+          void refreshProgress();
         }
         if (progress.state === 'completed' || progress.state === 'error' || progress.state === 'paused') {
           setDownloadSpeedBps(prev => ({ ...prev, [progress.file_id]: 0 }));
@@ -609,14 +610,14 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     try {
       const ok = await api.cloudDrive.setLocalAvailability(itemId, availability);
       if (ok) {
-        setLocalStates(prev => ({ ...prev, [itemId]: availability }));
+        await refreshProgress();
       }
       return ok;
     } catch (err) {
       console.error('[useCloudDrive] 设置本地可用性失败:', err);
       return false;
     }
-  }, []);
+  }, [refreshProgress]);
 
   const setFolderLocalAvailability = useCallback(async (
     folderPath: string,

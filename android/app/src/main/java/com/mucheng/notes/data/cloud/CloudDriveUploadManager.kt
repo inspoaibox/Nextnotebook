@@ -2,6 +2,7 @@ package com.mucheng.notes.data.cloud
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import com.mucheng.notes.data.local.dao.ItemDao
 import com.mucheng.notes.data.local.entity.ItemEntity
@@ -114,7 +115,8 @@ class CloudDriveUploadManager @Inject constructor(
         }
 
         // 2. 解析 SAF 源文件（未授权 / 文件被删则失败）
-        val sourceFile = folderPicker.buildRelativeDocumentFile(payload.relativePath)
+        val sourceFile = folderPicker.findRelativeDocumentFile(payload.relativePath)
+            ?.takeIf { it.exists() && it.isFile }
         if (sourceFile == null) {
             val msg = "SAF source not resolvable for ${payload.relativePath} (re-authorize folder)"
             Log.w(TAG, msg)
@@ -126,7 +128,7 @@ class CloudDriveUploadManager @Inject constructor(
 
         // 3. 解析本地文件总大小；DocumentFile.length() 在部分 provider 上不可靠，
         //    退化时回退 payload.size
-        val totalSize = sourceFile.length().takeIf { it > 0L } ?: payload.size
+        val totalSize = resolveLocalSize(sourceUri, sourceFile, payload.size)
         if (totalSize <= 0L) {
             val msg = "Cannot determine local size for $cloudFileId"
             Log.w(TAG, msg)
@@ -468,6 +470,37 @@ class CloudDriveUploadManager @Inject constructor(
         payload: CloudFilePayload
     ): String = payload.mimeType.ifBlank { "application/octet-stream" }
 
+    private suspend fun resolveLocalSize(uri: Uri, sourceFile: androidx.documentfile.provider.DocumentFile, payloadSize: Long): Long {
+        sourceFile.length().takeIf { it > 0L }?.let { return it }
+        queryOpenableSize(uri)?.takeIf { it > 0L }?.let { return it }
+        payloadSize.takeIf { it > 0L }?.let { return it }
+        return countStreamBytes(uri)
+    }
+
+    private fun queryOpenableSize(uri: Uri): Long? {
+        return runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (idx >= 0 && cursor.moveToFirst()) cursor.getLong(idx) else null
+            }
+        }.getOrNull()
+    }
+
+    private suspend fun countStreamBytes(uri: Uri): Long = withContext(Dispatchers.IO) {
+        context.contentResolver.openInputStream(uri).use { input ->
+            if (input == null) return@withContext 0L
+            val buffer = ByteArray(SIZE_PROBE_BUFFER)
+            var total = 0L
+            while (true) {
+                coroutineContext.ensureActive()
+                val read = input.read(buffer)
+                if (read <= 0) break
+                total += read
+            }
+            total
+        }
+    }
+
     /**
      * 计算 content_hash（SHA-256 前 16 字符）。
      * 与 [com.mucheng.notes.data.repository.ItemRepositoryImpl.computeContentHash] 完全一致。
@@ -504,6 +537,7 @@ class CloudDriveUploadManager @Inject constructor(
 
     companion object {
         private const val TAG = "CloudDriveUploadMgr"
+        private const val SIZE_PROBE_BUFFER = 256 * 1024
     }
 }
 

@@ -226,9 +226,14 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
     // 创建同步引擎（明文同步，不再需要加密）
     const itemsManager = getItemsManager();
     const resourcesDir = path.join(app.getPath('userData'), 'resources');
+    const syncModules: SyncModules = {
+      ...DEFAULT_SYNC_MODULES,
+      ...(config.syncModules || {}),
+    };
+
     const syncOptions: Partial<SyncOptions> = {
       conflictStrategy: 'create-copy',
-      syncModules: config.syncModules || DEFAULT_SYNC_MODULES,
+      syncModules,
       serverIdentifier: currentServerIdentifier, // 传递服务器标识
       resourcesDir, // 传递资源目录路径
       // Phase 2：cloud_file 物理文件操作的回调注入。
