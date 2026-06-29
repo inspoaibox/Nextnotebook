@@ -309,6 +309,23 @@ class SyncEngine @Inject constructor(
 
             for (remoteItem in remoteItems) {
                 val localItem = itemDao.getById(remoteItem.id)
+
+                if (remoteItem.deletedTime != null) {
+                    if (localItem != null && (localItem.deletedTime == null || localItem.syncStatus != "clean")) {
+                        if (applyRemoteDeletedItem(
+                                itemId = remoteItem.id,
+                                deletedTime = remoteItem.deletedTime,
+                                updatedTime = remoteItem.updatedTime,
+                                contentHash = remoteItem.contentHash,
+                                remoteItem = remoteItem
+                            )
+                        ) {
+                            count++
+                        }
+                    }
+                    continue
+                }
+
                 if (localItem?.syncStatus == "modified") {
                     skippedLocalModified++
                     continue
@@ -316,20 +333,12 @@ class SyncEngine @Inject constructor(
 
                 if (localItem?.syncStatus == "deleted") {
                     val localDeleteTime = localItem.deletedTime ?: localItem.updatedTime
-                    if (remoteItem.deletedTime == null && remoteItem.updatedTime > localDeleteTime) {
+                    if (remoteItem.updatedTime > localDeleteTime) {
                         itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
                         count++
                         restoredPendingDelete++
                     } else {
                         skippedPendingDelete++
-                    }
-                    continue
-                }
-
-                if (remoteItem.deletedTime != null) {
-                    if (localItem != null && localItem.deletedTime == null) {
-                        itemDao.upsert(remoteItem.copy(syncStatus = "clean"))
-                        count++
                     }
                     continue
                 }

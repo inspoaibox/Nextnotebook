@@ -169,6 +169,16 @@ enum class MessageDirection(val value: String) {
 }
 
 /**
+ * 消息发送状态
+ */
+enum class MessageStatus(val value: String) {
+    SENDING("sending"),
+    SENT("sent"),
+    FAILED("failed"),
+    RECEIVED("received")
+}
+
+/**
  * 文件传输状态
  */
 enum class FileTransferStatus(val value: String) {

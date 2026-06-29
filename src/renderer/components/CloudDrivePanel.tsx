@@ -14,8 +14,8 @@ import {
   FolderOpenOutlined, PlayCircleOutlined, PauseCircleOutlined,
   ReloadOutlined, CloudOutlined, InboxOutlined, SettingOutlined,
   ClearOutlined, CaretRightOutlined, PauseOutlined, CloseOutlined,
-  ExclamationCircleOutlined, EyeOutlined, FolderOutlined, FileOutlined, MoreOutlined,
-  AppstoreOutlined, UnorderedListOutlined, CloudDownloadOutlined,
+  ExclamationCircleOutlined, EyeOutlined, FolderOutlined, FileOutlined,
+  AppstoreOutlined, UnorderedListOutlined, CloudDownloadOutlined, ClockCircleOutlined, SyncOutlined,
 } from '@ant-design/icons';
 import { useCloudDrive } from '../hooks/useCloudDrive';
 import { useSettings } from '../contexts/SettingsContext';
@@ -65,14 +65,8 @@ const baseCloudName = (value: string | null | undefined): string => {
   return parts[parts.length - 1] || '根目录';
 };
 
-const availabilityColor = (value: CloudLocalAvailability | undefined): 'default' | 'blue' | 'green' =>
-  value === 'online_only' ? 'default' : value === 'offline' ? 'blue' : 'green';
-
 const availabilityLabel = (value: CloudLocalAvailability | undefined): string =>
   value === 'online_only' ? '仅云端' : value === 'offline' ? '离线保留' : '本地可用';
-
-const isCloudSynced = (syncStatus: SyncStatus | undefined, remoteRev: string | null | undefined): boolean =>
-  syncStatus === 'clean' && Boolean(remoteRev);
 
 const cloudSyncTag = (syncStatus: SyncStatus | undefined, remoteRev: string | null | undefined): { color: string; label: string } => {
   if (syncStatus === 'modified') return { color: 'warning', label: '待同步' };
@@ -82,14 +76,7 @@ const cloudSyncTag = (syncStatus: SyncStatus | undefined, remoteRev: string | nu
   return { color: 'default', label: '云端待确认' };
 };
 
-const presenceLabel = (
-  availability: CloudLocalAvailability,
-  syncStatus: SyncStatus | undefined,
-  remoteRev: string | null | undefined
-): string => {
-  if (availability === 'online_only') return '仅云端';
-  return isCloudSynced(syncStatus, remoteRev) ? '本地+云端' : '仅本地';
-};
+type StatusIconTone = 'default' | 'blue' | 'green' | 'warning' | 'error' | 'processing';
 
 const CloudDrivePanel: React.FC = () => {
   const { isDarkMode } = useSettings();
@@ -439,7 +426,91 @@ const CloudDrivePanel: React.FC = () => {
   const subColor = isDarkMode ? '#aaa' : '#666';
   const selectedAll = visibleItemIds.length > 0 && selectedIds.length === visibleItemIds.length;
   const selectedPartial = selectedIds.length > 0 && selectedIds.length < visibleItemIds.length;
-  const contentGridColumns = '36px minmax(0, 1fr) 96px minmax(112px, 180px) 148px';
+  const contentGridColumns = '32px minmax(0, 1fr) 88px minmax(92px, 148px) 108px';
+  const actionButtonStyle: React.CSSProperties = {
+    width: 24,
+    height: 24,
+    padding: 0,
+  };
+  const gridItemStyle = (selected: boolean): React.CSSProperties => ({
+    border: `1px solid ${selected ? '#91caff' : cardBorder}`,
+    borderRadius: 6,
+    background: selected
+      ? (isDarkMode ? '#111b26' : '#e6f4ff')
+      : cardBg,
+    padding: 8,
+    minWidth: 0,
+    minHeight: 100,
+    cursor: 'default',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    transition: 'border-color .15s ease, background .15s ease',
+  });
+  const statusIconColor = (tone: StatusIconTone): string => {
+    if (tone === 'blue' || tone === 'processing') return '#1677ff';
+    if (tone === 'green') return '#52c41a';
+    if (tone === 'warning') return '#faad14';
+    if (tone === 'error') return '#ff4d4f';
+    return isDarkMode ? '#aaa' : '#666';
+  };
+  const statusIconStyle = (tone: StatusIconTone = 'default'): React.CSSProperties => ({
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: statusIconColor(tone),
+    background: isDarkMode ? '#262626' : '#f7f8fa',
+    border: `1px solid ${isDarkMode ? '#303030' : '#eeeeee'}`,
+    fontSize: 12,
+    lineHeight: 1,
+  });
+  const renderStatusIcon = (title: string, icon: React.ReactNode, tone: StatusIconTone = 'default') => (
+    <Tooltip title={title}>
+      <span style={statusIconStyle(tone)}>{icon}</span>
+    </Tooltip>
+  );
+  const renderAvailabilityStatusIcon = (availability: CloudLocalAvailability) => {
+    if (availability === 'online_only') {
+      return renderStatusIcon(availabilityLabel(availability), <CloudDownloadOutlined />, 'blue');
+    }
+    if (availability === 'offline') {
+      return renderStatusIcon(availabilityLabel(availability), <InboxOutlined />, 'blue');
+    }
+    return renderStatusIcon(availabilityLabel(availability), <FolderOpenOutlined />, 'green');
+  };
+  const renderCloudSyncStatusIcon = (
+    syncStatus: SyncStatus | undefined,
+    remoteRev: string | null | undefined
+  ) => {
+    const syncTag = cloudSyncTag(syncStatus, remoteRev);
+    if (syncStatus === 'modified' || syncStatus === 'deleted') {
+      return renderStatusIcon(syncTag.label, <SyncOutlined />, 'warning');
+    }
+    if (syncStatus === 'conflict') {
+      return renderStatusIcon(syncTag.label, <ExclamationCircleOutlined />, 'error');
+    }
+    if (syncStatus === 'clean' && remoteRev) {
+      return renderStatusIcon(syncTag.label, <CloudOutlined />, 'blue');
+    }
+    return renderStatusIcon(syncTag.label, <ClockCircleOutlined />, 'default');
+  };
+  const renderUploadStatusIcon = (uploadState: CloudFilePayload['upload_state']) => {
+    if (uploadState === 'completed') return null;
+    if (uploadState === 'uploading') return renderStatusIcon('上传中', <CloudOutlined />, 'processing');
+    if (uploadState === 'error') return renderStatusIcon('上传失败', <ExclamationCircleOutlined />, 'error');
+    if (uploadState === 'paused') return renderStatusIcon('上传暂停', <PauseOutlined />, 'warning');
+    return renderStatusIcon('待上传', <ClockCircleOutlined />, 'default');
+  };
+  const renderDownloadStatusIcon = (downloadState: CloudFilePayload['download_state']) => {
+    if (!downloadState || downloadState === 'completed') return null;
+    if (downloadState === 'downloading') return renderStatusIcon('下载中', <CloudDownloadOutlined />, 'processing');
+    if (downloadState === 'error') return renderStatusIcon('下载失败', <ExclamationCircleOutlined />, 'error');
+    if (downloadState === 'paused') return renderStatusIcon('下载暂停', <PauseOutlined />, 'warning');
+    return renderStatusIcon('待下载', <ClockCircleOutlined />, 'default');
+  };
 
   const renderFileStatusTags = (
     availability: CloudLocalAvailability,
@@ -448,98 +519,39 @@ const CloudDrivePanel: React.FC = () => {
     syncStatus: SyncStatus | undefined,
     remoteRev: string | null | undefined
   ) => {
-    const syncTag = cloudSyncTag(syncStatus, remoteRev);
     return (
       <Space size={4} wrap>
-      <Tag color={availabilityColor(availability)} style={{ marginInlineEnd: 0 }}>
-        {presenceLabel(availability, syncStatus, remoteRev)}
-      </Tag>
-      <Tag color={syncTag.color} style={{ marginInlineEnd: 0 }}>{syncTag.label}</Tag>
-      {uploadState !== 'completed' && (
-        <Tag
-          color={
-            uploadState === 'uploading'
-              ? 'processing'
-              : uploadState === 'error'
-                ? 'error'
-                : uploadState === 'paused'
-                  ? 'warning'
-                  : 'default'
-          }
-          style={{ marginInlineEnd: 0 }}
-        >
-          {uploadState === 'uploading'
-            ? '上传中'
-            : uploadState === 'error'
-              ? '上传失败'
-              : uploadState === 'paused'
-                ? '上传暂停'
-                : '待上传'}
-        </Tag>
-      )}
-      {downloadState && downloadState !== 'completed' && (
-        <Tag
-          color={
-            downloadState === 'downloading'
-              ? 'processing'
-              : downloadState === 'error'
-                ? 'error'
-                : downloadState === 'paused'
-                  ? 'warning'
-                  : 'default'
-          }
-          style={{ marginInlineEnd: 0 }}
-        >
-          {downloadState === 'downloading'
-            ? '下载中'
-            : downloadState === 'error'
-              ? '下载失败'
-              : downloadState === 'paused'
-                ? '下载暂停'
-                : '待下载'}
-        </Tag>
-      )}
-    </Space>
+        {renderAvailabilityStatusIcon(availability)}
+        {renderCloudSyncStatusIcon(syncStatus, remoteRev)}
+        {renderUploadStatusIcon(uploadState)}
+        {renderDownloadStatusIcon(downloadState)}
+      </Space>
     );
   };
 
   const renderFolderStatusTags = (folder: typeof visibleFolders[number]) => {
-    const syncTag = cloudSyncTag(folder.syncStatus, folder.remoteRev);
     return (
       <Space size={4} wrap>
-        <Tag color="default" style={{ marginInlineEnd: 0 }}>目录</Tag>
-        <Tag color={syncTag.color} style={{ marginInlineEnd: 0 }}>{syncTag.label}</Tag>
+        {renderStatusIcon('目录', <FolderOutlined />, 'blue')}
+        {renderCloudSyncStatusIcon(folder.syncStatus, folder.remoteRev)}
       </Space>
     );
   };
 
   const renderFolderActions = (folder: typeof visibleFolders[number]) => (
-    <Space size={2} wrap>
+    <Space size={0} wrap>
       <Tooltip title="打开">
-        <Button size="small" type="text" aria-label="打开" icon={<FolderOpenOutlined />} onClick={() => setCurrentFolderPath(folder.relativePath)} />
+        <Button size="small" type="text" style={actionButtonStyle} aria-label="打开" icon={<FolderOpenOutlined />} onClick={() => setCurrentFolderPath(folder.relativePath)} />
       </Tooltip>
       <Tooltip title="打开本地目录">
-        <Button size="small" type="text" aria-label="打开本地目录" icon={<FolderOutlined />} onClick={() => handleOpenLocalDirectory(folder.relativePath)} />
+        <Button size="small" type="text" style={actionButtonStyle} aria-label="打开本地目录" icon={<FolderOutlined />} onClick={() => handleOpenLocalDirectory(folder.relativePath)} />
       </Tooltip>
       <Tooltip title="该目录离线">
-        <Button size="small" type="text" aria-label="该目录离线" icon={<InboxOutlined />} onClick={() => handleSetFolderLocalAvailability('offline', folder.relativePath)} />
+        <Button size="small" type="text" style={actionButtonStyle} aria-label="该目录离线" icon={<InboxOutlined />} onClick={() => handleSetFolderLocalAvailability('offline', folder.relativePath)} />
       </Tooltip>
       <Tooltip title="释放空间">
-        <Button size="small" type="text" aria-label="释放空间" icon={<ClearOutlined />} onClick={() => handleSetFolderLocalAvailability('online_only', folder.relativePath)} />
+        <Button size="small" type="text" style={actionButtonStyle} aria-label="释放空间" icon={<ClearOutlined />} onClick={() => handleSetFolderLocalAvailability('online_only', folder.relativePath)} />
       </Tooltip>
-      <Dropdown
-        trigger={['click']}
-        menu={{
-          items: [
-            { key: 'folder-open', label: '打开目录', onClick: () => setCurrentFolderPath(folder.relativePath) },
-            { key: 'folder-local-open', label: '打开本地目录', onClick: () => void handleOpenLocalDirectory(folder.relativePath) },
-            { key: 'folder-offline', label: '该目录离线', onClick: () => void handleSetFolderLocalAvailability('offline', folder.relativePath) },
-            { key: 'folder-release', label: '释放空间', onClick: () => void handleSetFolderLocalAvailability('online_only', folder.relativePath) },
-          ],
-        }}
-      >
-        <Button size="small" type="text" aria-label="更多" icon={<MoreOutlined />} />
-      </Dropdown>
     </Space>
   );
 
@@ -548,70 +560,52 @@ const CloudDrivePanel: React.FC = () => {
     availability: CloudLocalAvailability,
     downloadState: CloudFilePayload['download_state']
   ) => (
-    <Space size={2} wrap>
+    <Space size={0} wrap>
       {availability === 'online_only' ? (
         <Tooltip title="下载到本机">
-          <Button size="small" type="text" aria-label="下载到本机" icon={<CloudDownloadOutlined />} onClick={() => handleSetLocalAvailability(file.id, 'local')} />
+          <Button size="small" type="text" style={actionButtonStyle} aria-label="下载到本机" icon={<CloudDownloadOutlined />} onClick={() => handleSetLocalAvailability(file.id, 'local')} />
         </Tooltip>
       ) : (
         <>
           <Tooltip title="打开">
-            <Button size="small" type="text" aria-label="打开" icon={<EyeOutlined />} onClick={() => handleOpenLocalFile(file.id)} />
+            <Button size="small" type="text" style={actionButtonStyle} aria-label="打开" icon={<EyeOutlined />} onClick={() => handleOpenLocalFile(file.id)} />
           </Tooltip>
           <Tooltip title="释放空间">
-            <Button size="small" type="text" aria-label="释放空间" icon={<ClearOutlined />} onClick={() => handleSetLocalAvailability(file.id, 'online_only')} />
+            <Button size="small" type="text" style={actionButtonStyle} aria-label="释放空间" icon={<ClearOutlined />} onClick={() => handleSetLocalAvailability(file.id, 'online_only')} />
           </Tooltip>
         </>
       )}
       {availability !== 'offline' && (
         <Tooltip title="离线保留">
-          <Button size="small" type="text" aria-label="离线保留" icon={<InboxOutlined />} onClick={() => handleSetLocalAvailability(file.id, 'offline')} />
+          <Button size="small" type="text" style={actionButtonStyle} aria-label="离线保留" icon={<InboxOutlined />} onClick={() => handleSetLocalAvailability(file.id, 'offline')} />
         </Tooltip>
       )}
       {downloadState === 'error' && (
         <Tooltip title="重试下载">
-          <Button size="small" type="text" aria-label="重试下载" icon={<ReloadOutlined />} onClick={() => retryDownload(file.id)} />
+          <Button size="small" type="text" style={actionButtonStyle} aria-label="重试下载" icon={<ReloadOutlined />} onClick={() => retryDownload(file.id)} />
         </Tooltip>
       )}
       {downloadState === 'downloading' && (
         <Tooltip title="暂停下载">
-          <Button size="small" type="text" aria-label="暂停下载" icon={<PauseOutlined />} onClick={() => pauseDownload(file.id)} />
+          <Button size="small" type="text" style={actionButtonStyle} aria-label="暂停下载" icon={<PauseOutlined />} onClick={() => pauseDownload(file.id)} />
         </Tooltip>
       )}
       {downloadState === 'paused' && (
         <Tooltip title="继续下载">
-          <Button size="small" type="text" aria-label="继续下载" icon={<CaretRightOutlined />} onClick={() => resumeDownload(file.id)} />
+          <Button size="small" type="text" style={actionButtonStyle} aria-label="继续下载" icon={<CaretRightOutlined />} onClick={() => resumeDownload(file.id)} />
         </Tooltip>
       )}
-      <Dropdown
-        trigger={['click']}
-        menu={{
-          items: [
-            ...(availability !== 'online_only'
-              ? [{ key: 'file-open', label: '打开', onClick: () => void handleOpenLocalFile(file.id) }]
-              : [{ key: 'file-download', label: '下载到本机', onClick: () => void handleSetLocalAvailability(file.id, 'local') }]),
-            ...(availability !== 'offline'
-              ? [{ key: 'file-offline', label: '离线保留', onClick: () => void handleSetLocalAvailability(file.id, 'offline') }]
-              : []),
-            ...(availability !== 'online_only'
-              ? [{ key: 'file-release', label: '释放空间', onClick: () => void handleSetLocalAvailability(file.id, 'online_only') }]
-              : []),
-          ],
-        }}
-      >
-        <Button size="small" type="text" aria-label="更多" icon={<MoreOutlined />} />
-      </Dropdown>
     </Space>
   );
 
   return (
     <Content style={{ background: isDarkMode ? '#141414' : '#fafafa', height: '100%', overflow: 'auto' }}>
-      <div style={{ padding: 20, maxWidth: 1100, margin: '0 auto' }}>
+      <div style={{ padding: 14, maxWidth: 1180, margin: '0 auto' }}>
         {/* 头部 */}
-        <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <Space>
-            <CloudOutlined style={{ fontSize: 22, color: '#1890ff' }} />
-            <h2 style={{ margin: 0 }}>网盘</h2>
+            <CloudOutlined style={{ fontSize: 20, color: '#1890ff' }} />
+            <h2 style={{ margin: 0, fontSize: 20 }}>网盘</h2>
             <Tag color={isWatching ? 'success' : 'default'}>
               {isWatching ? '监听中' : '已停止'}
             </Tag>
@@ -654,7 +648,7 @@ const CloudDrivePanel: React.FC = () => {
             border: `1px solid ${cardBorder}`,
             borderRadius: 8,
             padding: '10px 12px',
-            marginBottom: 16,
+            marginBottom: 12,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -673,8 +667,8 @@ const CloudDrivePanel: React.FC = () => {
           </div>
         </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <Space>
               <FolderOpenOutlined style={{ color: '#1890ff' }} />
               <h3 style={{ margin: 0, fontSize: 16 }}>网盘文件</h3>
@@ -698,18 +692,18 @@ const CloudDrivePanel: React.FC = () => {
             </Space>
           </div>
 
-          <Row gutter={16}>
-            <Col xs={24} lg={7}>
+          <Row gutter={12}>
+            <Col xs={24} lg={6}>
               <div
                 style={{
                   background: cardBg,
                   border: `1px solid ${cardBorder}`,
                   borderRadius: 8,
-                  minHeight: 320,
+                  minHeight: 288,
                   overflow: 'hidden',
                 }}
               >
-                <div style={{ padding: '12px 14px', borderBottom: `1px solid ${rowBorder}`, fontWeight: 500 }}>
+                <div style={{ padding: '9px 12px', borderBottom: `1px solid ${rowBorder}`, fontWeight: 500 }}>
                   目录树
                 </div>
                 {folderEntries.length === 0 && fileEntries.length === 0 ? (
@@ -731,7 +725,7 @@ const CloudDrivePanel: React.FC = () => {
                             background: active ? (isDarkMode ? '#111b26' : '#e6f4ff') : 'transparent',
                             color: isDarkMode ? '#f0f0f0' : '#222',
                             textAlign: 'left',
-                            padding: `10px 12px 10px ${12 + depth * 14}px`,
+                            padding: `8px 10px 8px ${10 + depth * 12}px`,
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
@@ -748,17 +742,17 @@ const CloudDrivePanel: React.FC = () => {
               </div>
             </Col>
 
-            <Col xs={24} lg={17}>
+            <Col xs={24} lg={18}>
               <div
                 style={{
                   background: cardBg,
                   border: `1px solid ${cardBorder}`,
                   borderRadius: 8,
-                  minHeight: 320,
+                  minHeight: 288,
                   overflow: 'hidden',
                 }}
               >
-                <div style={{ padding: '12px 14px', borderBottom: `1px solid ${rowBorder}` }}>
+                <div style={{ padding: '9px 12px', borderBottom: `1px solid ${rowBorder}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                     <Space wrap size={4}>
                       <Button type="text" size="small" onClick={() => setCurrentFolderPath('')}>
@@ -798,7 +792,7 @@ const CloudDrivePanel: React.FC = () => {
                       </Tooltip>
                     </Space>
                   </div>
-                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <Checkbox
                       checked={selectedAll}
                       indeterminate={selectedPartial}
@@ -824,12 +818,12 @@ const CloudDrivePanel: React.FC = () => {
                   {cloudViewMode === 'list' && (
                     <div
                       style={{
-                        marginTop: 10,
-                        paddingTop: 8,
+                        marginTop: 7,
+                        paddingTop: 6,
                         borderTop: `1px solid ${rowBorder}`,
                         display: 'grid',
                         gridTemplateColumns: contentGridColumns,
-                        gap: 8,
+                        gap: 6,
                         alignItems: 'center',
                         color: subColor,
                         fontSize: 12,
@@ -845,16 +839,16 @@ const CloudDrivePanel: React.FC = () => {
                 </div>
 
                 {visibleFolders.length === 0 && visibleFiles.length === 0 ? (
-                  <div style={{ padding: 32 }}>
+                  <div style={{ padding: 24 }}>
                     <Empty description={currentFolderPath ? '该目录暂无内容' : '网盘目录为空'} />
                   </div>
                 ) : cloudViewMode === 'grid' ? (
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))',
-                      gap: 10,
-                      padding: 12,
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(132px, 1fr))',
+                      gap: 8,
+                      padding: 8,
                     }}
                   >
                     {visibleFolders.map(folder => (
@@ -872,19 +866,10 @@ const CloudDrivePanel: React.FC = () => {
                       >
                         <div
                           onDoubleClick={() => setCurrentFolderPath(folder.relativePath)}
-                          style={{
-                            border: `1px solid ${cardBorder}`,
-                            borderRadius: 8,
-                            background: selectedIdSet.has(folder.id)
-                              ? (isDarkMode ? '#111b26' : '#e6f4ff')
-                              : cardBg,
-                            padding: 10,
-                            minWidth: 0,
-                            cursor: 'default',
-                          }}
+                          style={gridItemStyle(selectedIdSet.has(folder.id))}
                         >
-                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                            <FolderOutlined style={{ color: '#1890ff', fontSize: 28, marginTop: 2 }} />
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                            <FolderOutlined style={{ color: '#1890ff', fontSize: 24 }} />
                             <Checkbox
                               checked={selectedIdSet.has(folder.id)}
                               onChange={e => toggleSelection(folder.id, e.target.checked)}
@@ -897,7 +882,7 @@ const CloudDrivePanel: React.FC = () => {
                             style={{
                               border: 0,
                               background: 'transparent',
-                              padding: '8px 0 0',
+                              padding: '5px 0 0',
                               margin: 0,
                               width: '100%',
                               textAlign: 'left',
@@ -914,15 +899,15 @@ const CloudDrivePanel: React.FC = () => {
                                 overflow: 'hidden',
                                 wordBreak: 'break-all',
                                 fontWeight: 500,
-                                lineHeight: 1.35,
-                                minHeight: 36,
+                                lineHeight: 1.28,
+                                minHeight: 18,
                               }}
                             >
                               {folder.name}
                             </span>
                           </button>
-                          <div style={{ marginTop: 8 }}>{renderFolderStatusTags(folder)}</div>
-                          <div style={{ marginTop: 8 }}>{renderFolderActions(folder)}</div>
+                          <div style={{ marginTop: 5 }}>{renderFolderStatusTags(folder)}</div>
+                          <div style={{ marginTop: 4 }}>{renderFolderActions(folder)}</div>
                         </div>
                       </Dropdown>
                     ))}
@@ -952,18 +937,10 @@ const CloudDrivePanel: React.FC = () => {
                         >
                           <div
                             onDoubleClick={() => availability === 'online_only' ? handleSetLocalAvailability(file.id, 'local') : handleOpenLocalFile(file.id)}
-                            style={{
-                              border: `1px solid ${cardBorder}`,
-                              borderRadius: 8,
-                              background: selectedIdSet.has(file.id)
-                                ? (isDarkMode ? '#111b26' : '#e6f4ff')
-                                : cardBg,
-                              padding: 10,
-                              minWidth: 0,
-                            }}
+                            style={gridItemStyle(selectedIdSet.has(file.id))}
                           >
-                            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                              <FileOutlined style={{ color: '#999', fontSize: 28, marginTop: 2 }} />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                              <FileOutlined style={{ color: '#999', fontSize: 24 }} />
                               <Checkbox
                                 checked={selectedIdSet.has(file.id)}
                                 onChange={e => toggleSelection(file.id, e.target.checked)}
@@ -972,24 +949,32 @@ const CloudDrivePanel: React.FC = () => {
                             </div>
                             <div
                               style={{
-                                marginTop: 8,
+                                marginTop: 5,
                                 display: '-webkit-box',
                                 WebkitLineClamp: 2,
                                 WebkitBoxOrient: 'vertical',
                                 overflow: 'hidden',
                                 wordBreak: 'break-all',
                                 fontWeight: 500,
-                                lineHeight: 1.35,
-                                minHeight: 36,
+                                lineHeight: 1.28,
+                                minHeight: 18,
                               }}
                             >
                               {file.filename}
                             </div>
-                            <div style={{ marginTop: 6, color: '#999', fontSize: 12 }}>{formatBytes(file.size)}</div>
-                            <div style={{ marginTop: 8 }}>
+                            <div
+                              style={{
+                                marginTop: 3,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                flexWrap: 'wrap',
+                              }}
+                            >
+                              <span style={{ color: '#999', fontSize: 11, lineHeight: '18px' }}>{formatBytes(file.size)}</span>
                               {renderFileStatusTags(availability, uploadState, downloadState, file.syncStatus, file.remoteRev)}
                             </div>
-                            <div style={{ marginTop: 8 }}>{renderFileActions(file, availability, downloadState)}</div>
+                            <div style={{ marginTop: 4 }}>{renderFileActions(file, availability, downloadState)}</div>
                           </div>
                         </Dropdown>
                       );
@@ -1012,12 +997,12 @@ const CloudDrivePanel: React.FC = () => {
                       >
                         <div
                           style={{
-                            padding: '6px 12px',
+                            padding: '5px 10px',
                             borderBottom: `1px solid ${rowBorder}`,
                             display: 'grid',
                             gridTemplateColumns: contentGridColumns,
                             alignItems: 'center',
-                            gap: 8,
+                            gap: 6,
                           }}
                         >
                           <Checkbox
@@ -1077,15 +1062,15 @@ const CloudDrivePanel: React.FC = () => {
                           }}
                         >
                           <div
-                          style={{
-                            padding: '6px 12px',
-                            borderBottom: `1px solid ${rowBorder}`,
-                            display: 'grid',
-                            gridTemplateColumns: contentGridColumns,
-                            alignItems: 'center',
-                            gap: 8,
-                          }}
-                        >
+                            style={{
+                              padding: '5px 10px',
+                              borderBottom: `1px solid ${rowBorder}`,
+                              display: 'grid',
+                              gridTemplateColumns: contentGridColumns,
+                              alignItems: 'center',
+                              gap: 6,
+                            }}
+                          >
                             <Checkbox
                               checked={selectedIdSet.has(file.id)}
                               onChange={e => toggleSelection(file.id, e.target.checked)}

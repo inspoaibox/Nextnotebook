@@ -3,8 +3,10 @@ package com.mucheng.notes.data.cloud
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import com.mucheng.notes.data.local.dao.CloudFileLocalPathDao
 import com.mucheng.notes.data.local.entity.CloudFileLocalPathEntity
+import com.mucheng.notes.data.local.entity.CloudLocalAvailabilityValues
 import com.mucheng.notes.data.remote.RemoteFileInfo
 import com.mucheng.notes.data.remote.WebDAVAdapter
 import com.mucheng.notes.domain.model.payload.CloudDownloadState
@@ -121,16 +123,29 @@ class CloudDriveDownloadManager @Inject constructor(
 
         // 4. 读取/创建侧表记录（含断点续传偏移），标记为 downloading
         val existing = localPathDao.getByCloudFileId(cloudFileId)
-        val resumeFrom = existing
-            ?.takeIf { it.documentUri == documentUri && it.state != CloudDownloadState.ERROR.value }
+        val storedResume = existing
+            ?.takeIf { it.documentUri == documentUri }
             ?.downloadedSize
             ?.coerceIn(0L, totalSize)
             ?: 0L
+        val localLength = resolveDocumentLength(Uri.parse(documentUri))
+        val resumeFrom = if (storedResume > 0L && localLength == storedResume) {
+            storedResume
+        } else {
+            if (storedResume > 0L && localLength != storedResume) {
+                Log.w(
+                    TAG,
+                    "Resume offset mismatch for $cloudFileId: record=$storedResume local=$localLength; restart"
+                )
+            }
+            0L
+        }
         val baseRecord = (existing?.copy(documentUri = documentUri, relativePath = payload.relativePath)
             ?: CloudFileLocalPathEntity(
                 cloudFileId = cloudFileId,
                 documentUri = documentUri,
-                relativePath = payload.relativePath
+                relativePath = payload.relativePath,
+                availability = CloudLocalAvailabilityValues.ONLINE_ONLY
             )).copy(
             downloadedSize = resumeFrom,
             state = CloudDownloadState.DOWNLOADING.value,
@@ -146,35 +161,57 @@ class CloudDriveDownloadManager @Inject constructor(
         while (true) {
             coroutineContext.ensureActive()
 
-            val transferErr = transferRanges(
+            val transfer = transferRanges(
                 cloudFileId, payload, adapter, documentUri, totalSize, startOffset
             )
-            if (transferErr != null) {
+            if (transfer.errorMessage != null) {
                 // 网络类失败：保留续传偏移，标 error（不整文件重试，Range 已续传）
-                localPathDao.updateProgress(cloudFileId, startOffset,
-                    CloudDownloadState.ERROR.value, null, null, transferErr)
-                publishProgress(cloudFileId, payload.filename, totalSize, startOffset,
-                    CloudDownloadState.ERROR, transferErr)
-                return@withContext Result.failure(IOException(transferErr))
+                val failedAt = transfer.offset.coerceIn(0L, totalSize)
+                localPathDao.markError(cloudFileId, failedAt, transfer.errorMessage)
+                publishProgress(cloudFileId, payload.filename, totalSize, failedAt,
+                    CloudDownloadState.ERROR, transfer.errorMessage)
+                return@withContext Result.failure(IOException(transfer.errorMessage))
             }
 
-            // 完整性校验（流式 SHA-256）
-            val computed = runCatching { computeDocumentFileHash(Uri.parse(documentUri)) }
+            // 完整性校验（实际落盘字节数 + 流式 SHA-256）
+            val computed = runCatching { computeDocumentFileDigest(Uri.parse(documentUri)) }
             if (computed.isFailure) {
-                val err = "hash compute failed: ${computed.exceptionOrNull()?.message}"
-                localPathDao.updateProgress(cloudFileId, totalSize,
-                    CloudDownloadState.ERROR.value, null, null, err)
+                val err = "digest compute failed: ${computed.exceptionOrNull()?.message}"
+                localPathDao.markError(cloudFileId, transfer.offset.coerceIn(0L, totalSize), err)
                 publishProgress(cloudFileId, payload.filename, totalSize, totalSize,
                     CloudDownloadState.ERROR, err)
                 return@withContext Result.failure(IOException(err))
             }
 
-            val actualHash = computed.getOrThrow()
+            val digest = computed.getOrThrow()
+            if (digest.size != totalSize) {
+                attempt++
+                if (attempt > MAX_VERIFY_RETRIES) {
+                    val err = "Size verification failed after $MAX_VERIFY_RETRIES retries " +
+                        "(expected=$totalSize, actual=${digest.size})"
+                    runCatching { truncateDocumentFile(documentUri) }
+                    localPathDao.markError(cloudFileId, 0L, err)
+                    publishProgress(cloudFileId, payload.filename, totalSize, 0L,
+                        CloudDownloadState.ERROR, err)
+                    return@withContext Result.failure(IOException(err))
+                }
+                Log.w(TAG, "Size mismatch for $cloudFileId (attempt $attempt): " +
+                    "expected=$totalSize actual=${digest.size}; retrying from scratch")
+                runCatching { truncateDocumentFile(documentUri) }
+                    .onFailure { Log.w(TAG, "truncate failed (will overwrite on retry): ${it.message}") }
+                localPathDao.updateProgress(cloudFileId, 0L,
+                    CloudDownloadState.DOWNLOADING.value, null, null, null)
+                startOffset = 0L
+                publishProgress(cloudFileId, payload.filename, totalSize, 0L,
+                    CloudDownloadState.DOWNLOADING, null)
+                continue
+            }
+
+            val actualHash = digest.sha256
             if (actualHash.equals(payload.fileHash, ignoreCase = true) || payload.fileHash.isBlank()) {
-                // 校验通过（远端无 hash 时跳过强校验，仅记录实际哈希）
+                // 校验通过（远端无 hash 时至少已经通过实际字节数校验，并记录实际哈希）
                 val now = System.currentTimeMillis()
-                localPathDao.updateProgress(cloudFileId, totalSize,
-                    CloudDownloadState.COMPLETED.value, actualHash, now, null)
+                localPathDao.markCompleted(cloudFileId, totalSize, actualHash, now)
                 publishProgress(cloudFileId, payload.filename, totalSize, totalSize,
                     CloudDownloadState.COMPLETED, null)
                 Log.i(TAG, "Download completed & verified: $cloudFileId (sha256=$actualHash)")
@@ -186,8 +223,8 @@ class CloudDriveDownloadManager @Inject constructor(
             if (attempt > MAX_VERIFY_RETRIES) {
                 val err = "Hash verification failed after $MAX_VERIFY_RETRIES retries " +
                     "(expected=${payload.fileHash}, last=$actualHash)"
-                localPathDao.updateProgress(cloudFileId, 0L,
-                    CloudDownloadState.ERROR.value, null, null, err)
+                runCatching { truncateDocumentFile(documentUri) }
+                localPathDao.markError(cloudFileId, 0L, err)
                 publishProgress(cloudFileId, payload.filename, totalSize, 0L,
                     CloudDownloadState.ERROR, err)
                 return@withContext Result.failure(SecurityException(err))
@@ -196,6 +233,8 @@ class CloudDriveDownloadManager @Inject constructor(
                 "expected=${payload.fileHash} actual=$actualHash — retrying from scratch")
             runCatching { truncateDocumentFile(documentUri) }
                 .onFailure { Log.w(TAG, "truncate failed (will overwrite on retry): ${it.message}") }
+            localPathDao.updateProgress(cloudFileId, 0L,
+                CloudDownloadState.DOWNLOADING.value, null, null, null)
             startOffset = 0L
             publishProgress(cloudFileId, payload.filename, totalSize, 0L,
                 CloudDownloadState.DOWNLOADING, null)
@@ -250,7 +289,7 @@ class CloudDriveDownloadManager @Inject constructor(
      * 从 [startOffset] 开始按 [CloudDriveConfigStore.current.downloadChunkSize] 分块下载，
      * 追加写入 DocumentFile，实时刷新侧表与进度流。
      *
-     * @return null 表示传输完成；非 null 为错误信息（调用方据此标 error）。
+     * @return 当前真实传输 offset；errorMessage 非空表示失败（调用方据此标 error）。
      *         遇到协程取消会抛 [kotlinx.coroutines.CancellationException]，不在此捕获。
      */
     private suspend fun transferRanges(
@@ -260,7 +299,7 @@ class CloudDriveDownloadManager @Inject constructor(
         documentUri: String,
         totalSize: Long,
         startOffset: Long
-    ): String? {
+    ): RangeTransferResult {
         val chunkSize = configStore.current.downloadChunkSize.coerceAtLeast(1L)
         var offset = startOffset.coerceIn(0L, totalSize)
         var firstChunk = true
@@ -276,12 +315,15 @@ class CloudDriveDownloadManager @Inject constructor(
 
             val bytesResult = adapter.downloadFileRange(cloudFileId, offset, effective)
             if (bytesResult.isFailure) {
-                return "Range download failed at offset $offset: " +
-                    "${bytesResult.exceptionOrNull()?.message}"
+                return RangeTransferResult(
+                    offset = offset,
+                    errorMessage = "Range download failed at offset $offset: " +
+                        "${bytesResult.exceptionOrNull()?.message}"
+                )
             }
             val bytes = bytesResult.getOrThrow()
             if (bytes.isEmpty()) {
-                return "Empty range response at offset $offset"
+                return RangeTransferResult(offset, "Empty range response at offset $offset")
             }
 
             // 首块：resume 时追加写（"wa"），全新/重试时截断写（"w"）；后续块一律追加
@@ -289,7 +331,7 @@ class CloudDriveDownloadManager @Inject constructor(
             try {
                 appendBytes(documentUri, bytes, append)
             } catch (e: IOException) {
-                return "write failed at offset $offset: ${e.message}"
+                return RangeTransferResult(offset, "write failed at offset $offset: ${e.message}")
             }
             firstChunk = false
             offset += bytes.size
@@ -299,7 +341,7 @@ class CloudDriveDownloadManager @Inject constructor(
             publishProgress(cloudFileId, payload.filename, totalSize, offset,
                 CloudDownloadState.DOWNLOADING, null)
         }
-        return null
+        return RangeTransferResult(offset = offset)
     }
 
     /**
@@ -349,8 +391,9 @@ class CloudDriveDownloadManager @Inject constructor(
      * 流式计算 DocumentFile 的 SHA-256（避免一次性把大文件读入内存）。
      * 与 [com.mucheng.notes.data.sync.ResourceSyncManager] 的哈希算法保持一致。
      */
-    private suspend fun computeDocumentFileHash(uri: Uri): String = withContext(Dispatchers.IO) {
+    private suspend fun computeDocumentFileDigest(uri: Uri): DocumentDigest = withContext(Dispatchers.IO) {
         val digest = MessageDigest.getInstance("SHA-256")
+        var totalRead = 0L
         context.contentResolver.openInputStream(uri).use { input ->
             if (input == null) throw IOException("Cannot open input stream for $uri")
             val buffer = ByteArray(HASH_BUFFER_SIZE)
@@ -358,10 +401,26 @@ class CloudDriveDownloadManager @Inject constructor(
             while (read > 0) {
                 coroutineContext.ensureActive()
                 digest.update(buffer, 0, read)
+                totalRead += read
                 read = input.read(buffer)
             }
         }
-        digest.digest().joinToString("") { "%02x".format(it) }
+        DocumentDigest(
+            sha256 = digest.digest().joinToString("") { "%02x".format(it) },
+            size = totalRead
+        )
+    }
+
+    private fun resolveDocumentLength(uri: Uri): Long? {
+        runCatching {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                afd.length.takeIf { it >= 0L }
+            }
+        }.getOrNull()?.let { return it }
+
+        return runCatching {
+            DocumentFile.fromSingleUri(context, uri)?.length()?.takeIf { it >= 0L }
+        }.getOrNull()
     }
 
     // ------------------------------------------------------------------
@@ -398,6 +457,16 @@ class CloudDriveDownloadManager @Inject constructor(
         private const val HASH_BUFFER_SIZE = 64 * 1024
     }
 }
+
+private data class RangeTransferResult(
+    val offset: Long,
+    val errorMessage: String? = null
+)
+
+private data class DocumentDigest(
+    val sha256: String,
+    val size: Long
+)
 
 /**
  * 单个文件的下载进度快照（暴露给 UI）。

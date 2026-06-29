@@ -203,6 +203,18 @@ class CloudDriveDirectoryScanner @Inject constructor(
             ?.let { runCatching { CloudFilePayload.fromJson(json, it.payload) }.getOrNull() }
         val localRecord = localPathDao.getByCloudFileId(id)
 
+        val remoteDeleteTime = existing?.deletedTime
+        val staleRemoteDeletedFile = existing != null &&
+            existing.type == ItemType.CLOUD_FILE.value &&
+            remoteDeleteTime != null &&
+            existing.syncStatus == "clean" &&
+            mtime <= remoteDeleteTime + MTIME_TOLERANCE_MS
+        if (staleRemoteDeletedFile) {
+            runCatching { file.delete() }
+            localPathDao.delete(existing.id)
+            return ScanUpsertResult(changed = false, trackDeletion = false)
+        }
+
         val staleOnlineOnlyPlaceholder = existing != null &&
             existing.deletedTime == null &&
             existing.syncStatus == "clean" &&
@@ -212,6 +224,16 @@ class CloudDriveDirectoryScanner @Inject constructor(
             (existingPayload.fileHash.isNotBlank() || existingPayload.size > 0L)
         if (staleOnlineOnlyPlaceholder) {
             runCatching { file.delete() }
+            return ScanUpsertResult(changed = false, trackDeletion = false)
+        }
+
+        val incompleteDownloadCache = existing != null &&
+            existing.deletedTime == null &&
+            existing.syncStatus == "clean" &&
+            localRecord != null &&
+            localRecord.documentUri == file.uri.toString() &&
+            localRecord.state != CloudDownloadState.COMPLETED.value
+        if (incompleteDownloadCache) {
             return ScanUpsertResult(changed = false, trackDeletion = false)
         }
 

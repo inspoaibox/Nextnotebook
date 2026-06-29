@@ -442,7 +442,17 @@ class CloudDriveViewModel @Inject constructor(
     }
 
     private suspend fun refreshLocalAvailability() = withContext(Dispatchers.IO) {
-        val local = localPathDao.getAll().associate { it.cloudFileId to it.availability }
+        val payloadsById = itemRepository.getByTypeOnce(ItemType.CLOUD_FILE).associate { entity ->
+            entity.id to runCatching { CloudFilePayload.fromJson(json, entity.payload) }.getOrNull()
+        }
+        val local = localPathDao.getAll().associate { record ->
+            val availability = if (isUsableLocalRecord(record, payloadsById[record.cloudFileId])) {
+                record.availability
+            } else {
+                CloudLocalAvailabilityValues.ONLINE_ONLY
+            }
+            record.cloudFileId to availability
+        }
         _uiState.update { it.copy(localAvailability = local) }
     }
 
@@ -552,9 +562,9 @@ class CloudDriveViewModel @Inject constructor(
     /** 判断该文件是否已下载完成（用于决定点击是直接打开还是先下载） */
     suspend fun isDownloaded(cloudFileId: String): Boolean = withContext(Dispatchers.IO) {
         val record = localPathDao.getByCloudFileId(cloudFileId) ?: return@withContext false
-        record.state == "completed" && runCatching {
-            DocumentFile.fromSingleUri(getApplication(), Uri.parse(record.documentUri))?.exists() == true
-        }.getOrDefault(false)
+        val item = itemRepository.getById(cloudFileId)
+        val payload = item?.let { runCatching { CloudFilePayload.fromJson(json, it.payload) }.getOrNull() }
+        isUsableLocalRecord(record, payload)
     }
 
     /**
@@ -572,6 +582,12 @@ class CloudDriveViewModel @Inject constructor(
         }
         val item = itemRepository.getById(cloudFileId)
         val payload = item?.let { runCatching { CloudFilePayload.fromJson(json, it.payload) }.getOrNull() }
+        if (!isUsableLocalRecord(record, payload)) {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "文件尚未完整下载", Toast.LENGTH_SHORT).show()
+            }
+            return@withContext
+        }
         val filename = payload?.filename.orEmpty()
         val mimeType = payload?.mimeType.takeIf { !it.isNullOrBlank() } ?: "application/octet-stream"
         val isApk = mimeType == "application/vnd.android.package-archive" ||
@@ -608,6 +624,34 @@ class CloudDriveViewModel @Inject constructor(
                 Toast.makeText(context, "没有可打开此文件的应用", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private fun isUsableLocalRecord(
+        record: CloudFileLocalPathEntity,
+        payload: CloudFilePayload?
+    ): Boolean {
+        if (record.state != CloudDownloadState.COMPLETED.value) return false
+        val document = runCatching {
+            DocumentFile.fromSingleUri(getApplication(), Uri.parse(record.documentUri))
+        }.getOrNull() ?: return false
+        if (!document.exists() || !document.isFile) return false
+
+        val expectedSize = payload?.size?.takeIf { it > 0L }
+        if (expectedSize != null) {
+            if (record.downloadedSize != expectedSize) return false
+            val actualSize = document.length()
+            if (actualSize != expectedSize) return false
+        }
+
+        val expectedHash = payload?.fileHash?.takeIf { it.isNotBlank() }
+        val verifiedHash = record.fileHashVerified?.takeIf { it.isNotBlank() }
+        if (expectedHash != null && verifiedHash != null &&
+            !verifiedHash.equals(expectedHash, ignoreCase = true)
+        ) {
+            return false
+        }
+
+        return true
     }
 
     /** UI 消费 Snackbar 后清空消息 */

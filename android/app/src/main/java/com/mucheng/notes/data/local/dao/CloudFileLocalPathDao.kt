@@ -41,6 +41,48 @@ interface CloudFileLocalPathDao {
         errorMessage: String?
     )
 
+    /**
+     * 标记为完整可用。若用户已设置离线保留，完成后保留 offline；否则标为 local。
+     */
+    @Query(
+        """UPDATE cloud_file_local_path
+           SET downloaded_size = :downloadedSize,
+               state = 'completed',
+               file_hash_verified = :fileHashVerified,
+               downloaded_at = :downloadedAt,
+               error_message = NULL,
+               availability = CASE
+                   WHEN availability = 'offline' THEN availability
+                   ELSE 'local'
+               END
+           WHERE cloud_file_id = :cloudFileId"""
+    )
+    suspend fun markCompleted(
+        cloudFileId: String,
+        downloadedSize: Long,
+        fileHashVerified: String,
+        downloadedAt: Long
+    )
+
+    /**
+     * 标记为失败。失败/半截文件不能继续显示为本地可用。
+     */
+    @Query(
+        """UPDATE cloud_file_local_path
+           SET downloaded_size = :downloadedSize,
+               state = 'error',
+               file_hash_verified = NULL,
+               downloaded_at = NULL,
+               error_message = :errorMessage,
+               availability = 'online_only'
+           WHERE cloud_file_id = :cloudFileId"""
+    )
+    suspend fun markError(
+        cloudFileId: String,
+        downloadedSize: Long,
+        errorMessage: String?
+    )
+
     @Query(
         """UPDATE cloud_file_local_path
            SET availability = :availability

@@ -1042,8 +1042,20 @@ private fun MessageBubble(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
-    val canOpenFile = fileEntity?.localPath != null
+    val canOpenFile = fileEntity?.localPath != null && fileEntity.status == FileTransferStatus.COMPLETED.value
     val copyText = message.content.ifBlank { if (isFileMessage) "文件" else "" }
+    val messageStatusText = when {
+        isSent && message.status == MessageStatus.FAILED.value -> "发送失败"
+        isSent && message.status == MessageStatus.SENDING.value -> "发送中"
+        isSent && message.readAt != null -> "已读"
+        else -> null
+    }
+    val fileStatusText = when (fileEntity?.status) {
+        FileTransferStatus.TRANSFERRING.value -> "传输中 ${fileEntity.progress.toInt().coerceIn(0, 99)}%"
+        FileTransferStatus.FAILED.value -> "传输失败"
+        FileTransferStatus.CANCELLED.value -> "已取消"
+        else -> null
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1119,6 +1131,30 @@ private fun MessageBubble(
                                     MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        if (fileEntity?.status == FileTransferStatus.TRANSFERRING.value) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { (fileEntity.progress / 100f).coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = if (isSent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                                trackColor = if (isSent)
+                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.25f)
+                                else
+                                    MaterialTheme.colorScheme.surface
+                            )
+                        }
+                        if (fileStatusText != null) {
+                            Text(
+                                text = fileStatusText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (fileEntity?.status == FileTransferStatus.FAILED.value)
+                                    MaterialTheme.colorScheme.error
+                                else if (isSent)
+                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
+                                else
+                                    MaterialTheme.colorScheme.outline
+                            )
+                        }
                         if (canOpenFile) {
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1149,14 +1185,28 @@ private fun MessageBubble(
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = dateFormat.format(Date(message.createdAt)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSent)
-                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-                        else
-                            MaterialTheme.colorScheme.outline
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = dateFormat.format(Date(message.createdAt)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSent)
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                            else
+                                MaterialTheme.colorScheme.outline
+                        )
+                        if (messageStatusText != null) {
+                            Text(
+                                text = messageStatusText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (message.status == MessageStatus.FAILED.value)
+                                    MaterialTheme.colorScheme.error
+                                else if (isSent)
+                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                                else
+                                    MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
                 }
             }
 

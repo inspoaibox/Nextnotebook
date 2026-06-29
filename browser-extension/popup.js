@@ -129,6 +129,8 @@ const bookmarkAddCancelBtn = document.getElementById('bookmark-add-cancel');
 const bookmarkManagerCountEl = document.getElementById('bookmark-manager-count');
 const bookmarkFolderListEl = document.getElementById('bookmark-folder-list');
 const bookmarkListEl = document.getElementById('bookmark-list');
+const bookmarkSearchInput = document.getElementById('bookmark-search');
+const bookmarkSearchClearBtn = document.getElementById('bookmark-search-clear');
 
 // DOM 元素 - 密码库
 const vaultSiteUrlEl = document.getElementById('vault-site-url');
@@ -157,12 +159,13 @@ let expandedBookmarkFolderIds = new Set();
 let hasInitializedBookmarkExpansion = false;
 let isBookmarkManagerLoading = false;
 let bookmarkManagerError = '';
+let bookmarkSearchQuery = '';
 let currentPageUrl = '';
 let vaultEntries = [];
 let vaultFolders = [];
 let isConnected = false;
 let extractedImages = [];
-let currentTab = 'note';
+let currentTab = 'vault';
 let vaultTotpTimer = null;
 let isVaultEntriesLoading = false;
 
@@ -300,6 +303,8 @@ function updateStatus(connected, text) {
   isConnected = connected;
   statusEl.className = `status ${connected ? 'connected' : 'disconnected'}`;
   statusTextEl.textContent = text;
+  statusEl.title = text;
+  statusEl.setAttribute('aria-label', text);
   updateButtonStates();
 }
 
@@ -508,6 +513,38 @@ function getBookmarksForSelection(folderId) {
   return bookmarkItems.filter(bookmark => bookmark.folderId && folderIds.includes(bookmark.folderId));
 }
 
+function normalizeBookmarkSearch(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function bookmarkMatchesSearch(bookmark, query) {
+  if (!query) return true;
+  const tags = Array.isArray(bookmark.tags) ? bookmark.tags : [];
+  const haystack = [
+    bookmark.name,
+    bookmark.url,
+    bookmark.description,
+    getBookmarkDomain(bookmark.url),
+    ...tags,
+  ].join(' ').toLowerCase();
+
+  return haystack.includes(query);
+}
+
+function getVisibleBookmarksForSelection(folderId) {
+  const query = normalizeBookmarkSearch(bookmarkSearchQuery);
+  return getBookmarksForSelection(folderId)
+    .filter(bookmark => bookmarkMatchesSearch(bookmark, query));
+}
+
+function syncBookmarkSearchControls() {
+  const hasQuery = Boolean(normalizeBookmarkSearch(bookmarkSearchQuery));
+  if (bookmarkSearchInput && bookmarkSearchInput.value !== bookmarkSearchQuery) {
+    bookmarkSearchInput.value = bookmarkSearchQuery;
+  }
+  bookmarkSearchClearBtn?.classList.toggle('active', hasQuery);
+}
+
 function getBookmarkDomain(url) {
   try {
     return new URL(normalizeBookmarkUrl(url)).hostname;
@@ -611,7 +648,7 @@ function createBookmarkFolderButton(selection, name, level = 0, hasChildren = fa
 
   const countEl = document.createElement('span');
   countEl.className = 'bookmark-folder-count';
-  countEl.textContent = String(getBookmarksForSelection(selection).length);
+  countEl.textContent = String(getVisibleBookmarksForSelection(selection).length);
 
   button.append(toggleEl, nameEl, countEl);
   if (hasChildren) {
@@ -697,15 +734,20 @@ function renderBookmarkItems() {
     return;
   }
 
-  const filtered = getBookmarksForSelection(selectedBookmarkFolderId)
+  const query = normalizeBookmarkSearch(bookmarkSearchQuery);
+  const filtered = getVisibleBookmarksForSelection(selectedBookmarkFolderId)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN'));
 
   if (bookmarkManagerCountEl) {
-    bookmarkManagerCountEl.textContent = `共 ${bookmarkItems.length} 个，当前 ${filtered.length} 个`;
+    bookmarkManagerCountEl.textContent = query
+      ? `共 ${bookmarkItems.length} 个，匹配 ${filtered.length} 个`
+      : `共 ${bookmarkItems.length} 个，当前 ${filtered.length} 个`;
   }
 
   if (!filtered.length) {
-    bookmarkListEl.innerHTML = '<div class="bookmark-empty">当前分类暂无书签</div>';
+    bookmarkListEl.innerHTML = query
+      ? '<div class="bookmark-empty">没有找到匹配的书签</div>'
+      : '<div class="bookmark-empty">当前分类暂无书签</div>';
     return;
   }
 
@@ -751,6 +793,7 @@ function renderBookmarkItems() {
 }
 
 function renderBookmarkManager() {
+  syncBookmarkSearchControls();
   renderBookmarkFolders();
   renderBookmarkItems();
 }
@@ -943,6 +986,78 @@ async function getPageContent() {
   return null;
 }
 
+const BOOKMARK_ICON_INLINE_MAX_BYTES = 120 * 1024;
+const BOOKMARK_ICON_FETCH_TIMEOUT_MS = 2500;
+
+function inferBookmarkIconMime(iconUrl, contentType) {
+  const mime = String(contentType || '').split(';')[0].trim().toLowerCase();
+  if (mime.startsWith('image/')) return mime;
+
+  try {
+    const path = new URL(iconUrl).pathname.toLowerCase();
+    if (path.endsWith('.svg')) return 'image/svg+xml';
+    if (path.endsWith('.png')) return 'image/png';
+    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg';
+    if (path.endsWith('.webp')) return 'image/webp';
+    if (path.endsWith('.ico')) return 'image/x-icon';
+  } catch {
+    // Keep the remote icon when the URL cannot be parsed.
+  }
+
+  return '';
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+
+  return btoa(binary);
+}
+
+async function inlineBookmarkIcon(iconUrl) {
+  const value = String(iconUrl || '').trim();
+  if (!value || value.startsWith('data:image') || value.startsWith('<svg') || !/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BOOKMARK_ICON_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(value, {
+      cache: 'force-cache',
+      credentials: 'omit',
+      signal: controller.signal,
+    });
+
+    if (!response.ok) return value;
+
+    const mime = inferBookmarkIconMime(value, response.headers.get('content-type'));
+    if (!mime) return value;
+
+    if (mime === 'image/svg+xml') {
+      const svg = await response.text();
+      const text = svg.trim();
+      if (!text || new Blob([text]).size > BOOKMARK_ICON_INLINE_MAX_BYTES) return value;
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`;
+    }
+
+    const buffer = await response.arrayBuffer();
+    if (!buffer.byteLength || buffer.byteLength > BOOKMARK_ICON_INLINE_MAX_BYTES) return value;
+    return `data:${mime};base64,${arrayBufferToBase64(buffer)}`;
+  } catch (e) {
+    console.warn('Failed to inline bookmark icon:', e);
+    return value;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // 获取当前页面书签信息
 async function getBookmarkInfo() {
   try {
@@ -956,16 +1071,33 @@ async function getBookmarkInfo() {
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
+        const cleanText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+        const getMetaContent = (selectors) => {
+          for (const selector of selectors) {
+            const content = cleanText(document.querySelector(selector)?.getAttribute('content'));
+            if (content) return content;
+          }
+          return '';
+        };
+
+        const getElementText = (selectors) => {
+          for (const selector of selectors) {
+            const text = cleanText(document.querySelector(selector)?.textContent);
+            if (text) return text;
+          }
+          return '';
+        };
+
         // 获取网站图标
         const getIcon = () => {
           // 优先获取 apple-touch-icon
-          const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
-          if (appleIcon) return appleIcon.href;
+          const appleIcon = document.querySelector('link[rel~="apple-touch-icon"], link[rel~="apple-touch-icon-precomposed"]');
+          if (appleIcon?.href) return appleIcon.href;
           
           // 获取 favicon
-          const favicon = document.querySelector('link[rel="icon"]') || 
-                         document.querySelector('link[rel="shortcut icon"]');
-          if (favicon) return favicon.href;
+          const favicon = document.querySelector('link[rel~="icon"], link[rel="shortcut icon"]');
+          if (favicon?.href) return favicon.href;
           
           // 默认 favicon 路径
           return window.location.origin + '/favicon.ico';
@@ -973,27 +1105,41 @@ async function getBookmarkInfo() {
         
         // 获取网站描述
         const getDescription = () => {
-          const metaDesc = document.querySelector('meta[name="description"]');
-          if (metaDesc) return metaDesc.content;
-          
-          const ogDesc = document.querySelector('meta[property="og:description"]');
-          if (ogDesc) return ogDesc.content;
-          
-          return '';
+          const metaDescription = getMetaContent([
+            'meta[property="og:description"]',
+            'meta[name="twitter:description"]',
+            'meta[property="twitter:description"]',
+            'meta[name="description"]',
+          ]);
+          if (metaDescription) return metaDescription;
+
+          const paragraph = getElementText([
+            'article p',
+            'main p',
+            '[role="main"] p',
+            'p',
+          ]);
+          return paragraph ? paragraph.substring(0, 200) : '';
         };
         
         // 获取网站名称
         const getName = () => {
-          // 优先使用 og:site_name
-          const ogSiteName = document.querySelector('meta[property="og:site_name"]');
-          if (ogSiteName) return ogSiteName.content;
-          
-          // 使用 og:title
-          const ogTitle = document.querySelector('meta[property="og:title"]');
-          if (ogTitle) return ogTitle.content;
-          
-          // 使用页面标题
-          return document.title;
+          const pageTitle = getMetaContent([
+            'meta[property="og:title"]',
+            'meta[name="twitter:title"]',
+            'meta[property="twitter:title"]',
+            'meta[name="title"]',
+          ]);
+          if (pageTitle) return pageTitle;
+
+          const documentTitle = cleanText(document.title);
+          if (documentTitle) return documentTitle;
+
+          const h1Title = getElementText(['h1']);
+          if (h1Title) return h1Title;
+
+          const siteName = getMetaContent(['meta[property="og:site_name"]']);
+          return siteName || window.location.hostname;
         };
         
         return {
@@ -1945,14 +2091,19 @@ async function saveBookmark() {
   bookmarkBtn.innerHTML = '<span class="loading">保存中</span>';
   
   try {
+    const bookmarkName = String(bookmarkNameInput.value || '').trim() || bookmarkData.name;
+    const bookmarkDescription = String(bookmarkDescInput.value || '').trim() || bookmarkData.description;
+    const bookmarkIcon = await inlineBookmarkIcon(bookmarkData.icon);
+    bookmarkData.icon = bookmarkIcon;
+
     const response = await vaultFetch('/api/bookmark', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: bookmarkNameInput.value || bookmarkData.name,
+        name: bookmarkName,
         url: bookmarkData.url,
-        description: bookmarkDescInput.value || bookmarkData.description,
-        icon: bookmarkData.icon,
+        description: bookmarkDescription,
+        icon: bookmarkIcon || null,
         folderId: bookmarkFolderSelect.value || null,
       }),
     });
@@ -2040,6 +2191,7 @@ async function init() {
   bookmarkData = await getBookmarkInfo();
   
   if (bookmarkData) {
+    bookmarkData.icon = await inlineBookmarkIcon(bookmarkData.icon);
     bookmarkNameInput.value = bookmarkData.name;
     bookmarkDescInput.value = bookmarkData.description;
     bookmarkDomain.textContent = bookmarkData.domain;
@@ -2072,6 +2224,15 @@ noteBtn.addEventListener('click', clipNote);
 bookmarkBtn.addEventListener('click', saveBookmark);
 bookmarkAddEntryBtn?.addEventListener('click', () => toggleBookmarkAddPanel());
 bookmarkAddCancelBtn?.addEventListener('click', () => toggleBookmarkAddPanel(false));
+bookmarkSearchInput?.addEventListener('input', () => {
+  bookmarkSearchQuery = bookmarkSearchInput.value;
+  renderBookmarkManager();
+});
+bookmarkSearchClearBtn?.addEventListener('click', () => {
+  bookmarkSearchQuery = '';
+  renderBookmarkManager();
+  bookmarkSearchInput?.focus();
+});
 vaultAddToggleBtn?.addEventListener('click', () => toggleVaultAddPanel());
 vaultCaptureBtn?.addEventListener('click', fillVaultAddFormFromPage);
 vaultAddCancelBtn?.addEventListener('click', () => toggleVaultAddPanel(false));

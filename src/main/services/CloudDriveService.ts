@@ -197,6 +197,47 @@ export class CloudDriveService {
     return this.localAvailability[itemId] === 'online_only';
   }
 
+  private markLocalCopyPresent(itemId: string): void {
+    const previous = this.localAvailability[itemId];
+    if (previous === 'local' || previous === 'offline') return;
+    this.localAvailability[itemId] = 'local';
+    this.saveLocalAvailability();
+  }
+
+  private hasLocalCopyProof(itemId: string): boolean {
+    const availability = this.localAvailability[itemId];
+    return availability === 'local' || availability === 'offline';
+  }
+
+  /**
+   * 远端拉下来的网盘元数据可能还没有本机物理副本，尤其是在 auto_download=false 时。
+   * 这类 clean + remote_rev 的记录缺少本地存在证明时，不能因为磁盘路径不存在就反推为删除。
+   */
+  private shouldPreserveMissingRemoteOnlyItem(
+    item: ItemBase | undefined,
+    payload: {
+      relative_path?: string;
+      download_state?: string;
+      upload_state?: string;
+      file_hash?: string;
+    }
+  ): boolean {
+    if (!item || (item.type !== 'cloud_file' && item.type !== 'cloud_folder')) return false;
+    if (this.isExplicitOnlineOnly(item.id)) return true;
+    if (this.hasLocalCopyProof(item.id)) return false;
+    if (item.sync_status !== 'clean' || !item.remote_rev) return false;
+
+    if (item.type === 'cloud_file') {
+      const needsLocalMaterialization =
+        payload.download_state !== 'completed' ||
+        payload.upload_state !== 'completed' ||
+        !payload.file_hash;
+      return needsLocalMaterialization || this.localAvailability[item.id] === undefined;
+    }
+
+    return this.localAvailability[item.id] === undefined;
+  }
+
   async openLocalFile(itemId: string): Promise<boolean> {
     const absPath = this.getAbsolutePathForCloudFile(itemId);
     if (!absPath || !fs.existsSync(absPath)) return false;
@@ -761,7 +802,7 @@ export class CloudDriveService {
         // 系统自身正在写入（下载/冲突复制）的路径跳过，避免误删正在落地的文件
         if (this.writingPaths.has(abs)) continue;
         const item = this.itemsManager.getByIdIncludeDeleted(row.id);
-        if (item?.type === 'cloud_file' && this.isExplicitOnlineOnly(row.id)) continue;
+        if (this.shouldPreserveMissingRemoteOnlyItem(item, payloadObj)) continue;
         if (!fs.existsSync(abs)) {
           this.softDeleteCloudItem(row.id);
           removed++;
@@ -796,6 +837,7 @@ export class CloudDriveService {
         console.warn(`[CloudDriveService] 文件超限，跳过: ${rel} (${size} bytes)`);
         return;
       }
+      this.markLocalCopyPresent(id);
 
       // 闸门：扫描/变更事件去重。
       // 若该文件已存在、已上传完成（upload_state==='completed'）且 size+mtime 均未变，
@@ -901,6 +943,7 @@ export class CloudDriveService {
       const rel = this.toRelative(absolutePath);
       if (!rel) return;
       const id = this.deriveId(rel);
+      this.markLocalCopyPresent(id);
 
       const payload: CloudFolderPayload = {
         name: path.basename(absolutePath),

@@ -400,6 +400,10 @@ describe('CloudDriveService (unit)', () => {
   describe('isExplicitOnlineOnly', () => {
     const isExplicitOnlineOnly = (id: string) =>
       (service as any).isExplicitOnlineOnly(id) as boolean;
+    const shouldPreserveMissingRemoteOnlyItem = (item: any, payload: any) =>
+      (service as any).shouldPreserveMissingRemoteOnlyItem(item, payload) as boolean;
+    const markLocalCopyPresent = (id: string) =>
+      (service as any).markLocalCopyPresent(id);
 
     it('仅在侧表显式记录为 online_only 时返回 true', () => {
       (service as any).localAvailability = {
@@ -418,6 +422,52 @@ describe('CloudDriveService (unit)', () => {
       // 用户手动删除会被误判成占位文件，导致旧目录旧文件残留。
       (service as any).localAvailability = {};
       expect(isExplicitOnlineOnly('deleted-file')).toBe(false);
+    });
+
+    it('远端 clean 且本机没有本地存在证明的 cloud_file 缺失时应保留', () => {
+      (service as any).localAvailability = {};
+      expect(shouldPreserveMissingRemoteOnlyItem({
+        id: 'remote-file',
+        type: 'cloud_file',
+        sync_status: 'clean',
+        remote_rev: 'r1',
+      }, {
+        download_state: 'pending',
+        upload_state: 'completed',
+        file_hash: 'abc',
+      })).toBe(true);
+    });
+
+    it('已有本地存在证明的 cloud_file 缺失时不应被远端-only 保护', () => {
+      (service as any).localAvailability = { localFile: 'local' };
+      expect(shouldPreserveMissingRemoteOnlyItem({
+        id: 'localFile',
+        type: 'cloud_file',
+        sync_status: 'clean',
+        remote_rev: 'r1',
+      }, {
+        download_state: 'completed',
+        upload_state: 'completed',
+        file_hash: 'abc',
+      })).toBe(false);
+    });
+
+    it('远端 clean 且本机没有本地存在证明的 cloud_folder 缺失时应保留', () => {
+      (service as any).localAvailability = {};
+      expect(shouldPreserveMissingRemoteOnlyItem({
+        id: 'remote-folder',
+        type: 'cloud_folder',
+        sync_status: 'clean',
+        remote_rev: 'r1',
+      }, {})).toBe(true);
+    });
+
+    it('扫描发现本地副本时记录 local 证明且不覆盖 offline', () => {
+      (service as any).localAvailability = { keepOffline: 'offline' };
+      markLocalCopyPresent('newLocal');
+      markLocalCopyPresent('keepOffline');
+      expect((service as any).localAvailability.newLocal).toBe('local');
+      expect((service as any).localAvailability.keepOffline).toBe('offline');
     });
   });
 

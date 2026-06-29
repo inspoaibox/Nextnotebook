@@ -57,9 +57,9 @@ data class CloudFileLocalPathEntity(
     @ColumnInfo(name = "error_message")
     val errorMessage: String? = null,
 
-    /** 本地可用性：local（普通本地）、offline（离线保留） */
+    /** 本地可用性：online_only（仅云端）、local（普通本地）、offline（离线保留） */
     @ColumnInfo(name = "availability")
-    val availability: String = CloudLocalAvailabilityValues.LOCAL
+    val availability: String = CloudLocalAvailabilityValues.ONLINE_ONLY
 )
 
 object CloudLocalAvailabilityValues {

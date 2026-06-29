@@ -207,6 +207,10 @@ export class SyncEngine {
       result.conflicts = pullResult.conflicts;
       result.errors.push(...pullResult.errors);
 
+      const cloudBackfill = await this.backfillCloudDriveMetadata();
+      result.pulled += cloudBackfill.count;
+      result.errors.push(...cloudBackfill.errors);
+
       // 3. Commit 阶段 - 更新同步状态
       this.reportProgress({ phase: 'committing', message: '正在完成同步...' });
       await this.commitSync();
@@ -340,6 +344,108 @@ export class SyncEngine {
 
     this.reportProgress({ phase: 'pushing', message: `已上传 ${count} 项`, current: count, total });
     return { count, errors };
+  }
+
+  /**
+   * 自建服务器网盘元数据补齐。
+   *
+   * 普通增量同步共用全局 cursor；如果电脑端曾在 cloudDrive 模块关闭、
+   * 或历史版本未处理 cloud_file/cloud_folder 时推进过 cursor，后续增量
+   * 不会再看到那些已存在的网盘变更。这里对齐 Android 端策略：每次同步
+   * 从 /api/items/all 只补 cloud_file/cloud_folder 元数据，不下载二进制，
+   * 也不覆盖本地 modified 项。
+   */
+  private async backfillCloudDriveMetadata(): Promise<{ count: number; errors: string[] }> {
+    const errors: string[] = [];
+    if (
+      this.serverIdentifier?.type !== 'server' ||
+      !this.options.syncModules.cloudDrive ||
+      !this.adapter.listAllItems
+    ) {
+      return { count: 0, errors };
+    }
+
+    try {
+      let count = 0;
+      let skippedModified = 0;
+      let skippedPendingDelete = 0;
+      let restoredPendingDelete = 0;
+      const remoteItems = (await this.adapter.listAllItems())
+        .filter(item => item.type === 'cloud_file' || item.type === 'cloud_folder');
+
+      for (const remoteItem of remoteItems) {
+        try {
+          const localItem = this.itemsManager.getByIdIncludeDeleted(remoteItem.id);
+
+          if (localItem?.sync_status === 'modified') {
+            skippedModified++;
+            continue;
+          }
+
+          if (localItem?.sync_status === 'deleted') {
+            const localDeleteTime = localItem.deleted_time ?? localItem.updated_time;
+            if (remoteItem.deleted_time === null && remoteItem.updated_time > localDeleteTime) {
+              this.itemsManager.upsertFromPlainItem(remoteItem, 'clean');
+              count++;
+              restoredPendingDelete++;
+              if (remoteItem.type === 'cloud_file') {
+                this.notifyCloudFileChanged(remoteItem);
+              }
+              if (this.onCloudItemsChanged) this.onCloudItemsChanged();
+            } else {
+              skippedPendingDelete++;
+            }
+            continue;
+          }
+
+          if (remoteItem.deleted_time !== null) {
+            if (localItem && localItem.deleted_time === null) {
+              this.itemsManager.markDeletedFromRemote(remoteItem.id, remoteItem.deleted_time);
+              count++;
+              this.notifyCloudItemDeleted(remoteItem.id);
+              if (this.onCloudItemsChanged) this.onCloudItemsChanged();
+            }
+            continue;
+          }
+
+          const shouldUpsert =
+            !localItem ||
+            localItem.deleted_time !== remoteItem.deleted_time ||
+            localItem.content_hash !== remoteItem.content_hash;
+
+          if (!shouldUpsert) continue;
+
+          if (!localItem) {
+            this.itemsManager.createWithId(remoteItem);
+          } else if (localItem.deleted_time !== null) {
+            this.itemsManager.upsertFromPlainItem(remoteItem, 'clean');
+          } else {
+            this.itemsManager.updateFromRemote(remoteItem);
+          }
+          count++;
+
+          if (remoteItem.type === 'cloud_file') {
+            this.notifyCloudFileChanged(remoteItem);
+          }
+          if (this.onCloudItemsChanged) this.onCloudItemsChanged();
+        } catch (error) {
+          errors.push(`Error backfilling cloud item ${remoteItem.id}: ${(error as Error).message}`);
+        }
+      }
+
+      if (count > 0 || skippedModified > 0 || skippedPendingDelete > 0 || restoredPendingDelete > 0) {
+        console.log(
+          `[SyncEngine] Cloud drive metadata backfill: upserted=${count}, ` +
+          `restoredPendingDelete=${restoredPendingDelete}, ` +
+          `skippedModified=${skippedModified}, skippedPendingDelete=${skippedPendingDelete}`
+        );
+      }
+
+      return { count, errors };
+    } catch (error) {
+      errors.push(`Cloud drive metadata backfill failed: ${(error as Error).message}`);
+      return { count: 0, errors };
+    }
   }
 
   // Pull 阶段：拉取远端变更
@@ -791,6 +897,25 @@ export class SyncEngine {
       }
     } catch (err) {
       console.warn(`[SyncEngine] markCloudFileForDownload 失败 ${remoteItem.id}:`, err);
+    }
+  }
+
+  private notifyCloudFileChanged(remoteItem: ItemBase): void {
+    if (remoteItem.type !== 'cloud_file' || !this.onCloudFileChanged) return;
+    try {
+      this.markCloudFileForDownload(remoteItem);
+      this.onCloudFileChanged(remoteItem.id);
+    } catch (err) {
+      console.warn(`[SyncEngine] onCloudFileChanged 回调失败 ${remoteItem.id}:`, err);
+    }
+  }
+
+  private notifyCloudItemDeleted(itemId: string): void {
+    if (!this.onCloudItemDeleted) return;
+    try {
+      this.onCloudItemDeleted(itemId);
+    } catch (err) {
+      console.warn(`[SyncEngine] onCloudItemDeleted 回调失败 ${itemId}:`, err);
     }
   }
 

@@ -66,42 +66,90 @@ function renderLogin(isSetup = false, setupState = {}) {
   const setupTokenRequired = Boolean(setupState.setupTokenRequired);
   const setupBlocked = Boolean(setupState.setupBlocked);
   render(`
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea,#764ba2);padding:20px;">
-      <div style="background:white;border-radius:12px;padding:40px;width:100%;max-width:400px;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
-        <h1 style="text-align:center;margin-bottom:8px;">🌙 暮城笔记</h1>
-        <p style="text-align:center;color:#666;margin-bottom:24px;">${isSetup ? '首次使用，请创建管理员账号' : '同步服务器管理面板'}</p>
-        <div id="error" style="display:none;background:#fee;color:#c00;padding:10px;border-radius:6px;margin-bottom:16px;font-size:14px;"></div>
+    <div class="login-shell">
+      <div class="login-panel">
+        <section class="login-brand-pane">
+          <div class="login-brand-main">
+            <div class="login-mark">🌙</div>
+            <h1 class="login-brand-title">暮城笔记</h1>
+            <p class="login-brand-subtitle">同步服务器管理面板</p>
+            <div class="login-feature-grid">
+              <div class="login-feature">
+                <strong>Auth</strong>
+                <span>账号认证</span>
+              </div>
+              <div class="login-feature">
+                <strong>Sync</strong>
+                <span>数据同步</span>
+              </div>
+              <div class="login-feature">
+                <strong>Key</strong>
+                <span>同步密钥</span>
+              </div>
+              <div class="login-feature">
+                <strong>Cloud</strong>
+                <span>云端管理</span>
+              </div>
+            </div>
+          </div>
+          <div class="login-brand-foot">
+            <span class="login-status-dot"></span>
+            <span>${isSetup ? '初始化管理账号' : '安全会话登录'}</span>
+          </div>
+        </section>
+
+        <section class="login-form-pane">
+          <div class="login-form-head">
+            <div class="login-kicker">${isSetup ? '首次配置' : '欢迎回来'}</div>
+            <h2 class="login-form-title">${isSetup ? '创建管理员账号' : '登录控制台'}</h2>
+            <p class="login-form-subtitle">${isSetup ? '完成首次初始化后即可进入同步服务器。' : '使用账号、密码和同步密钥进入管理面板。'}</p>
+          </div>
+
+          <div id="error" class="login-alert"></div>
         ${setupBlocked ? `
-          <div style="background:#fff3cd;color:#856404;padding:10px;border-radius:6px;margin-bottom:16px;font-size:14px;line-height:1.5;">
+          <div class="login-alert login-alert-warning">
             服务器要求初始化令牌，但尚未配置 INITIAL_SETUP_TOKEN。请在服务器环境变量中配置后重启。
           </div>
         ` : ''}
         <form id="loginForm">
-          <div style="margin-bottom:16px;">
-            <label style="display:block;margin-bottom:6px;font-weight:500;">用户名</label>
-            <input type="text" id="username" required style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+          <div class="login-field">
+            <label class="login-label" for="username">用户名</label>
+            <div class="login-input-wrap">
+              <span class="login-input-icon">👤</span>
+              <input class="login-input" type="text" id="username" required autocomplete="username">
+            </div>
           </div>
-          <div style="margin-bottom:16px;">
-            <label style="display:block;margin-bottom:6px;font-weight:500;">密码</label>
-            <input type="password" id="password" required style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-            ${isSetup ? '<small style="color:#666;">至少8个字符</small>' : ''}
+          <div class="login-field">
+            <label class="login-label" for="password">密码</label>
+            <div class="login-input-wrap">
+              <span class="login-input-icon">🔒</span>
+              <input class="login-input" type="password" id="password" required autocomplete="${isSetup ? 'new-password' : 'current-password'}">
+            </div>
+            ${isSetup ? '<small class="login-hint">至少8个字符</small>' : ''}
           </div>
-          <div style="margin-bottom:20px;">
-            <label style="display:block;margin-bottom:6px;font-weight:500;">同步密钥</label>
-            <input type="password" id="syncKey" required style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-            ${isSetup ? '<small style="color:#666;">至少16个字符，用于数据加密，请牢记</small>' : ''}
+          <div class="login-field">
+            <label class="login-label" for="syncKey">同步密钥</label>
+            <div class="login-input-wrap">
+              <span class="login-input-icon">🔑</span>
+              <input class="login-input" type="password" id="syncKey" required autocomplete="off">
+            </div>
+            ${isSetup ? '<small class="login-hint">至少16个字符，用于数据加密，请牢记</small>' : ''}
           </div>
           ${isSetup && setupTokenRequired ? `
-            <div style="margin-bottom:20px;">
-              <label style="display:block;margin-bottom:6px;font-weight:500;">初始化令牌</label>
-              <input type="password" id="setupToken" ${setupBlocked ? 'disabled' : 'required'} style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
-              <small style="color:#666;">服务器 INITIAL_SETUP_TOKEN，用于防止首个管理员被抢注</small>
+            <div class="login-field">
+              <label class="login-label" for="setupToken">初始化令牌</label>
+              <div class="login-input-wrap">
+                <span class="login-input-icon">🛡️</span>
+                <input class="login-input" type="password" id="setupToken" ${setupBlocked ? 'disabled' : 'required'} autocomplete="off">
+              </div>
+              <small class="login-hint">服务器 INITIAL_SETUP_TOKEN，用于防止首个管理员被抢注</small>
             </div>
           ` : ''}
-          <button type="submit" ${setupBlocked ? 'disabled' : ''} style="width:100%;padding:12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;border-radius:6px;font-size:16px;cursor:${setupBlocked ? 'not-allowed' : 'pointer'};opacity:${setupBlocked ? '0.6' : '1'};">
+          <button class="login-submit" type="submit" ${setupBlocked ? 'disabled' : ''}>
             ${isSetup ? '创建管理员' : '登录'}
           </button>
         </form>
+        </section>
       </div>
     </div>
   `);

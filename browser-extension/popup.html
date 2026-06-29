@@ -10,6 +10,9 @@
       padding: 0;
       box-sizing: border-box;
     }
+    html {
+      overflow: hidden;
+    }
     body {
       width: 430px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -17,10 +20,25 @@
       color: #333;
       overflow: hidden;
     }
+    body:has(#bookmark-form.active) {
+      height: 600px;
+      display: flex;
+      flex-direction: column;
+    }
+    body:has(#bookmark-form.active) .header {
+      flex: 0 0 auto;
+    }
     .header {
       padding: 16px;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .header-title {
+      min-width: 0;
     }
     .header h1 {
       font-size: 16px;
@@ -37,41 +55,68 @@
       overflow-y: auto;
       scrollbar-width: thin;
     }
-    .status {
+    .content:has(#bookmark-form.active) {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+      overflow: hidden;
       display: flex;
+      flex-direction: column;
+    }
+    .content:has(#bookmark-form.active) > .tabs {
+      flex: 0 0 auto;
+    }
+    .status {
+      flex: 0 0 auto;
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      display: inline-flex;
       align-items: center;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 16px;
-      font-size: 13px;
+      justify-content: center;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
     }
     .status.connected {
-      background: #f0fdf4;
-      color: #166534;
+      background: rgba(34, 197, 94, 0.18);
+      border-color: rgba(187, 247, 208, 0.6);
     }
     .status.disconnected {
-      background: #fef2f2;
-      color: #991b1b;
+      background: rgba(239, 68, 68, 0.18);
+      border-color: rgba(254, 202, 202, 0.65);
     }
     .status.checking {
-      background: #fefce8;
-      color: #854d0e;
+      background: rgba(234, 179, 8, 0.18);
+      border-color: rgba(254, 240, 138, 0.65);
     }
     .status-icon {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
-      margin-right: 8px;
     }
     .status.connected .status-icon {
       background: #22c55e;
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18);
     }
     .status.disconnected .status-icon {
       background: #ef4444;
+      box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.18);
     }
     .status.checking .status-icon {
       background: #eab308;
       animation: pulse 1s infinite;
+    }
+    .status-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -318,6 +363,64 @@
       border-color: #cbd5e1;
       color: #64748b;
     }
+    .bookmark-search {
+      height: 36px;
+      margin-bottom: 10px;
+      padding: 0 8px 0 10px;
+      border: 1px solid #dbe3ef;
+      border-radius: 8px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #94a3b8;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .bookmark-search:focus-within {
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+    }
+    .bookmark-search-icon {
+      flex: 0 0 auto;
+      font-size: 13px;
+      line-height: 1;
+    }
+    .bookmark-search input {
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: #111827;
+      font-size: 13px;
+    }
+    .bookmark-search input::placeholder {
+      color: #9ca3af;
+    }
+    .bookmark-search-clear {
+      flex: 0 0 22px;
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.16s;
+    }
+    .bookmark-search-clear.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .bookmark-search-clear:hover {
+      background: #f1f5f9;
+      color: #334155;
+    }
     .bookmark-add-panel {
       display: none;
       margin-bottom: 12px;
@@ -354,7 +457,7 @@
     .bookmark-manager-layout {
       display: grid;
       grid-template-columns: 132px minmax(0, 1fr);
-      height: clamp(280px, calc(100vh - 230px), 390px);
+      height: clamp(340px, calc(100vh - 190px), 470px);
       min-height: 0;
       border: 1px solid #e5e7eb;
       border-radius: 8px;
@@ -534,8 +637,14 @@
     }
     #bookmark-form.active {
       display: flex;
+      flex: 1 1 auto;
       min-height: 0;
       flex-direction: column;
+    }
+    #bookmark-form.active .bookmark-manager-layout {
+      flex: 1 1 auto;
+      height: auto;
+      min-height: 0;
     }
     .vault-site {
       display: flex;
@@ -804,27 +913,28 @@
 </head>
 <body>
   <div class="header">
-    <h1>📝 暮城笔记</h1>
-    <p>网页剪藏工具</p>
+    <div class="header-title">
+      <h1>📝 暮城笔记</h1>
+      <p>网页剪藏工具</p>
+    </div>
+    <div id="status" class="status checking" role="status" aria-live="polite" aria-label="正在检查连接..." title="正在检查连接...">
+      <span class="status-icon"></span>
+      <span id="status-text" class="status-text">正在检查连接...</span>
+    </div>
   </div>
   
   <div class="content">
-    <div id="status" class="status checking">
-      <span class="status-icon"></span>
-      <span id="status-text">正在检查连接...</span>
-    </div>
-    
     <div id="message" class="message" style="display: none;"></div>
     
     <!-- Tab 切换 -->
     <div class="tabs">
-      <button class="tab active" data-tab="note">📄 保存笔记</button>
+      <button class="tab active" data-tab="vault">🔐 密码库</button>
       <button class="tab" data-tab="bookmark">🔖 书签管理</button>
-      <button class="tab" data-tab="vault">🔐 密码库</button>
+      <button class="tab" data-tab="note">📄 保存笔记</button>
     </div>
     
     <!-- 笔记表单 -->
-    <div id="note-form" class="form-panel active">
+    <div id="note-form" class="form-panel">
       <div class="form-group">
         <label for="note-title">标题</label>
         <input type="text" id="note-title" placeholder="笔记标题">
@@ -862,6 +972,12 @@
           <span id="bookmark-manager-count">正在读取书签...</span>
         </div>
         <button id="bookmark-add-entry" class="bookmark-add-entry" type="button">＋ 添加书签</button>
+      </div>
+
+      <div class="bookmark-search">
+        <span class="bookmark-search-icon" aria-hidden="true">⌕</span>
+        <input id="bookmark-search" type="search" placeholder="搜索名称、网址、描述或标签" autocomplete="off">
+        <button id="bookmark-search-clear" class="bookmark-search-clear" type="button" aria-label="清空搜索" title="清空搜索">×</button>
       </div>
 
       <div id="bookmark-add-panel" class="bookmark-add-panel">
@@ -908,7 +1024,7 @@
     </div>
 
     <!-- 密码库表单 -->
-    <div id="vault-form" class="form-panel">
+    <div id="vault-form" class="form-panel active">
       <div class="vault-site">
         <span>🌐</span>
         <span id="vault-site-url">当前网站</span>

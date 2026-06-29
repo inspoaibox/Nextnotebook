@@ -8,6 +8,8 @@ package com.mucheng.notes.data.local.transfer
 
 import android.content.Context
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 // ============================================
@@ -84,7 +86,9 @@ data class TransferMessageEntity(
     @ColumnInfo(name = "created_at")
     val createdAt: Long,
     @ColumnInfo(name = "read_at")
-    val readAt: Long?
+    val readAt: Long?,
+    @ColumnInfo(name = "status", defaultValue = "sent")
+    val status: String = "sent"
 )
 
 @Entity(
@@ -203,6 +207,9 @@ interface TransferMessageDao {
     @Query("SELECT * FROM transfer_messages WHERE id = :id")
     suspend fun getById(id: String): TransferMessageEntity?
 
+    @Query("SELECT * FROM transfer_messages WHERE file_id = :fileId LIMIT 1")
+    suspend fun getByFileId(fileId: String): TransferMessageEntity?
+
     @Query("SELECT * FROM transfer_messages WHERE session_id = :sessionId ORDER BY created_at ASC LIMIT :limit OFFSET :offset")
     suspend fun getMessagesBySession(sessionId: String, limit: Int = 100, offset: Int = 0): List<TransferMessageEntity>
 
@@ -211,6 +218,12 @@ interface TransferMessageDao {
 
     @Query("UPDATE transfer_messages SET read_at = :readAt WHERE id = :id AND read_at IS NULL")
     suspend fun markAsRead(id: String, readAt: Long)
+
+    @Query("UPDATE transfer_messages SET read_at = :readAt WHERE id IN (:ids) AND read_at IS NULL")
+    suspend fun markMessagesAsRead(ids: List<String>, readAt: Long): Int
+
+    @Query("UPDATE transfer_messages SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: String, status: String): Int
 
     @Query("UPDATE transfer_messages SET read_at = :readAt WHERE session_id = :sessionId AND direction = 'received' AND read_at IS NULL")
     suspend fun markSessionMessagesAsRead(sessionId: String, readAt: Long): Int
@@ -269,7 +282,7 @@ interface TransferFileDao {
         TransferMessageEntity::class,
         TransferFileEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class TransferDatabase : RoomDatabase() {
@@ -284,6 +297,12 @@ abstract class TransferDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: TransferDatabase? = null
 
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transfer_messages ADD COLUMN status TEXT NOT NULL DEFAULT 'sent'")
+            }
+        }
+
         fun getInstance(context: Context): TransferDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: buildDatabase(context).also { INSTANCE = it }
@@ -296,6 +315,7 @@ abstract class TransferDatabase : RoomDatabase() {
                 TransferDatabase::class.java,
                 DATABASE_NAME
             )
+                .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigration()
                 .build()
         }
