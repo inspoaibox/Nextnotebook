@@ -53,7 +53,15 @@ fun SettingsScreen(
             route = null,
             icon = Icons.Default.Lock,
             title = "启用通行密钥服务",
-            subtitle = "打开系统通行密钥/凭据提供程序设置"
+            subtitle = "打开系统通行密钥/凭据提供程序设置",
+            action = SettingsMenuAction.OpenPasskeySettings
+        ),
+        SettingsMenuItem(
+            route = null,
+            icon = Icons.Default.Lock,
+            title = "启用账号密码自动填充",
+            subtitle = "打开系统自动填充服务设置",
+            action = SettingsMenuAction.OpenAutofillSettings
         ),
         SettingsMenuItem(
             route = "settings/ai",
@@ -101,7 +109,11 @@ fun SettingsScreen(
                         if (route != null) {
                             navController.navigate(route)
                         } else {
-                            openPasskeyServiceSettings(context)
+                            when (item.action) {
+                                SettingsMenuAction.OpenPasskeySettings -> openPasskeyServiceSettings(context)
+                                SettingsMenuAction.OpenAutofillSettings -> openAutofillServiceSettings(context)
+                                null -> Unit
+                            }
                         }
                     }
                 )
@@ -114,8 +126,14 @@ data class SettingsMenuItem(
     val route: String?,
     val icon: ImageVector,
     val title: String,
-    val subtitle: String
+    val subtitle: String,
+    val action: SettingsMenuAction? = null
 )
+
+enum class SettingsMenuAction {
+    OpenPasskeySettings,
+    OpenAutofillSettings
+}
 
 @Composable
 private fun SettingsMenuItemRow(

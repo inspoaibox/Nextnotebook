@@ -65,6 +65,13 @@
             android:noHistory="true"
             android:theme="@style/Theme.MuchengNotes" />
 
+        <activity
+            android:name=".service.MuchengAutofillAuthActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@style/Theme.MuchengNotes" />
+
         <!-- 自动填充服务 -->
         <service
             android:name=".service.MuchengAutofillService"

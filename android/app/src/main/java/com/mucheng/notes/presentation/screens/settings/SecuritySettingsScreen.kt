@@ -352,6 +352,39 @@ fun SecuritySettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
+                "账号密码自动填充",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                "启用后，浏览器和其他应用的账号密码输入框可以调用暮城密码库",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = {
+                    if (!openAutofillServiceSettings(context)) {
+                        scope.launch { snackbarHostState.showSnackbar("无法打开系统自动填充服务设置") }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("启用账号密码自动填充")
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
                 "通行密钥服务",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary

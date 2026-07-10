@@ -22,14 +22,17 @@ internal object MuchengPasskeyVaultGuard {
             prefs.getString(KEY_VAULT_PASSWORD, null) != null
     }
 
+    fun isVaultLocked(context: Context): Boolean {
+        return isVaultLockConfigured(context) && !isTemporarilyUnlocked(context)
+    }
+
     suspend fun ensureUnlocked(activity: Activity): Boolean {
         val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val storedHash = prefs.getString(KEY_VAULT_PASSWORD, null)
         val lockEnabled = prefs.getBoolean(KEY_VAULT_LOCK_ENABLED, false)
         if (!lockEnabled || storedHash == null) return true
 
-        val unlockedUntil = prefs.getLong(KEY_PASSKEY_UNLOCKED_UNTIL, 0L)
-        if (unlockedUntil > System.currentTimeMillis()) return true
+        if (isTemporarilyUnlocked(activity)) return true
 
         val verified = promptForPassword(activity, storedHash)
         if (verified) {
@@ -38,6 +41,11 @@ internal object MuchengPasskeyVaultGuard {
                 .apply()
         }
         return verified
+    }
+
+    private fun isTemporarilyUnlocked(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getLong(KEY_PASSKEY_UNLOCKED_UNTIL, 0L) > System.currentTimeMillis()
     }
 
     private suspend fun promptForPassword(activity: Activity, storedHash: String): Boolean {
