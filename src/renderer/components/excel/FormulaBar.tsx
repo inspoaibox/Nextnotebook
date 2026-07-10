@@ -73,7 +73,7 @@ export const FormulaBar: React.FC<FormulaBarProps> = ({
       gap: 8,
     }}>
       {/* 单元格地址 */}
-      <div style={{
+      <div className="formula-cell-address" style={{
         minWidth: 60,
         padding: '4px 8px',
         background: '#f5f5f5',

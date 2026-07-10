@@ -1,7 +1,6 @@
 package com.mucheng.notes.integration
 
-import com.mucheng.notes.security.CryptoEngineImpl
-import com.mucheng.notes.security.EncryptedData
+import com.mucheng.notes.testutil.JvmCryptoEngine
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -21,7 +20,7 @@ import java.util.Base64
  */
 class CryptoCompatibilityTest : StringSpec({
     
-    val cryptoEngine = CryptoEngineImpl()
+    val cryptoEngine = JvmCryptoEngine()
     val json = Json { ignoreUnknownKeys = true }
     
     // 测试密钥（32 字节）

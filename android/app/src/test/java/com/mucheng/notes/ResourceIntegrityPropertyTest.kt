@@ -5,6 +5,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldHaveLength
 import io.kotest.matchers.string.shouldMatch
 import io.kotest.property.Arb
+import io.kotest.property.arbitrary.byte
 import io.kotest.property.arbitrary.byteArray
 import io.kotest.property.arbitrary.int
 import io.kotest.property.checkAll
@@ -26,7 +27,7 @@ class ResourceIntegrityPropertyTest : StringSpec({
      * 验证 SHA-256 哈希计算的一致性
      */
     "Property 11: SHA-256 hash is consistent for same content" {
-        checkAll(Arb.byteArray(Arb.int(0, 1000))) { data ->
+        checkAll(Arb.byteArray(Arb.int(0, 1000), Arb.byte())) { data ->
             val hash1 = computeSHA256(data)
             val hash2 = computeSHA256(data)
             
@@ -40,7 +41,7 @@ class ResourceIntegrityPropertyTest : StringSpec({
      * 验证不同内容产生不同哈希
      */
     "Different content produces different hash" {
-        checkAll(Arb.byteArray(Arb.int(1, 100))) { data ->
+        checkAll(Arb.byteArray(Arb.int(1, 100), Arb.byte())) { data ->
             if (data.isNotEmpty()) {
                 val hash1 = computeSHA256(data)
                 

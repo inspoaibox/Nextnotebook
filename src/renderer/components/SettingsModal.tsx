@@ -1067,6 +1067,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ open, onClose, defaultTab
               <Form.Item name="auto_save_interval" label="保存间隔">
                 <InputNumber min={10} max={300} addonAfter="秒" style={{ width: 120 }} />
               </Form.Item>
+              <Form.Item
+                name="note_history_enabled"
+                label="笔记历史"
+                valuePropName="checked"
+                tooltip="开启后，每次保存普通笔记时记录一个可查看的历史快照"
+              >
+                <Switch />
+              </Form.Item>
               <Form.Item name="show_line_numbers" label="显示行号" valuePropName="checked">
                 <Switch />
               </Form.Item>

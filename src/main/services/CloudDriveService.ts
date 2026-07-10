@@ -197,16 +197,46 @@ export class CloudDriveService {
     return this.localAvailability[itemId] === 'online_only';
   }
 
-  private markLocalCopyPresent(itemId: string): void {
+  markLocalCopyPresent(itemId: string, relativePath?: string): void {
     const previous = this.localAvailability[itemId];
     if (previous === 'local' || previous === 'offline') return;
     this.localAvailability[itemId] = 'local';
+
+    if (relativePath) {
+      let parent = path.dirname(relativePath.replace(/\\/g, '/'));
+      while (parent && parent !== '.' && parent !== '/') {
+        const parentId = this.deriveId(parent);
+        const parentPrevious = this.localAvailability[parentId];
+        if (parentPrevious !== 'local' && parentPrevious !== 'offline') {
+          this.localAvailability[parentId] = 'local';
+        }
+        parent = path.dirname(parent);
+      }
+    }
+
     this.saveLocalAvailability();
   }
 
   private hasLocalCopyProof(itemId: string): boolean {
     const availability = this.localAvailability[itemId];
     return availability === 'local' || availability === 'offline';
+  }
+
+  private hasCompletedLocalCopyPayload(payload: {
+    size?: number;
+    file_hash?: string;
+    download_state?: string;
+    downloaded_size?: number;
+    downloaded_at?: number | null;
+  }): boolean {
+    const size = Number(payload.size ?? 0);
+    const downloadedSize = Number(payload.downloaded_size ?? 0);
+    return (
+      payload.download_state === 'completed' &&
+      !!payload.file_hash &&
+      payload.downloaded_at != null &&
+      (size <= 0 || downloadedSize >= size)
+    );
   }
 
   /**
@@ -220,6 +250,9 @@ export class CloudDriveService {
       download_state?: string;
       upload_state?: string;
       file_hash?: string;
+      size?: number;
+      downloaded_size?: number;
+      downloaded_at?: number | null;
     }
   ): boolean {
     if (!item || (item.type !== 'cloud_file' && item.type !== 'cloud_folder')) return false;
@@ -232,7 +265,11 @@ export class CloudDriveService {
         payload.download_state !== 'completed' ||
         payload.upload_state !== 'completed' ||
         !payload.file_hash;
-      return needsLocalMaterialization || this.localAvailability[item.id] === undefined;
+      if (needsLocalMaterialization) return true;
+      return (
+        this.localAvailability[item.id] === undefined &&
+        !this.hasCompletedLocalCopyPayload(payload)
+      );
     }
 
     return this.localAvailability[item.id] === undefined;
@@ -837,7 +874,7 @@ export class CloudDriveService {
         console.warn(`[CloudDriveService] 文件超限，跳过: ${rel} (${size} bytes)`);
         return;
       }
-      this.markLocalCopyPresent(id);
+      this.markLocalCopyPresent(id, rel);
 
       // 闸门：扫描/变更事件去重。
       // 若该文件已存在、已上传完成（upload_state==='completed'）且 size+mtime 均未变，
@@ -943,7 +980,7 @@ export class CloudDriveService {
       const rel = this.toRelative(absolutePath);
       if (!rel) return;
       const id = this.deriveId(rel);
-      this.markLocalCopyPresent(id);
+      this.markLocalCopyPresent(id, rel);
 
       const payload: CloudFolderPayload = {
         name: path.basename(absolutePath),

@@ -68,7 +68,7 @@ export class VersionHistory {
       }
     }
 
-    const size = new Blob([content]).size;
+    const size = Buffer.byteLength(content, 'utf8');
     this.db.run(
       'INSERT INTO note_versions (note_id, title, content, created_at, size) VALUES (?, ?, ?, ?, ?)',
       [noteId, encryptLocalPayload(title), encryptLocalPayload(content), Date.now(), size]

@@ -58,6 +58,8 @@ class TransferViewModel @Inject constructor(
     private val fileStreams = mutableMapOf<String, OutputStream>()
     private val filePaths = mutableMapOf<String, String>()
     private val fileDigests = mutableMapOf<String, MessageDigest>()
+    private val fileExpectedChunks = mutableMapOf<String, Int>()
+    private val fileReceivedChunks = mutableMapOf<String, MutableSet<Int>>()
     private val pendingFileChunks = mutableMapOf<String, MutableList<FileChunkEvent>>()
     private val pendingFileCompletes = mutableMapOf<String, FileCompleteEvent>()
     private val pendingMediaUris = mutableMapOf<String, android.net.Uri>()
@@ -107,31 +109,11 @@ class TransferViewModel @Inject constructor(
             }
         }
 
-        // 监听文件传入
+        // 文件事件必须按协议顺序处理：incoming -> chunk... -> complete/cancel。
+        // 如果分成多个 collector 再 launch，complete 可能抢先关闭输出流。
         viewModelScope.launch {
-            transferClient.fileIncoming.collect { event ->
-                handleFileIncoming(event)
-            }
-        }
-
-        // 监听文件分块
-        viewModelScope.launch {
-            transferClient.fileChunk.collect { event ->
-                handleFileChunk(event)
-            }
-        }
-
-        // 监听文件完成
-        viewModelScope.launch {
-            transferClient.fileComplete.collect { event ->
-                handleFileComplete(event)
-            }
-        }
-
-        // 监听文件取消
-        viewModelScope.launch {
-            transferClient.fileCancel.collect { event ->
-                handleFileCancel(event)
+            transferClient.fileEvents.collect { event ->
+                handleFileTransferEvent(event)
             }
         }
 
@@ -621,17 +603,24 @@ class TransferViewModel @Inject constructor(
     /**
      * 处理文件传入
      */
-    private fun handleFileIncoming(event: FileIncomingEvent) {
-        viewModelScope.launch {
-            try {
-                fileTransferMutex.withLock {
-                    initIncomingFileLocked(event)
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("TransferViewModel", "Failed to init incoming file", e)
-                fileTransferMutex.withLock {
-                    failIncomingFileLocked(event.fileInfo.id)
-                }
+    private suspend fun handleFileTransferEvent(event: FileTransferEvent) {
+        when (event) {
+            is FileTransferEvent.Incoming -> handleFileIncoming(event.event)
+            is FileTransferEvent.Chunk -> handleFileChunk(event.event)
+            is FileTransferEvent.Complete -> handleFileComplete(event.event)
+            is FileTransferEvent.Cancel -> handleFileCancel(event.event)
+        }
+    }
+
+    private suspend fun handleFileIncoming(event: FileIncomingEvent) {
+        try {
+            fileTransferMutex.withLock {
+                initIncomingFileLocked(event)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("TransferViewModel", "Failed to init incoming file", e)
+            fileTransferMutex.withLock {
+                failIncomingFileLocked(event.fileInfo.id)
             }
         }
     }
@@ -639,21 +628,19 @@ class TransferViewModel @Inject constructor(
     /**
      * 处理文件分块
      */
-    private fun handleFileChunk(event: FileChunkEvent) {
-        viewModelScope.launch {
-            try {
-                fileTransferMutex.withLock {
-                    if (!fileStreams.containsKey(event.fileId)) {
-                        pendingFileChunks.getOrPut(event.fileId) { mutableListOf() }.add(event)
-                        return@withLock
-                    }
-                    writeFileChunkLocked(event)
+    private suspend fun handleFileChunk(event: FileChunkEvent) {
+        try {
+            fileTransferMutex.withLock {
+                if (!fileStreams.containsKey(event.fileId)) {
+                    pendingFileChunks.getOrPut(event.fileId) { mutableListOf() }.add(event)
+                    return@withLock
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("TransferViewModel", "Failed to write chunk", e)
-                fileTransferMutex.withLock {
-                    failIncomingFileLocked(event.fileId)
-                }
+                writeFileChunkLocked(event)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("TransferViewModel", "Failed to write chunk", e)
+            fileTransferMutex.withLock {
+                failIncomingFileLocked(event.fileId)
             }
         }
     }
@@ -661,30 +648,26 @@ class TransferViewModel @Inject constructor(
     /**
      * 处理文件完成
      */
-    private fun handleFileComplete(event: FileCompleteEvent) {
-        viewModelScope.launch {
-            try {
-                fileTransferMutex.withLock {
-                    if (!fileStreams.containsKey(event.fileId)) {
-                        pendingFileCompletes[event.fileId] = event
-                        return@withLock
-                    }
-                    completeIncomingFileLocked(event)
+    private suspend fun handleFileComplete(event: FileCompleteEvent) {
+        try {
+            fileTransferMutex.withLock {
+                if (!fileStreams.containsKey(event.fileId)) {
+                    pendingFileCompletes[event.fileId] = event
+                    return@withLock
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("TransferViewModel", "Failed to complete file", e)
-                fileTransferMutex.withLock {
-                    failIncomingFileLocked(event.fileId)
-                }
+                completeIncomingFileLocked(event)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("TransferViewModel", "Failed to complete file", e)
+            fileTransferMutex.withLock {
+                failIncomingFileLocked(event.fileId)
             }
         }
     }
 
-    private fun handleFileCancel(event: FileCancelEvent) {
-        viewModelScope.launch {
-            fileTransferMutex.withLock {
-                cancelIncomingFileLocked(event.fileId)
-            }
+    private suspend fun handleFileCancel(event: FileCancelEvent) {
+        fileTransferMutex.withLock {
+            cancelIncomingFileLocked(event.fileId)
         }
     }
 
@@ -704,6 +687,8 @@ class TransferViewModel @Inject constructor(
         fileStreams[event.fileInfo.id] = target.outputStream
         filePaths[event.fileInfo.id] = target.localPath
         fileDigests[event.fileInfo.id] = MessageDigest.getInstance("SHA-256")
+        fileExpectedChunks[event.fileInfo.id] = event.fileInfo.totalChunks
+        fileReceivedChunks[event.fileInfo.id] = mutableSetOf()
         target.contentUri?.let { pendingMediaUris[event.fileInfo.id] = it }
 
         val fileEntity = TransferFileEntity(
@@ -740,6 +725,7 @@ class TransferViewModel @Inject constructor(
         withContext(Dispatchers.IO) {
             stream.write(event.chunk)
         }
+        fileReceivedChunks.getOrPut(event.fileId) { mutableSetOf() }.add(event.chunkIndex)
         fileDigests[event.fileId]?.update(event.chunk)
         if (event.totalChunks > 0) {
             val progress = (((event.chunkIndex + 1).toFloat() / event.totalChunks) * 100).coerceIn(0f, 99.9f)
@@ -762,6 +748,20 @@ class TransferViewModel @Inject constructor(
         val localHash = fileDigests.remove(event.fileId)
             ?.digest()
             ?.joinToString("") { "%02x".format(it) }
+        val expectedChunks = fileExpectedChunks.remove(event.fileId) ?: 0
+        val receivedChunks = fileReceivedChunks.remove(event.fileId)?.size ?: 0
+        if (expectedChunks > 0 && receivedChunks < expectedChunks) {
+            android.util.Log.e(
+                "TransferViewModel",
+                "File chunk count mismatch: file=${event.fileId}, expected=$expectedChunks, received=$receivedChunks"
+            )
+            cleanupIncomingLocalFile(event.fileId, localPath)
+            fileDao.failTransfer(event.fileId)
+            messageDao.getByFileId(event.fileId)?.let { message ->
+                messageDao.updateStatus(message.id, MessageStatus.FAILED.value)
+            }
+            return
+        }
         if (!event.fileHash.isNullOrBlank() && !localHash.isNullOrBlank() && event.fileHash != localHash) {
             android.util.Log.e("TransferViewModel", "File hash mismatch: file=${event.fileId}, remote=${event.fileHash}, local=$localHash")
             cleanupIncomingLocalFile(event.fileId, localPath)
@@ -826,6 +826,8 @@ class TransferViewModel @Inject constructor(
             runCatching { stream.close() }
         }
         fileDigests.remove(fileId)
+        fileExpectedChunks.remove(fileId)
+        fileReceivedChunks.remove(fileId)
         filePaths.remove(fileId)
         pendingFileChunks.remove(fileId)
         pendingFileCompletes.remove(fileId)

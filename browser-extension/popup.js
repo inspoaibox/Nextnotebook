@@ -4,6 +4,9 @@
 
 const API_BASE = 'http://127.0.0.1:27183';
 const VAULT_AUTH_STORAGE_KEY = 'muchengVaultAuthToken';
+const VAULT_PASSWORD_GENERATOR_SETTINGS_KEY = 'muchengVaultPasswordGeneratorSettings';
+const VAULT_REGISTRATION_SETTINGS_KEY = 'muchengVaultRegistrationSettings';
+const VAULT_DEFAULT_PASSWORD_SYMBOLS = '!@#$%^&*()-_=+[]{};:,.?';
 const VAULT_AUTH_HEADER = 'X-Mucheng-Extension-Token';
 const VAULT_EXTENSION_ID_HEADER = 'X-Mucheng-Extension-Id';
 let vaultPairPromise = null;
@@ -141,11 +144,36 @@ const vaultAddPanel = document.getElementById('vault-add-panel');
 const vaultAddNameInput = document.getElementById('vault-add-name');
 const vaultAddUsernameInput = document.getElementById('vault-add-username');
 const vaultAddPasswordInput = document.getElementById('vault-add-password');
+const vaultAddPasswordGenerateBtn = document.getElementById('vault-add-password-generate');
+const vaultAddPasswordViewBtn = document.getElementById('vault-add-password-view');
+const vaultRegisterCountrySelect = document.getElementById('vault-register-country');
+const vaultRegisterUsernameInput = document.getElementById('vault-register-username');
+const vaultRegisterEmailInput = document.getElementById('vault-register-email');
+const vaultRegisterPhoneInput = document.getElementById('vault-register-phone');
+const vaultRegisterReadBtn = document.getElementById('vault-register-read');
+const vaultRegisterGenerateBtn = document.getElementById('vault-register-generate');
+const vaultRegisterGenerateLocalBtn = document.getElementById('vault-register-generate-local');
+const vaultRegisterSummaryEl = document.getElementById('vault-register-summary');
+const vaultGeneratePasswordBtn = document.getElementById('vault-generate-password');
+const vaultPasswordTool = document.getElementById('vault-password-tool');
+const vaultPasswordPreviewInput = document.getElementById('vault-password-preview');
+const vaultPasswordRefreshBtn = document.getElementById('vault-password-refresh');
+const vaultPasswordLengthInput = document.getElementById('vault-password-length');
+const vaultPasswordLengthRange = document.getElementById('vault-password-length-range');
+const vaultPasswordUppercaseInput = document.getElementById('vault-password-uppercase');
+const vaultPasswordLowercaseInput = document.getElementById('vault-password-lowercase');
+const vaultPasswordNumbersInput = document.getElementById('vault-password-numbers');
+const vaultPasswordSymbolsEnabledInput = document.getElementById('vault-password-symbols-enabled');
+const vaultPasswordAvoidConfusingInput = document.getElementById('vault-password-avoid-confusing');
+const vaultPasswordSymbolsInput = document.getElementById('vault-password-symbols');
+const vaultPasswordCopyBtn = document.getElementById('vault-password-copy');
+const vaultPasswordUseBtn = document.getElementById('vault-password-use');
 const vaultAddUrlInput = document.getElementById('vault-add-url');
 const vaultAddUriNameInput = document.getElementById('vault-add-uri-name');
 const vaultAddTotpNameInput = document.getElementById('vault-add-totp-name');
 const vaultAddTotpSecretInput = document.getElementById('vault-add-totp-secret');
 const vaultAddFolderSelect = document.getElementById('vault-add-folder');
+const vaultAddNotesInput = document.getElementById('vault-add-notes');
 const vaultAddCancelBtn = document.getElementById('vault-add-cancel');
 const vaultAddSaveBtn = document.getElementById('vault-add-save');
 
@@ -168,6 +196,8 @@ let extractedImages = [];
 let currentTab = 'vault';
 let vaultTotpTimer = null;
 let isVaultEntriesLoading = false;
+let lastVaultRegistrationProfile = null;
+let lastVaultCapturedCredential = null;
 
 // 显示消息
 function showMessage(text, type = 'success') {
@@ -1345,6 +1375,633 @@ function normalizeVaultUrlInput(value) {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
+function getSecureRandomIndex(max) {
+  if (!Number.isFinite(max) || max <= 0) return 0;
+  const cryptoApi = globalThis.crypto || window.crypto;
+  if (!cryptoApi?.getRandomValues) {
+    return Math.floor(Math.random() * max);
+  }
+
+  const limit = Math.floor(0x100000000 / max) * max;
+  const values = new Uint32Array(1);
+  do {
+    cryptoApi.getRandomValues(values);
+  } while (values[0] >= limit);
+
+  return values[0] % max;
+}
+
+function shuffleVaultPasswordCharacters(characters) {
+  const result = [...characters];
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = getSecureRandomIndex(i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result.join('');
+}
+
+function getVaultPasswordOptions() {
+  const lengthValue = Number(vaultPasswordLengthInput?.value || vaultPasswordLengthRange?.value || 18);
+  return {
+    length: Math.min(64, Math.max(6, Number.isFinite(lengthValue) ? Math.round(lengthValue) : 18)),
+    uppercase: vaultPasswordUppercaseInput?.checked !== false,
+    lowercase: vaultPasswordLowercaseInput?.checked !== false,
+    numbers: vaultPasswordNumbersInput?.checked !== false,
+    symbols: vaultPasswordSymbolsEnabledInput?.checked !== false,
+    avoidConfusing: vaultPasswordAvoidConfusingInput?.checked !== false,
+    symbolCharacters: vaultPasswordSymbolsInput ? vaultPasswordSymbolsInput.value : VAULT_DEFAULT_PASSWORD_SYMBOLS,
+  };
+}
+
+function applyVaultPasswordOptions(options) {
+  if (!options || typeof options !== 'object') {
+    syncVaultPasswordLengthControls(18);
+    return;
+  }
+
+  syncVaultPasswordLengthControls(options.length);
+  if (vaultPasswordUppercaseInput) vaultPasswordUppercaseInput.checked = options.uppercase !== false;
+  if (vaultPasswordLowercaseInput) vaultPasswordLowercaseInput.checked = options.lowercase !== false;
+  if (vaultPasswordNumbersInput) vaultPasswordNumbersInput.checked = options.numbers !== false;
+  if (vaultPasswordSymbolsEnabledInput) vaultPasswordSymbolsEnabledInput.checked = options.symbols !== false;
+  if (vaultPasswordAvoidConfusingInput) vaultPasswordAvoidConfusingInput.checked = options.avoidConfusing !== false;
+  if (vaultPasswordSymbolsInput) {
+    vaultPasswordSymbolsInput.value = typeof options.symbolCharacters === 'string'
+      ? options.symbolCharacters
+      : VAULT_DEFAULT_PASSWORD_SYMBOLS;
+  }
+}
+
+async function loadVaultPasswordGeneratorSettings() {
+  try {
+    const savedOptions = await storageGet(VAULT_PASSWORD_GENERATOR_SETTINGS_KEY);
+    if (typeof savedOptions === 'string' && savedOptions) {
+      applyVaultPasswordOptions(JSON.parse(savedOptions));
+      return;
+    }
+    applyVaultPasswordOptions(savedOptions);
+  } catch (e) {
+    console.warn('Failed to load password generator settings:', e);
+    applyVaultPasswordOptions(null);
+  }
+}
+
+function saveVaultPasswordGeneratorSettings() {
+  storageSet(VAULT_PASSWORD_GENERATOR_SETTINGS_KEY, getVaultPasswordOptions()).catch((e) => {
+    console.warn('Failed to save password generator settings:', e);
+  });
+}
+
+function normalizeVaultPasswordCharacters(value, avoidConfusing) {
+  const confusingCharacters = new Set(['0', 'O', 'o', '1', 'l', 'I']);
+  const seen = new Set();
+  return [...String(value || '')].filter((character) => {
+    if (avoidConfusing && confusingCharacters.has(character)) return false;
+    if (seen.has(character)) return false;
+    seen.add(character);
+    return true;
+  }).join('');
+}
+
+function getVaultPasswordCharacterGroups(options) {
+  const groups = [];
+
+  if (options.uppercase) {
+    groups.push(normalizeVaultPasswordCharacters('ABCDEFGHIJKLMNOPQRSTUVWXYZ', options.avoidConfusing));
+  }
+  if (options.lowercase) {
+    groups.push(normalizeVaultPasswordCharacters('abcdefghijklmnopqrstuvwxyz', options.avoidConfusing));
+  }
+  if (options.numbers) {
+    groups.push(normalizeVaultPasswordCharacters('0123456789', options.avoidConfusing));
+  }
+  if (options.symbols) {
+    groups.push(normalizeVaultPasswordCharacters(options.symbolCharacters, false));
+  }
+
+  return groups.filter(Boolean);
+}
+
+function generateVaultPassword(options = getVaultPasswordOptions()) {
+  const groups = getVaultPasswordCharacterGroups(options);
+  if (groups.length === 0) {
+    return '';
+  }
+
+  const allCharacters = groups.join('');
+  const characters = groups.map(group => group[getSecureRandomIndex(group.length)]);
+
+  while (characters.length < options.length) {
+    characters.push(allCharacters[getSecureRandomIndex(allCharacters.length)]);
+  }
+
+  return shuffleVaultPasswordCharacters(characters);
+}
+
+function syncVaultPasswordLengthControls(value) {
+  const nextValue = Math.min(64, Math.max(6, Math.round(Number(value) || 18)));
+  if (vaultPasswordLengthInput) vaultPasswordLengthInput.value = String(nextValue);
+  if (vaultPasswordLengthRange) vaultPasswordLengthRange.value = String(nextValue);
+  return nextValue;
+}
+
+function refreshVaultGeneratedPassword() {
+  if (!vaultPasswordPreviewInput) return '';
+
+  syncVaultPasswordLengthControls(vaultPasswordLengthInput?.value || vaultPasswordLengthRange?.value || 18);
+  const password = generateVaultPassword();
+  vaultPasswordPreviewInput.value = password;
+  vaultPasswordPreviewInput.placeholder = password ? '' : '请至少选择一种字符类型';
+  vaultPasswordUseBtn?.toggleAttribute('disabled', !password);
+  vaultPasswordCopyBtn?.toggleAttribute('disabled', !password);
+  return password;
+}
+
+function handleVaultPasswordOptionsChange() {
+  refreshVaultGeneratedPassword();
+  saveVaultPasswordGeneratorSettings();
+}
+
+function toggleVaultPasswordTool(open) {
+  if (!vaultPasswordTool) return;
+
+  const shouldOpen = typeof open === 'boolean' ? open : !vaultPasswordTool.classList.contains('active');
+  vaultPasswordTool.classList.toggle('active', shouldOpen);
+  vaultGeneratePasswordBtn?.setAttribute('aria-expanded', String(shouldOpen));
+  if (shouldOpen) {
+    const password = refreshVaultGeneratedPassword();
+    if (password) {
+      vaultPasswordPreviewInput?.focus();
+      vaultPasswordPreviewInput?.select();
+    }
+  }
+}
+
+async function copyGeneratedVaultPassword() {
+  const password = vaultPasswordPreviewInput?.value || refreshVaultGeneratedPassword();
+  if (!password) {
+    showMessage('请至少选择一种字符类型', 'error');
+    return;
+  }
+
+  try {
+    await copyTextToClipboard(password);
+    showMessage('随机密码已复制', 'success');
+  } catch (e) {
+    console.error('Copy generated password failed:', e);
+    showMessage('复制失败，请手动复制', 'error');
+  }
+}
+
+function useGeneratedVaultPassword() {
+  const password = vaultPasswordPreviewInput?.value || refreshVaultGeneratedPassword();
+  if (!password) {
+    showMessage('请至少选择一种字符类型', 'error');
+    return;
+  }
+
+  toggleVaultAddPanel(true);
+  if (vaultAddPasswordInput) {
+    vaultAddPasswordInput.value = password;
+    vaultAddPasswordInput.focus();
+    vaultAddPasswordInput.select();
+  }
+  showMessage('已填入随机密码', 'success');
+}
+
+function generateVaultAddPassword() {
+  const password = refreshVaultGeneratedPassword();
+  if (!password) {
+    showMessage('请至少选择一种字符类型', 'error');
+    return;
+  }
+
+  toggleVaultAddPanel(true);
+  if (vaultAddPasswordInput) {
+    vaultAddPasswordInput.value = password;
+    vaultAddPasswordInput.focus();
+    vaultAddPasswordInput.select();
+  }
+  showMessage('已按生成器配置生成密码', 'success');
+}
+
+const VAULT_REGISTRATION_COUNTRIES = {
+  en_US: {
+    label: '美国',
+    aliases: ['United States', 'USA', 'US', '美国'],
+    firstNames: ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Emma', 'Olivia', 'Sophia', 'Ava'],
+    lastNames: ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Wilson', 'Taylor'],
+    regions: ['CA', 'NY', 'TX', 'WA', 'FL', 'IL', 'MA', 'CO'],
+    cities: ['Los Angeles', 'New York', 'Austin', 'Seattle', 'Miami', 'Chicago', 'Boston', 'Denver'],
+    streets: ['Main St', 'Oak Ave', 'Pine St', 'Maple Dr', 'Cedar Rd', 'Market St', 'Lake View Dr'],
+    domains: ['gmail.com', 'outlook.com', 'proton.me', 'icloud.com'],
+  },
+  zh_CN: {
+    label: '中国',
+    aliases: ['China', 'CN', '中国', '中华人民共和国'],
+    firstNames: ['伟', '芳', '娜', '敏', '静', '强', '磊', '洋', '勇', '艳', '杰', '娟'],
+    lastNames: ['王', '李', '张', '刘', '陈', '杨', '赵', '黄', '周', '吴', '徐', '孙'],
+    regions: ['北京市', '上海市', '广东省', '浙江省', '江苏省', '四川省', '湖北省', '福建省'],
+    cities: ['北京', '上海', '广州', '杭州', '南京', '成都', '武汉', '厦门'],
+    streets: ['中山路', '人民路', '解放路', '建设路', '长安街', '和平路', '青年路'],
+    domains: ['163.com', 'qq.com', 'outlook.com', 'gmail.com'],
+  },
+  ja: {
+    label: '日本',
+    aliases: ['Japan', 'JP', '日本'],
+    firstNames: ['蓮', '陽翔', '湊', '樹', '結菜', '陽葵', '凛', '美咲'],
+    lastNames: ['佐藤', '鈴木', '高橋', '田中', '伊藤', '渡辺', '山本', '中村'],
+    regions: ['東京都', '大阪府', '神奈川県', '愛知県', '北海道', '福岡県'],
+    cities: ['東京', '大阪', '横浜', '名古屋', '札幌', '福岡'],
+    streets: ['中央通り', '桜町', '青山', '銀座', '本町'],
+    domains: ['gmail.com', 'yahoo.co.jp', 'outlook.com'],
+  },
+  ko: {
+    label: '韩国',
+    aliases: ['Korea', 'South Korea', 'KR', '韩国', '대한민국'],
+    firstNames: ['서준', '도윤', '예준', '시우', '서연', '지우', '하윤', '지민'],
+    lastNames: ['김', '이', '박', '최', '정', '강', '조', '윤'],
+    regions: ['서울특별시', '부산광역시', '경기도', '인천광역시', '대구광역시'],
+    cities: ['서울', '부산', '수원', '인천', '대구'],
+    streets: ['중앙로', '강남대로', '세종대로', '테헤란로'],
+    domains: ['gmail.com', 'naver.com', 'outlook.com'],
+  },
+  en_GB: {
+    label: '英国',
+    aliases: ['United Kingdom', 'UK', 'Great Britain', '英国'],
+    firstNames: ['Oliver', 'George', 'Harry', 'Arthur', 'Noah', 'Olivia', 'Amelia', 'Isla', 'Ava'],
+    lastNames: ['Smith', 'Jones', 'Taylor', 'Brown', 'Williams', 'Wilson', 'Johnson', 'Davies'],
+    regions: ['England', 'Scotland', 'Wales', 'Northern Ireland'],
+    cities: ['London', 'Manchester', 'Birmingham', 'Leeds', 'Glasgow', 'Cardiff'],
+    streets: ['High Street', 'Station Road', 'Church Lane', 'Victoria Road', 'Park Road'],
+    domains: ['gmail.com', 'outlook.com', 'proton.me'],
+  },
+  de: {
+    label: '德国',
+    aliases: ['Germany', 'DE', 'Deutschland', '德国'],
+    firstNames: ['Noah', 'Ben', 'Paul', 'Leon', 'Emma', 'Mia', 'Hannah', 'Emilia'],
+    lastNames: ['Muller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner'],
+    regions: ['Berlin', 'Bayern', 'Hamburg', 'Hessen', 'Sachsen'],
+    cities: ['Berlin', 'Munich', 'Hamburg', 'Frankfurt', 'Dresden'],
+    streets: ['Hauptstrasse', 'Bahnhofstrasse', 'Kirchweg', 'Gartenstrasse'],
+    domains: ['gmail.com', 'outlook.com', 'proton.me'],
+  },
+  fr: {
+    label: '法国',
+    aliases: ['France', 'FR', '法国'],
+    firstNames: ['Leo', 'Gabriel', 'Louis', 'Arthur', 'Emma', 'Louise', 'Jade', 'Alice'],
+    lastNames: ['Martin', 'Bernard', 'Thomas', 'Petit', 'Robert', 'Richard', 'Durand'],
+    regions: ['Ile-de-France', 'Provence-Alpes-Cote dAzur', 'Occitanie', 'Normandie'],
+    cities: ['Paris', 'Marseille', 'Lyon', 'Toulouse', 'Nice', 'Rouen'],
+    streets: ['Rue de la Paix', 'Avenue Victor Hugo', 'Rue Nationale', 'Boulevard Saint-Michel'],
+    domains: ['gmail.com', 'outlook.com', 'proton.me'],
+  },
+  ru: {
+    label: '俄罗斯',
+    aliases: ['Russia', 'RU', 'Россия', '俄罗斯'],
+    firstNames: ['Alexander', 'Dmitry', 'Maxim', 'Ivan', 'Sofia', 'Anastasia', 'Maria', 'Anna'],
+    lastNames: ['Ivanov', 'Smirnov', 'Kuznetsov', 'Popov', 'Sokolov', 'Lebedev'],
+    regions: ['Moscow', 'Saint Petersburg', 'Tatarstan', 'Novosibirsk Oblast'],
+    cities: ['Moscow', 'Saint Petersburg', 'Kazan', 'Novosibirsk', 'Yekaterinburg'],
+    streets: ['Tverskaya St', 'Lenina Ave', 'Sovetskaya St', 'Centralnaya St'],
+    domains: ['gmail.com', 'outlook.com', 'proton.me'],
+  },
+};
+
+function pickVaultRegistrationValue(list) {
+  if (!Array.isArray(list) || list.length === 0) return '';
+  return list[getSecureRandomIndex(list.length)];
+}
+
+function getVaultRegistrationCountryCode(value) {
+  const input = String(value || '').trim().toLowerCase();
+  if (!input) return vaultRegisterCountrySelect?.value || 'en_US';
+
+  for (const [code, config] of Object.entries(VAULT_REGISTRATION_COUNTRIES)) {
+    if (code.toLowerCase() === input || config.label.toLowerCase() === input) return code;
+    if ((config.aliases || []).some(alias => alias.toLowerCase() === input || input.includes(alias.toLowerCase()))) {
+      return code;
+    }
+  }
+
+  if (/china|cn|中国|中华人民共和国/.test(input)) return 'zh_CN';
+  if (/japan|jp|日本/.test(input)) return 'ja';
+  if (/korea|kr|韩国|대한민국/.test(input)) return 'ko';
+  if (/kingdom|britain|uk|英国/.test(input)) return 'en_GB';
+  if (/germany|deutschland|德国/.test(input)) return 'de';
+  if (/france|法国/.test(input)) return 'fr';
+  if (/russia|россия|俄罗斯/.test(input)) return 'ru';
+  return vaultRegisterCountrySelect?.value || 'en_US';
+}
+
+function formatVaultRegistrationFullName(firstName, lastName, countryCode) {
+  if (['zh_CN', 'ja', 'ko'].includes(countryCode)) {
+    return `${lastName || ''}${firstName || ''}`;
+  }
+  return [firstName, lastName].filter(Boolean).join(' ');
+}
+
+function splitVaultRegistrationName(fullName, countryCode) {
+  const name = String(fullName || '').trim();
+  if (!name) return {};
+  if (['zh_CN', 'ja', 'ko'].includes(countryCode) && !/\s/.test(name) && name.length >= 2) {
+    return { lastName: name.slice(0, 1), firstName: name.slice(1) };
+  }
+
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return {
+      firstName: parts.slice(0, -1).join(' '),
+      lastName: parts[parts.length - 1],
+    };
+  }
+  return { firstName: name };
+}
+
+function normalizeVaultRegistrationEmailPart(value) {
+  const normalized = String(value || '')
+    .normalize('NFKD')
+    .replace(/[^\w.-]+/g, '')
+    .replace(/_+/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+    .toLowerCase();
+  return normalized || `user${1000 + getSecureRandomIndex(9000)}`;
+}
+
+function generateVaultRegistrationEmail(firstName, lastName, countryCode) {
+  const config = VAULT_REGISTRATION_COUNTRIES[countryCode] || VAULT_REGISTRATION_COUNTRIES.en_US;
+  const domain = pickVaultRegistrationValue(config.domains);
+  const suffix = String(100 + getSecureRandomIndex(900));
+  const local = normalizeVaultRegistrationEmailPart(
+    ['zh_CN', 'ja', 'ko'].includes(countryCode)
+      ? `${lastName || 'user'}${firstName || ''}${suffix}`
+      : `${firstName || 'user'}.${lastName || suffix}`
+  );
+  return `${local}@${domain}`;
+}
+
+function generateVaultRegistrationUsername(email, firstName, lastName, countryCode) {
+  if (email && email.includes('@')) {
+    return email.split('@')[0];
+  }
+  const suffix = String(1000 + getSecureRandomIndex(9000));
+  return normalizeVaultRegistrationEmailPart(
+    ['zh_CN', 'ja', 'ko'].includes(countryCode)
+      ? `${lastName || 'user'}${firstName || ''}${suffix}`
+      : `${firstName || 'user'}${lastName || ''}${suffix}`
+  );
+}
+
+function generateVaultRegistrationPostalCode(countryCode) {
+  if (countryCode === 'zh_CN') return String(100000 + getSecureRandomIndex(899999));
+  if (countryCode === 'en_US') return String(10000 + getSecureRandomIndex(89999));
+  if (countryCode === 'en_GB') return `SW${1 + getSecureRandomIndex(9)}A ${1 + getSecureRandomIndex(9)}AA`;
+  return String(10000 + getSecureRandomIndex(89999));
+}
+
+function generateVaultRegistrationPhone(countryCode) {
+  if (countryCode === 'zh_CN') {
+    return `1${3 + getSecureRandomIndex(7)}${String(100000000 + getSecureRandomIndex(900000000)).padStart(9, '0')}`;
+  }
+  if (countryCode === 'en_US') {
+    return `+1 ${200 + getSecureRandomIndex(700)}-${200 + getSecureRandomIndex(700)}-${String(1000 + getSecureRandomIndex(9000))}`;
+  }
+  if (countryCode === 'en_GB') {
+    return `+44 7${String(100000000 + getSecureRandomIndex(900000000)).slice(0, 9)}`;
+  }
+  return `+${10 + getSecureRandomIndex(80)} ${1000000 + getSecureRandomIndex(9000000)}`;
+}
+
+function generateVaultRegistrationAddress(countryCode, region, city, postalCode) {
+  const config = VAULT_REGISTRATION_COUNTRIES[countryCode] || VAULT_REGISTRATION_COUNTRIES.en_US;
+  const street = pickVaultRegistrationValue(config.streets);
+  const number = 10 + getSecureRandomIndex(9900);
+
+  if (countryCode === 'zh_CN') {
+    return `${region}${city}${street}${number}号`;
+  }
+  if (countryCode === 'ja') {
+    return `〒${postalCode} ${region}${city}${street}${number}`;
+  }
+  if (countryCode === 'ko') {
+    return `${region} ${city} ${street} ${number}, ${postalCode}`;
+  }
+  if (['de', 'fr'].includes(countryCode)) {
+    return `${street} ${number}, ${postalCode} ${city}`;
+  }
+  if (countryCode === 'en_GB') {
+    return `${number} ${street}, ${city}, ${postalCode}`;
+  }
+  return `${number} ${street}, ${city}, ${region} ${postalCode}`;
+}
+
+const VAULT_REGISTRATION_FIELD_LABELS = {
+  username: '用户名',
+  email: '邮箱',
+  firstName: '名',
+  lastName: '姓',
+  fullName: '姓名',
+  phone: '电话',
+  country: '国家/地区',
+  region: '地区/省州',
+  city: '城市',
+  address: '地址',
+  postalCode: '邮编',
+};
+
+const VAULT_REGISTRATION_PROFILE_ROLES = Object.keys(VAULT_REGISTRATION_FIELD_LABELS);
+
+function getVaultRegistrationExplicitInputs() {
+  return {
+    username: vaultRegisterUsernameInput?.value.trim() || '',
+    email: vaultRegisterEmailInput?.value.trim() || '',
+    phone: vaultRegisterPhoneInput?.value.trim() || '',
+  };
+}
+
+function normalizeVaultRegistrationRoles(captured = {}, options = {}) {
+  const roles = new Set();
+  const addRole = (role) => {
+    if (VAULT_REGISTRATION_PROFILE_ROLES.includes(role)) roles.add(role);
+  };
+  const addRoles = (value) => {
+    if (!value) return;
+    const list = Array.isArray(value) ? value : String(value).split(',');
+    list.forEach(role => addRole(String(role || '').trim()));
+  };
+
+  addRoles(options.requiredRoles || options.roles);
+  addRoles(captured.requiredRoles || captured.roles || captured.fieldRoles);
+  VAULT_REGISTRATION_PROFILE_ROLES.forEach((role) => {
+    if (captured[role]) addRole(role);
+  });
+
+  const explicit = getVaultRegistrationExplicitInputs();
+  if (!roles.has('username') && !roles.has('email') && !roles.has('phone')) {
+    if (explicit.username) {
+      roles.add('username');
+    } else if (explicit.email) {
+      roles.add('email');
+    } else if (explicit.phone) {
+      roles.add('phone');
+    } else {
+      roles.add('username');
+    }
+  }
+
+  return roles;
+}
+
+function hasVaultRegistrationRole(profile, role) {
+  const roles = Array.isArray(profile?.generatedRoles) ? profile.generatedRoles : null;
+  return !roles || roles.includes(role);
+}
+
+function normalizeVaultRegistrationComparable(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function shouldShowVaultRegistrationDetail(profile, role) {
+  if (!hasVaultRegistrationRole(profile, role)) return false;
+  const value = String(profile?.[role] || '').trim();
+  if (!value) return false;
+  const savedAccount = normalizeVaultRegistrationComparable(profile?.username);
+  if (savedAccount && normalizeVaultRegistrationComparable(value) === savedAccount) {
+    return false;
+  }
+  return true;
+}
+
+function generateVaultRegistrationProfile(captured = {}, options = {}) {
+  const countryCode = getVaultRegistrationCountryCode(captured.country || captured.region);
+  const config = VAULT_REGISTRATION_COUNTRIES[countryCode] || VAULT_REGISTRATION_COUNTRIES.en_US;
+  const roles = normalizeVaultRegistrationRoles(captured, options);
+  const splitName = splitVaultRegistrationName(captured.fullName, countryCode);
+  const firstName = captured.firstName || splitName.firstName || pickVaultRegistrationValue(config.firstNames);
+  const lastName = captured.lastName || splitName.lastName || pickVaultRegistrationValue(config.lastNames);
+  const fullName = captured.fullName || formatVaultRegistrationFullName(firstName, lastName, countryCode);
+  const region = captured.region || pickVaultRegistrationValue(config.regions);
+  const city = captured.city || pickVaultRegistrationValue(config.cities);
+  const postalCode = captured.postalCode || generateVaultRegistrationPostalCode(countryCode);
+  const address = captured.address || generateVaultRegistrationAddress(countryCode, region, city, postalCode);
+  const explicit = getVaultRegistrationExplicitInputs();
+  const needsEmail = roles.has('email');
+  const needsPhone = roles.has('phone');
+  const email = needsEmail
+    ? (explicit.email || captured.email || generateVaultRegistrationEmail(firstName, lastName, countryCode))
+    : (explicit.email || captured.email || '');
+  const phone = needsPhone
+    ? (explicit.phone || captured.phone || generateVaultRegistrationPhone(countryCode))
+    : (explicit.phone || captured.phone || '');
+  const usernameForField = explicit.username || captured.username || generateVaultRegistrationUsername(email, firstName, lastName, countryCode);
+  const username = roles.has('username')
+    ? usernameForField
+    : (email || phone || usernameForField);
+  const password = options.generatePassword
+    ? generateVaultPassword()
+    : (captured.password || vaultAddPasswordInput?.value || generateVaultPassword());
+  const generatedRoles = Array.from(roles);
+
+  return {
+    countryCode,
+    country: roles.has('country') ? config.label : '',
+    countryAliases: config.aliases || [],
+    firstName: roles.has('firstName') ? firstName : '',
+    lastName: roles.has('lastName') ? lastName : '',
+    fullName: roles.has('fullName') ? fullName : '',
+    username,
+    email: needsEmail ? email : '',
+    password,
+    phone: needsPhone ? phone : '',
+    region: roles.has('region') ? region : '',
+    city: roles.has('city') ? city : '',
+    postalCode: roles.has('postalCode') ? postalCode : '',
+    address: roles.has('address') ? address : '',
+    generatedRoles,
+  };
+}
+
+function formatVaultRegistrationNotes(profile) {
+  const lines = [];
+  if (shouldShowVaultRegistrationDetail(profile, 'fullName')) lines.push(`姓名: ${profile.fullName}`);
+  if (shouldShowVaultRegistrationDetail(profile, 'firstName')) lines.push(`名: ${profile.firstName}`);
+  if (shouldShowVaultRegistrationDetail(profile, 'lastName')) lines.push(`姓: ${profile.lastName}`);
+  if (shouldShowVaultRegistrationDetail(profile, 'email')) lines.push(`邮箱: ${profile.email}`);
+  if (shouldShowVaultRegistrationDetail(profile, 'phone')) lines.push(`电话: ${profile.phone}`);
+  if (shouldShowVaultRegistrationDetail(profile, 'country')) lines.push(`国家/地区: ${profile.country}`);
+  if (shouldShowVaultRegistrationDetail(profile, 'region')) lines.push(`地区/省州: ${profile.region}`);
+  if (shouldShowVaultRegistrationDetail(profile, 'city')) lines.push(`城市: ${profile.city}`);
+  if (shouldShowVaultRegistrationDetail(profile, 'address')) lines.push(`地址: ${profile.address}`);
+  if (shouldShowVaultRegistrationDetail(profile, 'postalCode')) lines.push(`邮编: ${profile.postalCode}`);
+  return lines.join('\n');
+}
+
+function renderVaultRegistrationSummary(profile, prefix = '已生成注册资料') {
+  if (!vaultRegisterSummaryEl) return;
+  if (!profile) {
+    vaultRegisterSummaryEl.textContent = '尚未读取注册页';
+    return;
+  }
+  const lines = [`${prefix}`, `保存账号: ${profile.username || '-'}`];
+  (profile.generatedRoles || [])
+    .filter(role => role !== 'username')
+    .forEach((role) => {
+      const label = VAULT_REGISTRATION_FIELD_LABELS[role];
+      const value = profile[role];
+      if (label && shouldShowVaultRegistrationDetail(profile, role)) lines.push(`${label}: ${value}`);
+    });
+  vaultRegisterSummaryEl.textContent = lines.join('\n');
+}
+
+function applyVaultRegistrationProfileToPopup(profile) {
+  if (!profile) return;
+  lastVaultRegistrationProfile = profile;
+  toggleVaultAddPanel(true);
+  ensureVaultAddDefaults();
+
+  if (vaultRegisterCountrySelect) vaultRegisterCountrySelect.value = profile.countryCode || 'en_US';
+  if (vaultAddUsernameInput) vaultAddUsernameInput.value = profile.username || '';
+  if (vaultAddPasswordInput) vaultAddPasswordInput.value = profile.password || '';
+  if (vaultAddNotesInput) vaultAddNotesInput.value = formatVaultRegistrationNotes(profile);
+  renderVaultRegistrationSummary(profile);
+}
+
+async function loadVaultRegistrationSettings() {
+  try {
+    const settings = await storageGet(VAULT_REGISTRATION_SETTINGS_KEY);
+    const parsedSettings = typeof settings === 'string'
+      ? (settings ? JSON.parse(settings) : {})
+      : settings;
+    const country = parsedSettings?.country;
+    if (vaultRegisterCountrySelect && VAULT_REGISTRATION_COUNTRIES[country]) {
+      vaultRegisterCountrySelect.value = country;
+    }
+    if (vaultRegisterUsernameInput) vaultRegisterUsernameInput.value = parsedSettings?.username || '';
+    if (vaultRegisterEmailInput) vaultRegisterEmailInput.value = parsedSettings?.email || '';
+    if (vaultRegisterPhoneInput) vaultRegisterPhoneInput.value = parsedSettings?.phone || '';
+  } catch (e) {
+    console.warn('Failed to load registration settings:', e);
+  }
+}
+
+function saveVaultRegistrationSettings() {
+  storageSet(VAULT_REGISTRATION_SETTINGS_KEY, {
+    country: vaultRegisterCountrySelect?.value || 'en_US',
+    username: vaultRegisterUsernameInput?.value.trim() || '',
+    email: vaultRegisterEmailInput?.value.trim() || '',
+    phone: vaultRegisterPhoneInput?.value.trim() || '',
+  }).catch((e) => {
+    console.warn('Failed to save registration settings:', e);
+  });
+}
+
+function toggleVaultAddPasswordVisibility() {
+  if (!vaultAddPasswordInput || !vaultAddPasswordViewBtn) return;
+  const shouldShow = vaultAddPasswordInput.type === 'password';
+  vaultAddPasswordInput.type = shouldShow ? 'text' : 'password';
+  vaultAddPasswordViewBtn.textContent = shouldShow ? '隐藏' : '查看';
+}
+
 function ensureVaultAddDefaults() {
   if (!vaultAddNameInput || !vaultAddUrlInput) return;
 
@@ -1378,6 +2035,20 @@ async function captureCredentialFromPage() {
   }
 
   const extractCredential = () => {
+    const FIELD_PATTERNS = [
+      ['password', /(new[-_\s]?password|password|passwd|pwd|pass|密码|密碼|设置密码|登录密码)/i],
+      ['email', /(e[-_\s]?mail|email|mail address|邮箱|郵箱|电子邮件|電子郵件|邮件地址|郵件地址)/i],
+      ['username', /(user[-_\s]?name|username|login|account|userid|user id|member id|nickname|display name|账号|帳號|账户|用戶名|用户名|登录名|登入名|昵称|暱稱)/i],
+      ['firstName', /(first[-_\s]?name|given[-_\s]?name|forename|名\b|名字|given)/i],
+      ['lastName', /(last[-_\s]?name|family[-_\s]?name|surname|姓\b|姓氏|family)/i],
+      ['fullName', /(^|\s)(full[-_\s]?name|name|real[-_\s]?name|姓名|真实姓名|真實姓名|联系人|聯絡人)(\s|$)/i],
+      ['phone', /(phone|mobile|tel|telephone|cell|手机号|手機號|手机|手機|电话|電話|联系电话|聯絡電話)/i],
+      ['country', /(country|nation|国家|國家|国家\/地区|國家\/地區)/i],
+      ['region', /(state|province|region|county|prefecture|area|省|州|地区|地區|区域|區域|都道府县)/i],
+      ['city', /(city|town|locality|城市|市区|市|区县|區縣)/i],
+      ['address', /(address|street|addr|住址|地址|街道|详细地址|詳細地址)/i],
+      ['postalCode', /(zip|postal|postcode|post code|邮编|郵編|邮政编码|郵政編碼)/i],
+    ];
     const isVisibleElement = (element) => {
       if (!element) return false;
       const style = window.getComputedStyle(element);
@@ -1386,6 +2057,7 @@ async function captureCredentialFromPage() {
     };
     const isEditableInput = (element) => {
       if (!element || element.disabled || element.readOnly) return false;
+      if (element instanceof HTMLSelectElement) return true;
       if (element instanceof HTMLTextAreaElement) return true;
       if (!(element instanceof HTMLInputElement)) return false;
       const type = (element.getAttribute('type') || 'text').toLowerCase();
@@ -1399,36 +2071,102 @@ async function captureCredentialFromPage() {
       });
       return roots;
     };
-    const getVisibleInputs = (root) => Array.from(root.querySelectorAll('input, textarea'))
+    const getVisibleFields = (root) => Array.from(root.querySelectorAll('input, textarea, select'))
       .filter(input => isEditableInput(input) && isVisibleElement(input));
-    const allInputs = collectRoots(document).flatMap(root => getVisibleInputs(root));
-    const passwordInput = allInputs.find(input => input instanceof HTMLInputElement && input.type === 'password' && input.value);
-    if (!passwordInput) {
-      return { success: false, error: '当前页面没有可读取的密码输入框' };
-    }
-
-    const form = passwordInput.form || passwordInput.closest('form');
-    const scopeInputs = form ? getVisibleInputs(form) : allInputs;
-    const passwordIndex = scopeInputs.indexOf(passwordInput);
-    const beforePassword = passwordIndex >= 0 ? scopeInputs.slice(0, passwordIndex).reverse() : scopeInputs;
-    const isLikelyUsernameInput = (input) => {
-      if (!(input instanceof HTMLInputElement)) return false;
-      const type = (input.getAttribute('type') || 'text').toLowerCase();
-      if (!['text', 'email', 'tel', 'search', 'number', ''].includes(type)) return false;
-      const hint = [input.name, input.id, input.autocomplete, input.placeholder, input.getAttribute('aria-label'), input.getAttribute('title')].join(' ').toLowerCase();
-      return /(user|login|email|account|phone|mobile|identifier|customer|client|member|id|用户名|账号|账户|邮箱|手机|客户)/i.test(hint) || type === 'email' || input.autocomplete === 'username';
+    const getFieldType = (field) => {
+      if (field instanceof HTMLSelectElement) return 'select';
+      if (field instanceof HTMLTextAreaElement) return 'textarea';
+      return (field.getAttribute('type') || 'text').toLowerCase();
     };
-    const usernameInput = beforePassword.find(isLikelyUsernameInput) ||
-      beforePassword.find(input => input instanceof HTMLInputElement && ['text', 'email', 'tel', 'number', ''].includes((input.getAttribute('type') || 'text').toLowerCase()));
+    const getLabelText = (field) => {
+      const labels = Array.from(field.labels || []).map(label => label.textContent || '');
+      const id = field.id ? document.querySelector(`label[for="${CSS.escape(field.id)}"]`)?.textContent || '' : '';
+      return [...labels, id].join(' ');
+    };
+    const getFieldHint = (field) => {
+      return [
+        field.name,
+        field.id,
+        field.autocomplete,
+        field.placeholder,
+        field.getAttribute('aria-label'),
+        field.getAttribute('title'),
+        field.getAttribute('data-testid'),
+        getLabelText(field),
+        field.getAttribute('aria-describedby') ? document.getElementById(field.getAttribute('aria-describedby'))?.textContent || '' : '',
+        field.getAttribute('aria-labelledby') ? document.getElementById(field.getAttribute('aria-labelledby'))?.textContent || '' : '',
+      ].join(' ').toLowerCase();
+    };
+    const classifyField = (field) => {
+      const type = getFieldType(field);
+      const autocomplete = String(field.autocomplete || '').toLowerCase();
+      const hint = getFieldHint(field);
+      if (type === 'password') return 'password';
+      if (type === 'email' || autocomplete === 'email') return 'email';
+      if (type === 'tel') return 'phone';
+      if (autocomplete === 'username') return 'username';
+      if (autocomplete === 'given-name') return 'firstName';
+      if (autocomplete === 'family-name') return 'lastName';
+      if (autocomplete === 'name') return 'fullName';
+      if (autocomplete === 'country' || autocomplete === 'country-name') return 'country';
+      if (autocomplete === 'address-level1') return 'region';
+      if (autocomplete === 'address-level2') return 'city';
+      if (autocomplete === 'street-address' || autocomplete === 'address-line1') return 'address';
+      if (autocomplete === 'postal-code') return 'postalCode';
+
+      const match = FIELD_PATTERNS.find(([, pattern]) => pattern.test(hint));
+      return match ? match[0] : '';
+    };
+    const getFieldValue = (field) => {
+      if (field instanceof HTMLSelectElement) {
+        return field.selectedOptions?.[0]?.textContent?.trim() || field.value || '';
+      }
+      return String(field.value || '').trim();
+    };
+
+    const allFields = collectRoots(document).flatMap(root => getVisibleFields(root));
+    const fields = allFields
+      .map((field, index) => ({
+        index,
+        role: classifyField(field),
+        value: getFieldValue(field),
+        type: getFieldType(field),
+      }))
+      .filter(field => field.role);
+
+    const credential = {
+      title: document.title || location.hostname,
+      url: window.location.href,
+      username: '',
+      password: '',
+      email: '',
+      firstName: '',
+      lastName: '',
+      fullName: '',
+      phone: '',
+      country: '',
+      region: '',
+      city: '',
+      address: '',
+      postalCode: '',
+      fieldCount: fields.length,
+      requiredRoles: [...new Set(fields.map(field => field.role).filter(role => role && role !== 'password'))],
+    };
+
+    for (const field of fields) {
+      if (!field.value && field.role !== 'password') continue;
+      if (field.role === 'password') {
+        if (!credential.password && field.value) credential.password = field.value;
+        continue;
+      }
+      if (!credential[field.role]) {
+        credential[field.role] = field.value;
+      }
+    }
 
     return {
       success: true,
-      credential: {
-        title: document.title || location.hostname,
-        url: window.location.href,
-        username: usernameInput?.value || '',
-        password: passwordInput.value || '',
-      },
+      credential,
     };
   };
 
@@ -1440,6 +2178,189 @@ async function captureCredentialFromPage() {
   const frameResults = (results || []).map(result => result.result).filter(Boolean);
   const success = frameResults.find(result => result.success);
   return success || frameResults.find(result => result.error) || { success: false, error: '没有读取到账号密码' };
+}
+
+async function fillRegistrationPageFromProfile(profile) {
+  const tab = await getActiveTab();
+  if (!tab || !tab.id) {
+    return { success: false, error: '无法获取当前页面' };
+  }
+
+  const fillFrame = (profileData) => {
+    const FIELD_PATTERNS = [
+      ['password', /(new[-_\s]?password|confirm[-_\s]?password|password|passwd|pwd|pass|密码|密碼|确认密码|確認密碼|设置密码)/i],
+      ['email', /(e[-_\s]?mail|email|mail address|邮箱|郵箱|电子邮件|電子郵件|邮件地址|郵件地址)/i],
+      ['username', /(user[-_\s]?name|username|login|account|userid|user id|member id|nickname|display name|账号|帳號|账户|用戶名|用户名|登录名|登入名|昵称|暱稱)/i],
+      ['firstName', /(first[-_\s]?name|given[-_\s]?name|forename|名\b|名字|given)/i],
+      ['lastName', /(last[-_\s]?name|family[-_\s]?name|surname|姓\b|姓氏|family)/i],
+      ['fullName', /(^|\s)(full[-_\s]?name|name|real[-_\s]?name|姓名|真实姓名|真實姓名|联系人|聯絡人)(\s|$)/i],
+      ['phone', /(phone|mobile|tel|telephone|cell|手机号|手機號|手机|手機|电话|電話|联系电话|聯絡電話)/i],
+      ['country', /(country|nation|国家|國家|国家\/地区|國家\/地區)/i],
+      ['region', /(state|province|region|county|prefecture|area|省|州|地区|地區|区域|區域|都道府县)/i],
+      ['city', /(city|town|locality|城市|市区|市|区县|區縣)/i],
+      ['address', /(address|street|addr|住址|地址|街道|详细地址|詳細地址)/i],
+      ['postalCode', /(zip|postal|postcode|post code|邮编|郵編|邮政编码|郵政編碼)/i],
+    ];
+    const isVisibleElement = (element) => {
+      if (!element) return false;
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
+    };
+    const isEditableInput = (element) => {
+      if (!element || element.disabled || element.readOnly) return false;
+      if (element instanceof HTMLSelectElement) return true;
+      if (element instanceof HTMLTextAreaElement) return true;
+      if (!(element instanceof HTMLInputElement)) return false;
+      const type = (element.getAttribute('type') || 'text').toLowerCase();
+      return !['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'].includes(type);
+    };
+    const setNativeValue = (element, value) => {
+      if (element instanceof HTMLSelectElement) {
+        const target = String(value || '').trim().toLowerCase();
+        const aliases = (profileData.countryAliases || []).map(alias => String(alias).toLowerCase());
+        const option = Array.from(element.options).find((item) => {
+          const text = String(item.textContent || '').trim().toLowerCase();
+          const optionValue = String(item.value || '').trim().toLowerCase();
+          return text === target ||
+            optionValue === target ||
+            aliases.includes(text) ||
+            aliases.includes(optionValue) ||
+            (target && (text.includes(target) || target.includes(text)));
+        });
+        if (option) {
+          element.value = option.value;
+          element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+          return true;
+        }
+        return false;
+      }
+
+      const valueSetter = Object.getOwnPropertyDescriptor(element, 'value')?.set;
+      const prototypeValueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value')?.set;
+      if (prototypeValueSetter && valueSetter !== prototypeValueSetter) {
+        prototypeValueSetter.call(element, value);
+      } else if (valueSetter) {
+        valueSetter.call(element, value);
+      } else {
+        element.value = value;
+      }
+      element.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+      element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true }));
+      return true;
+    };
+    const collectRoots = (root, roots = []) => {
+      roots.push(root);
+      const elements = root.querySelectorAll ? Array.from(root.querySelectorAll('*')) : [];
+      elements.forEach((element) => {
+        if (element.shadowRoot) collectRoots(element.shadowRoot, roots);
+      });
+      return roots;
+    };
+    const getVisibleFields = (root) => Array.from(root.querySelectorAll('input, textarea, select'))
+      .filter(input => isEditableInput(input) && isVisibleElement(input));
+    const getFieldType = (field) => {
+      if (field instanceof HTMLSelectElement) return 'select';
+      if (field instanceof HTMLTextAreaElement) return 'textarea';
+      return (field.getAttribute('type') || 'text').toLowerCase();
+    };
+    const getLabelText = (field) => {
+      const labels = Array.from(field.labels || []).map(label => label.textContent || '');
+      const id = field.id ? document.querySelector(`label[for="${CSS.escape(field.id)}"]`)?.textContent || '' : '';
+      return [...labels, id].join(' ');
+    };
+    const getFieldHint = (field) => {
+      return [
+        field.name,
+        field.id,
+        field.autocomplete,
+        field.placeholder,
+        field.getAttribute('aria-label'),
+        field.getAttribute('title'),
+        field.getAttribute('data-testid'),
+        getLabelText(field),
+        field.getAttribute('aria-describedby') ? document.getElementById(field.getAttribute('aria-describedby'))?.textContent || '' : '',
+        field.getAttribute('aria-labelledby') ? document.getElementById(field.getAttribute('aria-labelledby'))?.textContent || '' : '',
+      ].join(' ').toLowerCase();
+    };
+    const classifyField = (field) => {
+      const type = getFieldType(field);
+      const autocomplete = String(field.autocomplete || '').toLowerCase();
+      const hint = getFieldHint(field);
+      if (type === 'password') return 'password';
+      if (type === 'email' || autocomplete === 'email') return 'email';
+      if (type === 'tel') return 'phone';
+      if (autocomplete === 'username') return 'username';
+      if (autocomplete === 'given-name') return 'firstName';
+      if (autocomplete === 'family-name') return 'lastName';
+      if (autocomplete === 'name') return 'fullName';
+      if (autocomplete === 'country' || autocomplete === 'country-name') return 'country';
+      if (autocomplete === 'address-level1') return 'region';
+      if (autocomplete === 'address-level2') return 'city';
+      if (autocomplete === 'street-address' || autocomplete === 'address-line1') return 'address';
+      if (autocomplete === 'postal-code') return 'postalCode';
+      const match = FIELD_PATTERNS.find(([, pattern]) => pattern.test(hint));
+      return match ? match[0] : '';
+    };
+    const valueByRole = {
+      username: profileData.username,
+      password: profileData.password,
+      email: profileData.email,
+      firstName: profileData.firstName,
+      lastName: profileData.lastName,
+      fullName: profileData.fullName,
+      phone: profileData.phone,
+      country: profileData.country,
+      region: profileData.region,
+      city: profileData.city,
+      address: profileData.address,
+      postalCode: profileData.postalCode,
+    };
+
+    const allFields = collectRoots(document).flatMap(root => getVisibleFields(root));
+    const filledRoles = [];
+    for (const field of allFields) {
+      const role = classifyField(field);
+      const value = valueByRole[role];
+      if (!role || !value) continue;
+      if (role !== 'password' && filledRoles.includes(role)) continue;
+      const didFill = setNativeValue(field, value);
+      if (didFill) filledRoles.push(role);
+    }
+
+    return filledRoles.length > 0
+      ? { success: true, filledRoles, frameUrl: window.location.href }
+      : { success: false, error: '未找到可填充的注册表单' };
+  };
+
+  let results;
+  try {
+    results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      args: [profile],
+      func: fillFrame,
+    });
+  } catch (e) {
+    console.warn('Fill registration all frames failed, retrying main frame:', e);
+    results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      args: [profile],
+      func: fillFrame,
+    });
+  }
+
+  const frameResults = (results || []).map(result => result.result).filter(Boolean);
+  const successes = frameResults.filter(result => result.success);
+  if (successes.length > 0) {
+    return {
+      success: true,
+      filledRoles: [...new Set(successes.flatMap(result => result.filledRoles || []))],
+    };
+  }
+
+  return frameResults.find(result => result.error) || { success: false, error: '未找到可填充的注册表单' };
 }
 
 async function fillVaultAddFormFromPage() {
@@ -1454,19 +2375,53 @@ async function fillVaultAddFormFromPage() {
     }
 
     const credential = result.credential;
+    lastVaultCapturedCredential = credential;
+    const profile = generateVaultRegistrationProfile(credential);
     vaultAddNameInput.value = credential.title || getDefaultVaultEntryName();
     vaultAddUrlInput.value = credential.url || currentPageUrl || '';
     if (vaultAddUriNameInput) {
       vaultAddUriNameInput.value = getDefaultVaultUriName();
     }
-    vaultAddUsernameInput.value = credential.username || '';
-    vaultAddPasswordInput.value = credential.password || '';
-    showMessage('已读取页面输入', 'success');
+    applyVaultRegistrationProfileToPopup(profile);
+    showMessage('已读取页面输入并生成缺失资料', 'success');
   } catch (e) {
     console.error('Capture credential failed:', e);
     toggleVaultAddPanel(true);
     ensureVaultAddDefaults();
     showMessage('读取失败，请手动输入', 'error');
+  }
+}
+
+async function generateVaultRegistrationForPopup(fillPage = false) {
+  try {
+    toggleVaultAddPanel(true);
+    ensureVaultAddDefaults();
+
+    let captured = {};
+    const captureResult = await captureCredentialFromPage();
+    if (captureResult.success && captureResult.credential) {
+      captured = captureResult.credential;
+      lastVaultCapturedCredential = captured;
+    }
+
+    const profile = generateVaultRegistrationProfile(captured, { generatePassword: true });
+    applyVaultRegistrationProfileToPopup(profile);
+    saveVaultRegistrationSettings();
+
+    if (!fillPage) {
+      showMessage('已生成注册资料', 'success');
+      return;
+    }
+
+    const fillResult = await fillRegistrationPageFromProfile(profile);
+    if (fillResult.success) {
+      showMessage(`已填入注册页 ${fillResult.filledRoles?.length || 0} 个字段`, 'success');
+    } else {
+      showMessage(fillResult.error || '未找到可填充的注册表单', 'error');
+    }
+  } catch (e) {
+    console.error('Generate registration profile failed:', e);
+    showMessage('生成注册资料失败', 'error');
   }
 }
 
@@ -1480,6 +2435,7 @@ async function createVaultEntryFromPopup() {
     title: vaultAddNameInput.value.trim() || getDefaultVaultEntryName(),
     username: vaultAddUsernameInput.value.trim(),
     password: vaultAddPasswordInput.value,
+    notes: vaultAddNotesInput?.value.trim() || '',
     url: normalizeVaultUrlInput(vaultAddUrlInput.value || currentPageUrl),
     folderId: vaultAddFolderSelect?.value || null,
     uriName: vaultAddUriNameInput?.value.trim() || getDefaultVaultUriName(),
@@ -1512,6 +2468,10 @@ async function createVaultEntryFromPopup() {
     vaultAddPanel.classList.remove('active');
     vaultAddUsernameInput.value = '';
     vaultAddPasswordInput.value = '';
+    if (vaultAddNotesInput) vaultAddNotesInput.value = '';
+    lastVaultRegistrationProfile = null;
+    lastVaultCapturedCredential = null;
+    renderVaultRegistrationSummary(null);
     if (vaultAddTotpNameInput) vaultAddTotpNameInput.value = '';
     if (vaultAddTotpSecretInput) vaultAddTotpSecretInput.value = '';
     await loadVaultEntries();
@@ -2153,6 +3113,9 @@ function switchTab(tabName) {
 
 // 初始化
 async function init() {
+  await loadVaultPasswordGeneratorSettings();
+  await loadVaultRegistrationSettings();
+
   const tab = await getActiveTab();
   currentPageUrl = tab?.url || '';
   if (vaultSiteUrlEl) {
@@ -2235,6 +3198,48 @@ bookmarkSearchClearBtn?.addEventListener('click', () => {
 });
 vaultAddToggleBtn?.addEventListener('click', () => toggleVaultAddPanel());
 vaultCaptureBtn?.addEventListener('click', fillVaultAddFormFromPage);
+vaultGeneratePasswordBtn?.addEventListener('click', () => toggleVaultPasswordTool());
+vaultPasswordRefreshBtn?.addEventListener('click', () => {
+  refreshVaultGeneratedPassword();
+  vaultPasswordPreviewInput?.focus();
+  vaultPasswordPreviewInput?.select();
+});
+vaultPasswordLengthInput?.addEventListener('input', () => {
+  syncVaultPasswordLengthControls(vaultPasswordLengthInput.value);
+  handleVaultPasswordOptionsChange();
+});
+vaultPasswordLengthRange?.addEventListener('input', () => {
+  syncVaultPasswordLengthControls(vaultPasswordLengthRange.value);
+  handleVaultPasswordOptionsChange();
+});
+[
+  vaultPasswordUppercaseInput,
+  vaultPasswordLowercaseInput,
+  vaultPasswordNumbersInput,
+  vaultPasswordSymbolsEnabledInput,
+  vaultPasswordAvoidConfusingInput,
+  vaultPasswordSymbolsInput,
+].forEach((input) => input?.addEventListener('input', handleVaultPasswordOptionsChange));
+vaultPasswordCopyBtn?.addEventListener('click', copyGeneratedVaultPassword);
+vaultPasswordUseBtn?.addEventListener('click', useGeneratedVaultPassword);
+vaultAddPasswordGenerateBtn?.addEventListener('click', generateVaultAddPassword);
+vaultAddPasswordViewBtn?.addEventListener('click', toggleVaultAddPasswordVisibility);
+vaultRegisterCountrySelect?.addEventListener('change', () => {
+  saveVaultRegistrationSettings();
+  if (lastVaultRegistrationProfile) {
+    const profile = generateVaultRegistrationProfile({
+      ...(lastVaultCapturedCredential || {}),
+      country: vaultRegisterCountrySelect.value,
+    }, { generatePassword: true });
+    applyVaultRegistrationProfileToPopup(profile);
+  }
+});
+vaultRegisterUsernameInput?.addEventListener('input', saveVaultRegistrationSettings);
+vaultRegisterEmailInput?.addEventListener('input', saveVaultRegistrationSettings);
+vaultRegisterPhoneInput?.addEventListener('input', saveVaultRegistrationSettings);
+vaultRegisterReadBtn?.addEventListener('click', fillVaultAddFormFromPage);
+vaultRegisterGenerateLocalBtn?.addEventListener('click', () => generateVaultRegistrationForPopup(false));
+vaultRegisterGenerateBtn?.addEventListener('click', () => generateVaultRegistrationForPopup(true));
 vaultAddCancelBtn?.addEventListener('click', () => toggleVaultAddPanel(false));
 vaultAddSaveBtn?.addEventListener('click', createVaultEntryFromPopup);
 window.addEventListener('unload', stopVaultTotpTimer);

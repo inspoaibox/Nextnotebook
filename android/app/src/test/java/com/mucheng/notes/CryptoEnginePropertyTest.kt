@@ -1,7 +1,6 @@
 package com.mucheng.notes
 
-import com.mucheng.notes.security.CryptoEngineImpl
-import com.mucheng.notes.security.EncryptedData
+import com.mucheng.notes.testutil.JvmCryptoEngine
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldHaveLength
@@ -17,7 +16,7 @@ import java.util.Base64
  */
 class CryptoEnginePropertyTest : StringSpec({
     
-    val cryptoEngine = CryptoEngineImpl()
+    val cryptoEngine = JvmCryptoEngine()
     val json = Json { ignoreUnknownKeys = true }
     
     // 设置测试密钥

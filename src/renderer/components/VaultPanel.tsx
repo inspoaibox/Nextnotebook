@@ -143,7 +143,166 @@ const styles = `
   }
   
   .secure-input-wrapper input {
-    font-size: 13px; 
+    font-size: 13px;
+  }
+
+  body.dark-mode .vault-panel {
+    background: #111827 !important;
+  }
+
+  body.dark-mode .vault-sider-light {
+    background: #141414 !important;
+    border-right-color: #303030 !important;
+  }
+
+  body.dark-mode .vault-sidebar-title {
+    color: rgba(255, 255, 255, 0.88) !important;
+  }
+
+  body.dark-mode .vault-nav-item {
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  body.dark-mode .vault-nav-item:hover {
+    background: #1f1f1f;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  body.dark-mode .vault-nav-item.selected {
+    background: #111d2c;
+    color: #69b1ff;
+  }
+
+  body.dark-mode .vault-entry-card {
+    border-bottom-color: #303030 !important;
+    color: rgba(255, 255, 255, 0.82);
+  }
+
+  body.dark-mode .vault-entry-card:hover {
+    background: #1f1f1f !important;
+  }
+
+  body.dark-mode .vault-entry-card.selected {
+    background: #111d2c !important;
+    border-right-color: #1677ff !important;
+  }
+
+  body.dark-mode .vault-entry-icon {
+    background: #1f1f1f !important;
+    border-color: #303030 !important;
+  }
+
+  body.dark-mode .vault-entry-card.selected .vault-entry-icon {
+    background: #141414 !important;
+    border-color: #1677ff !important;
+  }
+
+  body.dark-mode .vault-entry-title {
+    color: rgba(255, 255, 255, 0.88) !important;
+  }
+
+  body.dark-mode .vault-entry-meta {
+    color: rgba(255, 255, 255, 0.56) !important;
+  }
+
+  body.dark-mode .vault-entry-date {
+    color: rgba(255, 255, 255, 0.42) !important;
+  }
+
+  body.dark-mode .vault-entry-footer {
+    border-top-color: #303030 !important;
+  }
+
+  body.dark-mode .vault-detail-content {
+    background: #111827 !important;
+  }
+
+  body.dark-mode .vault-detail-header {
+    background: #141414 !important;
+    border-bottom-color: #303030 !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+  }
+
+  body.dark-mode .vault-detail-type-icon {
+    background: #1f1f1f !important;
+    border-color: #303030 !important;
+  }
+
+  body.dark-mode .vault-detail-title {
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+
+  body.dark-mode .vault-detail-updated {
+    color: rgba(255, 255, 255, 0.45) !important;
+  }
+
+  body.dark-mode .vault-detail-section {
+    background: #1f1f1f !important;
+    border-color: #303030 !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.28);
+  }
+
+  body.dark-mode .vault-field-label {
+    color: rgba(255, 255, 255, 0.55) !important;
+  }
+
+  body.dark-mode .secure-input-wrapper {
+    background: #141414 !important;
+    border-color: #434343 !important;
+  }
+
+  body.dark-mode .secure-input-wrapper:focus-within {
+    background: #141414 !important;
+    border-color: #1677ff !important;
+    box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.18);
+  }
+
+  body.dark-mode .secure-input-wrapper .ant-input,
+  body.dark-mode .secure-input-wrapper input {
+    background: transparent !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+  }
+
+  body.dark-mode .secure-input-wrapper .ant-btn-text,
+  body.dark-mode .vault-uri-row .ant-btn-text {
+    color: rgba(255, 255, 255, 0.56) !important;
+  }
+
+  body.dark-mode .secure-input-wrapper .ant-btn-text:hover,
+  body.dark-mode .vault-uri-row .ant-btn-text:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #69b1ff !important;
+  }
+
+  body.dark-mode .vault-uri-row {
+    background: #141414 !important;
+    border-color: #303030 !important;
+  }
+
+  body.dark-mode .vault-uri-row > .anticon {
+    color: #69b1ff !important;
+  }
+
+  body.dark-mode .vault-uri-title {
+    color: rgba(255, 255, 255, 0.86) !important;
+  }
+
+  body.dark-mode .vault-uri-url {
+    color: rgba(255, 255, 255, 0.5) !important;
+  }
+
+  body.dark-mode .vault-notes-box {
+    background: #141414 !important;
+    color: rgba(255, 255, 255, 0.78) !important;
+  }
+
+  body.dark-mode .vault-totp-card {
+    background: #162312 !important;
+    border-color: #274916 !important;
+  }
+
+  body.dark-mode .vault-totp-name {
+    color: rgba(255, 255, 255, 0.62) !important;
   }
 `;
 
@@ -311,7 +470,7 @@ const TotpDisplay: React.FC<{ secret: string; name: string; account?: string; on
   const displayName = account ? `${name} (${account})` : (name || '验证码');
 
   return (
-    <div style={{
+    <div className="vault-totp-card" style={{
       display: 'flex',
       alignItems: 'center',
       gap: 12,
@@ -321,7 +480,7 @@ const TotpDisplay: React.FC<{ secret: string; name: string; account?: string; on
       border: '1px solid #b7eb8f',
     }}>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{displayName}</div>
+        <div className="vault-totp-name" style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>{displayName}</div>
         <div style={{
           fontSize: 24,
           fontWeight: 600,
@@ -372,7 +531,7 @@ const EntryListItem: React.FC<{
         borderRight: selected ? '3px solid #1890ff' : undefined,
       }}
     >
-      <div style={{
+      <div className="vault-entry-icon" style={{
         width: 32,
         height: 32,
         borderRadius: 6,
@@ -390,7 +549,7 @@ const EntryListItem: React.FC<{
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* 名称区域 - 允许换行显示完整内容 */}
-        <div style={{
+        <div className="vault-entry-title" style={{
           fontWeight: 500,
           fontSize: 13,
           color: '#1f2937',
@@ -403,7 +562,7 @@ const EntryListItem: React.FC<{
           {entry.name}
         </div>
         {/* 用户名/类型 和 时间 - 固定在底部一行 */}
-        <div style={{
+        <div className="vault-entry-meta" style={{
           fontSize: 11,
           color: '#9ca3af',
           display: 'flex',
@@ -420,7 +579,7 @@ const EntryListItem: React.FC<{
           }}>
             {entry.username || config.label}
           </span>
-          <span style={{ whiteSpace: 'nowrap', flexShrink: 0, color: '#bfbfbf', fontSize: 10 }}>
+          <span className="vault-entry-date" style={{ whiteSpace: 'nowrap', flexShrink: 0, color: '#bfbfbf', fontSize: 10 }}>
             {entry.updatedAt ? new Date(entry.updatedAt).toLocaleDateString() : ''}
           </span>
         </div>
@@ -887,7 +1046,7 @@ const VaultPanel: React.FC = () => {
             }}>
               <SafetyOutlined style={{ fontSize: 18, color: '#fff' }} />
             </div>
-            <span style={{ fontWeight: 700, fontSize: 16, color: '#111827', letterSpacing: -0.5 }}>安全保险箱</span>
+            <span className="vault-sidebar-title" style={{ fontWeight: 700, fontSize: 16, color: '#111827', letterSpacing: -0.5 }}>安全保险箱</span>
           </div>
 
           <div style={{ flex: 1, overflow: 'auto', padding: '0 8px' }}>
@@ -1046,7 +1205,7 @@ const VaultPanel: React.FC = () => {
                   ))
                 )}
               </div>
-              <div style={{ padding: '10px 16px', borderTop: '1px solid #f0f0f0' }}>
+              <div className="vault-entry-footer" style={{ padding: '10px 16px', borderTop: '1px solid #f0f0f0' }}>
                 <Button type="primary" icon={<PlusOutlined />} block onClick={handleCreateEntry} style={{ borderRadius: 6 }}>
                   新建条目
                 </Button>
@@ -1060,7 +1219,7 @@ const VaultPanel: React.FC = () => {
               <div>
                 <div className="vault-detail-header">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <div style={{
+                    <div className="vault-detail-type-icon" style={{
                       width: 48, height: 48,
                       borderRadius: 12,
                       background: '#f9fafb',
@@ -1072,7 +1231,7 @@ const VaultPanel: React.FC = () => {
                       {ENTRY_TYPE_CONFIG[selectedEntry.entryType].icon}
                     </div>
                     <div>
-                      <h2 style={{ margin: '0 0 2px', fontSize: 20, fontWeight: 700, color: '#111827' }}>
+                      <h2 className="vault-detail-title" style={{ margin: '0 0 2px', fontSize: 20, fontWeight: 700, color: '#111827' }}>
                         {selectedEntry.name}
                       </h2>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1080,7 +1239,7 @@ const VaultPanel: React.FC = () => {
                           {ENTRY_TYPE_CONFIG[selectedEntry.entryType].label}
                         </Tag>
                         {selectedEntry.updatedAt && (
-                          <span style={{ fontSize: 12, color: '#9ca3af' }}>{new Date(selectedEntry.updatedAt).toLocaleDateString()}</span>
+                          <span className="vault-detail-updated" style={{ fontSize: 12, color: '#9ca3af' }}>{new Date(selectedEntry.updatedAt).toLocaleDateString()}</span>
                         )}
                       </div>
                     </div>
@@ -1135,13 +1294,13 @@ const VaultPanel: React.FC = () => {
                               let hostname = url;
                               try { hostname = new URL(url).hostname; } catch { }
                               return (
-                                <div key={uri.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#f9fafb', borderRadius: 6, border: '1px solid #f0f0f0' }}>
+                                <div key={uri.id} className="vault-uri-row" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#f9fafb', borderRadius: 6, border: '1px solid #f0f0f0' }}>
                                   <GlobalOutlined style={{ color: '#096dd9', fontSize: 15, flexShrink: 0 }} />
                                   <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 500, fontSize: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                    <div className="vault-uri-title" style={{ fontWeight: 500, fontSize: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                                       {uri.name || hostname}
                                     </div>
-                                    <div style={{ fontSize: 12, color: '#999', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginTop: 1 }}>
+                                    <div className="vault-uri-url" style={{ fontSize: 12, color: '#999', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginTop: 1 }}>
                                       {uri.uri}
                                     </div>
                                   </div>
@@ -1233,7 +1392,7 @@ const VaultPanel: React.FC = () => {
                   {selectedEntry.notes && (
                     <div className="vault-detail-section">
                       <div className="vault-field-label">备注</div>
-                      <div style={{ whiteSpace: 'pre-wrap', color: '#4b5563', lineHeight: 1.5, background: '#f9fafb', padding: 12, borderRadius: 6, fontSize: 13 }}>{selectedEntry.notes}</div>
+                      <div className="vault-notes-box" style={{ whiteSpace: 'pre-wrap', color: '#4b5563', lineHeight: 1.5, background: '#f9fafb', padding: 12, borderRadius: 6, fontSize: 13 }}>{selectedEntry.notes}</div>
                     </div>
                   )}
                 </div>

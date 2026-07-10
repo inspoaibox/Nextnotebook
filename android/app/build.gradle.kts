@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.mucheng.notes"
-    compileSdk = 34
+    compileSdk = 36
 
     signingConfigs {
         create("release") {
@@ -132,6 +132,7 @@ dependencies {
     implementation(libs.tink)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.credentials)
 
     // Socket.IO for LAN Transfer
     implementation(libs.socketio.client)

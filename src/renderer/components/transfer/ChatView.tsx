@@ -162,20 +162,25 @@ export const ChatView: React.FC<ChatViewProps> = ({ session, onClose }) => {
     });
 
     const unsubFileComplete = transferClient.onFileComplete(data => {
+      const isFailed = data.status === 'failed';
       setFiles(prev =>
         prev.map(f =>
           f.id === data.fileId
             ? {
                 ...f,
-                progress: 100,
-                status: 'completed',
-                completed_at: Date.now(),
+                progress: isFailed ? f.progress : 100,
+                status: isFailed ? 'failed' : 'completed',
+                completed_at: isFailed ? f.completed_at : Date.now(),
                 local_path: data.localPath || f.local_path,
               }
             : f
         )
       );
-      transferClient.completeFileTransfer(data.fileId, data.localPath || '', data.fileHash);
+      if (isFailed) {
+        transferClient.failFileTransfer(data.fileId);
+      } else {
+        transferClient.completeFileTransfer(data.fileId, data.localPath || '', data.fileHash);
+      }
     });
 
     const handleRelayRefresh = async (event: Event) => {

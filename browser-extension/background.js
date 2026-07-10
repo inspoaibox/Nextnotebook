@@ -134,6 +134,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'passkeyCreate') {
+    handlePasskeyCreate(request.request, sender).then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'passkeyGet') {
+    handlePasskeyGet(request.request, sender).then(sendResponse);
+    return true;
+  }
+
   if (request.action === 'vaultCredentialPromptDismissed') {
     const key = request.promptKey;
     if (typeof key === 'string') {
@@ -409,6 +419,59 @@ async function handleVaultCreateCredential(rawCandidate, sender) {
   } catch (e) {
     console.error('Vault credential create failed:', e);
     return { success: false, error: e.message || '保存失败' };
+  }
+}
+
+async function postPasskeyRequest(path, request) {
+  const response = await vaultFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request || {}),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok && !result.error) {
+    result.error = `HTTP ${response.status}`;
+  }
+  return result;
+}
+
+async function handlePasskeyCreate(request, sender) {
+  try {
+    const connected = await checkConnection();
+    if (!connected) {
+      return { success: false, fallbackToNative: true, error: '暮城笔记未运行' };
+    }
+
+    const payload = {
+      ...(request || {}),
+      url: request?.url || sender.tab?.url || '',
+      title: request?.title || sender.tab?.title || '',
+    };
+
+    return await postPasskeyRequest('/api/vault/passkey/register', payload);
+  } catch (e) {
+    console.error('Passkey create failed:', e);
+    return { success: false, fallbackToNative: true, error: e.message || '通行密钥创建失败' };
+  }
+}
+
+async function handlePasskeyGet(request, sender) {
+  try {
+    const connected = await checkConnection();
+    if (!connected) {
+      return { success: false, fallbackToNative: true, error: '暮城笔记未运行' };
+    }
+
+    const payload = {
+      ...(request || {}),
+      url: request?.url || sender.tab?.url || '',
+      title: request?.title || sender.tab?.title || '',
+    };
+
+    return await postPasskeyRequest('/api/vault/passkey/assert', payload);
+  } catch (e) {
+    console.error('Passkey assertion failed:', e);
+    return { success: false, fallbackToNative: true, error: e.message || '通行密钥验证失败' };
   }
 }
 

@@ -611,8 +611,8 @@ const MindMapEditor: React.FC<MindMapEditorProps> = ({ data, onSave }) => {
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      <div style={{ 
+    <div className="mindmap-editor" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <div className="diagram-editor-toolbar" style={{
         padding: '8px 12px', 
         borderBottom: '1px solid #f0f0f0',
         background: '#fafafa',
@@ -700,7 +700,8 @@ const MindMapEditor: React.FC<MindMapEditorProps> = ({ data, onSave }) => {
         </div>
       </div>
 
-      <div 
+      <div
+        className="mindmap-canvas-wrap"
         ref={containerRef} 
         style={{ 
           flex: 1, 

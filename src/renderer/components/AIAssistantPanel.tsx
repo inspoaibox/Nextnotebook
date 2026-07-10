@@ -379,9 +379,9 @@ const AIAssistantPanel: React.FC = () => {
   );
 
   return (
-    <div style={{ display: 'flex', height: '100%', background: '#f5f5f5' }}>
+    <div className="ai-assistant-panel" style={{ display: 'flex', height: '100%', background: '#f5f5f5' }}>
       {/* 左侧对话列表 */}
-      <div style={{
+      <div className="ai-assistant-sidebar" style={{
         width: 220,
         background: '#fff',
         borderRight: '1px solid #e8e8e8',
@@ -400,6 +400,7 @@ const AIAssistantPanel: React.FC = () => {
             conversations.map(conv => (
               <div
                 key={conv.id}
+                className={`ai-conversation-item ${conv.id === currentConversationId ? 'selected' : ''}`}
                 onClick={() => handleSelectConversation(conv.id)}
                 style={{
                   padding: '10px 12px',
@@ -479,7 +480,7 @@ const AIAssistantPanel: React.FC = () => {
       {/* 右侧对话区域 */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* 顶部标题栏 */}
-        <div style={{
+        <div className="ai-assistant-header" style={{
           padding: '12px 16px',
           background: '#fff',
           borderBottom: '1px solid #e8e8e8',
@@ -499,7 +500,7 @@ const AIAssistantPanel: React.FC = () => {
         </div>
 
         {/* 消息列表 */}
-        <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+        <div className="ai-assistant-messages" style={{ flex: 1, overflow: 'auto', padding: 16 }}>
           {!currentConversationId ? (
             <Empty
               description="请先创建或选择一个对话"
@@ -546,10 +547,10 @@ const AIAssistantPanel: React.FC = () => {
         </div>
 
         {/* 输入区域 */}
-        <div style={{ background: '#fff', borderTop: '1px solid #e8e8e8', padding: '12px 16px' }}>
+        <div className="ai-assistant-composer" style={{ background: '#fff', borderTop: '1px solid #e8e8e8', padding: '12px 16px' }}>
           {/* 图片预览 */}
           {selectedImages.length > 0 && (
-            <div style={{
+            <div className="ai-image-preview-strip" style={{
               display: 'flex',
               flexWrap: 'wrap',
               gap: 8,
@@ -725,12 +726,12 @@ const MessageBubble: React.FC<{ message: AIMessage }> = ({ message }) => {
   const isUser = message.role === 'user';
 
   return (
-    <div style={{
+    <div className={`ai-message-row ${isUser ? 'user' : 'assistant'}`} style={{
       display: 'flex',
       justifyContent: isUser ? 'flex-end' : 'flex-start',
       marginBottom: 12,
     }}>
-      <div style={{
+      <div className="ai-message-bubble" style={{
         maxWidth: '85%',
         padding: '10px 14px',
         borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',

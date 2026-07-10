@@ -162,7 +162,7 @@ const DiagramPanel: React.FC = () => {
   });
 
   return (
-    <Layout style={{ height: '100%' }}>
+    <Layout className="diagram-panel" style={{ height: '100%' }}>
       {/* 左侧列表 */}
       <Sider width={280} style={{ background: '#fafafa', borderRight: '1px solid #f0f0f0' }} className="diagram-sider">
         {/* 类型切换 */}
@@ -215,6 +215,7 @@ const DiagramPanel: React.FC = () => {
               dataSource={currentDiagrams}
               renderItem={diagram => (
                 <List.Item
+                  className={`diagram-list-item ${selectedDiagram?.id === diagram.id ? 'selected' : ''}`}
                   style={{
                     padding: '8px 12px',
                     cursor: 'pointer',
@@ -248,7 +249,7 @@ const DiagramPanel: React.FC = () => {
       </Sider>
 
       {/* 右侧编辑器 */}
-      <Content style={{ background: '#fff', position: 'relative' }}>
+      <Content className="diagram-content" style={{ background: '#fff', position: 'relative' }}>
         {renderEditor()}
       </Content>
 

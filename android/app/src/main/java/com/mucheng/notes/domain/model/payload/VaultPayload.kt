@@ -55,6 +55,30 @@ data class VaultCustomField(
 )
 
 /**
+ * 通行密钥（Passkey/WebAuthn）元数据 - 与桌面端 VaultPasskey 完全一致
+ */
+@Serializable
+data class VaultPasskey(
+    val id: String = "",
+    @SerialName("credential_type") val credentialType: String = "public-key",
+    @SerialName("rp_id") val rpId: String = "",
+    @SerialName("rp_name") val rpName: String = "",
+    @SerialName("credential_id") val credentialId: String = "",
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("user_name") val userName: String = "",
+    @SerialName("user_display_name") val userDisplayName: String = "",
+    @SerialName("public_key") val publicKey: String = "",
+    @SerialName("private_key") val privateKey: String = "",
+    @SerialName("sign_count") val signCount: Long = 0,
+    val algorithm: String = "ES256",
+    val transports: List<String> = emptyList(),
+    @SerialName("backup_eligible") val backupEligible: Boolean = false,
+    @SerialName("backup_state") val backupState: Boolean = false,
+    @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("last_used_at") val lastUsedAt: Long? = null
+)
+
+/**
  * 密码库条目 Payload - 与桌面端 VaultEntryPayload 完全一致
  */
 @Serializable
@@ -69,6 +93,7 @@ data class VaultEntryPayload(
     val password: String = "",
     @SerialName("totp_secrets") val totpSecrets: List<VaultTotp> = emptyList(),
     val uris: List<VaultUri> = emptyList(),
+    val passkeys: List<VaultPasskey> = emptyList(),
     // 银行卡类型字段
     @SerialName("card_holder_name") val cardHolderName: String = "",
     @SerialName("card_number") val cardNumber: String = "",

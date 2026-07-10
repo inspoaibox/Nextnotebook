@@ -1,5 +1,14 @@
 import { ItemBase, ItemType, NotePayload, FolderPayload, TagPayload } from '@shared/types';
 
+export interface NoteHistoryVersion {
+  id: number;
+  noteId: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  size: number;
+}
+
 // 获取 electronAPI（通过 preload 暴露）
 const getElectronAPI = () => {
   if (typeof window !== 'undefined' && (window as any).electronAPI) {
@@ -63,6 +72,23 @@ export const itemsApi = {
   getStats: (): Promise<{ total: number; byType: Record<string, number> }> => {
     const api = getElectronAPI();
     return api?.items?.getStats() ?? Promise.resolve({ total: 0, byType: {} });
+  },
+};
+
+export const noteHistoryApi = {
+  saveVersion: (noteId: string, title: string, content: string): Promise<boolean> => {
+    const api = getElectronAPI();
+    return api?.noteHistory?.saveVersion(noteId, title, content) ?? Promise.resolve(false);
+  },
+
+  getVersions: (noteId: string): Promise<NoteHistoryVersion[]> => {
+    const api = getElectronAPI();
+    return api?.noteHistory?.getVersions(noteId) ?? Promise.resolve([]);
+  },
+
+  getVersion: (versionId: number): Promise<NoteHistoryVersion | undefined> => {
+    const api = getElectronAPI();
+    return api?.noteHistory?.getVersion(versionId) ?? Promise.resolve(undefined);
   },
 };
 

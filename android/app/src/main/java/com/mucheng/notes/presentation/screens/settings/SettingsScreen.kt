@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -28,6 +29,7 @@ fun SettingsScreen(
     bottomPadding: PaddingValues = PaddingValues(),
     viewModel: SettingsViewModel
 ) {
+    val context = LocalContext.current
     val settingsItems = listOf(
         SettingsMenuItem(
             route = "settings/features",
@@ -46,6 +48,12 @@ fun SettingsScreen(
             icon = Icons.Default.Lock,
             title = stringResource(R.string.settings_security),
             subtitle = "应用锁、密码库锁定"
+        ),
+        SettingsMenuItem(
+            route = null,
+            icon = Icons.Default.Lock,
+            title = "启用通行密钥服务",
+            subtitle = "打开系统通行密钥/凭据提供程序设置"
         ),
         SettingsMenuItem(
             route = "settings/ai",
@@ -88,7 +96,14 @@ fun SettingsScreen(
             items(settingsItems) { item ->
                 SettingsMenuItemRow(
                     item = item,
-                    onClick = { navController.navigate(item.route) }
+                    onClick = {
+                        val route = item.route
+                        if (route != null) {
+                            navController.navigate(route)
+                        } else {
+                            openPasskeyServiceSettings(context)
+                        }
+                    }
                 )
             }
         }
@@ -96,7 +111,7 @@ fun SettingsScreen(
 }
 
 data class SettingsMenuItem(
-    val route: String,
+    val route: String?,
     val icon: ImageVector,
     val title: String,
     val subtitle: String

@@ -19,6 +19,7 @@ sqlcipher = "4.5.7"
 tink = "1.15.0"
 biometric = "1.2.0-alpha05"
 securityCrypto = "1.1.0-alpha06"
+credentials = "1.7.0-alpha02"
 kotest = "5.9.1"
 mockk = "1.13.13"
 turbine = "1.2.0"
@@ -81,6 +82,7 @@ sqlite = { group = "androidx.sqlite", name = "sqlite-ktx", version = "2.4.0" }
 tink = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tink" }
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }

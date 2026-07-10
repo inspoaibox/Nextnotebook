@@ -7,11 +7,12 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Payload 兼容性集成测�?
+ * Payload 兼容性集成测�?
  * 
- * 验证所�?Payload 类型�?JSON 序列化格式与桌面端完全一�?
+ * 验证所�?Payload 类型�?JSON 序列化格式与桌面端完全一�?
  */
 class PayloadCompatibilityTest : StringSpec({
     
@@ -21,7 +22,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 NotePayload 字段�?
+     * 测试 NotePayload 字段�?
      */
     "NotePayload field names are snake_case" {
         val payload = NotePayload(
@@ -48,7 +49,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 TodoPayload 字段名和枚举�?
+     * 测试 TodoPayload 字段名和枚举�?
      */
     "TodoPayload field names and enum values are correct" {
         val payload = TodoPayload(
@@ -66,18 +67,18 @@ class PayloadCompatibilityTest : StringSpec({
         
         val jsonStr = json.encodeToString(payload)
         
-        // 字段�?
+        // 字段�?
         jsonStr shouldContain "\"completed_at\""
         jsonStr shouldContain "\"due_date\""
         jsonStr shouldContain "\"reminder_time\""
         jsonStr shouldContain "\"reminder_enabled\""
         
-        // 枚举�?
+        // 枚举�?
         jsonStr shouldContain "\"urgent-important\""
     }
     
     /**
-     * 测试 TodoQuadrant 所有枚举�?
+     * 测试 TodoQuadrant 所有枚举�?
      */
     "TodoQuadrant enum values match desktop" {
         val quadrants = mapOf(
@@ -107,7 +108,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 VaultEntryPayload 字段�?
+     * 测试 VaultEntryPayload 字段�?
      */
     "VaultEntryPayload field names are snake_case" {
         val payload = VaultEntryPayload(
@@ -156,7 +157,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 VaultEntryType 枚举�?
+     * 测试 VaultEntryType 枚举�?
      */
     "VaultEntryType enum values match desktop" {
         val types = mapOf(
@@ -198,7 +199,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 BookmarkPayload 字段�?
+     * 测试 BookmarkPayload 字段�?
      */
     "BookmarkPayload field names are snake_case" {
         val payload = BookmarkPayload(
@@ -217,7 +218,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 AIConversationPayload 字段�?
+     * 测试 AIConversationPayload 字段�?
      */
     "AIConversationPayload field names are snake_case" {
         val payload = AIConversationPayload(
@@ -241,7 +242,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 AIMessagePayload 字段�?
+     * 测试 AIMessagePayload 字段�?
      */
     "AIMessagePayload field names are snake_case" {
         val payload = AIMessagePayload(
@@ -261,7 +262,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 AIConfigPayload 字段�?
+     * 测试 AIConfigPayload 字段�?
      */
     "AIConfigPayload field names are snake_case" {
         val payload = AIConfigPayload(
@@ -278,7 +279,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 AIChannel 字段�?
+     * 测试 AIChannel 字段�?
      */
     "AIChannel field names are snake_case" {
         val channel = AIChannel(
@@ -298,7 +299,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 ResourcePayload 字段名（不含 local_path�?
+     * 测试 ResourcePayload 字段名（不含 local_path�?
      */
     "ResourcePayload field names are snake_case and no local_path" {
         val payload = ResourcePayload(
@@ -321,7 +322,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 DiagramPayload 字段名和枚举�?
+     * 测试 DiagramPayload 字段名和枚举�?
      */
     "DiagramPayload field names and enum values are correct" {
         val payload = DiagramPayload(
@@ -340,7 +341,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 DiagramType 所有枚举�?
+     * 测试 DiagramType 所有枚举�?
      */
     "DiagramType enum values match desktop" {
         val types = mapOf(
@@ -364,7 +365,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 FolderPayload 字段�?
+     * 测试 FolderPayload 字段�?
      */
     "FolderPayload field names are snake_case" {
         val payload = FolderPayload(
@@ -381,7 +382,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 VaultUri 字段�?
+     * 测试 VaultUri 字段�?
      */
     "VaultUri field names are snake_case" {
         val uri = VaultUri(
@@ -396,10 +397,8 @@ class PayloadCompatibilityTest : StringSpec({
         jsonStr shouldContain "\"match_type\""
         jsonStr shouldNotContain "\"matchType\""
     }
-})
-
     /**
-     * 测试 ExcelNotePayload 字段�?
+     * 测试 ExcelNotePayload 字段�?
      */
     "ExcelNotePayload field names are snake_case" {
         val payload = ExcelNotePayload(
@@ -430,15 +429,15 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 ExcelSheet 字段�?
+     * 测试 ExcelSheet 字段�?
      */
     "ExcelSheet field names are snake_case" {
         val sheet = ExcelSheet(
             id = "sheet-1",
             name = "Sheet1",
             rows = emptyList(),
-            columnWidths = listOf(100.0, 100.0),
-            rowHeights = listOf(25.0, 25.0),
+            columnWidths = listOf(JsonPrimitive(100.0), JsonPrimitive(100.0)),
+            rowHeights = listOf(JsonPrimitive(25.0), JsonPrimitive(25.0)),
             frozenRows = 1,
             frozenColumns = 1
         )
@@ -457,7 +456,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 ExcelCell 字段�?
+     * 测试 ExcelCell 字段�?
      */
     "ExcelCell field names are snake_case" {
         val cell = ExcelCell(
@@ -474,7 +473,7 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
     /**
-     * 测试 ExcelRow 字段�?
+     * 测试 ExcelRow 字段�?
      */
     "ExcelRow field names are snake_case" {
         val row = ExcelRow(
@@ -489,3 +488,4 @@ class PayloadCompatibilityTest : StringSpec({
     }
     
 
+})

@@ -51,6 +51,20 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".service.passkey.MuchengPasskeyCredentialActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@style/Theme.MuchengNotes" />
+
+        <activity
+            android:name=".service.passkey.MuchengPasskeyCreateActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@style/Theme.MuchengNotes" />
+
         <!-- 自动填充服务 -->
         <service
             android:name=".service.MuchengAutofillService"
@@ -62,6 +76,19 @@
             <meta-data
                 android:name="android.autofill"
                 android:resource="@xml/autofill_service" />
+        </service>
+
+        <!-- 通行密钥 / Credential Provider 服务（Android 14+） -->
+        <service
+            android:name=".service.passkey.MuchengCredentialProviderService"
+            android:exported="true"
+            android:permission="android.permission.BIND_CREDENTIAL_PROVIDER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.credentials.CredentialProviderService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.credentials.provider"
+                android:resource="@xml/credential_provider" />
         </service>
 
         <!-- 待办提醒广播接收器 -->

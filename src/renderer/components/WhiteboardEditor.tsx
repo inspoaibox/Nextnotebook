@@ -566,9 +566,9 @@ const WhiteboardEditor: React.FC<WhiteboardEditorProps> = ({ data, onSave }) => 
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div className="whiteboard-editor" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 工具栏 */}
-      <div style={{ 
+      <div className="diagram-editor-toolbar" style={{
         padding: '8px 12px', 
         borderBottom: '1px solid #f0f0f0',
         background: '#fafafa',
@@ -665,7 +665,7 @@ const WhiteboardEditor: React.FC<WhiteboardEditorProps> = ({ data, onSave }) => 
       {/* 主内容区 */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* 左侧图形库面板 */}
-        <div style={{ 
+        <div className="whiteboard-shape-sider" style={{
           width: 80, 
           background: '#fafafa', 
           borderRight: '1px solid #f0f0f0',
@@ -678,6 +678,7 @@ const WhiteboardEditor: React.FC<WhiteboardEditorProps> = ({ data, onSave }) => 
           {SHAPE_LIBRARY.map(shape => (
             <div
               key={shape.type}
+              className="whiteboard-shape-item"
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData('shapeType', shape.type);
@@ -710,7 +711,8 @@ const WhiteboardEditor: React.FC<WhiteboardEditorProps> = ({ data, onSave }) => 
         </div>
 
         {/* 画布容器 */}
-        <div 
+        <div
+          className="whiteboard-canvas-wrap"
           ref={containerRef}
           style={{ 
             flex: 1, 

@@ -13,6 +13,7 @@ import io.socket.client.IO
 import io.socket.client.Socket
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -96,7 +97,15 @@ class TransferClient(
     private var currentLanTransport: LanTransport? = null
     
     // 设备信息
-    private val deviceId: String by lazy { getOrCreateDeviceId() }
+    @Volatile
+    private var cachedDeviceId: String? = null
+    private val deviceId: String
+        get() {
+            cachedDeviceId?.let { return it }
+            return synchronized(this) {
+                cachedDeviceId ?: getOrCreateDeviceId().also { cachedDeviceId = it }
+            }
+        }
     private val deviceName: String by lazy { buildDeviceName() }
     
     // 状态流
@@ -116,35 +125,16 @@ class TransferClient(
     // 一旦 emit 挂起就会卡住整条读取循环，后续所有报文都会被阻塞，
     // 表现为「配对成功后双方互相发消息/文件都无响应」。
     // 这里增加缓冲并采用 DROP_OLDEST，确保读循环永远不会被消费端拖住。
+    // 文件传输事件不能丢弃，也不能让 complete 抢在 chunk 前面处理，因此文件事件
+    // 使用单独的无限 Channel，按协议到达顺序交给 ViewModel。
     private val _messageReceived = MutableSharedFlow<MessageReceivedEvent>(
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val messageReceived: SharedFlow<MessageReceivedEvent> = _messageReceived.asSharedFlow()
 
-    private val _fileIncoming = MutableSharedFlow<FileIncomingEvent>(
-        extraBufferCapacity = 16,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val fileIncoming: SharedFlow<FileIncomingEvent> = _fileIncoming.asSharedFlow()
-
-    private val _fileChunk = MutableSharedFlow<FileChunkEvent>(
-        extraBufferCapacity = 128,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val fileChunk: SharedFlow<FileChunkEvent> = _fileChunk.asSharedFlow()
-
-    private val _fileComplete = MutableSharedFlow<FileCompleteEvent>(
-        extraBufferCapacity = 16,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val fileComplete: SharedFlow<FileCompleteEvent> = _fileComplete.asSharedFlow()
-
-    private val _fileCancel = MutableSharedFlow<FileCancelEvent>(
-        extraBufferCapacity = 16,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val fileCancel: SharedFlow<FileCancelEvent> = _fileCancel.asSharedFlow()
+    private val fileEventChannel = Channel<FileTransferEvent>(Channel.UNLIMITED)
+    val fileEvents: Flow<FileTransferEvent> = fileEventChannel.receiveAsFlow()
 
     private val _messageRead = MutableSharedFlow<MessageReadEvent>(
         extraBufferCapacity = 16,
@@ -197,6 +187,7 @@ class TransferClient(
                     reconnectionAttempts = TransferConstants.MAX_RETRY
                     reconnectionDelay = TransferConstants.RETRY_INTERVAL
                     timeout = TransferConstants.SESSION_TIMEOUT
+                    transports = arrayOf("websocket")
                     path = if (mode == ConnectionMode.RELAY) endpoint?.path ?: "/transfer" else "/socket.io"
                     // 中继模式需要密钥认证
                     if (mode == ConnectionMode.RELAY && !relayKey.isNullOrEmpty()) {
@@ -309,6 +300,10 @@ class TransferClient(
             return
         }
 
+        if (!prepareAndroidLanIdentity(qrData)) {
+            return
+        }
+
         _connectionState.value = ConnectionState.Connecting
 
         scope.launch {
@@ -328,10 +323,8 @@ class TransferClient(
                 lanPeers[peer.deviceId] = peer
                 currentLanTransport = LanTransport.ANDROID_TCP
                 updateLanPeerList()
-                _connectionState.value = ConnectionState.Connected(ConnectionMode.LAN)
-                refreshHeartbeatTimer()
 
-                sendLanPacket(
+                val registered = sendLanPacket(
                     peer = peer,
                     event = SocketEvents.DEVICE_REGISTER,
                     payload = JSONObject().apply {
@@ -340,6 +333,12 @@ class TransferClient(
                         put("deviceType", DeviceType.ANDROID.value)
                     }
                 )
+                if (!registered) {
+                    _connectionState.value = ConnectionState.Error(
+                        TransferError(TransferErrorCode.CONNECTION_CLOSED)
+                    )
+                    return@launch
+                }
 
                 launch { listenToLanPeer(peer) }
                 Log.d(TAG, "Connected to Android LAN server ${qrData.serverIp}:${qrData.serverPort}")
@@ -463,6 +462,7 @@ class TransferClient(
             forceNew = true
             reconnection = false // 手动处理重连
             timeout = TransferConstants.RETRY_INTERVAL
+            transports = arrayOf("websocket")
             path = if (mode == ConnectionMode.RELAY) endpoint?.path ?: "/transfer" else "/socket.io"
             // 中继模式需要密钥认证
             if (mode == ConnectionMode.RELAY && !relayKey.isNullOrEmpty()) {
@@ -867,56 +867,48 @@ class TransferClient(
         on(SocketEvents.FILE_INCOMING) { args ->
             val json = args.firstOrNull() as? JSONObject ?: return@on
             val fileInfoJson = json.optJSONObject("fileInfo") ?: return@on
-            scope.launch {
-                _fileIncoming.emit(FileIncomingEvent(
-                    senderId = json.optString("senderId"),
-                    sessionId = json.optString("sessionId"),
-                    fileInfo = FileTransferInfo(
-                        id = fileInfoJson.optString("id"),
-                        filename = fileInfoJson.optString("filename"),
-                        fileSize = fileInfoJson.optLong("fileSize"),
-                        mimeType = fileInfoJson.optString("mimeType"),
-                        totalChunks = fileInfoJson.optInt("totalChunks")
-                    )
-                ))
-            }
+            emitFileEvent(FileTransferEvent.Incoming(FileIncomingEvent(
+                senderId = json.optString("senderId"),
+                sessionId = json.optString("sessionId"),
+                fileInfo = FileTransferInfo(
+                    id = fileInfoJson.optString("id"),
+                    filename = fileInfoJson.optString("filename"),
+                    fileSize = fileInfoJson.optLong("fileSize"),
+                    mimeType = fileInfoJson.optString("mimeType"),
+                    totalChunks = fileInfoJson.optInt("totalChunks")
+                )
+            )))
         }
 
         on(SocketEvents.FILE_CHUNK) { args ->
             val json = args.firstOrNull() as? JSONObject ?: return@on
-            scope.launch {
-                _fileChunk.emit(FileChunkEvent(
-                    senderId = json.optString("senderId"),
-                    fileId = json.optString("fileId"),
-                    chunkIndex = json.optInt("chunkIndex"),
-                    chunk = android.util.Base64.decode(json.optString("chunk"), android.util.Base64.NO_WRAP),
-                    totalChunks = json.optInt("totalChunks")
-                ))
-            }
+            emitFileEvent(FileTransferEvent.Chunk(FileChunkEvent(
+                senderId = json.optString("senderId"),
+                fileId = json.optString("fileId"),
+                chunkIndex = json.optInt("chunkIndex"),
+                chunk = android.util.Base64.decode(json.optString("chunk"), android.util.Base64.NO_WRAP),
+                totalChunks = json.optInt("totalChunks")
+            )))
         }
 
         on(SocketEvents.FILE_COMPLETE) { args ->
             val json = args.firstOrNull() as? JSONObject ?: return@on
-            scope.launch {
-                _fileComplete.emit(FileCompleteEvent(
-                    senderId = json.optString("senderId"),
-                    fileId = json.optString("fileId"),
-                    fileHash = json.optString("fileHash").takeIf { it.isNotEmpty() }
-                ))
-            }
+            emitFileEvent(FileTransferEvent.Complete(FileCompleteEvent(
+                senderId = json.optString("senderId"),
+                fileId = json.optString("fileId"),
+                fileHash = json.optString("fileHash").takeIf { it.isNotEmpty() }
+            )))
         }
 
         on(SocketEvents.FILE_CANCEL) { args ->
             val json = args.firstOrNull() as? JSONObject ?: return@on
-            scope.launch {
-                _fileCancel.emit(
-                    FileCancelEvent(
-                        senderId = json.optString("senderId"),
-                        sessionId = json.optString("sessionId"),
-                        fileId = json.optString("fileId")
-                    )
+            emitFileEvent(FileTransferEvent.Cancel(
+                FileCancelEvent(
+                    senderId = json.optString("senderId"),
+                    sessionId = json.optString("sessionId"),
+                    fileId = json.optString("fileId")
                 )
-            }
+            ))
         }
 
         on(SocketEvents.ERROR) { args ->
@@ -1079,6 +1071,9 @@ class TransferClient(
                 )
             }
             SocketEvents.PAIR_SUCCESS -> {
+                currentLanTransport = LanTransport.ANDROID_TCP
+                _connectionState.value = ConnectionState.Connected(ConnectionMode.LAN)
+                refreshHeartbeatTimer()
                 _pairSuccess.emit(
                     PairSuccessEvent(
                         sessionId = payload.optString("sessionId"),
@@ -1226,26 +1221,26 @@ class TransferClient(
             return
         }
         Log.d(TAG, "Emit fileIncoming: sender=${payload.optString("senderId", peer.deviceId)}, file=${fileInfoJson.optString("filename")}")
-        _fileIncoming.emit(
-            FileIncomingEvent(
+        emitFileEvent(
+            FileTransferEvent.Incoming(FileIncomingEvent(
                 senderId = payload.optString("senderId", peer.deviceId),
                 sessionId = payload.optString("sessionId"),
                 fileInfo = parseFileInfo(fileInfoJson)
-            )
+            ))
         )
     }
 
     private suspend fun handleLanFileChunk(peer: LanPeer, payload: JSONObject) {
         val targetDeviceId = payload.optString("targetDeviceId")
         if (targetDeviceId == deviceId || targetDeviceId.isBlank()) {
-            _fileChunk.emit(
-                FileChunkEvent(
+            emitFileEvent(
+                FileTransferEvent.Chunk(FileChunkEvent(
                     senderId = payload.optString("senderId", peer.deviceId),
                     fileId = payload.optString("fileId"),
                     chunkIndex = payload.optInt("chunkIndex"),
                     chunk = android.util.Base64.decode(payload.optString("chunk"), android.util.Base64.NO_WRAP),
                     totalChunks = payload.optInt("totalChunks")
-                )
+                ))
             )
             return
         }
@@ -1269,12 +1264,12 @@ class TransferClient(
     private suspend fun handleLanFileComplete(peer: LanPeer, payload: JSONObject) {
         val targetDeviceId = payload.optString("targetDeviceId")
         if (targetDeviceId == deviceId || targetDeviceId.isBlank()) {
-            _fileComplete.emit(
-                FileCompleteEvent(
+            emitFileEvent(
+                FileTransferEvent.Complete(FileCompleteEvent(
                     senderId = payload.optString("senderId", peer.deviceId),
                     fileId = payload.optString("fileId"),
                     fileHash = payload.optString("fileHash").takeIf { it.isNotEmpty() }
-                )
+                ))
             )
             return
         }
@@ -1298,12 +1293,12 @@ class TransferClient(
     private suspend fun handleLanFileCancel(peer: LanPeer, payload: JSONObject) {
         val targetDeviceId = payload.optString("targetDeviceId")
         if (targetDeviceId == deviceId || targetDeviceId.isBlank()) {
-            _fileCancel.emit(
-                FileCancelEvent(
+            emitFileEvent(
+                FileTransferEvent.Cancel(FileCancelEvent(
                     senderId = payload.optString("senderId", peer.deviceId),
                     sessionId = payload.optString("sessionId"),
                     fileId = payload.optString("fileId")
-                )
+                ))
             )
             return
         }
@@ -1343,6 +1338,13 @@ class TransferClient(
             return false
         }
         return sendLanPacket(peer, event, payload)
+    }
+
+    private fun emitFileEvent(event: FileTransferEvent) {
+        val result = fileEventChannel.trySend(event)
+        if (result.isFailure) {
+            Log.e(TAG, "Failed to enqueue file transfer event: ${event::class.simpleName}")
+        }
     }
 
     private fun sendLanPacket(peer: LanPeer, event: String, payload: JSONObject): Boolean {
@@ -1409,7 +1411,9 @@ class TransferClient(
         if (lanPeers.isEmpty() && currentLanTransport == LanTransport.ANDROID_TCP) {
             currentLanTransport = null
             if (socket?.connected() != true) {
-                _connectionState.value = ConnectionState.Disconnected
+                if (_connectionState.value !is ConnectionState.Error) {
+                    _connectionState.value = ConnectionState.Disconnected
+                }
             }
         }
         refreshHeartbeatTimer()
@@ -1593,6 +1597,43 @@ class TransferClient(
         return id
     }
 
+    private fun prepareAndroidLanIdentity(qrData: PairingQRData): Boolean {
+        if (qrData.deviceId != deviceId) {
+            return true
+        }
+
+        val localIp = findLocalIPv4Address()
+        val localServer = _lanServerStatus.value
+        val isLocalServerQr = localServer.running &&
+            localServer.ip == qrData.serverIp &&
+            localServer.port == qrData.serverPort
+        if (localIp == qrData.serverIp || isLocalServerQr) {
+            _connectionState.value = ConnectionState.Error(
+                TransferError(
+                    code = TransferErrorCode.DEVICE_ID_CONFLICT,
+                    message = "不能连接本机二维码",
+                    details = "Scanned this device's Android LAN QR code"
+                )
+            )
+            return false
+        }
+
+        regenerateDeviceId(excluding = qrData.deviceId)
+        Log.w(TAG, "Regenerated duplicate Android LAN device id before connecting to ${qrData.deviceName}")
+        return true
+    }
+
+    private fun regenerateDeviceId(excluding: String? = null): String {
+        val prefs = context.getSharedPreferences("transfer", Context.MODE_PRIVATE)
+        var newId: String
+        do {
+            newId = UUID.randomUUID().toString()
+        } while (newId == excluding)
+        prefs.edit().putString("device_id", newId).apply()
+        cachedDeviceId = newId
+        return newId
+    }
+
     private fun buildDeviceName(): String {
         return Build.MODEL ?: "Android Device"
     }
@@ -1705,6 +1746,13 @@ data class FileCancelEvent(
     val sessionId: String,
     val fileId: String
 )
+
+sealed class FileTransferEvent {
+    data class Incoming(val event: FileIncomingEvent) : FileTransferEvent()
+    data class Chunk(val event: FileChunkEvent) : FileTransferEvent()
+    data class Complete(val event: FileCompleteEvent) : FileTransferEvent()
+    data class Cancel(val event: FileCancelEvent) : FileTransferEvent()
+}
 
 data class PairRequestEvent(
     val requesterId: String,

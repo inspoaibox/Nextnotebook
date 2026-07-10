@@ -62,6 +62,7 @@ import com.mucheng.notes.data.transfer.*
 import com.mucheng.notes.presentation.components.QRScannerDialog
 import com.mucheng.notes.presentation.viewmodel.TransferUiState
 import com.mucheng.notes.presentation.viewmodel.TransferViewModel
+import com.mucheng.notes.security.AppLockExternalActivityGuard
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.launch
@@ -975,7 +976,13 @@ private fun ChatView(
                     .padding(8.dp)
             ) {
                 // 附件按钮
-                IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
+                IconButton(
+                    onClick = {
+                        AppLockExternalActivityGuard.launchFromUnlockedApp {
+                            filePickerLauncher.launch(arrayOf("*/*"))
+                        }
+                    }
+                ) {
                     Icon(Icons.Default.AttachFile, contentDescription = "发送文件")
                 }
                 

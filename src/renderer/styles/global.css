@@ -1055,6 +1055,214 @@ body.dark-mode .ant-message-notice-content span {
 }
 
 
+/* ========== 组件级深色模式补强 ========== */
+
+/* AI 助手面板 */
+body.dark-mode .ai-assistant-panel {
+  background: #141414 !important;
+}
+
+body.dark-mode .ai-assistant-sidebar,
+body.dark-mode .ai-assistant-header,
+body.dark-mode .ai-assistant-composer {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+body.dark-mode .ai-assistant-messages {
+  background: #141414 !important;
+}
+
+body.dark-mode .ai-conversation-item {
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+
+body.dark-mode .ai-conversation-item:hover {
+  background: #262626 !important;
+}
+
+body.dark-mode .ai-conversation-item.selected {
+  background: #111d2c !important;
+  color: #69b1ff !important;
+}
+
+body.dark-mode .ai-message-row.assistant .ai-message-bubble {
+  background: #1f1f1f !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35) !important;
+}
+
+body.dark-mode .ai-image-preview-strip {
+  background: #141414 !important;
+}
+
+body.dark-mode .ai-image-preview-strip .anticon-close-circle {
+  background: #1f1f1f !important;
+}
+
+/* 图表/白板/流程图/思维导图 */
+body.dark-mode .diagram-panel,
+body.dark-mode .diagram-content,
+body.dark-mode .whiteboard-editor,
+body.dark-mode .flowchart-editor,
+body.dark-mode .mindmap-editor {
+  background: #141414 !important;
+}
+
+body.dark-mode .diagram-sider,
+body.dark-mode .diagram-editor-toolbar,
+body.dark-mode .whiteboard-shape-sider {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+body.dark-mode .diagram-list-item {
+  color: rgba(255, 255, 255, 0.82) !important;
+  border-color: transparent !important;
+}
+
+body.dark-mode .diagram-list-item:hover {
+  background: #262626 !important;
+}
+
+body.dark-mode .diagram-list-item.selected {
+  background: #111d2c !important;
+  border-left-color: #1677ff !important;
+}
+
+body.dark-mode .whiteboard-shape-item {
+  background: #141414 !important;
+  border-color: #434343 !important;
+}
+
+body.dark-mode .whiteboard-shape-item:hover {
+  border-color: #1677ff !important;
+}
+
+body.dark-mode .whiteboard-canvas-wrap {
+  background: #262626 !important;
+}
+
+body.dark-mode .flowchart-canvas-wrap,
+body.dark-mode .flowchart-canvas-wrap .react-flow,
+body.dark-mode .mindmap-canvas-wrap {
+  background: #141414 !important;
+}
+
+body.dark-mode .mindmap-editor div[style*="rgba(255,255,255,0.95)"] {
+  background: rgba(31, 31, 31, 0.96) !important;
+}
+
+/* Excel 编辑器 */
+body.dark-mode .excel-editor-panel {
+  background: #141414 !important;
+}
+
+body.dark-mode .excel-titlebar,
+body.dark-mode .excel-toolbar,
+body.dark-mode .formula-bar,
+body.dark-mode .sheet-tabs {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+body.dark-mode .excel-note-card {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+body.dark-mode .excel-note-card:hover {
+  background: #262626 !important;
+  border-color: #1677ff !important;
+}
+
+body.dark-mode .formula-cell-address {
+  background: #141414 !important;
+  border-color: #434343 !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body.dark-mode .sheet-tab {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+body.dark-mode .sheet-tab.active {
+  background: #141414 !important;
+  border-color: #434343 !important;
+  border-bottom-color: #141414 !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+body.dark-mode .excel-context-menu,
+body.dark-mode .excel-filter-dropdown {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* 工具箱 */
+body.dark-mode .toolbox-panel,
+body.dark-mode .toolbox-content {
+  background: #141414 !important;
+}
+
+body.dark-mode .toolbox-options-bar,
+body.dark-mode .emoji-grid,
+body.dark-mode .emoji-added-item {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+body.dark-mode .toolbox-panel textarea[readonly],
+body.dark-mode .toolbox-panel .ant-input[readonly] {
+  background: #262626 !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 锁屏 */
+body.dark-mode .app-lock-card {
+  background: #1f1f1f !important;
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+body.dark-mode .app-lock-icon {
+  background: #262626 !important;
+}
+
+body.dark-mode .vault-lock-screen {
+  background: #141414 !important;
+}
+
+body.dark-mode .vault-lock-screen h2 {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+body.dark-mode .vault-lock-screen p {
+  color: rgba(255, 255, 255, 0.62) !important;
+}
+
+/* PDF 工具：只调整外围，不改变 PDF 页面/canvas 自身白底 */
+body.dark-mode .pdf-preview,
+body.dark-mode .pdf-compare-tool {
+  background: #141414 !important;
+}
+
+body.dark-mode .pdf-preview-toolbar {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+body.dark-mode .pdf-preview-stage {
+  background: #1f1f1f !important;
+}
+
+body.dark-mode .pdf-compare-pane,
+body.dark-mode .pdf-compare-pane-header {
+  background: #1f1f1f !important;
+  border-color: #303030 !important;
+}
+
+
 /* ========== TinyMCE 编辑器样式 ========== */
 
 /* 移除 TinyMCE 编辑器的蓝色聚焦边框 */

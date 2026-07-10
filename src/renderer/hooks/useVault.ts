@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ItemBase, VaultEntryPayload, VaultFolderPayload, VaultEntryType, VaultCustomField, VaultUri, VaultTotp } from '@shared/types';
+import { ItemBase, VaultEntryPayload, VaultFolderPayload, VaultEntryType, VaultCustomField, VaultUri, VaultTotp, VaultPasskey } from '@shared/types';
 import { itemsApi } from '../services/itemsApi';
 
 export interface VaultEntry {
@@ -13,6 +13,7 @@ export interface VaultEntry {
   password: string;
   totpSecrets: VaultTotp[];
   uris: VaultUri[];
+  passkeys: VaultPasskey[];
   cardHolderName: string;
   cardNumber: string;
   cardBrand: string;
@@ -54,6 +55,7 @@ function itemToEntry(item: ItemBase): VaultEntry {
     password: p.password || '',
     totpSecrets: p.totp_secrets || [],
     uris: p.uris || [],
+    passkeys: p.passkeys || [],
     cardHolderName: p.card_holder_name || '',
     cardNumber: p.card_number || '',
     cardBrand: p.card_brand || '',
@@ -209,6 +211,7 @@ export function useVaultEntries(folderId?: string | null) {
       password: data.password || '',
       totp_secrets: data.totp_secrets || [],
       uris: data.uris || [],
+      passkeys: data.passkeys || [],
       card_holder_name: data.card_holder_name || '',
       card_number: data.card_number || '',
       card_brand: data.card_brand || '',

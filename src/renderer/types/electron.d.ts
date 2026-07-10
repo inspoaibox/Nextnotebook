@@ -14,6 +14,21 @@ export interface ItemsAPI {
   getStats: () => Promise<{ total: number; byType: Record<string, number> }>;
 }
 
+export interface NoteHistoryVersion {
+  id: number;
+  noteId: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  size: number;
+}
+
+export interface NoteHistoryAPI {
+  saveVersion: (noteId: string, title: string, content: string) => Promise<boolean>;
+  getVersions: (noteId: string) => Promise<NoteHistoryVersion[]>;
+  getVersion: (versionId: number) => Promise<NoteHistoryVersion | undefined>;
+}
+
 export interface ImageMetadata {
   width: number;
   height: number;
@@ -397,6 +412,7 @@ export interface ElectronAPI {
   onWindowCloseRequest: (callback: () => void) => void;
   onMenuAction: (callback: (action: string) => void) => void;
   items: ItemsAPI;
+  noteHistory: NoteHistoryAPI;
   sync: SyncAPI;
   fs: {
     readFile: (path: string) => Promise<Buffer>;

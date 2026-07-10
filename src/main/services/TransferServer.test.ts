@@ -6,6 +6,9 @@ import { TransferServer, ServerStatus, ConnectedDevice } from './TransferServer'
 import { io as SocketIOClient, Socket as ClientSocket } from 'socket.io-client';
 import { SOCKET_EVENTS, TRANSFER_CONSTANTS } from '@shared/transfer/constants';
 import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 describe('TransferServer', () => {
   let server: TransferServer;
@@ -318,6 +321,102 @@ describe('TransferServer', () => {
 
       client1.disconnect();
       client2.disconnect();
+    });
+  });
+
+  // ============================================
+  // 文件转发测试
+  // ============================================
+
+  describe('File Forwarding', () => {
+    it('should include sessionId when desktop sends a file directly to a device', async () => {
+      const status = await server.start(45121);
+      const receiver = SocketIOClient(`http://localhost:${status.port}`);
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-server-test-'));
+      const tempFile = path.join(tempDir, 'sample.txt');
+      fs.writeFileSync(tempFile, 'hello file');
+
+      try {
+        await new Promise<void>((resolve) => {
+          receiver.on('connect', () => {
+            receiver.emit(SOCKET_EVENTS.DEVICE_REGISTER, {
+              deviceId: 'receiver',
+              deviceName: 'Receiver',
+              deviceType: 'android',
+            });
+            setTimeout(resolve, 100);
+          });
+        });
+
+        const incomingPromise = new Promise<any>((resolve) => {
+          receiver.on(SOCKET_EVENTS.FILE_INCOMING, resolve);
+        });
+
+        await server.sendFile('receiver', 'test-session', tempFile);
+
+        const incoming = await incomingPromise;
+        expect(incoming.senderId).toBe(testDeviceId);
+        expect(incoming.sessionId).toBe('test-session');
+        expect(incoming.fileInfo.filename).toBe('sample.txt');
+      } finally {
+        receiver.disconnect();
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should preserve sessionId when forwarding file start between devices', async () => {
+      const status = await server.start(45122);
+      const sender = SocketIOClient(`http://localhost:${status.port}`);
+      const receiver = SocketIOClient(`http://localhost:${status.port}`);
+
+      try {
+        await Promise.all([
+          new Promise<void>((resolve) => {
+            sender.on('connect', () => {
+              sender.emit(SOCKET_EVENTS.DEVICE_REGISTER, {
+                deviceId: 'sender',
+                deviceName: 'Sender',
+                deviceType: 'android',
+              });
+              setTimeout(resolve, 100);
+            });
+          }),
+          new Promise<void>((resolve) => {
+            receiver.on('connect', () => {
+              receiver.emit(SOCKET_EVENTS.DEVICE_REGISTER, {
+                deviceId: 'receiver',
+                deviceName: 'Receiver',
+                deviceType: 'android',
+              });
+              setTimeout(resolve, 100);
+            });
+          }),
+        ]);
+
+        const incomingPromise = new Promise<any>((resolve) => {
+          receiver.on(SOCKET_EVENTS.FILE_INCOMING, resolve);
+        });
+
+        sender.emit(SOCKET_EVENTS.FILE_START, {
+          targetDeviceId: 'receiver',
+          sessionId: 'forward-session',
+          fileInfo: {
+            id: 'file-1',
+            filename: 'document.pdf',
+            fileSize: 10,
+            mimeType: 'application/pdf',
+            totalChunks: 1,
+          },
+        });
+
+        const incoming = await incomingPromise;
+        expect(incoming.senderId).toBe('sender');
+        expect(incoming.sessionId).toBe('forward-session');
+        expect(incoming.fileInfo.filename).toBe('document.pdf');
+      } finally {
+        sender.disconnect();
+        receiver.disconnect();
+      }
     });
   });
 

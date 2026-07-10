@@ -658,6 +658,7 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
           {excelNotes.map(note => (
             <div
               key={note.id}
+              className="excel-note-card"
               onClick={() => selectExcelNote(note.id)}
               style={{
                 padding: '12px 16px',
@@ -752,7 +753,7 @@ export const ExcelEditorPanel: React.FC<ExcelEditorPanelProps> = ({ noteId, onBa
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {/* 标题栏 */}
-          <div style={{ 
+          <div className="excel-titlebar" style={{
             display: 'flex', 
             alignItems: 'center', 
             padding: '8px 12px',

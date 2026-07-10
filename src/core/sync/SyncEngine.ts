@@ -1,6 +1,12 @@
-import { ItemBase, ItemType, SyncModules, SYNC_MODULE_TYPES, ResourcePayload } from '@shared/types';
+import { ItemBase, ItemType, SyncModules, SYNC_MODULE_TYPES, ResourcePayload, VaultEntryPayload } from '@shared/types';
 import { StorageAdapter, RemoteChange, CHANGE_LOG_RETENTION } from './StorageAdapter';
 import { ItemsManager } from '../database/ItemsManager';
+import {
+  protectVaultItemPasskeysForRemote,
+  restoreVaultItemPasskeysFromRemote,
+  vaultItemHasPasskeyPrivateKey,
+  vaultItemHasUnprotectedPasskeyPrivateKey,
+} from '../vault/VaultPasskeyFieldCrypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -44,6 +50,7 @@ export interface SyncOptions {
   onCloudItemDeleted?: (itemId: string) => void;       // 远端删除，需删除本地文件
   onCloudFileConflict?: (itemId: string, conflictPath: string) => void;  // 冲突副本已生成
   onCloudItemsChanged?: () => void;                    // cloud 元数据已变化，需刷新 UI
+  passkeyFieldSecret?: string | null;                  // passkey 私钥字段级同步加密密钥
 }
 
 export class SyncEngine {
@@ -59,6 +66,7 @@ export class SyncEngine {
   private onCloudItemDeleted: ((itemId: string) => void) | null = null;
   private onCloudFileConflict: ((itemId: string, conflictPath: string) => void) | null = null;
   private onCloudItemsChanged: (() => void) | null = null;
+  private passkeyFieldSecret: string | null = null;
 
   constructor(
     adapter: StorageAdapter,
@@ -88,6 +96,7 @@ export class SyncEngine {
     this.onCloudItemDeleted = options.onCloudItemDeleted || null;
     this.onCloudFileConflict = options.onCloudFileConflict || null;
     this.onCloudItemsChanged = options.onCloudItemsChanged || null;
+    this.passkeyFieldSecret = options.passkeyFieldSecret || null;
   }
 
   // 设置资源目录
@@ -180,6 +189,14 @@ export class SyncEngine {
     return this.allowedTypes.has(type);
   }
 
+  private prepareItemForRemote(item: ItemBase): ItemBase {
+    return protectVaultItemPasskeysForRemote(item, this.passkeyFieldSecret);
+  }
+
+  private restoreItemFromRemote(item: ItemBase): ItemBase {
+    return restoreVaultItemPasskeysFromRemote(item, this.passkeyFieldSecret);
+  }
+
   // 执行完整同步
   async sync(): Promise<SyncResult> {
     const startTime = Date.now();
@@ -199,6 +216,10 @@ export class SyncEngine {
       const pushResult = await this.pushChanges();
       result.pushed = pushResult.count;
       result.errors.push(...pushResult.errors);
+
+      const passkeyProtectionResult = await this.protectRemotePasskeyPayloads();
+      result.pushed += passkeyProtectionResult.count;
+      result.errors.push(...passkeyProtectionResult.errors);
 
       // 2. Pull 阶段 - 拉取远端变更
       this.reportProgress({ phase: 'pulling', message: '正在检查远端变更...' });
@@ -280,10 +301,10 @@ export class SyncEngine {
     for (const item of pendingItems) {
       try {
         // 明文同步：确保 encryption_applied = 0
-        const itemToUpload: ItemBase = {
+        const itemToUpload: ItemBase = this.prepareItemForRemote({
           ...item,
           encryption_applied: 0 as const,
-        };
+        });
 
         // 上传 item 元数据
         const result = await this.adapter.putItem(itemToUpload);
@@ -343,6 +364,51 @@ export class SyncEngine {
     }
 
     this.reportProgress({ phase: 'pushing', message: `已上传 ${count} 项`, current: count, total });
+    return { count, errors };
+  }
+
+  private async protectRemotePasskeyPayloads(): Promise<{ count: number; errors: string[] }> {
+    const errors: string[] = [];
+    let count = 0;
+    if (!this.passkeyFieldSecret || !this.shouldSyncType('vault_entry')) {
+      return { count, errors };
+    }
+
+    const localVaultItems = this.itemsManager
+      .getByType('vault_entry')
+      .filter(item => item.sync_status === 'clean' && vaultItemHasPasskeyPrivateKey(item));
+
+    for (const localItem of localVaultItems) {
+      try {
+        const remoteItem = await this.adapter.getItem(localItem.id);
+        if (
+          !remoteItem ||
+          remoteItem.deleted_time !== null ||
+          remoteItem.content_hash !== localItem.content_hash ||
+          !vaultItemHasUnprotectedPasskeyPrivateKey(remoteItem)
+        ) {
+          continue;
+        }
+
+        const result = await this.adapter.putItem(this.prepareItemForRemote({
+          ...localItem,
+          encryption_applied: 0 as const,
+        }));
+        if (result.success) {
+          this.itemsManager.markSynced(localItem.id, result.remoteRev);
+          count++;
+        } else {
+          const errorDetail = result.error ? `: ${result.error}` : '';
+          errors.push(`Failed to protect remote passkey item ${localItem.id}${errorDetail}`);
+        }
+      } catch (error) {
+        errors.push(`Error protecting remote passkey item ${localItem.id}: ${(error as Error).message}`);
+      }
+    }
+
+    if (count > 0) {
+      console.log(`[SyncEngine] Protected ${count} remote passkey payload(s)`);
+    }
     return { count, errors };
   }
 
@@ -518,8 +584,9 @@ export class SyncEngine {
         console.log(`[SyncEngine] Full pull: ${filteredItems.length} items to process (filtered from ${allItems.length})`);
 
         const total = filteredItems.length;
-        for (const remoteItem of filteredItems) {
+        for (const encryptedRemoteItem of filteredItems) {
           try {
+            const remoteItem = this.restoreItemFromRemote(encryptedRemoteItem);
             // 跳过已删除的 item
             if (remoteItem.deleted_time !== null) {
               const localItem = this.itemsManager.getByIdIncludeDeleted(remoteItem.id);
@@ -565,6 +632,10 @@ export class SyncEngine {
             } else if (localItem.content_hash !== remoteItem.content_hash) {
               // 内容不同，检查冲突
               if (localItem.sync_status === 'modified') {
+                if (this.tryMergePasskeyUsageConflict(localItem, remoteItem)) {
+                  count++;
+                  continue;
+                }
                 // 有冲突，创建副本
                 const conflictPayload = JSON.parse(localItem.payload);
                 conflictPayload.title = `${conflictPayload.title || 'Untitled'} (冲突副本)`;
@@ -629,7 +700,7 @@ export class SyncEngine {
               }
             }
           } catch (error) {
-            errors.push(`Error processing item ${remoteItem.id}: ${(error as Error).message}`);
+            errors.push(`Error processing item ${encryptedRemoteItem.id}: ${(error as Error).message}`);
           }
         }
 
@@ -821,11 +892,12 @@ export class SyncEngine {
     }
 
     // 拉取远端完整数据
-    const remoteItem = await this.adapter.getItem(change.item_id);
-    if (!remoteItem) {
+    const encryptedRemoteItem = await this.adapter.getItem(change.item_id);
+    if (!encryptedRemoteItem) {
       console.warn(`Remote item ${change.item_id} not found, skipping`);
       return { success: true, conflict: false };
     }
+    const remoteItem = this.restoreItemFromRemote(encryptedRemoteItem);
 
     // 如果是资源类型，下载资源文件
     if (change.type === 'resource' && this.resourcesDir) {
@@ -947,6 +1019,85 @@ export class SyncEngine {
     }
   }
 
+  private stableStringify(value: unknown): string {
+    const normalize = (input: unknown): unknown => {
+      if (Array.isArray(input)) {
+        return input.map(normalize);
+      }
+      if (input && typeof input === 'object') {
+        const source = input as Record<string, unknown>;
+        return Object.keys(source).sort().reduce((acc, key) => {
+          acc[key] = normalize(source[key]);
+          return acc;
+        }, {} as Record<string, unknown>);
+      }
+      return input;
+    };
+
+    return JSON.stringify(normalize(value));
+  }
+
+  private normalizeVaultPayloadForPasskeyUsageCompare(payload: VaultEntryPayload): string {
+    const passkeys = (payload.passkeys || [])
+      .map(passkey => ({
+        ...passkey,
+        sign_count: 0,
+        last_used_at: null,
+      }))
+      .sort((a, b) =>
+        (a.id || a.credential_id).localeCompare(b.id || b.credential_id)
+      );
+    return this.stableStringify({ ...payload, passkeys });
+  }
+
+  private mergePasskeyUsage(localPayload: VaultEntryPayload, remotePayload: VaultEntryPayload) {
+    const merged = new Map<string, NonNullable<VaultEntryPayload['passkeys']>[number]>();
+    for (const passkey of remotePayload.passkeys || []) {
+      merged.set(passkey.id || passkey.credential_id, passkey);
+    }
+    for (const passkey of localPayload.passkeys || []) {
+      const key = passkey.id || passkey.credential_id;
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, passkey);
+        continue;
+      }
+      merged.set(key, {
+        ...existing,
+        sign_count: Math.max(existing.sign_count || 0, passkey.sign_count || 0),
+        last_used_at: Math.max(existing.last_used_at || 0, passkey.last_used_at || 0) || null,
+      });
+    }
+    return Array.from(merged.values());
+  }
+
+  private tryMergePasskeyUsageConflict(localItem: ItemBase, remoteItem: ItemBase): boolean {
+    if (localItem.type !== 'vault_entry' || remoteItem.type !== 'vault_entry') {
+      return false;
+    }
+
+    try {
+      const localPayload = JSON.parse(localItem.payload) as VaultEntryPayload;
+      const remotePayload = JSON.parse(remoteItem.payload) as VaultEntryPayload;
+      if (localPayload.entry_type !== 'login' || remotePayload.entry_type !== 'login') {
+        return false;
+      }
+      if (
+        this.normalizeVaultPayloadForPasskeyUsageCompare(localPayload) !==
+        this.normalizeVaultPayloadForPasskeyUsageCompare(remotePayload)
+      ) {
+        return false;
+      }
+
+      const mergedPasskeys = this.mergePasskeyUsage(localPayload, remotePayload);
+      this.itemsManager.updateFromRemote(remoteItem);
+      this.itemsManager.update(localItem.id, { passkeys: mergedPasskeys });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // 处理冲突
   private async handleConflict(localItem: ItemBase, remoteChange: RemoteChange): Promise<{
     success: boolean;
@@ -954,9 +1105,14 @@ export class SyncEngine {
     skipped?: boolean;
     error?: string;
   }> {
-    const remoteItem = await this.adapter.getItem(remoteChange.item_id);
-    if (!remoteItem) {
+    const encryptedRemoteItem = await this.adapter.getItem(remoteChange.item_id);
+    if (!encryptedRemoteItem) {
       return { success: false, conflict: true, error: 'Remote item not found during conflict resolution' };
+    }
+    const remoteItem = this.restoreItemFromRemote(encryptedRemoteItem);
+
+    if (this.tryMergePasskeyUsageConflict(localItem, remoteItem)) {
+      return { success: true, conflict: false };
     }
 
     switch (this.options.conflictStrategy) {

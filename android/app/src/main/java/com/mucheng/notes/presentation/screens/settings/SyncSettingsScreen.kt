@@ -32,6 +32,7 @@ import com.mucheng.notes.domain.model.payload.CloudDownloadState
 import com.mucheng.notes.domain.model.payload.CloudUploadState
 import com.mucheng.notes.presentation.viewmodel.SettingsViewModel
 import com.mucheng.notes.presentation.viewmodel.SyncInterval
+import com.mucheng.notes.security.AppLockExternalActivityGuard
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -375,7 +376,11 @@ fun SyncSettingsScreen(
                         autoDownload = uiState.cloudDriveAutoDownload,
                         showConflictStrategyMenu = showConflictStrategyMenu,
                         onToggleConflictStrategyMenu = { showConflictStrategyMenu = it },
-                        onPickFolder = { folderPickerLauncher.launch(null) },
+                        onPickFolder = {
+                            AppLockExternalActivityGuard.launchFromUnlockedApp {
+                                folderPickerLauncher.launch(null)
+                            }
+                        },
                         onRevokeFolder = { viewModel.revokeCloudDriveFolder() },
                         onConflictStrategyChange = { viewModel.setCloudConflictStrategy(it) },
                         onAutoDownloadChange = { viewModel.setCloudAutoDownload(it) },

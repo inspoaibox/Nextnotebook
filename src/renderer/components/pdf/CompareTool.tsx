@@ -129,8 +129,8 @@ const CompareTool: React.FC = () => {
 
     if (pdf.data) {
       return (
-        <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+        <div className="pdf-compare-pane" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <div className="pdf-compare-pane-header" style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
             <Row justify="space-between" align="middle">
               <Col>
                 <Text strong ellipsis style={{ maxWidth: 150 }} title={pdf.name}>
@@ -186,7 +186,7 @@ const CompareTool: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: 16, height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div className="pdf-compare-tool" style={{ padding: 16, height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 控制栏 */}
       <Card size="small" style={{ marginBottom: 12 }}>
         <Row gutter={16} align="middle">

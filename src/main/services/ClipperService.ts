@@ -11,6 +11,12 @@ import * as crypto from 'crypto';
 import * as OTPAuth from 'otpauth';
 import { BrowserWindow, ipcMain, app, safeStorage, dialog } from 'electron';
 import { ItemsManager } from '../../core/database/ItemsManager';
+import {
+  PasskeyAssertionRequest,
+  PasskeyRegistrationRequest,
+  VaultPasskeyError,
+  VaultPasskeyService,
+} from '../../core/vault/VaultPasskeyService';
 import { ItemBase, VaultEntryPayload, VaultFolderPayload, VaultTotp, VaultUri } from '@shared/types';
 
 const CLIPPER_PORT = 27183;
@@ -92,6 +98,7 @@ interface VaultCapturedCredential {
   title?: string;
   username?: string;
   password?: string;
+  notes?: string;
   folderId?: string | null;
   uriName?: string;
   totpSecret?: string;
@@ -342,6 +349,18 @@ export class ClipperService {
       return;
     }
 
+    // 通行密钥注册端点
+    if (req.method === 'POST' && url === '/api/vault/passkey/register') {
+      this.handleVaultPasskeyRegister(req, res);
+      return;
+    }
+
+    // 通行密钥登录签名端点
+    if (req.method === 'POST' && url === '/api/vault/passkey/assert') {
+      this.handleVaultPasskeyAssert(req, res);
+      return;
+    }
+
     // 404
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
@@ -442,6 +461,8 @@ export class ClipperService {
       url === '/api/vault/query' ||
       url === '/api/vault/credential' ||
       url === '/api/vault/create' ||
+      url === '/api/vault/passkey/register' ||
+      url === '/api/vault/passkey/assert' ||
       url === '/api/vault-folders';
   }
 
@@ -846,7 +867,7 @@ export class ClipperService {
         }
       })
       .filter((entry): entry is { item: ItemBase; payload: VaultEntryPayload; matchedUri: VaultUri } => Boolean(entry))
-      .filter(({ payload }) => Boolean(payload.username || payload.password))
+      .filter(({ payload }) => Boolean(payload.password))
       .sort((a, b) => {
         if (a.payload.favorite && !b.payload.favorite) return -1;
         if (!a.payload.favorite && b.payload.favorite) return 1;
@@ -979,6 +1000,7 @@ export class ClipperService {
       title: string;
       username: string;
       password: string;
+      notes?: string;
       folderId?: string | null;
       uriName?: string;
       totpSecret?: string;
@@ -996,7 +1018,7 @@ export class ClipperService {
       entry_type: 'login',
       folder_id: this.getValidVaultFolderId(data.folderId),
       favorite: false,
-      notes: '',
+      notes: (data.notes || '').trim(),
       username: data.username.trim(),
       password: data.password,
       totp_secrets: totpSecret ? [totpSecret] : [],
@@ -1006,6 +1028,7 @@ export class ClipperService {
         uri: data.url,
         match_type: 'domain',
       }],
+      passkeys: [],
       card_holder_name: '',
       card_number: '',
       card_brand: '',
@@ -1191,6 +1214,7 @@ export class ClipperService {
           title: data.title || '',
           username,
           password,
+          notes: data.notes || '',
           folderId,
           uriName: data.uriName || '',
           totpSecret: data.totpSecret || '',
@@ -1213,6 +1237,66 @@ export class ClipperService {
       .catch((err: Error) => {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: err.message }));
+      });
+  }
+
+  private handleVaultPasskeyRegister(req: http.IncomingMessage, res: http.ServerResponse) {
+    if (!this.isVaultRequestAllowed(req)) {
+      this.rejectVaultRequest(res);
+      return;
+    }
+
+    this.readJsonBody<PasskeyRegistrationRequest>(req)
+      .then((data) => {
+        if (!this.itemsManager) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Service not ready' }));
+          return;
+        }
+
+        const result = new VaultPasskeyService(this.itemsManager).register(data);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, ...result }));
+      })
+      .catch((err: Error) => {
+        const statusCode = err instanceof VaultPasskeyError ? err.statusCode : 400;
+        const fallbackToNative = err instanceof VaultPasskeyError ? err.fallbackToNative : false;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: false,
+          error: err.message,
+          fallbackToNative,
+        }));
+      });
+  }
+
+  private handleVaultPasskeyAssert(req: http.IncomingMessage, res: http.ServerResponse) {
+    if (!this.isVaultRequestAllowed(req)) {
+      this.rejectVaultRequest(res);
+      return;
+    }
+
+    this.readJsonBody<PasskeyAssertionRequest>(req)
+      .then((data) => {
+        if (!this.itemsManager) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Service not ready' }));
+          return;
+        }
+
+        const result = new VaultPasskeyService(this.itemsManager).assert(data);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, ...result }));
+      })
+      .catch((err: Error) => {
+        const statusCode = err instanceof VaultPasskeyError ? err.statusCode : 400;
+        const fallbackToNative = err instanceof VaultPasskeyError ? err.fallbackToNative : false;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: false,
+          error: err.message,
+          fallbackToNative,
+        }));
       });
   }
 

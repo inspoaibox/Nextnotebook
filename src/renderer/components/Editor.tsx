@@ -14,6 +14,7 @@ import {
   CopyOutlined,
   ExportOutlined,
   InfoCircleOutlined,
+  HistoryOutlined,
   UnorderedListOutlined,
   OrderedListOutlined,
   MenuFoldOutlined,
@@ -37,6 +38,7 @@ import { Tag } from '../hooks/useTags';
 import MarkdownToolbar from './MarkdownToolbar';
 import { useAISettings } from '../hooks/useAI';
 import { callAIApi } from '../services/aiApi';
+import { noteHistoryApi, NoteHistoryVersion } from '../services/itemsApi';
 
 const copyTextToClipboard = async (text: string) => {
   if (navigator.clipboard?.writeText) {
@@ -610,6 +612,9 @@ interface EditorProps {
   onCreateTag?: (name: string, color?: string | null) => Promise<Tag | null>;
   isTrashView?: boolean;
   defaultMode?: 'edit' | 'preview';
+  noteHistoryEnabled?: boolean;
+  autoSaveEnabled?: boolean;
+  autoSaveInterval?: number;
 }
 
 const Editor: React.FC<EditorProps> = ({
@@ -628,6 +633,9 @@ const Editor: React.FC<EditorProps> = ({
   onCreateTag,
   isTrashView = false,
   defaultMode = 'edit',
+  noteHistoryEnabled = true,
+  autoSaveEnabled = true,
+  autoSaveInterval = 30,
 }) => {
   const [content, setContent] = useState('');
   const [title, setTitle] = useState('');
@@ -635,12 +643,17 @@ const Editor: React.FC<EditorProps> = ({
   const [isDirty, setIsDirty] = useState(false);
   const [tagModalOpen, setTagModalOpen] = useState(false);
   const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyVersions, setHistoryVersions] = useState<NoteHistoryVersion[]>([]);
+  const [selectedHistoryVersion, setSelectedHistoryVersion] = useState<NoteHistoryVersion | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newTagName, setNewTagName] = useState('');
   const [tocCollapsed, setTocCollapsed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const historyRequestRef = useRef(0);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -754,15 +767,20 @@ const Editor: React.FC<EditorProps> = ({
   const scheduleAutoSave = useCallback(() => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
     }
+    if (!autoSaveEnabled || !noteId || !onSave) {
+      return;
+    }
+    const delayMs = Math.max(1, autoSaveInterval || 30) * 1000;
     saveTimeoutRef.current = setTimeout(async () => {
       if (isDirty && noteId && onSave) {
         await onSave(noteId, content, title);
         setIsDirty(false);
         message.success('已自动保存', 1);
       }
-    }, 2000);
-  }, [isDirty, noteId, content, title, onSave]);
+    }, delayMs);
+  }, [autoSaveEnabled, autoSaveInterval, isDirty, noteId, content, title, onSave]);
 
   useEffect(() => {
     if (isDirty) {
@@ -1330,10 +1348,63 @@ const Editor: React.FC<EditorProps> = ({
     return new Date(timestamp).toLocaleString('zh-CN');
   };
 
+  const formatHistoryTime = (timestamp: number) =>
+    new Date(timestamp).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+  const formatSize = (size: number) => {
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  };
+
+  const loadHistoryVersions = useCallback(async () => {
+    if (!noteId) return;
+    const requestId = historyRequestRef.current + 1;
+    historyRequestRef.current = requestId;
+    setHistoryLoading(true);
+    try {
+      const versions = await noteHistoryApi.getVersions(noteId);
+      if (historyRequestRef.current !== requestId) return;
+      setHistoryVersions(versions);
+      setSelectedHistoryVersion(versions[0] || null);
+    } catch (error) {
+      if (historyRequestRef.current !== requestId) return;
+      message.error('加载历史记录失败');
+      setHistoryVersions([]);
+      setSelectedHistoryVersion(null);
+    } finally {
+      if (historyRequestRef.current === requestId) {
+        setHistoryLoading(false);
+      }
+    }
+  }, [noteId]);
+
+  const handleOpenHistory = useCallback(() => {
+    setHistoryModalOpen(true);
+    void loadHistoryVersions();
+  }, [loadHistoryVersions]);
+
+  useEffect(() => {
+    historyRequestRef.current += 1;
+    setHistoryModalOpen(false);
+    setHistoryLoading(false);
+    setHistoryVersions([]);
+    setSelectedHistoryVersion(null);
+  }, [noteId]);
+
   const moreMenuItems: MenuProps['items'] = [
     { key: 'duplicate', icon: <CopyOutlined />, label: '复制笔记', onClick: handleDuplicate },
     { key: 'export', icon: <ExportOutlined />, label: '导出为 Markdown', onClick: handleExport },
     { key: 'info', icon: <InfoCircleOutlined />, label: '笔记信息', onClick: () => setInfoModalOpen(true) },
+    ...(noteHistoryEnabled && !isTrashView
+      ? [{ key: 'history', icon: <HistoryOutlined />, label: '历史记录', onClick: handleOpenHistory }]
+      : []),
     { type: 'divider' },
     note?.isLocked
       ? { key: 'unlock', icon: <UnlockOutlined />, label: '解除加密', onClick: handleRemoveLock }
@@ -1991,6 +2062,97 @@ const Editor: React.FC<EditorProps> = ({
           <p><strong>修改时间：</strong>{formatDate(note?.updatedAt)}</p>
           <p><strong>标签数：</strong>{note?.tags?.length || 0}</p>
           <p><strong>加密状态：</strong>{note?.isLocked ? '已加密' : '未加密'}</p>
+        </div>
+      </Modal>
+
+      {/* 历史记录 Modal */}
+      <Modal
+        title="历史记录"
+        open={historyModalOpen}
+        onCancel={() => setHistoryModalOpen(false)}
+        width={920}
+        footer={<Button onClick={() => setHistoryModalOpen(false)}>关闭</Button>}
+      >
+        <div style={{ display: 'flex', minHeight: 420, maxHeight: 560 }}>
+          <div
+            style={{
+              width: 260,
+              borderRight: '1px solid var(--border-color, #f0f0f0)',
+              paddingRight: 12,
+              overflowY: 'auto',
+              flexShrink: 0,
+            }}
+          >
+            {historyLoading ? (
+              <div style={{ padding: '24px 8px', color: 'var(--text-secondary, #666)' }}>加载中...</div>
+            ) : historyVersions.length === 0 ? (
+              <Empty description="暂无历史记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {historyVersions.map(version => {
+                  const active = selectedHistoryVersion?.id === version.id;
+                  return (
+                    <button
+                      key={version.id}
+                      type="button"
+                      onClick={() => setSelectedHistoryVersion(version)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        border: `1px solid ${active ? '#1890ff' : 'var(--border-color, #f0f0f0)'}`,
+                        background: active ? 'rgba(24, 144, 255, 0.08)' : 'var(--bg-primary, #fff)',
+                        borderRadius: 6,
+                        padding: '8px 10px',
+                        cursor: 'pointer',
+                        color: 'var(--text-primary, #333)',
+                      }}
+                    >
+                      <div style={{ fontWeight: 500, fontSize: 13 }}>
+                        {formatHistoryTime(version.createdAt)}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary, #666)', marginTop: 3 }}>
+                        {formatSize(version.size)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0, paddingLeft: 16, overflowY: 'auto' }}>
+            {selectedHistoryVersion ? (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+                    {selectedHistoryVersion.title || '无标题'}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary, #666)' }}>
+                    保存于 {formatDate(selectedHistoryVersion.createdAt)}
+                  </div>
+                </div>
+                {selectedHistoryVersion.content.trim() ? (
+                  <div className="markdown-preview" style={{ lineHeight: 1.8, userSelect: 'text' }}>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                      urlTransform={(url) => {
+                        if (url.startsWith('resource://')) return url;
+                        return url;
+                      }}
+                      components={markdownComponents}
+                    >
+                      {selectedHistoryVersion.content}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  <Empty description="此快照没有正文内容" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                )}
+              </>
+            ) : (
+              <Empty description="选择一个保存时间查看快照" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
+          </div>
         </div>
       </Modal>
 

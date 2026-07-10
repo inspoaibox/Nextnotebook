@@ -2,9 +2,12 @@ package com.mucheng.notes.data.cloud
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import com.mucheng.notes.data.local.dao.CloudFileLocalPathDao
 import com.mucheng.notes.data.local.dao.ItemDao
+import com.mucheng.notes.data.local.entity.CloudFileLocalPathEntity
+import com.mucheng.notes.data.local.entity.CloudLocalAvailabilityValues
 import com.mucheng.notes.data.local.entity.ItemEntity
 import com.mucheng.notes.domain.model.ItemType
 import com.mucheng.notes.domain.model.payload.CloudFilePayload
@@ -237,6 +240,11 @@ class CloudDriveDirectoryScanner @Inject constructor(
             return ScanUpsertResult(changed = false, trackDeletion = false)
         }
 
+        val trackDeletion = existing == null ||
+            existing.syncStatus == "modified" ||
+            key in previousEntries ||
+            localRecord == null
+
         val downloadedCacheUnchanged = existing != null &&
             existing.deletedTime == null &&
             existing.syncStatus == "clean" &&
@@ -253,13 +261,22 @@ class CloudDriveDirectoryScanner @Inject constructor(
                 ) == true)
 
         if (downloadedCacheUnchanged) {
-            return ScanUpsertResult(changed = false, trackDeletion = false)
+            // 文件已经被扫描到，必须继续保留快照追踪；否则本轮删除对账会误删侧表。
+            return ScanUpsertResult(changed = false, trackDeletion = trackDeletion)
         }
 
-        val trackDeletion = existing == null ||
-            existing.syncStatus == "modified" ||
-            key in previousEntries ||
-            localRecord == null
+        val verifiedSameContent = existing != null &&
+            existing.deletedTime == null &&
+            existing.syncStatus == "clean" &&
+            existingPayload != null &&
+            existingPayload.size == size &&
+            existingPayload.fileHash.isNotBlank() &&
+            verifySameCloudFileContent(id, file, relativePath, size, existingPayload, localRecord)
+
+        if (verifiedSameContent) {
+            // 侧表丢失时 verifySameCloudFileContent 会按云端 hash 自愈为本地可用。
+            return ScanUpsertResult(changed = false, trackDeletion = trackDeletion)
+        }
 
         if (existingPayload != null &&
             existingPayload.size == size &&
@@ -384,7 +401,10 @@ class CloudDriveDirectoryScanner @Inject constructor(
                 item.syncStatus == "clean" &&
                 localPathRecordsById.containsKey(item.id)
             ) {
-                localPathDao.delete(item.id)
+                val record = localPathRecordsById[item.id]
+                if (record == null || !preserveUsableDownloadedCache(record, item)) {
+                    localPathDao.delete(item.id)
+                }
                 continue
             }
 
@@ -512,6 +532,126 @@ class CloudDriveDirectoryScanner @Inject constructor(
         return digest.digest(content.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
             .take(16)
+    }
+
+    private suspend fun verifySameCloudFileContent(
+        cloudFileId: String,
+        file: DocumentFile,
+        relativePath: String,
+        size: Long,
+        existingPayload: CloudFilePayload,
+        localRecord: CloudFileLocalPathEntity?,
+    ): Boolean {
+        val expectedHash = existingPayload.fileHash.takeIf { it.isNotBlank() } ?: return false
+        val cachedHashMatches = localRecord?.fileHashVerified
+            ?.takeIf { it.isNotBlank() }
+            ?.equals(expectedHash, ignoreCase = true) == true
+
+        val actualHash = if (cachedHashMatches) {
+            expectedHash
+        } else {
+            computeDocumentFileHash(file) ?: return false
+        }
+
+        if (!actualHash.equals(expectedHash, ignoreCase = true)) {
+            return false
+        }
+
+        val now = System.currentTimeMillis()
+        localPathDao.upsert(
+            localRecord?.copy(
+                documentUri = file.uri.toString(),
+                relativePath = relativePath,
+                downloadedSize = size,
+                state = CloudDownloadState.COMPLETED.value,
+                fileHashVerified = expectedHash,
+                downloadedAt = now,
+                errorMessage = null,
+                availability = normalizeLocalAvailability(localRecord.availability),
+            ) ?: CloudFileLocalPathEntity(
+                cloudFileId = cloudFileId,
+                documentUri = file.uri.toString(),
+                relativePath = relativePath,
+                downloadedSize = size,
+                state = CloudDownloadState.COMPLETED.value,
+                fileHashVerified = expectedHash,
+                downloadedAt = now,
+                errorMessage = null,
+                availability = CloudLocalAvailabilityValues.LOCAL,
+            )
+        )
+
+        return true
+    }
+
+    private suspend fun preserveUsableDownloadedCache(
+        record: CloudFileLocalPathEntity,
+        item: ItemEntity,
+    ): Boolean {
+        if (record.state != CloudDownloadState.COMPLETED.value) return false
+
+        val payload = runCatching {
+            CloudFilePayload.fromJson(json, item.payload)
+        }.getOrNull() ?: return false
+        val document = runCatching {
+            DocumentFile.fromSingleUri(context, Uri.parse(record.documentUri))
+        }.getOrNull() ?: return false
+        if (!document.exists() || !document.isFile) return false
+
+        val expectedSize = payload.size.takeIf { it > 0L }
+        val actualSize = document.length().coerceAtLeast(0L)
+        if (expectedSize != null && actualSize != expectedSize) return false
+
+        val expectedHash = payload.fileHash.takeIf { it.isNotBlank() }
+        val verifiedHash = record.fileHashVerified?.takeIf { it.isNotBlank() }
+        val repairedHash = if (expectedHash != null &&
+            !verifiedHash.equals(expectedHash, ignoreCase = true)
+        ) {
+            val actualHash = computeDocumentFileHash(document) ?: return false
+            if (!actualHash.equals(expectedHash, ignoreCase = true)) return false
+            expectedHash
+        } else {
+            verifiedHash
+        }
+
+        localPathDao.upsert(
+            record.copy(
+                relativePath = CloudDrivePathIdentity.normalize(payload.relativePath)
+                    .ifBlank { record.relativePath },
+                downloadedSize = expectedSize ?: record.downloadedSize.coerceAtLeast(actualSize),
+                state = CloudDownloadState.COMPLETED.value,
+                fileHashVerified = repairedHash ?: record.fileHashVerified,
+                downloadedAt = record.downloadedAt ?: System.currentTimeMillis(),
+                errorMessage = null,
+                availability = normalizeLocalAvailability(record.availability),
+            )
+        )
+        return true
+    }
+
+    private fun normalizeLocalAvailability(availability: String): String =
+        if (availability == CloudLocalAvailabilityValues.OFFLINE) {
+            CloudLocalAvailabilityValues.OFFLINE
+        } else {
+            CloudLocalAvailabilityValues.LOCAL
+        }
+
+    private fun computeDocumentFileHash(file: DocumentFile): String? {
+        return try {
+            context.contentResolver.openInputStream(file.uri)?.use { input ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    digest.update(buffer, 0, read)
+                }
+                digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("CloudDriveScanner", "Failed to hash local cloud file ${file.uri}: ${e.message}")
+            null
+        }
     }
 
     private fun guessMimeFromExtension(filename: String): String {

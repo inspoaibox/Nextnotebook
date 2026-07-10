@@ -2,7 +2,7 @@ package com.mucheng.notes.integration
 
 import com.mucheng.notes.data.local.entity.ItemEntity
 import com.mucheng.notes.domain.model.payload.NotePayload
-import com.mucheng.notes.security.CryptoEngineImpl
+import com.mucheng.notes.testutil.JvmCryptoEngine
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.longs.shouldBeLessThan
 import io.kotest.matchers.shouldBe
@@ -27,7 +27,7 @@ class PerformanceTest : StringSpec({
         encodeDefaults = true
     }
     
-    val cryptoEngine = CryptoEngineImpl()
+    val cryptoEngine = JvmCryptoEngine()
     
     beforeSpec {
         val testKey = ByteArray(32) { it.toByte() }

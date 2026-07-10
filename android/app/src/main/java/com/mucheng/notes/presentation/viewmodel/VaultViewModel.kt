@@ -11,6 +11,7 @@ import com.mucheng.notes.domain.model.ItemType
 import com.mucheng.notes.domain.model.payload.VaultEntryPayload
 import com.mucheng.notes.domain.model.payload.VaultEntryType
 import com.mucheng.notes.domain.model.payload.VaultFolderPayload
+import com.mucheng.notes.domain.model.payload.VaultPasskey
 import com.mucheng.notes.domain.repository.ItemRepository
 import com.mucheng.notes.security.AuthResult
 import com.mucheng.notes.security.BiometricManager
@@ -415,6 +416,7 @@ class VaultViewModel @Inject constructor(
         password: String = "",
         totpSecrets: List<com.mucheng.notes.domain.model.payload.VaultTotp> = emptyList(),
         uris: List<com.mucheng.notes.domain.model.payload.VaultUri> = emptyList(),
+        passkeys: List<VaultPasskey> = emptyList(),
         // 银行卡类型字段
         cardHolderName: String = "",
         cardNumber: String = "",
@@ -443,6 +445,7 @@ class VaultViewModel @Inject constructor(
                 password = password,
                 totpSecrets = totpSecrets,
                 uris = uris,
+                passkeys = passkeys,
                 cardHolderName = cardHolderName,
                 cardNumber = cardNumber,
                 cardBrand = cardBrand,
@@ -475,6 +478,7 @@ class VaultViewModel @Inject constructor(
         password: String = "",
         totpSecrets: List<com.mucheng.notes.domain.model.payload.VaultTotp> = emptyList(),
         uris: List<com.mucheng.notes.domain.model.payload.VaultUri> = emptyList(),
+        passkeys: List<VaultPasskey>? = null,
         cardHolderName: String = "",
         cardNumber: String = "",
         cardBrand: String = "",
@@ -490,6 +494,15 @@ class VaultViewModel @Inject constructor(
         customFields: List<com.mucheng.notes.domain.model.payload.VaultCustomField> = emptyList()
     ) {
         viewModelScope.launch {
+            val preservedPasskeys = passkeys ?: itemRepository.getById(id)
+                ?.payload
+                ?.let { payloadJson ->
+                    runCatching {
+                        json.decodeFromString<VaultEntryPayload>(payloadJson).passkeys
+                    }.getOrNull()
+                }
+                .orEmpty()
+
             val payload = VaultEntryPayload(
                 name = name,
                 entryType = entryType,
@@ -500,6 +513,7 @@ class VaultViewModel @Inject constructor(
                 password = password,
                 totpSecrets = totpSecrets,
                 uris = uris,
+                passkeys = preservedPasskeys,
                 cardHolderName = cardHolderName,
                 cardNumber = cardNumber,
                 cardBrand = cardBrand,
@@ -568,6 +582,7 @@ class VaultViewModel @Inject constructor(
                 password = payload.password,
                 totpSecrets = payload.totpSecrets,
                 uris = payload.uris,
+                passkeys = payload.passkeys,
                 cardHolderName = payload.cardHolderName,
                 cardNumber = payload.cardNumber,
                 cardBrand = payload.cardBrand,
@@ -598,6 +613,7 @@ class VaultViewModel @Inject constructor(
                 password = "",
                 totpSecrets = emptyList(),
                 uris = emptyList(),
+                passkeys = emptyList(),
                 cardHolderName = "",
                 cardNumber = "",
                 cardBrand = "",
@@ -650,6 +666,7 @@ data class VaultEntryItem(
     val password: String,
     val totpSecrets: List<com.mucheng.notes.domain.model.payload.VaultTotp>,
     val uris: List<com.mucheng.notes.domain.model.payload.VaultUri>,
+    val passkeys: List<VaultPasskey> = emptyList(),
     // 银行卡字段
     val cardHolderName: String,
     val cardNumber: String,

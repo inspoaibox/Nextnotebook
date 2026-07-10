@@ -79,6 +79,10 @@ function readTransportConfig(): {
   }
 }
 
+function getPasskeyFieldSecret(config: SyncServiceConfig): string | null {
+  return config.serverSyncKey || config.password || config.apiKey || null;
+}
+
 // 初始化同步服务
 export async function initializeSyncService(config: SyncServiceConfig): Promise<boolean> {
   try {
@@ -236,6 +240,7 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
       syncModules,
       serverIdentifier: currentServerIdentifier, // 传递服务器标识
       resourcesDir, // 传递资源目录路径
+      passkeyFieldSecret: getPasskeyFieldSecret(config),
       // Phase 2：cloud_file 物理文件操作的回调注入。
       // 通过动态 require 获取 CloudDriveService，避免 SyncService ↔ CloudDriveService 形成静态导入环。
       // SyncEngine 触发这些回调时元数据已写库，CloudDriveService 只做物理文件操作。

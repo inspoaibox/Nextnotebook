@@ -1461,6 +1461,7 @@ export class CloudDriveScheduler {
     }, { localOnly: true });
     payload = { ...payload, download_state: 'downloading', download_error: null };
     this.emitDownloadProgressFor(itemId, payload, 'downloading', startOffset);
+    this.markDownloadTargetWriting(absPath);
 
     try {
       let written = startOffset;
@@ -1547,6 +1548,7 @@ export class CloudDriveScheduler {
       const msg = err instanceof Error ? err.message : String(err);
       this.markDownloadError(itemId, payload, msg);
     } finally {
+      this.unmarkDownloadTargetWriting(absPath);
       this.downloadInFlight.delete(itemId);
       this.downloadAbortControllers.delete(itemId);
       if (this.pendingDownloadResume.delete(itemId)) {
@@ -1560,6 +1562,7 @@ export class CloudDriveScheduler {
     payload: CloudFilePayload,
     size: number
   ): void {
+    this.markLocalCopyPresent(itemId, payload.relative_path);
     this.updatePayload(itemId, {
       download_state: 'completed',
       downloaded_size: size,
@@ -1594,6 +1597,36 @@ export class CloudDriveScheduler {
       payload.downloaded_size ?? 0
     );
     console.error(`[CloudDriveScheduler] 下载失败 ${payload.relative_path}: ${message}`);
+  }
+
+  private markDownloadTargetWriting(absPath: string): void {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getCloudDriveService } = require('./CloudDriveService') as typeof import('./CloudDriveService');
+      getCloudDriveService()?.markFileWriting(absPath);
+    } catch (err) {
+      console.warn('[CloudDriveScheduler] 标记下载写入路径失败:', err);
+    }
+  }
+
+  private unmarkDownloadTargetWriting(absPath: string): void {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getCloudDriveService } = require('./CloudDriveService') as typeof import('./CloudDriveService');
+      getCloudDriveService()?.unmarkFileWriting(absPath);
+    } catch (err) {
+      console.warn('[CloudDriveScheduler] 解除下载写入路径失败:', err);
+    }
+  }
+
+  private markLocalCopyPresent(itemId: string, relativePath: string): void {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getCloudDriveService } = require('./CloudDriveService') as typeof import('./CloudDriveService');
+      getCloudDriveService()?.markLocalCopyPresent(itemId, relativePath);
+    } catch (err) {
+      console.warn(`[CloudDriveScheduler] 标记本地副本失败: ${itemId}`, err);
+    }
   }
 
   private emitDownloadProgressFor(

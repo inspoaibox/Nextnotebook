@@ -146,8 +146,9 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
   const hasFilter = currentFilter && !currentFilter.selectAll;
 
   const dropdownContent = (
-    <div 
-      style={{ 
+    <div
+      className="excel-filter-dropdown"
+      style={{
         width: 220, 
         background: '#fff', 
         borderRadius: 4,

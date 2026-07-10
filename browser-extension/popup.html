@@ -29,7 +29,7 @@
       flex: 0 0 auto;
     }
     .header {
-      padding: 16px;
+      padding: 12px 16px;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #fff;
       display: flex;
@@ -43,15 +43,11 @@
     .header h1 {
       font-size: 16px;
       font-weight: 600;
-      margin-bottom: 4px;
-    }
-    .header p {
-      font-size: 12px;
-      opacity: 0.9;
+      margin: 0;
     }
     .content {
       padding: 16px;
-      max-height: min(536px, calc(100vh - 62px));
+      max-height: min(544px, calc(100vh - 54px));
       overflow-y: auto;
       scrollbar-width: thin;
     }
@@ -686,6 +682,156 @@
       color: #4f46e5;
       background: #f8f7ff;
     }
+    .vault-secondary-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      background: #f9fafb;
+      border-color: #d1d5db;
+      color: #6b7280;
+    }
+    .vault-password-tool {
+      display: none;
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid #dbe3ef;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+    .vault-password-tool.active {
+      display: block;
+    }
+    .vault-password-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .vault-password-title {
+      color: #111827;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .vault-mini-btn {
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .vault-mini-btn:hover {
+      border-color: #667eea;
+      color: #4f46e5;
+      background: #fff;
+    }
+    .vault-password-output {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .vault-password-output input {
+      flex: 1;
+      min-width: 0;
+      height: 36px;
+      padding: 0 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      background: #fff;
+      color: #111827;
+      font: 13px Consolas, Monaco, monospace;
+      letter-spacing: 0;
+      outline: none;
+    }
+    .vault-password-output input:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.12);
+    }
+    .vault-password-length {
+      display: grid;
+      grid-template-columns: auto 62px minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      color: #374151;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .vault-password-length input[type="number"] {
+      width: 62px;
+      height: 30px;
+      padding: 0 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 12px;
+      outline: none;
+    }
+    .vault-password-length input[type="range"] {
+      width: 100%;
+      min-width: 0;
+    }
+    .vault-password-rules {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .vault-password-rule {
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      background: #fff;
+      color: #374151;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .vault-password-rule input {
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      cursor: pointer;
+    }
+    .vault-password-symbols {
+      margin-bottom: 10px;
+    }
+    .vault-password-symbols label {
+      display: block;
+      margin-bottom: 5px;
+      color: #374151;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .vault-password-symbols input {
+      width: 100%;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      color: #111827;
+      font: 12px Consolas, Monaco, monospace;
+      outline: none;
+    }
+    .vault-password-tool-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .vault-password-tool-actions .btn {
+      flex: 1;
+      height: 34px;
+      padding: 0 10px;
+      margin-top: 0;
+      border-radius: 7px;
+    }
     .vault-add-panel {
       display: none;
       margin-bottom: 12px;
@@ -714,9 +860,9 @@
       font-weight: 600;
     }
     .vault-add-row input,
-    .vault-add-row select {
+    .vault-add-row select,
+    .vault-add-row textarea {
       width: 100%;
-      height: 34px;
       padding: 0 10px;
       border: 1px solid #d1d5db;
       border-radius: 6px;
@@ -724,10 +870,108 @@
       outline: none;
       background: #fff;
     }
+    .vault-add-row input,
+    .vault-add-row select {
+      height: 34px;
+    }
+    .vault-add-row textarea {
+      min-height: 74px;
+      padding: 8px 10px;
+      resize: vertical;
+      line-height: 1.5;
+      font-family: inherit;
+    }
     .vault-add-row input:focus,
-    .vault-add-row select:focus {
+    .vault-add-row select:focus,
+    .vault-add-row textarea:focus {
       border-color: #667eea;
       box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.12);
+    }
+    .vault-add-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .vault-register-helper {
+      margin: 10px 0;
+      padding: 10px;
+      border: 1px solid #dbe3ef;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+    .vault-register-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .vault-register-title {
+      color: #111827;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .vault-register-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .vault-register-actions .vault-mini-btn {
+      flex: 1;
+      height: 30px;
+    }
+    .vault-register-summary {
+      margin-top: 8px;
+      padding: 7px 8px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    .vault-password-input-wrap {
+      display: flex;
+      align-items: center;
+      height: 34px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+      overflow: hidden;
+    }
+    .vault-password-input-wrap:focus-within {
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.12);
+    }
+    .vault-add-row .vault-password-input-wrap input {
+      flex: 1;
+      min-width: 0;
+      height: 32px;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .vault-add-row .vault-password-input-wrap input:focus {
+      box-shadow: none;
+    }
+    .vault-password-view-btn {
+      flex: 0 0 auto;
+      height: 24px;
+      margin-right: 5px;
+      padding: 0 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 5px;
+      background: #f9fafb;
+      color: #4b5563;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .vault-password-view-btn:hover {
+      border-color: #667eea;
+      color: #4f46e5;
+      background: #fff;
     }
     .vault-add-footer {
       display: flex;
@@ -915,7 +1159,6 @@
   <div class="header">
     <div class="header-title">
       <h1>📝 暮城笔记</h1>
-      <p>网页剪藏工具</p>
     </div>
     <div id="status" class="status checking" role="status" aria-live="polite" aria-label="正在检查连接..." title="正在检查连接...">
       <span class="status-icon"></span>
@@ -1032,6 +1275,51 @@
       <div class="vault-actions">
         <button id="vault-add-toggle" class="vault-secondary-btn" type="button">➕ 手动添加账号</button>
         <button id="vault-capture-btn" class="vault-secondary-btn" type="button">读取页面输入</button>
+        <button id="vault-generate-password" class="vault-secondary-btn" type="button" aria-expanded="false">密码生成器</button>
+      </div>
+      <div id="vault-password-tool" class="vault-password-tool">
+        <div class="vault-password-head">
+          <div class="vault-password-title">随机密码</div>
+          <button id="vault-password-refresh" class="vault-mini-btn" type="button">重新生成</button>
+        </div>
+        <div class="vault-password-output">
+          <input id="vault-password-preview" type="text" readonly aria-label="生成的随机密码">
+        </div>
+        <label class="vault-password-length">
+          <span>长度</span>
+          <input id="vault-password-length" type="number" min="6" max="64" value="18">
+          <input id="vault-password-length-range" type="range" min="6" max="64" value="18">
+        </label>
+        <div class="vault-password-rules">
+          <label class="vault-password-rule">
+            <input id="vault-password-uppercase" type="checkbox" checked>
+            <span>大写字母</span>
+          </label>
+          <label class="vault-password-rule">
+            <input id="vault-password-lowercase" type="checkbox" checked>
+            <span>小写字母</span>
+          </label>
+          <label class="vault-password-rule">
+            <input id="vault-password-numbers" type="checkbox" checked>
+            <span>数字</span>
+          </label>
+          <label class="vault-password-rule">
+            <input id="vault-password-symbols-enabled" type="checkbox" checked>
+            <span>符号</span>
+          </label>
+          <label class="vault-password-rule">
+            <input id="vault-password-avoid-confusing" type="checkbox" checked>
+            <span>排除易混淆字符</span>
+          </label>
+        </div>
+        <div class="vault-password-symbols">
+          <label for="vault-password-symbols">自定义符号</label>
+          <input id="vault-password-symbols" type="text" value="!@#$%^&*()-_=+[]{};:,.?">
+        </div>
+        <div class="vault-password-tool-actions">
+          <button id="vault-password-copy" class="btn btn-secondary" type="button">复制</button>
+          <button id="vault-password-use" class="btn btn-primary" type="button">填入密码</button>
+        </div>
       </div>
       <div id="vault-add-panel" class="vault-add-panel">
         <div class="vault-add-title">新建密码库条目</div>
@@ -1041,11 +1329,53 @@
         </div>
         <div class="vault-add-row">
           <label for="vault-add-username">用户名</label>
-          <input id="vault-add-username" type="text" placeholder="账号 / 邮箱 / 手机号">
+          <input id="vault-add-username" type="text" placeholder="最终保存的账号 / 邮箱 / 手机号">
         </div>
         <div class="vault-add-row">
           <label for="vault-add-password">密码</label>
-          <input id="vault-add-password" type="password" placeholder="密码">
+          <div class="vault-password-input-wrap">
+            <input id="vault-add-password" type="password" placeholder="密码">
+            <button id="vault-add-password-generate" class="vault-password-view-btn" type="button">生成</button>
+            <button id="vault-add-password-view" class="vault-password-view-btn" type="button">查看</button>
+          </div>
+        </div>
+        <div class="vault-register-helper">
+          <div class="vault-register-head">
+            <div class="vault-register-title">注册资料助手</div>
+            <button id="vault-register-generate" class="vault-mini-btn" type="button">生成并填入页面</button>
+          </div>
+          <div class="vault-add-grid">
+            <div class="vault-add-row">
+              <label for="vault-register-country">国家/地区</label>
+              <select id="vault-register-country">
+                <option value="en_US">美国</option>
+                <option value="zh_CN">中国</option>
+                <option value="ja">日本</option>
+                <option value="ko">韩国</option>
+                <option value="en_GB">英国</option>
+                <option value="de">德国</option>
+                <option value="fr">法国</option>
+                <option value="ru">俄罗斯</option>
+              </select>
+            </div>
+            <div class="vault-add-row">
+              <label for="vault-register-username">指定用户名</label>
+              <input id="vault-register-username" type="text" placeholder="常用用户名，留空则随机生成">
+            </div>
+            <div class="vault-add-row">
+              <label for="vault-register-email">指定邮箱</label>
+              <input id="vault-register-email" type="email" placeholder="常用邮箱，留空则随机生成">
+            </div>
+            <div class="vault-add-row">
+              <label for="vault-register-phone">指定电话</label>
+              <input id="vault-register-phone" type="tel" placeholder="常用电话，留空则随机生成">
+            </div>
+          </div>
+          <div class="vault-register-actions">
+            <button id="vault-register-read" class="vault-mini-btn" type="button">读取注册页</button>
+            <button id="vault-register-generate-local" class="vault-mini-btn" type="button">只生成资料</button>
+          </div>
+          <div id="vault-register-summary" class="vault-register-summary">尚未读取注册页</div>
         </div>
         <div class="vault-add-row">
           <label for="vault-add-url">关联网站</label>
@@ -1068,6 +1398,10 @@
           <select id="vault-add-folder">
             <option value="">未分类</option>
           </select>
+        </div>
+        <div class="vault-add-row">
+          <label for="vault-add-notes">备注/注册资料</label>
+          <textarea id="vault-add-notes" placeholder="姓名、地址、电话、邮箱等资料会显示在这里"></textarea>
         </div>
         <div class="vault-add-footer">
           <button id="vault-add-cancel" class="btn" type="button">取消</button>

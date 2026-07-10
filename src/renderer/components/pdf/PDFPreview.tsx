@@ -417,10 +417,10 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
   }, [currentPage, totalPages, zoom]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, ...style }}>
+    <div className="pdf-preview" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, ...style }}>
       {/* 控制栏 */}
       {showControls && (
-        <div style={{ 
+        <div className="pdf-preview-toolbar" style={{
           padding: '8px 12px', 
           borderBottom: '1px solid #f0f0f0',
           display: 'flex',
@@ -504,6 +504,7 @@ const PDFPreview: React.FC<PDFPreviewProps> = ({
       {/* PDF 渲染区域 */}
       <div
         ref={containerRef}
+        className="pdf-preview-stage"
         style={{
           flex: 1,
           minHeight: 0,

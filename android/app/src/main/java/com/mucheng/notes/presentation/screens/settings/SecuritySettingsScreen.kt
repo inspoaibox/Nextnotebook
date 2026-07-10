@@ -346,6 +346,39 @@ fun SecuritySettingsScreen(
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(32.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                "通行密钥服务",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                "在系统凭据提供程序中启用暮城笔记后，网站登录时可以调用通行密钥",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = {
+                    if (!openPasskeyServiceSettings(context)) {
+                        scope.launch { snackbarHostState.showSnackbar("无法打开系统通行密钥服务设置") }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("启用通行密钥服务")
+            }
         }
     }
     

@@ -1,5 +1,6 @@
 import { app, ipcMain, IpcMainInvokeEvent, dialog } from 'electron';
 import { DatabaseManager, ItemsManager } from '@core/database';
+import { VersionHistory } from '@core/notes';
 import { ItemBase, ItemType } from '@shared/types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -7,6 +8,7 @@ import * as crypto from 'crypto';
 
 let dbManager: DatabaseManager | null = null;
 let itemsManager: ItemsManager | null = null;
+let versionHistory: VersionHistory | null = null;
 
 // 导出数据格式版本
 const EXPORT_VERSION = '1.0';
@@ -43,6 +45,7 @@ export function initializeDatabase(): void {
   dbManager = new DatabaseManager(userDataPath);
   dbManager.initialize();
   itemsManager = new ItemsManager(dbManager);
+  versionHistory = new VersionHistory(dbManager, 50, 0);
 
   registerIpcHandlers();
 }
@@ -57,7 +60,13 @@ export function closeDatabase(): void {
     dbManager.close();
     dbManager = null;
     itemsManager = null;
+    versionHistory = null;
   }
+}
+
+function getVersionHistory(): VersionHistory {
+  if (!versionHistory) throw new Error('Version history not initialized');
+  return versionHistory;
 }
 
 function registerIpcHandlers(): void {
@@ -124,6 +133,23 @@ function registerIpcHandlers(): void {
   // 获取统计信息
   ipcMain.handle('items:getStats', () => {
     return getItemsManager().getStats();
+  });
+
+  ipcMain.handle(
+    'note-history:saveVersion',
+    (_event: IpcMainInvokeEvent, noteId: string, title: string, content: string) => {
+      const item = getItemsManager().getById(noteId);
+      if (!item || item.type !== 'note') return false;
+      return getVersionHistory().saveVersion(noteId, title, content);
+    }
+  );
+
+  ipcMain.handle('note-history:getVersions', (_event: IpcMainInvokeEvent, noteId: string) => {
+    return getVersionHistory().getVersions(noteId);
+  });
+
+  ipcMain.handle('note-history:getVersion', (_event: IpcMainInvokeEvent, versionId: number) => {
+    return getVersionHistory().getVersion(versionId);
   });
 
   // 导出数据

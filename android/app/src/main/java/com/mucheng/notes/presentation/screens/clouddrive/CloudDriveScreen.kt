@@ -50,6 +50,7 @@ import com.mucheng.notes.domain.model.payload.CloudUploadState
 import com.mucheng.notes.presentation.viewmodel.CloudDriveItem
 import com.mucheng.notes.presentation.viewmodel.CloudDriveViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mucheng.notes.security.AppLockExternalActivityGuard
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -124,7 +125,11 @@ fun CloudDriveScreen(
                 actions = {
                     // 上传文件
                     IconButton(
-                        onClick = { uploadLauncher.launch(arrayOf("*/*")) },
+                        onClick = {
+                            AppLockExternalActivityGuard.launchFromUnlockedApp {
+                                uploadLauncher.launch(arrayOf("*/*"))
+                            }
+                        },
                         enabled = uiState.authorized
                     ) {
                         Icon(Icons.Default.Upload, contentDescription = "上传文件")
@@ -162,7 +167,11 @@ fun CloudDriveScreen(
         floatingActionButton = {
             if (uiState.authorized) {
                 FloatingActionButton(
-                    onClick = { uploadLauncher.launch(arrayOf("*/*")) },
+                    onClick = {
+                        AppLockExternalActivityGuard.launchFromUnlockedApp {
+                            uploadLauncher.launch(arrayOf("*/*"))
+                        }
+                    },
                     modifier = Modifier.padding(bottom = bottomPadding.calculateBottomPadding())
                 ) {
                     Icon(Icons.Default.Upload, contentDescription = "上传文件")

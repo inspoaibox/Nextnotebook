@@ -609,9 +609,9 @@ const FlowchartEditorInner: React.FC<FlowchartEditorProps> = ({ data, onSave }) 
   };
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div className="flowchart-editor" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 工具栏 */}
-      <div style={{ 
+      <div className="diagram-editor-toolbar" style={{
         padding: '8px 12px', 
         borderBottom: '1px solid #f0f0f0',
         background: '#fafafa',
@@ -676,7 +676,7 @@ const FlowchartEditorInner: React.FC<FlowchartEditorProps> = ({ data, onSave }) 
       </div>
 
       {/* 流程图容器 */}
-      <div style={{ flex: 1 }} ref={reactFlowWrapper}>
+      <div className="flowchart-canvas-wrap" style={{ flex: 1 }} ref={reactFlowWrapper}>
         <ReactFlow
           nodes={nodes}
           edges={edges}

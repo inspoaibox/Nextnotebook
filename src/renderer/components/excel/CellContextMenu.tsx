@@ -114,6 +114,7 @@ export const CellContextMenu: React.FC<CellContextMenuProps> = ({
       {visible && (
         <div
           ref={menuRef}
+          className="excel-context-menu"
           style={{
             position: 'fixed',
             left: position.x,

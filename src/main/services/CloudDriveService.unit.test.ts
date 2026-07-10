@@ -452,6 +452,40 @@ describe('CloudDriveService (unit)', () => {
       })).toBe(false);
     });
 
+    it('旧版已完成下载但缺少侧表证明的 cloud_file 缺失时不应保留', () => {
+      (service as any).localAvailability = {};
+      expect(shouldPreserveMissingRemoteOnlyItem({
+        id: 'downloaded-file',
+        type: 'cloud_file',
+        sync_status: 'clean',
+        remote_rev: 'r1',
+      }, {
+        size: 1024,
+        downloaded_size: 1024,
+        downloaded_at: Date.now(),
+        download_state: 'completed',
+        upload_state: 'completed',
+        file_hash: 'abc',
+      })).toBe(false);
+    });
+
+    it('未完成下载的 cloud_file 缺失时仍按远端-only 元数据保留', () => {
+      (service as any).localAvailability = {};
+      expect(shouldPreserveMissingRemoteOnlyItem({
+        id: 'partial-file',
+        type: 'cloud_file',
+        sync_status: 'clean',
+        remote_rev: 'r1',
+      }, {
+        size: 1024,
+        downloaded_size: 512,
+        downloaded_at: Date.now(),
+        download_state: 'completed',
+        upload_state: 'completed',
+        file_hash: 'abc',
+      })).toBe(true);
+    });
+
     it('远端 clean 且本机没有本地存在证明的 cloud_folder 缺失时应保留', () => {
       (service as any).localAvailability = {};
       expect(shouldPreserveMissingRemoteOnlyItem({

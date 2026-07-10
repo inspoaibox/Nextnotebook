@@ -95,6 +95,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mucheng.notes.R
 import com.mucheng.notes.presentation.components.NoteToolbar
 import com.mucheng.notes.presentation.viewmodel.NoteDetailViewModel
+import com.mucheng.notes.security.AppLockExternalActivityGuard
 
 
 /**
@@ -407,8 +408,16 @@ fun NoteDetailScreen(
                             onQuoteClick = { viewModel.insertPrefix("> ") },
                             onCodeClick = { viewModel.insertMarkdown("`", "`") },
                             onLinkClick = { viewModel.insertMarkdown("[", "](url)") },
-                            onImageClick = { imagePickerLauncher.launch("image/*") },
-                            onAttachmentClick = { filePickerLauncher.launch("*/*") },
+                            onImageClick = {
+                                AppLockExternalActivityGuard.launchFromUnlockedApp {
+                                    imagePickerLauncher.launch("image/*")
+                                }
+                            },
+                            onAttachmentClick = {
+                                AppLockExternalActivityGuard.launchFromUnlockedApp {
+                                    filePickerLauncher.launch("*/*")
+                                }
+                            },
                             onUndoClick = { viewModel.undo() },
                             onRedoClick = { viewModel.redo() },
                             onTableClick = { viewModel.insertTable() },
@@ -923,7 +932,9 @@ fun NoteDetailScreen(
                                         "${context.packageName}.fileprovider",
                                         photoFile
                                     )
-                                    cameraLauncher.launch(tempPhotoUri!!)
+                                    AppLockExternalActivityGuard.launchFromUnlockedApp {
+                                        cameraLauncher.launch(tempPhotoUri!!)
+                                    }
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -938,7 +949,11 @@ fun NoteDetailScreen(
                             
                             // 选择图片按钮
                             OutlinedButton(
-                                onClick = { aiImagePickerLauncher.launch("image/*") },
+                                onClick = {
+                                    AppLockExternalActivityGuard.launchFromUnlockedApp {
+                                        aiImagePickerLauncher.launch("image/*")
+                                    }
+                                },
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Icon(

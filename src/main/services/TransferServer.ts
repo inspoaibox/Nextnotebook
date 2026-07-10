@@ -324,6 +324,7 @@ export class TransferServer {
 
     targetSocket.emit(SOCKET_EVENTS.FILE_INCOMING, {
       senderId: this.deviceId,
+      sessionId,
       fileInfo: { id: fileId, filename, fileSize, mimeType, totalChunks },
     });
 
@@ -756,6 +757,7 @@ export class TransferServer {
       console.log(`[TransferServer] Forwarding file start to device ${targetDeviceId}`);
       targetSocket.emit(SOCKET_EVENTS.FILE_INCOMING, {
         senderId,
+        sessionId,
         fileInfo,
       });
     }

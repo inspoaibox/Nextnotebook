@@ -55,7 +55,7 @@ const VaultLockScreen: React.FC<VaultLockScreenProps> = ({ onUnlock, onSetPasswo
 
   if (!hasPassword) {
     return (
-      <div style={{
+      <div className="vault-lock-screen" style={{
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -78,7 +78,7 @@ const VaultLockScreen: React.FC<VaultLockScreenProps> = ({ onUnlock, onSetPasswo
   }
 
   return (
-    <div style={{
+    <div className="vault-lock-screen" style={{
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',

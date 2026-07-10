@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   font_size: 14,
   auto_save: true,
   auto_save_interval: 30,
+  note_history_enabled: true,
   show_line_numbers: true,
   spell_check: false,
   auto_launch: false,

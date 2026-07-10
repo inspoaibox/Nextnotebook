@@ -289,7 +289,7 @@ const ToolboxPanel: React.FC = () => {
   const selectedCategory = currentTool?.category;
 
   return (
-    <Layout style={{ height: '100%' }}>
+    <Layout className="toolbox-panel" style={{ height: '100%' }}>
       <Sider width={260} className="toolbox-sider" style={{ borderRight: '1px solid var(--border-color, #f0f0f0)' }}>
         <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color, #f0f0f0)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <AppstoreOutlined style={{ fontSize: 16, color: '#1890ff' }} />
@@ -311,7 +311,7 @@ const ToolboxPanel: React.FC = () => {
           style={{ background: 'transparent', borderRight: 0, height: 'calc(100% - 49px)', overflow: 'auto' }}
         />
       </Sider>
-      <Content style={{ padding: 16, overflow: 'auto' }}>
+      <Content className="toolbox-content" style={{ padding: 16, overflow: 'auto' }}>
         <div style={{ marginBottom: 16 }}>
           <Title level={4} style={{ margin: 0 }}>
             {currentTool?.icon} {currentTool?.name}
@@ -3154,7 +3154,7 @@ function hello() {
 
       {/* 选项（仅 MD→HTML 模式） */}
       {mode === 'md2html' && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fafafa', borderRadius: 6, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <div className="toolbox-options-bar" style={{ marginBottom: 12, padding: '8px 12px', background: '#fafafa', borderRadius: 6, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <Checkbox checked={options.gfm} onChange={e => setOptions({...options, gfm: e.target.checked})}>
             GFM 模式
           </Checkbox>
@@ -4032,7 +4032,7 @@ const TextCompareTool: React.FC = () => {
 
       {/* 统计信息 */}
       {diffResult && (
-        <div style={{ marginBottom: 8, padding: '8px 12px', background: '#f6f8fa', borderRadius: 4 }}>
+        <div className="toolbox-options-bar" style={{ marginBottom: 8, padding: '8px 12px', background: '#f6f8fa', borderRadius: 4 }}>
           <Space size="large">
             <Text>
               <span style={{ color: '#1a7f37' }}>● 新增: {diffResult.stats.added} 行</span>
@@ -4883,7 +4883,7 @@ const EmojiTool: React.FC = () => {
         <Text strong>已添加的 Emoji</Text>
         <div style={{ marginTop: 8, maxHeight: 400, overflow: 'auto' }}>
           {editorEmojis.map((item, idx) => (
-            <div key={idx} style={{ marginBottom: 8, padding: 8, background: '#fafafa', borderRadius: 4 }}>
+            <div key={idx} className="emoji-added-item" style={{ marginBottom: 8, padding: 8, background: '#fafafa', borderRadius: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <img src={getEmojiSvgUrl(getSkintoneVariant(item.emoji, selectedSkinTone))} alt={item.emoji.annotation} style={{ width: 32, height: 32 }} />
                 <div style={{ flex: 1, fontSize: 12 }}>{item.emoji.annotation}</div>
@@ -4905,7 +4905,7 @@ const EmojiTool: React.FC = () => {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <style>{`.emoji-item:hover { background: #f5f5f5; border-color: #d9d9d9 !important; }`}</style>
+      <style>{`body:not(.dark-mode) .emoji-item:hover { background: #f5f5f5; border-color: #d9d9d9 !important; } body.dark-mode .emoji-item:hover { background: #262626; border-color: #434343 !important; }`}</style>
       <div style={{ marginBottom: 12, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <Input placeholder="搜索 emoji（支持英文、hexcode）" prefix={<SearchOutlined />} value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: 260 }} allowClear />
         <Select value={selectedCategory} onChange={setSelectedCategory} style={{ width: 140 }} options={[{ value: 'all', label: '全部分类' }, ...categories.map(cat => ({ value: cat, label: `${emojiCategories[cat]?.icon || ''} ${emojiCategories[cat]?.name || cat}` }))]} />
@@ -4923,7 +4923,7 @@ const EmojiTool: React.FC = () => {
         { key: 'editor', label: <span><EditOutlined /> 编辑器 ({editorEmojis.length})</span> },
       ]} />
       {activeTab === 'editor' ? renderEditor() : (
-        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexWrap: 'wrap', gap: 4, alignContent: 'flex-start', padding: 8, background: '#fafafa', borderRadius: 8 }}>
+        <div className="emoji-grid" style={{ flex: 1, overflow: 'auto', display: 'flex', flexWrap: 'wrap', gap: 4, alignContent: 'flex-start', padding: 8, background: '#fafafa', borderRadius: 8 }}>
           {displayEmojis.length === 0 ? (
             <div style={{ width: '100%', textAlign: 'center', padding: 40, color: '#999' }}>
               {activeTab === 'favorites' ? '暂无收藏的 emoji' : activeTab === 'recent' ? '暂无最近使用的 emoji' : '未找到匹配的 emoji'}

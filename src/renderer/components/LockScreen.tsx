@@ -45,6 +45,7 @@ const LockScreen: React.FC<LockScreenProps> = ({ onUnlock, failedAttempts, locke
 
   return (
     <div
+      className="app-lock-screen"
       style={{
         position: 'fixed',
         top: 0,
@@ -59,6 +60,7 @@ const LockScreen: React.FC<LockScreenProps> = ({ onUnlock, failedAttempts, locke
       }}
     >
       <div
+        className="app-lock-card"
         style={{
           background: 'white',
           borderRadius: 16,
@@ -69,6 +71,7 @@ const LockScreen: React.FC<LockScreenProps> = ({ onUnlock, failedAttempts, locke
         }}
       >
         <div
+          className="app-lock-icon"
           style={{
             width: 80,
             height: 80,

@@ -92,6 +92,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStats: () => ipcRenderer.invoke('items:getStats'),
   },
 
+  noteHistory: {
+    saveVersion: (noteId: string, title: string, content: string) =>
+      ipcRenderer.invoke('note-history:saveVersion', noteId, title, content),
+    getVersions: (noteId: string) => ipcRenderer.invoke('note-history:getVersions', noteId),
+    getVersion: (versionId: number) => ipcRenderer.invoke('note-history:getVersion', versionId),
+  },
+
   // Sync API
   sync: {
     initialize: (config: object) => ipcRenderer.invoke('sync:initialize', config),

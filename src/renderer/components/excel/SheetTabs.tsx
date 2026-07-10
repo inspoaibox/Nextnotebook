@@ -124,6 +124,7 @@ export const SheetTabs: React.FC<SheetTabsProps> = ({
       {sheets.map((sheet, index) => (
         <div
           key={sheet.id}
+          className={`sheet-tab ${index === activeIndex ? 'active' : ''}`}
           draggable
           onDragStart={(e) => handleDragStart(e, index)}
           onDragOver={handleDragOver}

@@ -26,6 +26,10 @@ import com.mucheng.notes.domain.model.SyncResult
 import com.mucheng.notes.domain.model.payload.CloudFilePayload
 import com.mucheng.notes.domain.model.payload.CloudFolderPayload
 import com.mucheng.notes.domain.model.payload.ResourcePayload
+import com.mucheng.notes.domain.model.payload.VaultEntryPayload
+import com.mucheng.notes.domain.model.payload.VaultEntryType
+import com.mucheng.notes.domain.model.payload.VaultPasskey
+import com.mucheng.notes.security.PasskeyPrivateKeyFieldCrypto
 import com.mucheng.notes.security.SecureSyncStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +41,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -215,6 +220,29 @@ class SyncEngine @Inject constructor(
             webDAVAdapter
         }
     }
+
+    private fun getPasskeyFieldSecret(): String? {
+        val cfg = config ?: return null
+        return cfg.serverSyncKey ?: cfg.password ?: cfg.apiKey
+    }
+
+    private fun prepareItemForRemote(item: ItemEntity): ItemEntity {
+        if (item.type != ItemType.VAULT_ENTRY.value) return item
+        val payload = PasskeyPrivateKeyFieldCrypto.protectVaultPayloadForRemote(
+            item.payload,
+            getPasskeyFieldSecret()
+        )
+        return if (payload == item.payload) item else item.copy(payload = payload)
+    }
+
+    private fun restoreItemFromRemote(item: ItemEntity): ItemEntity {
+        if (item.type != ItemType.VAULT_ENTRY.value) return item
+        val payload = PasskeyPrivateKeyFieldCrypto.restoreVaultPayloadFromRemote(
+            item.payload,
+            getPasskeyFieldSecret()
+        )
+        return if (payload == item.payload) item else item.copy(payload = payload)
+    }
     
     /**
      * 执行同步（明文同步，不再需要加密）
@@ -257,6 +285,10 @@ class SyncEngine @Inject constructor(
             val pushResult = pushChanges(cfg)
             pushed += pushResult.count
             errors.addAll(pushResult.errors)
+
+            val passkeyProtectionResult = protectRemotePasskeyPayloads(cfg)
+            pushed += passkeyProtectionResult.count
+            errors.addAll(passkeyProtectionResult.errors)
             
             // 2. Pull 远端变更
             val pullResult = pullChanges(cfg)
@@ -554,7 +586,7 @@ class SyncEngine @Inject constructor(
                 }
 
                 // 上传项目
-                val result = adapter.putItem(itemToUpload)
+                val result = adapter.putItem(prepareItemForRemote(itemToUpload))
 
                 if (result.isSuccess) {
                     val remoteRev = result.getOrThrow()
@@ -608,6 +640,54 @@ class SyncEngine @Inject constructor(
             }
         }
         
+        return PushResult(count, errors)
+    }
+
+    private suspend fun protectRemotePasskeyPayloads(cfg: SyncConfig): PushResult {
+        val errors = mutableListOf<String>()
+        var count = 0
+        if (getPasskeyFieldSecret().isNullOrBlank()) return PushResult(count, errors)
+
+        val effectiveModules = if (cfg.type == "server") cfg.syncModules else cfg.syncModules.copy(cloudDrive = false)
+        val enabledTypes = SyncModuleTypes.getEnabledTypes(effectiveModules)
+        if (ItemType.VAULT_ENTRY.value !in enabledTypes) return PushResult(count, errors)
+
+        val adapter = getAdapter()
+        val localVaultItems = itemDao.getByTypeOnce(ItemType.VAULT_ENTRY.value)
+            .filter { item ->
+                item.syncStatus == "clean" &&
+                    PasskeyPrivateKeyFieldCrypto.hasPasskeyPrivateKey(item.payload)
+            }
+
+        for (localItem in localVaultItems) {
+            try {
+                val remoteItem = adapter.getItem(localItem.id) ?: continue
+                if (
+                    remoteItem.deletedTime != null ||
+                    remoteItem.contentHash != localItem.contentHash ||
+                    !PasskeyPrivateKeyFieldCrypto.hasUnprotectedPasskeyPrivateKey(remoteItem.payload)
+                ) {
+                    continue
+                }
+
+                val result = adapter.putItem(prepareItemForRemote(localItem.copy(encryptionApplied = 0)))
+                if (result.isSuccess) {
+                    itemDao.markSynced(localItem.id, result.getOrThrow())
+                    count++
+                } else {
+                    errors.add(
+                        "Failed to protect remote passkey item ${localItem.id}: " +
+                            (result.exceptionOrNull()?.message ?: "unknown error")
+                    )
+                }
+            } catch (e: Exception) {
+                errors.add("Error protecting remote passkey item ${localItem.id}: ${e.message}")
+            }
+        }
+
+        if (count > 0) {
+            android.util.Log.d("SyncEngine", "Protected $count remote passkey payload(s)")
+        }
         return PushResult(count, errors)
     }
 
@@ -717,6 +797,95 @@ class SyncEngine @Inject constructor(
         }
     }
 
+    private suspend fun tryMergePasskeyUsageConflict(
+        localItem: ItemEntity,
+        remoteItem: ItemEntity
+    ): Boolean {
+        if (localItem.type != ItemType.VAULT_ENTRY.value || remoteItem.type != ItemType.VAULT_ENTRY.value) {
+            return false
+        }
+
+        return try {
+            val localPayload = json.decodeFromString<VaultEntryPayload>(localItem.payload)
+            val remotePayload = json.decodeFromString<VaultEntryPayload>(remoteItem.payload)
+            if (localPayload.entryType != VaultEntryType.LOGIN || remotePayload.entryType != VaultEntryType.LOGIN) {
+                return false
+            }
+
+            if (
+                normalizeVaultPayloadForPasskeyUsageCompare(localPayload) !=
+                normalizeVaultPayloadForPasskeyUsageCompare(remotePayload)
+            ) {
+                return false
+            }
+
+            val mergedPayload = remotePayload.copy(
+                passkeys = mergePasskeyUsage(localPayload, remotePayload)
+            )
+            val mergedPayloadText = json.encodeToString(mergedPayload)
+            itemDao.upsert(
+                remoteItem.copy(
+                    payload = mergedPayloadText,
+                    contentHash = computeContentHash(mergedPayloadText),
+                    syncStatus = "modified",
+                    localRev = localItem.localRev + 1,
+                    updatedTime = System.currentTimeMillis()
+                )
+            )
+            true
+        } catch (e: Exception) {
+            android.util.Log.w(
+                "SyncEngine",
+                "Failed to merge passkey usage conflict for ${localItem.id}: ${e.message}"
+            )
+            false
+        }
+    }
+
+    private fun normalizeVaultPayloadForPasskeyUsageCompare(payload: VaultEntryPayload): String {
+        val passkeys = payload.passkeys
+            .map { passkey ->
+                passkey.copy(
+                    signCount = 0,
+                    lastUsedAt = null
+                )
+            }
+            .sortedBy { passkey -> passkey.id.ifBlank { passkey.credentialId } }
+        return json.encodeToString(payload.copy(passkeys = passkeys))
+    }
+
+    private fun mergePasskeyUsage(
+        localPayload: VaultEntryPayload,
+        remotePayload: VaultEntryPayload
+    ): List<VaultPasskey> {
+        val merged = LinkedHashMap<String, VaultPasskey>()
+        remotePayload.passkeys.forEach { passkey ->
+            merged[passkey.id.ifBlank { passkey.credentialId }] = passkey
+        }
+        localPayload.passkeys.forEach { passkey ->
+            val key = passkey.id.ifBlank { passkey.credentialId }
+            val existing = merged[key]
+            if (existing == null) {
+                merged[key] = passkey
+            } else {
+                val latestUsedAt = listOfNotNull(existing.lastUsedAt, passkey.lastUsedAt)
+                    .maxOrNull()
+                merged[key] = existing.copy(
+                    signCount = maxOf(existing.signCount, passkey.signCount),
+                    lastUsedAt = latestUsedAt
+                )
+            }
+        }
+        return merged.values.toList()
+    }
+
+    private fun computeContentHash(content: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(content.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+            .take(16)
+    }
+
     private suspend fun shouldRestoreRemoteCloudItemInsteadOfDeleting(
         localDeletedItem: ItemEntity,
         adapter: WebDAVAdapter
@@ -804,8 +973,9 @@ class SyncEngine @Inject constructor(
                 val filteredItems = allItems.filter { it.type in enabledTypes }
                 android.util.Log.d("SyncEngine", "Full pull: ${filteredItems.size} items (filtered from ${allItems.size})")
 
-                for (remoteItem in filteredItems) {
+                for (encryptedRemoteItem in filteredItems) {
                     try {
+                        val remoteItem = restoreItemFromRemote(encryptedRemoteItem)
                         if (remoteItem.deletedTime != null) {
                             if (applyRemoteDeletedItem(
                                     itemId = remoteItem.id,
@@ -829,6 +999,10 @@ class SyncEngine @Inject constructor(
                         } else if (localItem.contentHash != remoteItem.contentHash) {
                             // 内容不同，检查冲突
                             if (localItem.syncStatus == "modified") {
+                                if (tryMergePasskeyUsageConflict(localItem, remoteItem)) {
+                                    count++
+                                    continue
+                                }
                                 if (isLocalStaleConflictCopy(localItem)) {
                                     // 本地本身就是陈旧冲突副本（relativePath/filename
                                     // 含后缀）：不要再派生 "副本的副本"，直接用远端覆盖。
@@ -901,7 +1075,7 @@ class SyncEngine @Inject constructor(
                             }
                         }
                     } catch (e: Exception) {
-                        android.util.Log.e("SyncEngine", "Error processing full pull item ${remoteItem.id}: ${e.message}")
+                        android.util.Log.e("SyncEngine", "Error processing full pull item ${encryptedRemoteItem.id}: ${e.message}")
                     }
                 }
 
@@ -932,8 +1106,8 @@ class SyncEngine @Inject constructor(
             for (change in result.changes) {
                 if (change.type !in enabledTypes) continue
 
-                val remoteItem = adapter.getItem(change.itemId)
-                if (remoteItem == null) {
+                val encryptedRemoteItem = adapter.getItem(change.itemId)
+                if (encryptedRemoteItem == null) {
                     if (change.deletedTime != null) {
                         if (applyRemoteDeletedItem(
                                 itemId = change.itemId,
@@ -950,6 +1124,7 @@ class SyncEngine @Inject constructor(
                     android.util.Log.w("SyncEngine", "Remote item ${change.itemId} not found, skipping")
                     continue
                 }
+                val remoteItem = restoreItemFromRemote(encryptedRemoteItem)
 
                 val localItem = itemDao.getById(remoteItem.id)
 
@@ -973,6 +1148,10 @@ class SyncEngine @Inject constructor(
                 }
 
                 if (localItem != null && localItem.syncStatus == "modified") {
+                    if (tryMergePasskeyUsageConflict(localItem, remoteItem)) {
+                        count++
+                        continue
+                    }
                     if (isLocalStaleConflictCopy(localItem)) {
                         // 本地本身就是陈旧冲突副本：跳过派生，直接用远端覆盖
                         itemDao.hardDelete(localItem.id)

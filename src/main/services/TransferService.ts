@@ -342,11 +342,11 @@ class TransferService {
       this.broadcast('transfer:file-chunk', data);
     });
 
-    this.server.on('file:complete', data => {
+    this.server.on('file:complete', async data => {
       const { fileId, fileHash } = data;
       if (!fileId) return;
 
-      const completeInfo = this.handleFileComplete(fileId, fileHash);
+      const completeInfo = await this.handleFileComplete(fileId, fileHash);
 
       this.broadcast('transfer:file-complete', { ...data, ...completeInfo });
     });
@@ -444,20 +444,48 @@ class TransferService {
     this.filePaths.delete(fileId);
   }
 
-  private handleFileComplete(
+  private finishWriteStream(stream: fs.WriteStream): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        stream.off('finish', onFinish);
+        stream.off('error', onError);
+      };
+      const onFinish = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      stream.once('finish', onFinish);
+      stream.once('error', onError);
+      stream.end();
+    });
+  }
+
+  private async handleFileComplete(
     fileId: string,
     fileHash?: string
-  ): { localPath?: string; fileHash?: string } {
+  ): Promise<{ localPath?: string; fileHash?: string; status?: 'completed' | 'failed'; error?: string }> {
     const stream = this.fileStreams.get(fileId);
     const localPath = this.filePaths.get(fileId);
 
     if (stream) {
       try {
-        stream.end();
+        await this.finishWriteStream(stream);
       } catch (e) {
         console.error('[TransferService] Error closing stream:', e);
+        this.db?.failFileTransfer(fileId);
+        return {
+          localPath: localPath || undefined,
+          fileHash: fileHash || undefined,
+          status: 'failed',
+          error: e instanceof Error ? e.message : String(e),
+        };
+      } finally {
+        this.fileStreams.delete(fileId);
       }
-      this.fileStreams.delete(fileId);
     }
     this.filePaths.delete(fileId);
 
@@ -471,18 +499,32 @@ class TransferService {
             console.error(
               `[TransferService] Hash mismatch for ${fileId}: expected ${fileHash}, got ${computedHash}`
             );
+            this.db.failFileTransfer(fileId);
+            return {
+              localPath,
+              fileHash: computedHash,
+              status: 'failed',
+              error: 'hash_mismatch',
+            };
           }
           verifiedHash = computedHash;
         } catch (e) {
           console.error('[TransferService] Failed to verify file hash:', e);
+          this.db.failFileTransfer(fileId);
+          return {
+            localPath,
+            fileHash: fileHash || undefined,
+            status: 'failed',
+            error: e instanceof Error ? e.message : String(e),
+          };
         }
       }
       this.db.completeFileTransfer(fileId, localPath, verifiedHash);
       console.log('[TransferService] File transfer completed:', localPath);
-      return { localPath, fileHash: verifiedHash };
+      return { localPath, fileHash: verifiedHash, status: 'completed' };
     }
 
-    return { localPath: localPath || undefined, fileHash: fileHash || undefined };
+    return { localPath: localPath || undefined, fileHash: fileHash || undefined, status: 'completed' };
   }
 
   private cleanupDeviceFileStreams(deviceId: string) {
@@ -598,11 +640,16 @@ class TransferService {
       this.broadcast('transfer:file-chunk', data);
     });
 
-    on('file:complete', (data: any) => {
+    on('file:complete', async (data: any) => {
       const { fileId } = data;
-      let completeInfo: { localPath?: string; fileHash?: string } = {};
+      let completeInfo: {
+        localPath?: string;
+        fileHash?: string;
+        status?: 'completed' | 'failed';
+        error?: string;
+      } = {};
       if (fileId) {
-        completeInfo = this.handleFileComplete(fileId, data.fileHash);
+        completeInfo = await this.handleFileComplete(fileId, data.fileHash);
       }
       const payload = { ...data, ...completeInfo };
       this.broadcast('transfer:relay:file-complete', payload);

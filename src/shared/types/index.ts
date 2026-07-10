@@ -88,6 +88,27 @@ export interface VaultTotp {
   secret: string;
 }
 
+// 通行密钥（Passkey/WebAuthn）元数据
+export interface VaultPasskey {
+  id: string;
+  credential_type: 'public-key';
+  rp_id: string;
+  rp_name: string;
+  credential_id: string;
+  user_id: string;
+  user_name: string;
+  user_display_name: string;
+  public_key: string;
+  private_key: string;
+  sign_count: number;
+  algorithm: string;
+  transports: string[];
+  backup_eligible: boolean;
+  backup_state: boolean;
+  created_at: number;
+  last_used_at: number | null;
+}
+
 // 密码库条目 payload
 export interface VaultEntryPayload {
   name: string;
@@ -100,6 +121,7 @@ export interface VaultEntryPayload {
   password: string;
   totp_secrets: VaultTotp[];  // 多个 TOTP 密钥
   uris: VaultUri[];
+  passkeys: VaultPasskey[];
   // 银行卡类型字段
   card_holder_name: string;
   card_number: string;
@@ -468,6 +490,7 @@ export interface AppSettings {
   font_size: number;
   auto_save: boolean;
   auto_save_interval: number;
+  note_history_enabled: boolean;
   show_line_numbers: boolean;
   spell_check: boolean;
   auto_launch: boolean;

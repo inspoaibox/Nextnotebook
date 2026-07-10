@@ -16,6 +16,7 @@ import com.mucheng.notes.presentation.navigation.MainNavigation
 import com.mucheng.notes.presentation.screens.lock.LockScreen
 import com.mucheng.notes.presentation.theme.MuchengNotesTheme
 import com.mucheng.notes.presentation.viewmodel.SettingsViewModel
+import com.mucheng.notes.security.AppLockExternalActivityGuard
 import com.mucheng.notes.security.AppLockManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -34,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val isLockedState = mutableStateOf(false)
     private val lockSessionState = mutableStateOf(0)
+    private var skipLockRefreshUntilResume = false
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,17 +73,32 @@ class MainActivity : AppCompatActivity() {
     
     override fun onStart() {
         super.onStart()
+        if (AppLockExternalActivityGuard.isAwaitingReturn()) {
+            skipLockRefreshUntilResume = true
+            updateSecureWindowFlag()
+            return
+        }
         refreshLockState()
     }
 
     override fun onResume() {
         super.onResume()
+        if (skipLockRefreshUntilResume) {
+            skipLockRefreshUntilResume = false
+            AppLockExternalActivityGuard.consumeReturn()
+            updateSecureWindowFlag()
+            return
+        }
+        if (AppLockExternalActivityGuard.consumeReturn()) {
+            updateSecureWindowFlag()
+            return
+        }
         refreshLockState()
     }
     
     override fun onStop() {
         super.onStop()
-        if (!isChangingConfigurations) {
+        if (!isChangingConfigurations && !AppLockExternalActivityGuard.shouldSkipBackgroundRecord()) {
             appLockManager.recordBackground()
         }
     }

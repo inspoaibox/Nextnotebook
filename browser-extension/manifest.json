@@ -34,6 +34,21 @@
   ],
   "content_scripts": [
     {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["passkey-page.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": false,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["passkey-bridge.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": false
+    },
+    {
       "matches": ["<all_urls>"],
       "js": ["lib/Readability.js", "lib/turndown.js", "lib/turndown-plugin-gfm.js", "content.js"],
       "run_at": "document_idle",

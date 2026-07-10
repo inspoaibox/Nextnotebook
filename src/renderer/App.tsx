@@ -24,7 +24,7 @@ import { useFolders } from './hooks/useFolders';
 import { useTags } from './hooks/useTags';
 import { useSettings } from './contexts/SettingsContext';
 import { useFeatureSettings } from './hooks/useFeatureSettings';
-import { itemsApi, notesApi, parsePayload } from './services/itemsApi';
+import { itemsApi, noteHistoryApi, notesApi, parsePayload } from './services/itemsApi';
 import { syncApi } from './services/syncApi';
 import { aiSettingsApi } from './services/aiApi';
 import { ItemBase, NotePayload } from '@shared/types';
@@ -529,14 +529,21 @@ const App: React.FC = () => {
 
   const handleSaveNote = useCallback(
     async (id: string, content: string, title: string) => {
-      await updateNote(id, { content, title });
+      const updated = await updateNote(id, { content, title });
+      if (updated && settings.note_history_enabled) {
+        try {
+          await noteHistoryApi.saveVersion(id, title, content);
+        } catch (error) {
+          console.warn('[App] 保存笔记历史失败:', error);
+        }
+      }
       // 通知同步服务有内容变更
       if (syncInitialized) {
         await syncApi.notifyChange();
       }
       setPendingChanges(prev => prev + 1);
     },
-    [updateNote, syncInitialized]
+    [updateNote, syncInitialized, settings.note_history_enabled]
   );
 
   // 处理图片上传
@@ -1447,6 +1454,9 @@ const App: React.FC = () => {
                     onCreateTag={createTag}
                     isTrashView={selectedView === 'trash'}
                     defaultMode={isNewNote ? 'edit' : 'preview'}
+                    noteHistoryEnabled={settings.note_history_enabled}
+                    autoSaveEnabled={settings.auto_save}
+                    autoSaveInterval={settings.auto_save_interval}
                   />
                 )}
               </Content>
