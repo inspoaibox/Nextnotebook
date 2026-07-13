@@ -1,13 +1,15 @@
 (function patchMuchengPageCredentials() {
-  if (window.__muchengPasskeyPagePatched) {
+  if (window.__muchengPasskeyPageController) {
+    window.__muchengPasskeyPageController.setEnabled(true);
     return;
   }
-  window.__muchengPasskeyPagePatched = true;
 
   const PAGE_SOURCE = 'mucheng-passkey-page';
   const CONTENT_SOURCE = 'mucheng-passkey-content';
   const REQUEST_TIMEOUT_MS = 20000;
   const originalCredentials = navigator.credentials;
+  let passkeyEnabled = true;
+  let patchInstalled = false;
 
   if (
     !originalCredentials ||
@@ -17,8 +19,10 @@
     return;
   }
 
-  const originalCreate = originalCredentials.create.bind(originalCredentials);
-  const originalGet = originalCredentials.get.bind(originalCredentials);
+  const nativeCreate = originalCredentials.create;
+  const nativeGet = originalCredentials.get;
+  const originalCreate = nativeCreate.bind(originalCredentials);
+  const originalGet = nativeGet.bind(originalCredentials);
 
   function bufferToBase64Url(value) {
     if (!value) return '';
@@ -241,8 +245,8 @@
     }
   }
 
-  navigator.credentials.create = async function muchengCreateCredential(options) {
-    if (!options?.publicKey) {
+  async function muchengCreateCredential(options) {
+    if (!passkeyEnabled || !options?.publicKey) {
       return originalCreate(options);
     }
 
@@ -259,10 +263,10 @@
       return originalCreate(options);
     }
     throw createDomException(result?.error || '通行密钥创建失败', 'NotAllowedError');
-  };
+  }
 
-  navigator.credentials.get = async function muchengGetCredential(options) {
-    if (!options?.publicKey) {
+  async function muchengGetCredential(options) {
+    if (!passkeyEnabled || !options?.publicKey) {
       return originalGet(options);
     }
 
@@ -279,5 +283,51 @@
       return originalGet(options);
     }
     throw createDomException(result?.error || '通行密钥验证失败', 'NotAllowedError');
+  }
+
+  function installPatch() {
+    if (patchInstalled) {
+      return;
+    }
+    navigator.credentials.create = muchengCreateCredential;
+    navigator.credentials.get = muchengGetCredential;
+    patchInstalled = true;
+  }
+
+  function uninstallPatch() {
+    if (!patchInstalled) {
+      return;
+    }
+    if (navigator.credentials.create === muchengCreateCredential) {
+      navigator.credentials.create = nativeCreate;
+    }
+    if (navigator.credentials.get === muchengGetCredential) {
+      navigator.credentials.get = nativeGet;
+    }
+    patchInstalled = false;
+  }
+
+  function setPasskeyEnabled(enabled) {
+    passkeyEnabled = enabled === true;
+    if (passkeyEnabled) {
+      installPatch();
+    } else {
+      uninstallPatch();
+    }
+  }
+
+  window.__muchengPasskeyPageController = {
+    setEnabled: setPasskeyEnabled,
   };
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window || event.data?.source !== CONTENT_SOURCE) {
+      return;
+    }
+    if (event.data?.action === 'passkeyConfig') {
+      setPasskeyEnabled(event.data.enabled === true);
+    }
+  });
+
+  setPasskeyEnabled(true);
 })();

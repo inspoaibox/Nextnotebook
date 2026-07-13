@@ -33,6 +33,51 @@ import {
   ItemBase,
 } from '@shared/types';
 
+type CloudDriveItemsChangedHint = {
+  changedIds?: string[];
+  deletedIds?: string[];
+  full?: boolean;
+};
+
+type CloudDriveItemSnapshotForUi = {
+  id: string;
+  type: string;
+  payload: CloudFilePayload | CloudFolderPayload;
+  sync_status: ItemBase['sync_status'];
+  remote_rev: string | null;
+};
+
+export type CloudDriveItemsChangedEvent = {
+  at: number;
+  full?: boolean;
+  changed?: CloudDriveItemSnapshotForUi[];
+  deletedIds?: string[];
+};
+
+export type CloudDriveDirectoryListingForUi = {
+  folderPath: string;
+  items: CloudDriveItemSnapshotForUi[];
+  localStates: Record<string, { availability: CloudLocalAvailability }>;
+  total: number;
+  at: number;
+};
+
+type CloudDriveDirectoryIndexCache = {
+  at: number;
+  foldersByParent: Map<string, CloudDriveItemSnapshotForUi[]>;
+  filesByParent: Map<string, CloudDriveItemSnapshotForUi[]>;
+  folderItems: CloudDriveItemSnapshotForUi[];
+  transferItems: CloudDriveItemSnapshotForUi[];
+  itemParents: Map<string, string>;
+  itemTypes: Map<string, 'cloud_file' | 'cloud_folder'>;
+};
+
+type CloudDrivePathLookupCache = {
+  files: Map<string, string>;
+  folders: Map<string, string>;
+  itemPaths: Map<string, { type: 'cloud_file' | 'cloud_folder'; path: string }>;
+};
+
 // ========== 模块单例 ==========
 let cloudDriveService: CloudDriveService | null = null;
 
@@ -41,20 +86,36 @@ let cloudDriveService: CloudDriveService | null = null;
 const CLOUD_DRIVE_NAMESPACE = '6f3c1d2a-9b7e-4a8c-b5f3-2e1d0c9b8a74';
 
 export class CloudDriveService {
+  private static readonly VERBOSE_ITEM_LOGS = false;
+  private static readonly LOCAL_STATES_CACHE_TTL_MS = 5_000;
+  private static readonly CLOUD_ITEMS_UI_CACHE_TTL_MS = 5_000;
   private itemsManager: ItemsManager;
   private userDataPath: string;
   private configPath: string;
   private localStatePath: string;
   private config: CloudDriveConfig;
   private localAvailability: Record<string, CloudLocalAvailability>;
+  private localStatesCache: {
+    at: number;
+    value: Record<string, { availability: CloudLocalAvailability }>;
+  } | null = null;
+  private cloudItemsUiCache: {
+    at: number;
+    items: CloudDriveItemSnapshotForUi[];
+  } | null = null;
+  private cloudDirectoryIndexCache: CloudDriveDirectoryIndexCache | null = null;
+  private cloudItemPathLookupCache: CloudDrivePathLookupCache | null = null;
+  private pendingItemsChangedFullRefresh = false;
+  private pendingItemsChangedIds = new Set<string>();
+  private pendingItemsDeletedIds = new Set<string>();
 
   private watcher: FSWatcher | null = null;
   private mainWindow: BrowserWindow | null = null;
   private itemsChangedTimer: NodeJS.Timeout | null = null;
   private consistencyTimer: NodeJS.Timeout | null = null;
-  private static readonly CONSISTENCY_CHECK_INTERVAL_MS = 4000;
+  private static readonly CONSISTENCY_CHECK_INTERVAL_MS = 60_000;
   private lastSnapshotConsistencyAt = 0;
-  private static readonly SNAPSHOT_CONSISTENCY_MIN_INTERVAL_MS = 1500;
+  private static readonly SNAPSHOT_CONSISTENCY_MIN_INTERVAL_MS = 30_000;
 
   // ========== 下载回环抑制（P2-4）==========
   // 当 CloudDriveScheduler 下载文件 / CloudDriveService 处理删除/冲突复制时，
@@ -130,11 +191,28 @@ export class CloudDriveService {
   }
 
   private saveLocalAvailability(): void {
+    this.invalidateLocalStatesCache();
     try {
       fs.writeFileSync(this.localStatePath, JSON.stringify(this.localAvailability, null, 2), 'utf-8');
     } catch (err) {
       console.error('[CloudDriveService] 保存本地可用性状态失败:', err);
     }
+  }
+
+  private invalidateLocalStatesCache(): void {
+    this.localStatesCache = null;
+  }
+
+  private invalidateCloudItemsUiCache(): void {
+    this.cloudItemsUiCache = null;
+  }
+
+  private invalidateCloudDirectoryIndexCache(): void {
+    this.cloudDirectoryIndexCache = null;
+  }
+
+  private invalidateCloudItemPathLookupCache(): void {
+    this.cloudItemPathLookupCache = null;
   }
 
   getConfig(): CloudDriveConfig {
@@ -143,15 +221,38 @@ export class CloudDriveService {
 
   updateConfig(patch: Partial<CloudDriveConfig>): CloudDriveConfig {
     this.config = { ...this.config, ...patch };
+    this.invalidateLocalStatesCache();
+    this.invalidateCloudItemsUiCache();
+    this.invalidateCloudDirectoryIndexCache();
+    this.invalidateCloudItemPathLookupCache();
     this.saveConfig();
     return { ...this.config };
   }
 
   getLocalStates(): Record<string, { availability: CloudLocalAvailability }> {
+    const now = Date.now();
+    if (
+      this.localStatesCache &&
+      now - this.localStatesCache.at < CloudDriveService.LOCAL_STATES_CACHE_TTL_MS
+    ) {
+      return { ...this.localStatesCache.value };
+    }
+
     const out: Record<string, { availability: CloudLocalAvailability }> = {};
     const files = this.itemsManager.getByType('cloud_file');
+    const root = this.config.watched_root_path;
     for (const file of files) {
-      const absPath = this.getAbsolutePathForCloudFile(file.id);
+      let absPath: string | null = null;
+      if (root) {
+        try {
+          const payload = JSON.parse(file.payload) as CloudFilePayload;
+          if (payload.relative_path) {
+            absPath = path.join(root, payload.relative_path);
+          }
+        } catch {
+          absPath = null;
+        }
+      }
       const stored = this.localAvailability[file.id];
       const exists = !!absPath && fs.existsSync(absPath);
       out[file.id] = {
@@ -160,7 +261,8 @@ export class CloudDriveService {
           : 'online_only',
       };
     }
-    return out;
+    this.localStatesCache = { at: now, value: out };
+    return { ...out };
   }
 
   private getCloudFilePayload(itemId: string): CloudFilePayload | null {
@@ -188,6 +290,20 @@ export class CloudDriveService {
     return stored === 'offline' ? 'offline' : 'local';
   }
 
+  private enqueueDownloadsForLocalAvailability(itemIds: string[]): void {
+    if (itemIds.length === 0) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getCloudDriveScheduler } = require('./CloudDriveScheduler') as typeof import('./CloudDriveScheduler');
+      const scheduler = getCloudDriveScheduler();
+      for (const itemId of itemIds) {
+        scheduler?.enqueueDownload(itemId);
+      }
+    } catch (err) {
+      console.warn('[CloudDriveService] 本地可用性触发下载失败:', err);
+    }
+  }
+
   /**
    * 删除保护只认“用户显式设置为仅云端”。
    * 不能根据“文件此刻不存在”反推 online_only，否则用户手动删除后会被误判成占位文件，
@@ -205,7 +321,7 @@ export class CloudDriveService {
     if (relativePath) {
       let parent = path.dirname(relativePath.replace(/\\/g, '/'));
       while (parent && parent !== '.' && parent !== '/') {
-        const parentId = this.deriveId(parent);
+        const parentId = this.resolveCloudItemIdByRelativePath('cloud_folder', parent);
         const parentPrevious = this.localAvailability[parentId];
         if (parentPrevious !== 'local' && parentPrevious !== 'offline') {
           this.localAvailability[parentId] = 'local';
@@ -339,13 +455,7 @@ export class CloudDriveService {
     this.saveLocalAvailability();
 
     if ((availability === 'local' || availability === 'offline') && (!absPath || !fs.existsSync(absPath))) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { getCloudDriveScheduler } = require('./CloudDriveScheduler') as typeof import('./CloudDriveScheduler');
-        getCloudDriveScheduler()?.enqueueDownload(itemId);
-      } catch (err) {
-        console.warn('[CloudDriveService] 本地可用性触发下载失败:', err);
-      }
+      this.enqueueDownloadsForLocalAvailability([itemId]);
     }
 
     return true;
@@ -355,6 +465,11 @@ export class CloudDriveService {
     const normalized = String(folderPath || '').split('/').filter(Boolean).join('/');
     const files = this.itemsManager.getByType('cloud_file');
     let changed = 0;
+    let shouldSave = false;
+    let shouldInvalidateLocalStates = false;
+    const downloadsToQueue: string[] = [];
+    const root = this.config.watched_root_path;
+
     for (const file of files) {
       let payload: CloudFilePayload | null = null;
       try {
@@ -368,10 +483,47 @@ export class CloudDriveService {
         ? rel === normalized || rel.startsWith(normalized + '/')
         : true;
       if (!inFolder) continue;
-      if (this.setLocalAvailability(file.id, availability)) {
-        changed++;
+
+      const absPath = root ? path.join(root, payload.relative_path) : null;
+      const previous = this.localAvailability[file.id];
+      const exists = !!absPath && fs.existsSync(absPath);
+
+      if (availability === 'online_only' && absPath && exists) {
+        this.localAvailability[file.id] = availability;
+        shouldSave = shouldSave || previous !== availability;
+        this.markWriting(absPath);
+        try {
+          fs.unlinkSync(absPath);
+          shouldInvalidateLocalStates = true;
+          changed++;
+        } catch (err) {
+          if (previous) {
+            this.localAvailability[file.id] = previous;
+          } else {
+            delete this.localAvailability[file.id];
+          }
+          shouldSave = true;
+          console.warn(`[CloudDriveService] 删除本地副本失败: ${absPath}`, err);
+        }
+        continue;
       }
+
+      this.localAvailability[file.id] = availability;
+      shouldSave = shouldSave || previous !== availability;
+      shouldInvalidateLocalStates = shouldInvalidateLocalStates || previous !== availability;
+      if ((availability === 'local' || availability === 'offline') && (!absPath || !exists)) {
+        downloadsToQueue.push(file.id);
+      }
+      changed++;
     }
+
+    if (shouldSave) {
+      this.saveLocalAvailability();
+    } else if (shouldInvalidateLocalStates) {
+      this.invalidateLocalStatesCache();
+    }
+    this.enqueueDownloadsForLocalAvailability(downloadsToQueue);
+
     return changed;
   }
 
@@ -401,22 +553,37 @@ export class CloudDriveService {
 
   /** 推送上传进度（层5 调用；层4 仅保留接口） */
   emitUploadProgress(progress: CloudUploadProgress): void {
+    if (progress.state === 'completed' || progress.state === 'error' || progress.state === 'paused') {
+      this.invalidateCloudItemsUiCache();
+    }
     this.emit('cloud-drive:uploadProgress', progress);
   }
 
   /** 推送下载进度（层5 调用；层4 仅保留接口） */
   emitDownloadProgress(progress: CloudDownloadProgress): void {
+    if (progress.state === 'completed' || progress.state === 'error' || progress.state === 'paused') {
+      this.invalidateCloudItemsUiCache();
+      this.invalidateLocalStatesCache();
+    }
     this.emit('cloud-drive:downloadProgress', progress);
   }
 
-  /** 推送目录/文件元数据变更（用于前端重拉目录树快照）。 */
-  private emitItemsChanged(localMutation: boolean = false): void {
+  /** 推送目录/文件元数据变更（用于前端更新目录树快照）。 */
+  private emitItemsChanged(
+    localMutation: boolean = false,
+    hint?: CloudDriveItemsChangedHint
+  ): void {
+    this.invalidateCloudItemsUiCache();
+    this.invalidateLocalStatesCache();
+    this.updateCloudItemPathLookupCache(hint);
+    this.updateCloudDirectoryIndexCache(hint);
+    this.queueItemsChangedHint(hint);
     if (this.itemsChangedTimer) {
       clearTimeout(this.itemsChangedTimer);
     }
     this.itemsChangedTimer = setTimeout(() => {
       this.itemsChangedTimer = null;
-      this.emit('cloud-drive:itemsChanged', { at: Date.now() });
+      this.emit('cloud-drive:itemsChanged', this.consumeItemsChangedEvent());
       if (localMutation) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -429,8 +596,60 @@ export class CloudDriveService {
     }, 120);
   }
 
-  notifyItemsChanged(): void {
-    this.emitItemsChanged(false);
+  notifyItemsChanged(hint?: CloudDriveItemsChangedHint): void {
+    this.emitItemsChanged(false, hint);
+  }
+
+  private queueItemsChangedHint(hint?: CloudDriveItemsChangedHint): void {
+    if (!hint || hint.full) {
+      this.pendingItemsChangedFullRefresh = true;
+      return;
+    }
+
+    for (const id of hint.changedIds || []) {
+      if (!id) continue;
+      this.pendingItemsChangedIds.add(id);
+      this.pendingItemsDeletedIds.delete(id);
+    }
+    for (const id of hint.deletedIds || []) {
+      if (!id) continue;
+      this.pendingItemsDeletedIds.add(id);
+      this.pendingItemsChangedIds.delete(id);
+    }
+  }
+
+  private consumeItemsChangedEvent(): CloudDriveItemsChangedEvent {
+    const full = this.pendingItemsChangedFullRefresh;
+    const changedIds = Array.from(this.pendingItemsChangedIds);
+    const deletedIds = Array.from(this.pendingItemsDeletedIds);
+
+    this.pendingItemsChangedFullRefresh = false;
+    this.pendingItemsChangedIds.clear();
+    this.pendingItemsDeletedIds.clear();
+
+    if (full) {
+      return { at: Date.now(), full: true };
+    }
+
+    return {
+      at: Date.now(),
+      changed: this.getCloudItemSnapshotsByIds(changedIds),
+      deletedIds,
+    };
+  }
+
+  private getCloudItemSnapshotsByIds(ids: string[]): CloudDriveItemSnapshotForUi[] {
+    const out: CloudDriveItemSnapshotForUi[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const item = this.itemsManager.getByIdIncludeDeleted(id);
+      if (!item) continue;
+      const snapshot = this.snapshotCloudItemForUi(item);
+      if (snapshot) out.push(snapshot);
+    }
+    return out;
   }
 
   private repairUnconfirmedCloudItems(): void {
@@ -573,9 +792,8 @@ export class CloudDriveService {
   // ========== ID 派生 ==========
 
   /**
-   * 由相对路径派生稳定 UUIDv5。
-   * 相对路径不变 => ID 不变，实现"重启/重命名后保持同一 Item"。
-   * 路径变化（重命名/移动）会被识别为新 Item + 旧 Item 软删除。
+   * 由相对路径派生稳定 UUIDv5，作为首次入库时的默认 ID。
+   * 已经通过重命名/移动保留旧 ID 的记录，会先按 payload.relative_path 反查。
    */
   private deriveId(relativePath: string): string {
     const normalized = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
@@ -586,6 +804,109 @@ export class CloudDriveService {
       .slice(0, 16)
       .toString('hex')
       .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+  }
+
+  private findCloudItemIdByRelativePath(
+    type: 'cloud_file' | 'cloud_folder',
+    relativePath: string
+  ): string | null {
+    const normalized = this.normalizeCloudRelativePath(relativePath);
+    if (!normalized) return null;
+    const cache = this.getCloudItemPathLookupCache();
+    const target = type === 'cloud_file' ? cache.files : cache.folders;
+    return target.get(normalized) ?? null;
+  }
+
+  private resolveCloudItemIdByRelativePath(
+    type: 'cloud_file' | 'cloud_folder',
+    relativePath: string
+  ): string {
+    return this.findCloudItemIdByRelativePath(type, relativePath) ?? this.deriveId(relativePath);
+  }
+
+  private createCloudItemPathLookupCache(): CloudDrivePathLookupCache {
+    return {
+      files: new Map(),
+      folders: new Map(),
+      itemPaths: new Map(),
+    };
+  }
+
+  private getCloudItemPathLookupCache(): CloudDrivePathLookupCache {
+    if (this.cloudItemPathLookupCache) {
+      return this.cloudItemPathLookupCache;
+    }
+
+    const cache = this.createCloudItemPathLookupCache();
+    if (typeof (this.itemsManager as any).getByType !== 'function') {
+      this.cloudItemPathLookupCache = cache;
+      return cache;
+    }
+
+    try {
+      for (const folder of this.itemsManager.getByType('cloud_folder')) {
+        this.addItemToPathLookupCache(cache, folder);
+      }
+      for (const file of this.itemsManager.getByType('cloud_file')) {
+        this.addItemToPathLookupCache(cache, file);
+      }
+    } catch {
+      // 测试桩或数据库暂不可用时退回路径派生 ID。
+    }
+
+    this.cloudItemPathLookupCache = cache;
+    return cache;
+  }
+
+  private addItemToPathLookupCache(cache: CloudDrivePathLookupCache, item: ItemBase): void {
+    if (item.deleted_time !== null) return;
+    if (item.type !== 'cloud_file' && item.type !== 'cloud_folder') return;
+    try {
+      const payload = JSON.parse(item.payload) as { relative_path?: string };
+      const relativePath = this.normalizeCloudRelativePath(payload.relative_path);
+      if (!relativePath) return;
+      this.removeItemFromPathLookupCache(cache, item.id);
+      const target = item.type === 'cloud_file' ? cache.files : cache.folders;
+      target.set(relativePath, item.id);
+      cache.itemPaths.set(item.id, { type: item.type, path: relativePath });
+    } catch {
+      // 损坏 payload 不进入路径索引。
+    }
+  }
+
+  private removeItemFromPathLookupCache(
+    cache: CloudDrivePathLookupCache,
+    itemId: string
+  ): void {
+    const previous = cache.itemPaths.get(itemId);
+    if (!previous) return;
+    const target = previous.type === 'cloud_file' ? cache.files : cache.folders;
+    if (target.get(previous.path) === itemId) {
+      target.delete(previous.path);
+    }
+    cache.itemPaths.delete(itemId);
+  }
+
+  private updateCloudItemPathLookupCache(hint?: CloudDriveItemsChangedHint): void {
+    const cache = this.cloudItemPathLookupCache;
+    if (!cache) return;
+    if (!hint || hint.full) {
+      this.invalidateCloudItemPathLookupCache();
+      return;
+    }
+
+    for (const id of hint.deletedIds || []) {
+      this.removeItemFromPathLookupCache(cache, id);
+    }
+    if (typeof (this.itemsManager as any).getByIdIncludeDeleted !== 'function') {
+      this.invalidateCloudItemPathLookupCache();
+      return;
+    }
+    for (const id of hint.changedIds || []) {
+      this.removeItemFromPathLookupCache(cache, id);
+      const item = this.itemsManager.getByIdIncludeDeleted(id);
+      if (item) this.addItemToPathLookupCache(cache, item);
+    }
   }
 
   // ========== 垃圾过滤（闸门2）==========
@@ -651,17 +972,17 @@ export class CloudDriveService {
 
   /** 由相对路径推导 parent_folder_id（父目录的派生 ID；根级为 'root'） */
   private deriveParentFolderId(relativePath: string): string {
-    const normalized = relativePath.replace(/\\/g, '/');
+    const normalized = this.normalizeCloudRelativePath(relativePath);
     const parentDir = path.posix.dirname(normalized);
     if (parentDir === '.' || parentDir === '') return 'root';
-    return this.deriveId(parentDir);
+    return this.findCloudItemIdByRelativePath('cloud_folder', parentDir) ?? this.deriveId(parentDir);
   }
 
   private startConsistencyWatch(): void {
     this.stopConsistencyWatch();
     const timer = setInterval(() => {
       try {
-        this.ensureSnapshotConsistency(true);
+        this.ensureSnapshotConsistency(false);
       } catch (err) {
         console.warn('[CloudDriveService] 一致性巡检失败:', err);
       }
@@ -867,7 +1188,7 @@ export class CloudDriveService {
       if (!rel) return;
       const size = stats?.size ?? (fs.existsSync(absolutePath) ? fs.statSync(absolutePath).size : 0);
       const mtime = stats?.mtimeMs ?? Date.now();
-      const id = this.deriveId(rel);
+      const id = this.resolveCloudItemIdByRelativePath('cloud_file', rel);
 
       // 大小上限校验（0 = 无限制）
       if (this.config.max_file_size > 0 && size > this.config.max_file_size) {
@@ -979,7 +1300,7 @@ export class CloudDriveService {
     try {
       const rel = this.toRelative(absolutePath);
       if (!rel) return;
-      const id = this.deriveId(rel);
+      const id = this.resolveCloudItemIdByRelativePath('cloud_folder', rel);
       this.markLocalCopyPresent(id, rel);
 
       const payload: CloudFolderPayload = {
@@ -1009,7 +1330,7 @@ export class CloudDriveService {
       }
       const rel = this.toRelative(absolutePath);
       if (!rel) return;
-      const id = this.deriveId(rel);
+      const id = this.resolveCloudItemIdByRelativePath('cloud_file', rel);
       if (this.isExplicitOnlineOnly(id)) {
         return;
       }
@@ -1058,7 +1379,7 @@ export class CloudDriveService {
       }
       const rel = this.toRelative(absolutePath);
       if (!rel) return;
-      const id = this.deriveId(rel);
+      const id = this.resolveCloudItemIdByRelativePath('cloud_folder', rel);
       // 删除文件夹本身
       this.softDeleteCloudItem(id);
       // 级联软删除其下所有子孙（按 relative_path 前缀匹配）
@@ -1100,16 +1421,20 @@ export class CloudDriveService {
         schema_version: 1,
       };
       this.itemsManager.upsertFromPlainItem(item, 'modified');
-      console.log(`[CloudDriveService] 新增 ${type}: ${payload.relative_path ?? ''} -> ${id}`);
-      this.emitItemsChanged(true);
+      if (CloudDriveService.VERBOSE_ITEM_LOGS) {
+        console.log(`[CloudDriveService] 新增 ${type}: ${payload.relative_path ?? ''} -> ${id}`);
+      }
+      this.emitItemsChanged(true, { changedIds: [id] });
     } else if (existing.deleted_time !== null) {
       // 之前被软删除、现在又出现：恢复
       const restored = this.itemsManager.restore(id);
       // 恢复后再 update 元数据（updated_time/size 等）
       const updated = this.itemsManager.update(id, payload);
-      console.log(`[CloudDriveService] 恢复 ${type}: ${id}`);
+      if (CloudDriveService.VERBOSE_ITEM_LOGS) {
+        console.log(`[CloudDriveService] 恢复 ${type}: ${id}`);
+      }
       if (restored || updated?.content_hash !== existing.content_hash) {
-        this.emitItemsChanged(true);
+        this.emitItemsChanged(true, { changedIds: [id] });
       }
     } else {
       // 已存在且未删除：更新（ItemsManager.update 内部会做 content_hash 去重）
@@ -1118,13 +1443,13 @@ export class CloudDriveService {
           const repaired = this.itemsManager.markUnconfirmedCloudItemForSync(id);
           if (repaired) {
             console.warn(`[CloudDriveService] 修复未确认远端版本的 ${type}: ${payload.relative_path ?? id}`);
-            this.emitItemsChanged(true);
+            this.emitItemsChanged(true, { changedIds: [id] });
           }
         }
         return;
       }
       this.itemsManager.update(id, payload);
-      this.emitItemsChanged(true);
+      this.emitItemsChanged(true, { changedIds: [id] });
     }
   }
 
@@ -1132,8 +1457,11 @@ export class CloudDriveService {
     this.discardUploadForLocalDelete(id);
     const ok = this.itemsManager.softDelete(id);
     if (ok) {
-      console.log(`[CloudDriveService] 软删除: ${id}`);
-      this.emitItemsChanged(true);
+      this.invalidateLocalStatesCache();
+      if (CloudDriveService.VERBOSE_ITEM_LOGS) {
+        console.log(`[CloudDriveService] 软删除: ${id}`);
+      }
+      this.emitItemsChanged(true, { deletedIds: [id] });
     }
   }
 
@@ -1214,6 +1542,7 @@ export class CloudDriveService {
       // 直接用 db 查询找出所有未删除的 cloud 项，按相对路径前缀过滤
       const rows = this.queryAllCloudItems(false);
       let changed = false;
+      const deletedIds: string[] = [];
       for (const row of rows) {
         let payloadObj: { relative_path?: string } = {};
         try {
@@ -1227,11 +1556,16 @@ export class CloudDriveService {
         if (rp === normalizedPrefix) continue;
         if (rp.startsWith(normalizedPrefix + '/') || rp.startsWith(normalizedPrefix + '\\')) {
           this.discardUploadForLocalDelete(row.id);
-          changed = this.itemsManager.softDelete(row.id) || changed;
+          const deleted = this.itemsManager.softDelete(row.id);
+          if (deleted) {
+            changed = true;
+            deletedIds.push(row.id);
+          }
         }
       }
       if (changed) {
-        this.emitItemsChanged(true);
+        this.invalidateLocalStatesCache();
+        this.emitItemsChanged(true, { deletedIds });
       }
     } catch (err) {
       console.error('[CloudDriveService] cascadeDeleteByPathPrefix 失败:', err);
@@ -1255,6 +1589,162 @@ export class CloudDriveService {
 
   // ========== 层7：UI 列表查询辅助 ==========
 
+  private normalizeCloudRelativePath(value: string | null | undefined): string {
+    return String(value || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  }
+
+  private parentCloudRelativePath(value: string | null | undefined): string {
+    const normalized = this.normalizeCloudRelativePath(value);
+    if (!normalized) return '';
+    const parts = normalized.split('/');
+    parts.pop();
+    return parts.join('/');
+  }
+
+  private snapshotCloudItemForUi(item: ItemBase): CloudDriveItemSnapshotForUi | null {
+    if (item.deleted_time !== null) return null;
+    if (item.type !== 'cloud_file' && item.type !== 'cloud_folder') return null;
+    try {
+      return {
+        id: item.id,
+        type: item.type,
+        payload: JSON.parse(item.payload) as CloudFilePayload | CloudFolderPayload,
+        sync_status: item.sync_status,
+        remote_rev: item.remote_rev,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private getEffectiveAvailabilityFromPayload(
+    itemId: string,
+    payload: CloudFilePayload
+  ): CloudLocalAvailability {
+    const root = this.config.watched_root_path;
+    const absPath = root && payload.relative_path ? path.join(root, payload.relative_path) : null;
+    const exists = !!absPath && fs.existsSync(absPath);
+    if (!exists) return 'online_only';
+    return this.localAvailability[itemId] === 'offline' ? 'offline' : 'local';
+  }
+
+  private createCloudDirectoryIndexCache(): CloudDriveDirectoryIndexCache {
+    return {
+      at: Date.now(),
+      foldersByParent: new Map(),
+      filesByParent: new Map(),
+      folderItems: [],
+      transferItems: [],
+      itemParents: new Map(),
+      itemTypes: new Map(),
+    };
+  }
+
+  private getCloudDirectoryIndexCache(): CloudDriveDirectoryIndexCache {
+    if (this.cloudDirectoryIndexCache) {
+      return this.cloudDirectoryIndexCache;
+    }
+
+    const cache = this.createCloudDirectoryIndexCache();
+    for (const folder of this.itemsManager.getByType('cloud_folder')) {
+      const snapshot = this.snapshotCloudItemForUi(folder);
+      if (snapshot) this.addSnapshotToDirectoryIndexCache(cache, snapshot);
+    }
+    for (const file of this.itemsManager.getByType('cloud_file')) {
+      const snapshot = this.snapshotCloudItemForUi(file);
+      if (snapshot) this.addSnapshotToDirectoryIndexCache(cache, snapshot);
+    }
+    this.sortCloudDirectoryIndexCache(cache);
+    this.cloudDirectoryIndexCache = cache;
+    return cache;
+  }
+
+  private addSnapshotToDirectoryIndexCache(
+    cache: CloudDriveDirectoryIndexCache,
+    snapshot: CloudDriveItemSnapshotForUi
+  ): void {
+    if (snapshot.type !== 'cloud_file' && snapshot.type !== 'cloud_folder') return;
+    const payload = snapshot.payload as CloudFilePayload | CloudFolderPayload;
+    const parentPath = this.parentCloudRelativePath(payload.relative_path);
+    const target = snapshot.type === 'cloud_folder' ? cache.foldersByParent : cache.filesByParent;
+    const siblings = target.get(parentPath) || [];
+    siblings.push(snapshot);
+    target.set(parentPath, siblings);
+    cache.itemParents.set(snapshot.id, parentPath);
+    cache.itemTypes.set(snapshot.id, snapshot.type);
+
+    if (snapshot.type === 'cloud_folder') {
+      cache.folderItems.push(snapshot);
+    } else if (this.isTransferSnapshot(snapshot)) {
+      cache.transferItems.push(snapshot);
+    }
+  }
+
+  private removeSnapshotFromDirectoryIndexCache(
+    cache: CloudDriveDirectoryIndexCache,
+    itemId: string
+  ): void {
+    const parentPath = cache.itemParents.get(itemId);
+    const type = cache.itemTypes.get(itemId);
+    if (parentPath && type) {
+      const target = type === 'cloud_folder' ? cache.foldersByParent : cache.filesByParent;
+      const siblings = target.get(parentPath);
+      if (siblings) {
+        const next = siblings.filter(item => item.id !== itemId);
+        if (next.length > 0) target.set(parentPath, next);
+        else target.delete(parentPath);
+      }
+    }
+
+    cache.folderItems = cache.folderItems.filter(item => item.id !== itemId);
+    cache.transferItems = cache.transferItems.filter(item => item.id !== itemId);
+    cache.itemParents.delete(itemId);
+    cache.itemTypes.delete(itemId);
+  }
+
+  private sortCloudDirectoryIndexCache(cache: CloudDriveDirectoryIndexCache): void {
+    const byRelativePath = (a: CloudDriveItemSnapshotForUi, b: CloudDriveItemSnapshotForUi) => {
+      const left = this.normalizeCloudRelativePath((a.payload as CloudFilePayload | CloudFolderPayload).relative_path);
+      const right = this.normalizeCloudRelativePath((b.payload as CloudFilePayload | CloudFolderPayload).relative_path);
+      return left.localeCompare(right, 'zh-CN');
+    };
+    for (const items of cache.foldersByParent.values()) items.sort(byRelativePath);
+    for (const items of cache.filesByParent.values()) items.sort(byRelativePath);
+    cache.folderItems.sort(byRelativePath);
+    cache.transferItems.sort(byRelativePath);
+  }
+
+  private isTransferSnapshot(snapshot: CloudDriveItemSnapshotForUi): boolean {
+    if (snapshot.type !== 'cloud_file') return false;
+    const payload = snapshot.payload as CloudFilePayload;
+    const uploadActive = payload.upload_state !== 'completed';
+    const downloadState = payload.download_state ?? 'completed';
+    return uploadActive || downloadState !== 'completed';
+  }
+
+  private updateCloudDirectoryIndexCache(hint?: CloudDriveItemsChangedHint): void {
+    const cache = this.cloudDirectoryIndexCache;
+    if (!cache) return;
+    if (!hint || hint.full) {
+      this.invalidateCloudDirectoryIndexCache();
+      return;
+    }
+
+    for (const id of hint.deletedIds || []) {
+      this.removeSnapshotFromDirectoryIndexCache(cache, id);
+    }
+    for (const id of hint.changedIds || []) {
+      if (!id) continue;
+      this.removeSnapshotFromDirectoryIndexCache(cache, id);
+      const item = this.itemsManager.getByIdIncludeDeleted(id);
+      if (!item) continue;
+      const snapshot = this.snapshotCloudItemForUi(item);
+      if (snapshot) this.addSnapshotToDirectoryIndexCache(cache, snapshot);
+    }
+    cache.at = Date.now();
+    this.sortCloudDirectoryIndexCache(cache);
+  }
+
   /** 返回所有处于 error/pending 的 cloud_file id（供 retryAll IPC 使用） */
   listCloudFilesForRetry(): string[] {
     const out: string[] = [];
@@ -1276,50 +1766,71 @@ export class CloudDriveService {
    * 返回 UI 所需的 cloud_file/cloud_folder 摘要列表。
    * 用于渲染层（重新）构建进度面板：包括 pending/uploading/paused/error/completed 全部状态。
    */
-  listCloudItemsForUi(): Array<{
-    id: string;
-    type: string;
-    payload: CloudFilePayload | CloudFolderPayload;
-    sync_status: ItemBase['sync_status'];
-    remote_rev: string | null;
-  }> {
-    this.ensureSnapshotConsistency();
+  listCloudItemsForUi(): CloudDriveItemSnapshotForUi[] {
+    const now = Date.now();
+    if (
+      this.cloudItemsUiCache &&
+      now - this.cloudItemsUiCache.at < CloudDriveService.CLOUD_ITEMS_UI_CACHE_TTL_MS
+    ) {
+      return this.cloudItemsUiCache.items.map(item => ({ ...item }));
+    }
+
     const files = this.itemsManager.getByType('cloud_file');
     const folders = this.itemsManager.getByType('cloud_folder');
-    const out: Array<{
-      id: string;
-      type: string;
-      payload: CloudFilePayload | CloudFolderPayload;
-      sync_status: ItemBase['sync_status'];
-      remote_rev: string | null;
-    }> = [];
+    const out: CloudDriveItemSnapshotForUi[] = [];
     for (const f of files) {
-      try {
-        out.push({
-          id: f.id,
-          type: 'cloud_file',
-          payload: JSON.parse(f.payload) as CloudFilePayload,
-          sync_status: f.sync_status,
-          remote_rev: f.remote_rev,
-        });
-      } catch {
-        /* 跳过损坏 payload */
-      }
+      const snapshot = this.snapshotCloudItemForUi(f);
+      if (snapshot) out.push(snapshot);
     }
     for (const fo of folders) {
-      try {
-        out.push({
-          id: fo.id,
-          type: 'cloud_folder',
-          payload: JSON.parse(fo.payload) as CloudFolderPayload,
-          sync_status: fo.sync_status,
-          remote_rev: fo.remote_rev,
-        });
-      } catch {
-        /* 跳过 */
-      }
+      const snapshot = this.snapshotCloudItemForUi(fo);
+      if (snapshot) out.push(snapshot);
+    }
+    this.cloudItemsUiCache = { at: now, items: out };
+    return out.map(item => ({ ...item }));
+  }
+
+  listCloudFoldersForUi(): CloudDriveItemSnapshotForUi[] {
+    return this.getCloudDirectoryIndexCache().folderItems.map(item => ({ ...item }));
+  }
+
+  listCloudTransferItemsForUi(): CloudDriveItemSnapshotForUi[] {
+    return this.getCloudDirectoryIndexCache().transferItems.map(item => ({ ...item }));
+  }
+
+  getLocalStatesByIds(itemIds: string[]): Record<string, { availability: CloudLocalAvailability }> {
+    const out: Record<string, { availability: CloudLocalAvailability }> = {};
+    const seen = new Set<string>();
+    for (const itemId of itemIds || []) {
+      if (!itemId || seen.has(itemId)) continue;
+      seen.add(itemId);
+      const payload = this.getCloudFilePayload(itemId);
+      if (!payload) continue;
+      out[itemId] = { availability: this.getEffectiveAvailabilityFromPayload(itemId, payload) };
     }
     return out;
+  }
+
+  listCloudDirectoryForUi(folderPath: string): CloudDriveDirectoryListingForUi {
+    const normalizedFolder = this.normalizeCloudRelativePath(folderPath);
+    const cache = this.getCloudDirectoryIndexCache();
+    const folders = cache.foldersByParent.get(normalizedFolder) || [];
+    const files = cache.filesByParent.get(normalizedFolder) || [];
+    const out = [...folders, ...files].map(item => ({ ...item }));
+    const localStates: Record<string, { availability: CloudLocalAvailability }> = {};
+    for (const file of files) {
+      localStates[file.id] = {
+        availability: this.getEffectiveAvailabilityFromPayload(file.id, file.payload as CloudFilePayload),
+      };
+    }
+
+    return {
+      folderPath: normalizedFolder,
+      items: out,
+      localStates,
+      total: out.length,
+      at: Date.now(),
+    };
   }
 
   // ========== 销毁 ==========
@@ -1625,6 +2136,28 @@ export function registerCloudDriveIpcHandlers(): void {
     if (!scheduler) return { cleared: [] };
     return { cleared: scheduler.clearCompletedDownloads() };
   });
+
+  ipcMain.handle('cloud-drive:listFolders', async (): Promise<{ items: unknown[] }> => {
+    return { items: svc().listCloudFoldersForUi() };
+  });
+
+  ipcMain.handle('cloud-drive:listTransferItems', async (): Promise<{ items: unknown[] }> => {
+    return { items: svc().listCloudTransferItemsForUi() };
+  });
+
+  ipcMain.handle(
+    'cloud-drive:getLocalStatesByIds',
+    async (_event: IpcMainInvokeEvent, itemIds: string[]): Promise<Record<string, { availability: CloudLocalAvailability }>> => {
+      return svc().getLocalStatesByIds(Array.isArray(itemIds) ? itemIds : []);
+    }
+  );
+
+  ipcMain.handle(
+    'cloud-drive:listDirectory',
+    async (_event: IpcMainInvokeEvent, folderPath: string): Promise<CloudDriveDirectoryListingForUi> => {
+      return svc().listCloudDirectoryForUi(folderPath);
+    }
+  );
 
   ipcMain.handle('cloud-drive:listItems', async (): Promise<{ items: unknown[] }> => {
     // 返回当前所有未删除 cloud_file/cloud_folder 元数据（供 UI 重建进度列表）

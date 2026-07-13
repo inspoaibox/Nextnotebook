@@ -781,7 +781,7 @@ export class CloudDriveScheduler {
       upload_session_id: sessionId,
       error_message: null,
     });
-    this.scheduleMetadataSync(500);
+    this.scheduleMetadataSync(itemId, 500);
     // 重新读取 payload 以反映最新 size
     const fresh = this.itemsManager.getById(itemId);
     let p = payload;
@@ -870,7 +870,7 @@ export class CloudDriveScheduler {
       upload_state: 'error',
       error_message: message,
     });
-    this.scheduleMetadataSync(500);
+    this.scheduleMetadataSync(itemId, 500);
     this.emitProgressFor(itemId, payload, 'error', 0);
     console.error(`[CloudDriveScheduler] 上传失败 ${payload.relative_path}: ${message}`);
   }
@@ -904,11 +904,11 @@ export class CloudDriveScheduler {
     }
   }
 
-  private scheduleMetadataSync(delayMs: number = 800): void {
+  private scheduleMetadataSync(itemId: string | null = null, delayMs: number = 800): void {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { getCloudDriveService } = require('./CloudDriveService') as typeof import('./CloudDriveService');
-      getCloudDriveService()?.notifyItemsChanged();
+      getCloudDriveService()?.notifyItemsChanged(itemId ? { changedIds: [itemId] } : undefined);
     } catch (err) {
       console.warn('[CloudDriveScheduler] 通知网盘列表刷新失败:', err);
     }
@@ -1562,6 +1562,7 @@ export class CloudDriveScheduler {
     payload: CloudFilePayload,
     size: number
   ): void {
+    this.restoreDownloadedFileMtime(payload);
     this.markLocalCopyPresent(itemId, payload.relative_path);
     this.updatePayload(itemId, {
       download_state: 'completed',
@@ -1579,6 +1580,21 @@ export class CloudDriveScheduler {
       }
     }
     this.emitDownloadProgressFor(itemId, p, 'completed', p.size || size);
+  }
+
+  private restoreDownloadedFileMtime(payload: CloudFilePayload): void {
+    const mtime = Number(payload.mtime || 0);
+    if (!Number.isFinite(mtime) || mtime <= 0) return;
+    const root = this.getConfig().watched_root_path;
+    if (!root) return;
+    const absPath = path.join(root, payload.relative_path);
+    if (!fs.existsSync(absPath)) return;
+    try {
+      const date = new Date(mtime);
+      fs.utimesSync(absPath, date, date);
+    } catch (err) {
+      console.warn(`[CloudDriveScheduler] 恢复下载文件 mtime 失败 ${payload.relative_path}:`, err);
+    }
   }
 
   private markDownloadError(

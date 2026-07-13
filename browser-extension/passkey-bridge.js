@@ -11,6 +11,38 @@
 
   const PAGE_SOURCE = 'mucheng-passkey-page';
   const CONTENT_SOURCE = 'mucheng-passkey-content';
+  const PASSKEY_ENABLED_STORAGE_KEY = 'muchengPasskeyEnabled';
+
+  function readPasskeyEnabled() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([PASSKEY_ENABLED_STORAGE_KEY], (result) => {
+        resolve(result[PASSKEY_ENABLED_STORAGE_KEY] === true);
+      });
+    });
+  }
+
+  function postPasskeyConfig(enabled) {
+    window.postMessage({
+      source: CONTENT_SOURCE,
+      action: 'passkeyConfig',
+      enabled: enabled === true,
+    }, '*');
+  }
+
+  readPasskeyEnabled().then(postPasskeyConfig);
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes[PASSKEY_ENABLED_STORAGE_KEY]) {
+      return;
+    }
+    postPasskeyConfig(changes[PASSKEY_ENABLED_STORAGE_KEY].newValue === true);
+  });
+
+  chrome.runtime.onMessage.addListener((request) => {
+    if (request?.action === 'passkeyConfigChanged') {
+      postPasskeyConfig(request.enabled === true);
+    }
+  });
 
   window.addEventListener('message', async (event) => {
     if (event.source !== window || event.data?.source !== PAGE_SOURCE) {
@@ -23,6 +55,20 @@
     }
 
     try {
+      const enabled = await readPasskeyEnabled();
+      if (!enabled) {
+        window.postMessage({
+          source: CONTENT_SOURCE,
+          requestId,
+          response: {
+            success: false,
+            fallbackToNative: true,
+            error: '暮城笔记通行密钥功能已关闭',
+          },
+        }, '*');
+        return;
+      }
+
       const response = await chrome.runtime.sendMessage({ action, request });
       window.postMessage({ source: CONTENT_SOURCE, requestId, response }, '*');
     } catch (error) {

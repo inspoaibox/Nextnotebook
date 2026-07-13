@@ -5,7 +5,7 @@
  * 层7：补齐手动控制（重试 / 取消 / 暂停 / 恢复 / 清空已完成）与高级配置编辑。
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Layout, Button, Tooltip, Tag, Empty, Progress, Row, Col, Space,
   Drawer, Form, InputNumber, Switch, Input, Divider, Popconfirm, message, Dropdown, Checkbox, Segmented, Badge,
@@ -30,6 +30,71 @@ import {
 
 const { Content } = Layout;
 const { TextArea } = Input;
+
+const TREE_ROW_HEIGHT = 36;
+const LIST_ROW_HEIGHT = 50;
+const GRID_ITEM_HEIGHT = 144;
+const GRID_GAP = 8;
+const GRID_ROW_HEIGHT = GRID_ITEM_HEIGHT + GRID_GAP;
+const GRID_MIN_COLUMN_WIDTH = 132;
+const VIRTUAL_OVERSCAN_ROWS = 5;
+
+type VirtualWindow = {
+  startIndex: number;
+  endIndex: number;
+  offsetTop: number;
+  totalHeight: number;
+};
+
+const getVirtualWindow = (
+  itemCount: number,
+  rowHeight: number,
+  viewportHeight: number,
+  scrollTop: number
+): VirtualWindow => {
+  if (itemCount <= 0) {
+    return { startIndex: 0, endIndex: 0, offsetTop: 0, totalHeight: 0 };
+  }
+  const safeViewportHeight = Math.max(viewportHeight || 0, rowHeight);
+  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - VIRTUAL_OVERSCAN_ROWS);
+  const visibleCount = Math.ceil(safeViewportHeight / rowHeight) + VIRTUAL_OVERSCAN_ROWS * 2;
+  const endIndex = Math.min(itemCount, startIndex + visibleCount);
+  return {
+    startIndex,
+    endIndex,
+    offsetTop: startIndex * rowHeight,
+    totalHeight: itemCount * rowHeight,
+  };
+};
+
+const useElementSize = <T extends HTMLElement>(): [React.RefObject<T>, { width: number; height: number }] => {
+  const ref = useRef<T>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+
+    const update = () => {
+      setSize({
+        width: element.clientWidth,
+        height: element.clientHeight,
+      });
+    };
+
+    update();
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(update);
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  return [ref, size];
+};
 
 // 字节数格式化
 const formatBytes = (bytes: number): string => {
@@ -81,19 +146,25 @@ type StatusIconTone = 'default' | 'blue' | 'green' | 'warning' | 'error' | 'proc
 const CloudDrivePanel: React.FC = () => {
   const { isDarkMode } = useSettings();
   const {
-    config, isWatching, uploadProgress, cloudItems, downloadProgress, loading,
+    config, isWatching, uploadProgress, cloudItems, cloudItemsRevision, downloadProgress, loading,
     selectWatchedFolder, startWatching, stopWatching, scanNow, updateConfig,
     retryFailed, retryItem, pauseItem, resumeItem, cancelUpload, clearCompleted,
     downloadFile, pauseDownload, resumeDownload, cancelDownload,
-    retryDownload, retryAllDownloads, clearCompletedDownloads, uploadSpeedBps, downloadSpeedBps, localStates, setLocalAvailability, setFolderLocalAvailability, openLocalFile, openLocalDirectory,
+    retryDownload, retryAllDownloads, clearCompletedDownloads, uploadSpeedBps, downloadSpeedBps, localStates, setLocalAvailability, setFolderLocalAvailability, openLocalFile, openLocalDirectory, listDirectory,
   } = useCloudDrive();
   const [currentFolderPath, setCurrentFolderPath] = useState('');
+  const [directoryItems, setDirectoryItems] = useState<typeof cloudItems | null>(null);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [transferOpen, setTransferOpen] = useState(false);
   const [cloudViewMode, setCloudViewMode] = useState<'grid' | 'list'>(() => {
     const saved = localStorage.getItem('cloud-drive-view-mode');
     return saved === 'list' ? 'list' : 'grid';
   });
+  const [treeScrollTop, setTreeScrollTop] = useState(0);
+  const [contentScrollTop, setContentScrollTop] = useState(0);
+  const [treeViewportRef, treeViewportSize] = useElementSize<HTMLDivElement>();
+  const [contentViewportRef, contentViewportSize] = useElementSize<HTMLDivElement>();
 
   // 高级设置抽屉
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -189,8 +260,28 @@ const CloudDrivePanel: React.FC = () => {
     return paths;
   }, [folderEntries]);
 
+  const currentDirectoryItems = directoryItems ?? cloudItems;
+
+  const currentDirectoryFolderEntries = useMemo(() => {
+    const folders = currentDirectoryItems
+      .filter((item): item is typeof item & { type: 'cloud_folder'; payload: CloudFolderPayload } => item.type === 'cloud_folder')
+      .map(item => {
+        const relativePath = normalizeCloudPath(item.payload.relative_path);
+        return {
+          id: item.id,
+          name: item.payload.name || baseCloudName(relativePath),
+          relativePath,
+          parentPath: parentCloudPath(relativePath),
+          syncStatus: item.sync_status,
+          remoteRev: item.remote_rev,
+        };
+      });
+    folders.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'zh-CN'));
+    return folders;
+  }, [currentDirectoryItems]);
+
   const fileEntries = useMemo(() => {
-    const files = cloudItems
+    const files = currentDirectoryItems
       .filter((item): item is typeof item & { type: 'cloud_file'; payload: CloudFilePayload } => item.type === 'cloud_file')
       .map(item => ({
         id: item.id,
@@ -205,13 +296,37 @@ const CloudDrivePanel: React.FC = () => {
       }));
     files.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'zh-CN'));
     return files;
-  }, [cloudItems]);
+  }, [currentDirectoryItems]);
 
   useEffect(() => {
     if (!folderPathSet.has(currentFolderPath)) {
       setCurrentFolderPath('');
     }
   }, [currentFolderPath, folderPathSet]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDirectoryLoading(true);
+    listDirectory(currentFolderPath)
+      .then(listing => {
+        if (!cancelled) {
+          setDirectoryItems(listing.items);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDirectoryItems(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDirectoryLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cloudItemsRevision, currentFolderPath, listDirectory]);
 
   const currentFolderSegments = useMemo(() => {
     const normalized = normalizeCloudPath(currentFolderPath);
@@ -224,8 +339,8 @@ const CloudDrivePanel: React.FC = () => {
   }, [currentFolderPath]);
 
   const visibleFolders = useMemo(
-    () => folderEntries.filter(folder => folder.parentPath === currentFolderPath),
-    [currentFolderPath, folderEntries]
+    () => (directoryItems ? currentDirectoryFolderEntries : folderEntries).filter(folder => folder.parentPath === currentFolderPath),
+    [currentDirectoryFolderEntries, currentFolderPath, directoryItems, folderEntries]
   );
 
   const visibleFiles = useMemo(
@@ -236,6 +351,57 @@ const CloudDrivePanel: React.FC = () => {
   const visibleFolderIds = useMemo(() => visibleFolders.map(folder => folder.id), [visibleFolders]);
   const visibleFileIds = useMemo(() => visibleFiles.map(file => file.id), [visibleFiles]);
   const visibleItemIds = useMemo(() => [...visibleFolderIds, ...visibleFileIds], [visibleFileIds, visibleFolderIds]);
+  const visibleItemIdSet = useMemo(() => new Set(visibleItemIds), [visibleItemIds]);
+  const visibleEntries = useMemo(
+    () => [
+      ...visibleFolders.map(folder => ({ kind: 'folder' as const, folder })),
+      ...visibleFiles.map(file => ({ kind: 'file' as const, file })),
+    ],
+    [visibleFiles, visibleFolders]
+  );
+  const treeEntries = useMemo(
+    () => [{ id: 'root', name: '根目录', relativePath: '', parentPath: '' }, ...folderEntries],
+    [folderEntries]
+  );
+  const gridColumnCount = useMemo(() => {
+    const width = Math.max(contentViewportSize.width - GRID_GAP * 2, GRID_MIN_COLUMN_WIDTH);
+    return Math.max(1, Math.floor((width + GRID_GAP) / (GRID_MIN_COLUMN_WIDTH + GRID_GAP)));
+  }, [contentViewportSize.width]);
+  const contentRowCount = cloudViewMode === 'grid'
+    ? Math.ceil(visibleEntries.length / gridColumnCount)
+    : visibleEntries.length;
+  const treeVirtualWindow = useMemo(
+    () => getVirtualWindow(treeEntries.length, TREE_ROW_HEIGHT, treeViewportSize.height || 288, treeScrollTop),
+    [treeEntries.length, treeScrollTop, treeViewportSize.height]
+  );
+  const contentVirtualWindow = useMemo(
+    () => getVirtualWindow(
+      contentRowCount,
+      cloudViewMode === 'grid' ? GRID_ROW_HEIGHT : LIST_ROW_HEIGHT,
+      contentViewportSize.height || 360,
+      contentScrollTop
+    ),
+    [cloudViewMode, contentRowCount, contentScrollTop, contentViewportSize.height]
+  );
+  const visibleTreeEntries = useMemo(
+    () => treeEntries.slice(treeVirtualWindow.startIndex, treeVirtualWindow.endIndex),
+    [treeEntries, treeVirtualWindow.endIndex, treeVirtualWindow.startIndex]
+  );
+  const virtualVisibleEntries = useMemo(() => {
+    const start = cloudViewMode === 'grid'
+      ? contentVirtualWindow.startIndex * gridColumnCount
+      : contentVirtualWindow.startIndex;
+    const end = cloudViewMode === 'grid'
+      ? Math.min(visibleEntries.length, contentVirtualWindow.endIndex * gridColumnCount)
+      : contentVirtualWindow.endIndex;
+    return visibleEntries.slice(start, end);
+  }, [
+    cloudViewMode,
+    contentVirtualWindow.endIndex,
+    contentVirtualWindow.startIndex,
+    gridColumnCount,
+    visibleEntries,
+  ]);
 
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedFolders = useMemo(
@@ -394,8 +560,15 @@ const CloudDrivePanel: React.FC = () => {
   };
 
   useEffect(() => {
-    setSelectedIds(prev => prev.filter(id => visibleItemIds.includes(id)));
-  }, [visibleItemIds]);
+    setSelectedIds(prev => prev.filter(id => visibleItemIdSet.has(id)));
+  }, [visibleItemIdSet]);
+
+  useEffect(() => {
+    setContentScrollTop(0);
+    if (contentViewportRef.current) {
+      contentViewportRef.current.scrollTop = 0;
+    }
+  }, [cloudViewMode, contentViewportRef, currentFolderPath]);
 
   // 高级设置：保存
   const handleSaveAdvanced = async () => {
@@ -440,7 +613,8 @@ const CloudDrivePanel: React.FC = () => {
       : cardBg,
     padding: 8,
     minWidth: 0,
-    minHeight: 100,
+    height: GRID_ITEM_HEIGHT,
+    boxSizing: 'border-box',
     cursor: 'default',
     display: 'flex',
     flexDirection: 'column',
@@ -598,6 +772,259 @@ const CloudDrivePanel: React.FC = () => {
     </Space>
   );
 
+  const renderGridEntry = (entry: typeof visibleEntries[number]) => {
+    if (entry.kind === 'folder') {
+      const { folder } = entry;
+      return (
+        <Dropdown
+          key={folder.id}
+          trigger={['contextMenu']}
+          menu={{
+            items: [
+              { key: 'open', label: '打开目录', onClick: () => setCurrentFolderPath(folder.relativePath) },
+              { key: 'local-open', label: '打开本地目录', onClick: () => void handleOpenLocalDirectory(folder.relativePath) },
+              { key: 'offline', label: '该目录离线', onClick: () => void handleSetFolderLocalAvailability('offline', folder.relativePath) },
+              { key: 'release', label: '释放空间', onClick: () => void handleSetFolderLocalAvailability('online_only', folder.relativePath) },
+            ],
+          }}
+        >
+          <div
+            onDoubleClick={() => setCurrentFolderPath(folder.relativePath)}
+            style={gridItemStyle(selectedIdSet.has(folder.id))}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+              <FolderOutlined style={{ color: '#1890ff', fontSize: 24 }} />
+              <Checkbox
+                checked={selectedIdSet.has(folder.id)}
+                onChange={e => toggleSelection(folder.id, e.target.checked)}
+                onClick={e => e.stopPropagation()}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setCurrentFolderPath(folder.relativePath)}
+              style={{
+                border: 0,
+                background: 'transparent',
+                padding: '5px 0 0',
+                margin: 0,
+                width: '100%',
+                textAlign: 'left',
+                cursor: 'pointer',
+                color: isDarkMode ? '#f0f0f0' : '#222',
+                minWidth: 0,
+              }}
+            >
+              <span
+                style={{
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  wordBreak: 'break-all',
+                  fontWeight: 500,
+                  lineHeight: 1.28,
+                  minHeight: 18,
+                }}
+              >
+                {folder.name}
+              </span>
+            </button>
+            <div style={{ marginTop: 5 }}>{renderFolderStatusTags(folder)}</div>
+            <div style={{ marginTop: 4 }}>{renderFolderActions(folder)}</div>
+          </div>
+        </Dropdown>
+      );
+    }
+
+    const { file } = entry;
+    const availability = localStates[file.id] ?? 'online_only';
+    const uploadState = uploadStateMap.get(file.id)?.state ?? file.uploadState;
+    const downloadProgressItem = downloadStateMap.get(file.id);
+    const downloadState = downloadProgressItem?.state ?? file.downloadState;
+    return (
+      <Dropdown
+        key={file.id}
+        trigger={['contextMenu']}
+        menu={{
+          items: [
+            ...(availability !== 'online_only'
+              ? [{ key: 'open', label: '打开', onClick: () => void handleOpenLocalFile(file.id) }]
+              : [{ key: 'download', label: '下载到本机', onClick: () => void handleSetLocalAvailability(file.id, 'local') }]),
+            ...(availability !== 'offline'
+              ? [{ key: 'offline', label: '离线保留', onClick: () => void handleSetLocalAvailability(file.id, 'offline') }]
+              : []),
+            ...(availability !== 'online_only'
+              ? [{ key: 'release', label: '释放空间', onClick: () => void handleSetLocalAvailability(file.id, 'online_only') }]
+              : []),
+          ],
+        }}
+      >
+        <div
+          onDoubleClick={() => availability === 'online_only' ? handleSetLocalAvailability(file.id, 'local') : handleOpenLocalFile(file.id)}
+          style={gridItemStyle(selectedIdSet.has(file.id))}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+            <FileOutlined style={{ color: '#999', fontSize: 24 }} />
+            <Checkbox
+              checked={selectedIdSet.has(file.id)}
+              onChange={e => toggleSelection(file.id, e.target.checked)}
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+          <div
+            style={{
+              marginTop: 5,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              wordBreak: 'break-all',
+              fontWeight: 500,
+              lineHeight: 1.28,
+              minHeight: 18,
+            }}
+          >
+            {file.filename}
+          </div>
+          <div
+            style={{
+              marginTop: 3,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ color: '#999', fontSize: 11, lineHeight: '18px' }}>{formatBytes(file.size)}</span>
+            {renderFileStatusTags(availability, uploadState, downloadState, file.syncStatus, file.remoteRev)}
+          </div>
+          <div style={{ marginTop: 4 }}>{renderFileActions(file, availability, downloadState)}</div>
+        </div>
+      </Dropdown>
+    );
+  };
+
+  const renderListEntry = (entry: typeof visibleEntries[number]) => {
+    if (entry.kind === 'folder') {
+      const { folder } = entry;
+      return (
+        <Dropdown
+          key={folder.id}
+          trigger={['contextMenu']}
+          menu={{
+            items: [
+              { key: 'open', label: '打开目录', onClick: () => setCurrentFolderPath(folder.relativePath) },
+              { key: 'local-open', label: '打开本地目录', onClick: () => void handleOpenLocalDirectory(folder.relativePath) },
+              { key: 'offline', label: '该目录离线', onClick: () => void handleSetFolderLocalAvailability('offline', folder.relativePath) },
+              { key: 'release', label: '释放空间', onClick: () => void handleSetFolderLocalAvailability('online_only', folder.relativePath) },
+            ],
+          }}
+        >
+          <div
+            style={{
+              height: LIST_ROW_HEIGHT,
+              boxSizing: 'border-box',
+              padding: '5px 10px',
+              borderBottom: `1px solid ${rowBorder}`,
+              display: 'grid',
+              gridTemplateColumns: contentGridColumns,
+              alignItems: 'center',
+              gap: 6,
+              overflow: 'hidden',
+            }}
+          >
+            <Checkbox
+              checked={selectedIdSet.has(folder.id)}
+              onChange={e => toggleSelection(folder.id, e.target.checked)}
+              onClick={e => e.stopPropagation()}
+            />
+            <button
+              type="button"
+              onClick={() => setCurrentFolderPath(folder.relativePath)}
+              style={{
+                border: 0,
+                background: 'transparent',
+                padding: 0,
+                margin: 0,
+                textAlign: 'left',
+                cursor: 'pointer',
+                color: isDarkMode ? '#f0f0f0' : '#222',
+                minWidth: 0,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FolderOutlined style={{ color: '#1890ff' }} />
+                <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {folder.name}
+                </span>
+              </div>
+            </button>
+            <span style={{ color: '#999', fontSize: 12 }}>-</span>
+            {renderFolderStatusTags(folder)}
+            {renderFolderActions(folder)}
+          </div>
+        </Dropdown>
+      );
+    }
+
+    const { file } = entry;
+    const availability = localStates[file.id] ?? 'online_only';
+    const uploadState = uploadStateMap.get(file.id)?.state ?? file.uploadState;
+    const downloadProgressItem = downloadStateMap.get(file.id);
+    const downloadState = downloadProgressItem?.state ?? file.downloadState;
+    return (
+      <Dropdown
+        key={file.id}
+        trigger={['contextMenu']}
+        menu={{
+          items: [
+            ...(availability !== 'online_only'
+              ? [{ key: 'open', label: '打开', onClick: () => void handleOpenLocalFile(file.id) }]
+              : [{ key: 'download', label: '下载到本机', onClick: () => void handleSetLocalAvailability(file.id, 'local') }]),
+            ...(availability !== 'offline'
+              ? [{ key: 'offline', label: '离线保留', onClick: () => void handleSetLocalAvailability(file.id, 'offline') }]
+              : []),
+            ...(availability !== 'online_only'
+              ? [{ key: 'release', label: '释放空间', onClick: () => void handleSetLocalAvailability(file.id, 'online_only') }]
+              : []),
+          ],
+        }}
+      >
+        <div
+          style={{
+            height: LIST_ROW_HEIGHT,
+            boxSizing: 'border-box',
+            padding: '5px 10px',
+            borderBottom: `1px solid ${rowBorder}`,
+            display: 'grid',
+            gridTemplateColumns: contentGridColumns,
+            alignItems: 'center',
+            gap: 6,
+            overflow: 'hidden',
+          }}
+        >
+          <Checkbox
+            checked={selectedIdSet.has(file.id)}
+            onChange={e => toggleSelection(file.id, e.target.checked)}
+            onClick={e => e.stopPropagation()}
+          />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FileOutlined style={{ color: '#999' }} />
+              <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {file.filename}
+              </span>
+            </div>
+          </div>
+          <span style={{ color: '#999', fontSize: 12 }}>{formatBytes(file.size)}</span>
+          {renderFileStatusTags(availability, uploadState, downloadState, file.syncStatus, file.remoteRev)}
+          {renderFileActions(file, availability, downloadState)}
+        </div>
+      </Dropdown>
+    );
+  };
+
   return (
     <Content style={{ background: isDarkMode ? '#141414' : '#fafafa', height: '100%', overflow: 'auto' }}>
       <div style={{ padding: 14, maxWidth: 1180, margin: '0 auto' }}>
@@ -709,34 +1136,43 @@ const CloudDrivePanel: React.FC = () => {
                 {folderEntries.length === 0 && fileEntries.length === 0 ? (
                   <div style={{ padding: 20, color: '#999' }}>暂无目录元数据</div>
                 ) : (
-                  <div>
-                    {[{ id: 'root', name: '根目录', relativePath: '', parentPath: '' }, ...folderEntries].map(folder => {
-                      const depth = folder.relativePath ? folder.relativePath.split('/').length : 0;
-                      const active = folder.relativePath === currentFolderPath;
-                      return (
-                        <button
-                          key={folder.id}
-                          type="button"
-                          onClick={() => setCurrentFolderPath(folder.relativePath)}
-                          style={{
-                            width: '100%',
-                            border: 0,
-                            borderBottom: `1px solid ${rowBorder}`,
-                            background: active ? (isDarkMode ? '#111b26' : '#e6f4ff') : 'transparent',
-                            color: isDarkMode ? '#f0f0f0' : '#222',
-                            textAlign: 'left',
-                            padding: `8px 10px 8px ${10 + depth * 12}px`,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                          }}
-                        >
-                          <FolderOutlined style={{ color: active ? '#1890ff' : '#999' }} />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</span>
-                        </button>
-                      );
-                    })}
+                  <div
+                    ref={treeViewportRef}
+                    onScroll={event => setTreeScrollTop(event.currentTarget.scrollTop)}
+                    style={{ maxHeight: 460, overflowY: 'auto' }}
+                  >
+                    <div style={{ height: treeVirtualWindow.totalHeight, position: 'relative' }}>
+                      <div style={{ transform: `translateY(${treeVirtualWindow.offsetTop}px)` }}>
+                        {visibleTreeEntries.map(folder => {
+                          const depth = folder.relativePath ? folder.relativePath.split('/').length : 0;
+                          const active = folder.relativePath === currentFolderPath;
+                          return (
+                            <button
+                              key={folder.id}
+                              type="button"
+                              onClick={() => setCurrentFolderPath(folder.relativePath)}
+                              style={{
+                                width: '100%',
+                                height: TREE_ROW_HEIGHT,
+                                border: 0,
+                                borderBottom: `1px solid ${rowBorder}`,
+                                background: active ? (isDarkMode ? '#111b26' : '#e6f4ff') : 'transparent',
+                                color: isDarkMode ? '#f0f0f0' : '#222',
+                                textAlign: 'left',
+                                padding: `8px 10px 8px ${10 + depth * 12}px`,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                              }}
+                            >
+                              <FolderOutlined style={{ color: active ? '#1890ff' : '#999' }} />
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folder.name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -769,7 +1205,7 @@ const CloudDrivePanel: React.FC = () => {
                     </Space>
                     <Space size={8} wrap>
                       <span style={{ color: subColor, fontSize: 12 }}>
-                        {visibleFolders.length} 个文件夹，{visibleFiles.length} 个文件
+                        {directoryLoading ? '目录加载中...' : `${visibleFolders.length} 个文件夹，${visibleFiles.length} 个文件`}
                       </span>
                       <Segmented
                         size="small"
@@ -842,255 +1278,39 @@ const CloudDrivePanel: React.FC = () => {
                   <div style={{ padding: 24 }}>
                     <Empty description={currentFolderPath ? '该目录暂无内容' : '网盘目录为空'} />
                   </div>
-                ) : cloudViewMode === 'grid' ? (
+                ) : (
                   <div
+                    ref={contentViewportRef}
+                    onScroll={event => setContentScrollTop(event.currentTarget.scrollTop)}
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(132px, 1fr))',
-                      gap: 8,
-                      padding: 8,
+                      minHeight: 288,
+                      maxHeight: 'calc(100vh - 332px)',
+                      overflowY: 'auto',
                     }}
                   >
-                    {visibleFolders.map(folder => (
-                      <Dropdown
-                        key={folder.id}
-                        trigger={['contextMenu']}
-                        menu={{
-                          items: [
-                            { key: 'open', label: '打开目录', onClick: () => setCurrentFolderPath(folder.relativePath) },
-                            { key: 'local-open', label: '打开本地目录', onClick: () => void handleOpenLocalDirectory(folder.relativePath) },
-                            { key: 'offline', label: '该目录离线', onClick: () => void handleSetFolderLocalAvailability('offline', folder.relativePath) },
-                            { key: 'release', label: '释放空间', onClick: () => void handleSetFolderLocalAvailability('online_only', folder.relativePath) },
-                          ],
+                    <div
+                      style={{
+                        height: contentVirtualWindow.totalHeight,
+                        position: 'relative',
+                        padding: cloudViewMode === 'grid' ? GRID_GAP : 0,
+                        boxSizing: 'content-box',
+                      }}
+                    >
+                      <div
+                        style={{
+                          transform: `translateY(${contentVirtualWindow.offsetTop}px)`,
+                          display: cloudViewMode === 'grid' ? 'grid' : 'block',
+                          gridTemplateColumns: cloudViewMode === 'grid'
+                            ? `repeat(${gridColumnCount}, minmax(0, 1fr))`
+                            : undefined,
+                          gap: cloudViewMode === 'grid' ? GRID_GAP : undefined,
                         }}
                       >
-                        <div
-                          onDoubleClick={() => setCurrentFolderPath(folder.relativePath)}
-                          style={gridItemStyle(selectedIdSet.has(folder.id))}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                            <FolderOutlined style={{ color: '#1890ff', fontSize: 24 }} />
-                            <Checkbox
-                              checked={selectedIdSet.has(folder.id)}
-                              onChange={e => toggleSelection(folder.id, e.target.checked)}
-                              onClick={e => e.stopPropagation()}
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setCurrentFolderPath(folder.relativePath)}
-                            style={{
-                              border: 0,
-                              background: 'transparent',
-                              padding: '5px 0 0',
-                              margin: 0,
-                              width: '100%',
-                              textAlign: 'left',
-                              cursor: 'pointer',
-                              color: isDarkMode ? '#f0f0f0' : '#222',
-                              minWidth: 0,
-                            }}
-                          >
-                            <span
-                              style={{
-                                display: '-webkit-box',
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden',
-                                wordBreak: 'break-all',
-                                fontWeight: 500,
-                                lineHeight: 1.28,
-                                minHeight: 18,
-                              }}
-                            >
-                              {folder.name}
-                            </span>
-                          </button>
-                          <div style={{ marginTop: 5 }}>{renderFolderStatusTags(folder)}</div>
-                          <div style={{ marginTop: 4 }}>{renderFolderActions(folder)}</div>
-                        </div>
-                      </Dropdown>
-                    ))}
-
-                    {visibleFiles.map(file => {
-                      const availability = localStates[file.id] ?? 'online_only';
-                      const uploadState = uploadStateMap.get(file.id)?.state ?? file.uploadState;
-                      const downloadProgressItem = downloadStateMap.get(file.id);
-                      const downloadState = downloadProgressItem?.state ?? file.downloadState;
-                      return (
-                        <Dropdown
-                          key={file.id}
-                          trigger={['contextMenu']}
-                          menu={{
-                            items: [
-                              ...(availability !== 'online_only'
-                                ? [{ key: 'open', label: '打开', onClick: () => void handleOpenLocalFile(file.id) }]
-                                : [{ key: 'download', label: '下载到本机', onClick: () => void handleSetLocalAvailability(file.id, 'local') }]),
-                              ...(availability !== 'offline'
-                                ? [{ key: 'offline', label: '离线保留', onClick: () => void handleSetLocalAvailability(file.id, 'offline') }]
-                                : []),
-                              ...(availability !== 'online_only'
-                                ? [{ key: 'release', label: '释放空间', onClick: () => void handleSetLocalAvailability(file.id, 'online_only') }]
-                                : []),
-                            ],
-                          }}
-                        >
-                          <div
-                            onDoubleClick={() => availability === 'online_only' ? handleSetLocalAvailability(file.id, 'local') : handleOpenLocalFile(file.id)}
-                            style={gridItemStyle(selectedIdSet.has(file.id))}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                              <FileOutlined style={{ color: '#999', fontSize: 24 }} />
-                              <Checkbox
-                                checked={selectedIdSet.has(file.id)}
-                                onChange={e => toggleSelection(file.id, e.target.checked)}
-                                onClick={e => e.stopPropagation()}
-                              />
-                            </div>
-                            <div
-                              style={{
-                                marginTop: 5,
-                                display: '-webkit-box',
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden',
-                                wordBreak: 'break-all',
-                                fontWeight: 500,
-                                lineHeight: 1.28,
-                                minHeight: 18,
-                              }}
-                            >
-                              {file.filename}
-                            </div>
-                            <div
-                              style={{
-                                marginTop: 3,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                flexWrap: 'wrap',
-                              }}
-                            >
-                              <span style={{ color: '#999', fontSize: 11, lineHeight: '18px' }}>{formatBytes(file.size)}</span>
-                              {renderFileStatusTags(availability, uploadState, downloadState, file.syncStatus, file.remoteRev)}
-                            </div>
-                            <div style={{ marginTop: 4 }}>{renderFileActions(file, availability, downloadState)}</div>
-                          </div>
-                        </Dropdown>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div>
-                    {visibleFolders.map(folder => (
-                      <Dropdown
-                        key={folder.id}
-                        trigger={['contextMenu']}
-                        menu={{
-                          items: [
-                            { key: 'open', label: '打开目录', onClick: () => setCurrentFolderPath(folder.relativePath) },
-                            { key: 'local-open', label: '打开本地目录', onClick: () => void handleOpenLocalDirectory(folder.relativePath) },
-                            { key: 'offline', label: '该目录离线', onClick: () => void handleSetFolderLocalAvailability('offline', folder.relativePath) },
-                            { key: 'release', label: '释放空间', onClick: () => void handleSetFolderLocalAvailability('online_only', folder.relativePath) },
-                          ],
-                        }}
-                      >
-                        <div
-                          style={{
-                            padding: '5px 10px',
-                            borderBottom: `1px solid ${rowBorder}`,
-                            display: 'grid',
-                            gridTemplateColumns: contentGridColumns,
-                            alignItems: 'center',
-                            gap: 6,
-                          }}
-                        >
-                          <Checkbox
-                            checked={selectedIdSet.has(folder.id)}
-                            onChange={e => toggleSelection(folder.id, e.target.checked)}
-                            onClick={e => e.stopPropagation()}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setCurrentFolderPath(folder.relativePath)}
-                            style={{
-                              border: 0,
-                              background: 'transparent',
-                              padding: 0,
-                              margin: 0,
-                              textAlign: 'left',
-                              cursor: 'pointer',
-                              color: isDarkMode ? '#f0f0f0' : '#222',
-                              minWidth: 0,
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <FolderOutlined style={{ color: '#1890ff' }} />
-                              <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {folder.name}
-                              </span>
-                            </div>
-                          </button>
-                          <span style={{ color: '#999', fontSize: 12 }}>-</span>
-                          {renderFolderStatusTags(folder)}
-                          {renderFolderActions(folder)}
-                        </div>
-                      </Dropdown>
-                    ))}
-
-                    {visibleFiles.map(file => {
-                      const availability = localStates[file.id] ?? 'online_only';
-                      const uploadState = uploadStateMap.get(file.id)?.state ?? file.uploadState;
-                      const downloadProgressItem = downloadStateMap.get(file.id);
-                      const downloadState = downloadProgressItem?.state ?? file.downloadState;
-                      return (
-                        <Dropdown
-                          key={file.id}
-                          trigger={['contextMenu']}
-                          menu={{
-                            items: [
-                              ...(availability !== 'online_only'
-                                ? [{ key: 'open', label: '打开', onClick: () => void handleOpenLocalFile(file.id) }]
-                                : [{ key: 'download', label: '下载到本机', onClick: () => void handleSetLocalAvailability(file.id, 'local') }]),
-                              ...(availability !== 'offline'
-                                ? [{ key: 'offline', label: '离线保留', onClick: () => void handleSetLocalAvailability(file.id, 'offline') }]
-                                : []),
-                              ...(availability !== 'online_only'
-                                ? [{ key: 'release', label: '释放空间', onClick: () => void handleSetLocalAvailability(file.id, 'online_only') }]
-                                : []),
-                            ],
-                          }}
-                        >
-                          <div
-                            style={{
-                              padding: '5px 10px',
-                              borderBottom: `1px solid ${rowBorder}`,
-                              display: 'grid',
-                              gridTemplateColumns: contentGridColumns,
-                              alignItems: 'center',
-                              gap: 6,
-                            }}
-                          >
-                            <Checkbox
-                              checked={selectedIdSet.has(file.id)}
-                              onChange={e => toggleSelection(file.id, e.target.checked)}
-                              onClick={e => e.stopPropagation()}
-                            />
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <FileOutlined style={{ color: '#999' }} />
-                                <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {file.filename}
-                                </span>
-                              </div>
-                            </div>
-                            <span style={{ color: '#999', fontSize: 12 }}>{formatBytes(file.size)}</span>
-                            {renderFileStatusTags(availability, uploadState, downloadState, file.syncStatus, file.remoteRev)}
-                            {renderFileActions(file, availability, downloadState)}
-                          </div>
-                        </Dropdown>
-                      );
-                    })}
+                        {cloudViewMode === 'grid'
+                          ? virtualVisibleEntries.map(renderGridEntry)
+                          : virtualVisibleEntries.map(renderListEntry)}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

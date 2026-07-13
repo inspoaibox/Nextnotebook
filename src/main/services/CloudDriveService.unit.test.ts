@@ -47,6 +47,7 @@ describe('CloudDriveService (unit)', () => {
   });
 
   afterEach(() => {
+    service.dispose();
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {
@@ -359,6 +360,122 @@ describe('CloudDriveService (unit)', () => {
   });
 
   // ============================================================
+  // 移动/重命名后的路径反查
+  // ============================================================
+  describe('移动/重命名后的路径反查', () => {
+    const installItemsManagerStub = (records: Record<string, any>) => {
+      const getActiveByType = (type: string) =>
+        Object.values(records).filter(item => item.type === type && item.deleted_time === null);
+
+      const manager = {
+        getByType: jest.fn(getActiveByType),
+        getByIdIncludeDeleted: jest.fn((id: string) => records[id] ?? null),
+        upsertFromPlainItem: jest.fn((item: any) => {
+          records[item.id] = item;
+        }),
+        update: jest.fn((id: string, payload: any) => {
+          const current = records[id];
+          if (!current) return null;
+          const next = {
+            ...current,
+            payload: JSON.stringify(payload),
+            content_hash: `updated-${id}-${JSON.stringify(payload).length}`,
+            updated_time: Date.now(),
+          };
+          records[id] = next;
+          return next;
+        }),
+        restore: jest.fn((id: string) => {
+          if (!records[id]) return false;
+          records[id] = { ...records[id], deleted_time: null };
+          return true;
+        }),
+        softDelete: jest.fn((id: string) => {
+          if (!records[id] || records[id].deleted_time !== null) return false;
+          records[id] = { ...records[id], deleted_time: Date.now() };
+          return true;
+        }),
+        markUnconfirmedCloudItemForSync: jest.fn(),
+      };
+
+      (service as any).itemsManager = manager;
+      return manager;
+    };
+
+    const cloudFileRecord = (id: string, relativePath: string, size = 3, mtime = 1000) => ({
+      id,
+      type: 'cloud_file',
+      payload: JSON.stringify({
+        filename: path.basename(relativePath),
+        mime_type: 'text/plain',
+        size,
+        file_hash: 'hash-abc',
+        parent_folder_id: 'root',
+        relative_path: relativePath,
+        mtime,
+        upload_state: 'completed',
+        chunk_size: 8 * 1024 * 1024,
+        total_chunks: 1,
+        uploaded_chunks: [0],
+        upload_session_id: null,
+        error_message: null,
+        download_state: 'completed',
+        downloaded_size: size,
+        downloaded_at: mtime,
+        download_error: null,
+      }),
+      content_hash: `content-${id}`,
+      sync_status: 'clean',
+      remote_rev: 'remote-1',
+      deleted_time: null,
+    });
+
+    it('重命名保留旧 ID 后，新路径扫描不会再创建路径派生的新条目', () => {
+      const watchedRoot = path.join(tmpDir, 'watched');
+      fs.mkdirSync(watchedRoot, { recursive: true });
+      const newAbs = path.join(watchedRoot, 'renamed.txt');
+      fs.writeFileSync(newAbs, 'abc');
+      const stats = fs.statSync(newAbs);
+      service.updateConfig({ watched_root_path: watchedRoot });
+
+      const oldId = (service as any).deriveId('old.txt');
+      const newDerivedId = (service as any).deriveId('renamed.txt');
+      const records: Record<string, any> = {
+        [oldId]: cloudFileRecord(oldId, 'old.txt', stats.size, stats.mtimeMs),
+      };
+      const manager = installItemsManagerStub(records);
+
+      (service as any).applyRename(oldId, newAbs, 'renamed.txt', stats.size, stats.mtimeMs);
+      expect(JSON.parse(records[oldId].payload).relative_path).toBe('renamed.txt');
+
+      (service as any).onFileAdded(newAbs, stats);
+
+      expect(records[newDerivedId]).toBeUndefined();
+      expect(manager.upsertFromPlainItem).not.toHaveBeenCalled();
+      expect(Object.values(records).filter(item => item.deleted_time === null)).toHaveLength(1);
+    });
+
+    it('删除已移动路径时通过 relative_path 命中旧 ID，而不是软删除新派生 ID', () => {
+      const watchedRoot = path.join(tmpDir, 'watched');
+      fs.mkdirSync(watchedRoot, { recursive: true });
+      service.updateConfig({ watched_root_path: watchedRoot });
+
+      const oldId = (service as any).deriveId('old.txt');
+      const newDerivedId = (service as any).deriveId('renamed.txt');
+      const records: Record<string, any> = {
+        [oldId]: cloudFileRecord(oldId, 'renamed.txt', 0, 1000),
+      };
+      const manager = installItemsManagerStub(records);
+
+      (service as any).onFileUnlinked(path.join(watchedRoot, 'renamed.txt'));
+
+      expect(manager.softDelete).toHaveBeenCalledWith(oldId);
+      expect(records[oldId].deleted_time).not.toBeNull();
+      expect(records[newDerivedId]).toBeUndefined();
+    });
+  });
+
+  // ============================================================
   // toRelative
   // ============================================================
   describe('toRelative', () => {
@@ -502,6 +619,291 @@ describe('CloudDriveService (unit)', () => {
       markLocalCopyPresent('keepOffline');
       expect((service as any).localAvailability.newLocal).toBe('local');
       expect((service as any).localAvailability.keepOffline).toBe('offline');
+    });
+  });
+
+  // ============================================================
+  // itemsChanged 增量事件
+  // ============================================================
+  describe('itemsChanged 增量事件', () => {
+    const installItemsManagerStub = (items: Record<string, any>) => {
+      (service as any).itemsManager = {
+        getByIdIncludeDeleted: jest.fn((id: string) => items[id] ?? null),
+      };
+    };
+
+    const queueHint = (hint: any) => (service as any).queueItemsChangedHint(hint);
+    const consume = () => (service as any).consumeItemsChangedEvent();
+
+    it('changedIds 只生成对应条目的 UI 快照', () => {
+      installItemsManagerStub({
+        fileA: {
+          id: 'fileA',
+          type: 'cloud_file',
+          payload: JSON.stringify({
+            filename: 'a.txt',
+            relative_path: 'docs/a.txt',
+            size: 12,
+            upload_state: 'completed',
+            download_state: 'pending',
+          }),
+          sync_status: 'clean',
+          remote_rev: 'r1',
+          deleted_time: null,
+        },
+      });
+
+      queueHint({ changedIds: ['fileA'] });
+      const event = consume();
+
+      expect(event.full).toBeUndefined();
+      expect(event.deletedIds).toEqual([]);
+      expect(event.changed).toHaveLength(1);
+      expect(event.changed[0]).toMatchObject({
+        id: 'fileA',
+        type: 'cloud_file',
+        sync_status: 'clean',
+        remote_rev: 'r1',
+      });
+      expect(event.changed[0].payload.filename).toBe('a.txt');
+    });
+
+    it('deletedIds 覆盖同一批次里较早的 changedIds，避免前端复活已删除项目', () => {
+      installItemsManagerStub({
+        fileA: {
+          id: 'fileA',
+          type: 'cloud_file',
+          payload: JSON.stringify({ filename: 'a.txt', relative_path: 'a.txt' }),
+          sync_status: 'clean',
+          remote_rev: 'r1',
+          deleted_time: null,
+        },
+      });
+
+      queueHint({ changedIds: ['fileA'] });
+      queueHint({ deletedIds: ['fileA'] });
+      const event = consume();
+
+      expect(event.full).toBeUndefined();
+      expect(event.changed).toEqual([]);
+      expect(event.deletedIds).toEqual(['fileA']);
+    });
+
+    it('full hint 强制回退全量刷新并清空已排队的增量提示', () => {
+      installItemsManagerStub({});
+
+      queueHint({ changedIds: ['fileA'], deletedIds: ['fileB'] });
+      queueHint({ full: true });
+      const event = consume();
+
+      expect(event).toMatchObject({ full: true });
+      expect(event.changed).toBeUndefined();
+      expect(event.deletedIds).toBeUndefined();
+    });
+
+    it('已软删除或损坏 payload 的 changedIds 不会进入 UI 快照', () => {
+      installItemsManagerStub({
+        deletedFile: {
+          id: 'deletedFile',
+          type: 'cloud_file',
+          payload: JSON.stringify({ filename: 'deleted.txt', relative_path: 'deleted.txt' }),
+          sync_status: 'clean',
+          remote_rev: 'r1',
+          deleted_time: Date.now(),
+        },
+        brokenFile: {
+          id: 'brokenFile',
+          type: 'cloud_file',
+          payload: '{ not valid json',
+          sync_status: 'clean',
+          remote_rev: 'r2',
+          deleted_time: null,
+        },
+      });
+
+      queueHint({ changedIds: ['deletedFile', 'brokenFile'] });
+      const event = consume();
+
+      expect(event.full).toBeUndefined();
+      expect(event.changed).toEqual([]);
+      expect(event.deletedIds).toEqual([]);
+    });
+  });
+
+  // ============================================================
+  // 文件夹批量本地可用性
+  // ============================================================
+  describe('setFolderLocalAvailability', () => {
+    const cloudFile = (id: string, relativePath: string) => ({
+      id,
+      type: 'cloud_file',
+      payload: JSON.stringify({
+        filename: path.basename(relativePath),
+        relative_path: relativePath,
+        upload_state: 'completed',
+        download_state: 'pending',
+      }),
+      sync_status: 'clean',
+      remote_rev: 'r1',
+      deleted_time: null,
+    });
+
+    it('批量设置目录时只保存一次本地状态，并且不影响目录外文件', () => {
+      const watchedRoot = path.join(tmpDir, 'watched');
+      fs.mkdirSync(watchedRoot, { recursive: true });
+      service.updateConfig({ watched_root_path: watchedRoot });
+      (service as any).itemsManager = {
+        getByType: jest.fn((type: string) => type === 'cloud_file'
+          ? [
+            cloudFile('docsA', 'docs/a.txt'),
+            cloudFile('docsB', 'docs/nested/b.txt'),
+            cloudFile('rootC', 'c.txt'),
+          ]
+          : []),
+      };
+      const saveSpy = jest.spyOn(service as any, 'saveLocalAvailability');
+
+      const changed = service.setFolderLocalAvailability('docs', 'offline');
+
+      expect(changed).toBe(2);
+      expect(saveSpy).toHaveBeenCalledTimes(1);
+      expect((service as any).localAvailability).toMatchObject({
+        docsA: 'offline',
+        docsB: 'offline',
+      });
+      expect((service as any).localAvailability.rootC).toBeUndefined();
+    });
+  });
+
+  // ============================================================
+  // 网盘 UI 轻量查询
+  // ============================================================
+  describe('网盘 UI 轻量查询', () => {
+    const cloudFolder = (id: string, relativePath: string) => ({
+      id,
+      type: 'cloud_folder',
+      payload: JSON.stringify({
+        name: path.basename(relativePath) || 'root',
+        parent_folder_id: null,
+        relative_path: relativePath,
+      }),
+      sync_status: 'clean',
+      remote_rev: 'r1',
+      deleted_time: null,
+    });
+
+    const cloudFile = (
+      id: string,
+      relativePath: string,
+      uploadState = 'completed',
+      downloadState = 'completed'
+    ) => ({
+      id,
+      type: 'cloud_file',
+      payload: JSON.stringify({
+        filename: path.basename(relativePath),
+        mime_type: 'text/plain',
+        size: 1,
+        file_hash: 'hash',
+        parent_folder_id: 'root',
+        relative_path: relativePath,
+        mtime: Date.now(),
+        upload_state: uploadState,
+        chunk_size: 1024,
+        total_chunks: 1,
+        uploaded_chunks: [0],
+        upload_session_id: null,
+        error_message: null,
+        download_state: downloadState,
+        downloaded_size: downloadState === 'completed' ? 1 : 0,
+        downloaded_at: downloadState === 'completed' ? Date.now() : null,
+        download_error: null,
+      }),
+      sync_status: 'clean',
+      remote_rev: 'r1',
+      deleted_time: null,
+    });
+
+    it('listCloudDirectoryForUi 只返回目标目录的直接子项并附带本地状态', () => {
+      const watchedRoot = path.join(tmpDir, 'watched');
+      fs.mkdirSync(path.join(watchedRoot, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(watchedRoot, 'docs', 'a.txt'), 'a');
+      service.updateConfig({ watched_root_path: watchedRoot });
+      (service as any).localAvailability = { docsA: 'offline' };
+      (service as any).itemsManager = {
+        getByType: jest.fn((type: string) => {
+          if (type === 'cloud_folder') {
+            return [
+              cloudFolder('docs', 'docs'),
+              cloudFolder('nested', 'docs/nested'),
+              cloudFolder('outside', 'outside'),
+            ];
+          }
+          if (type === 'cloud_file') {
+            return [
+              cloudFile('docsA', 'docs/a.txt'),
+              cloudFile('nestedB', 'docs/nested/b.txt'),
+              cloudFile('rootC', 'c.txt'),
+            ];
+          }
+          return [];
+        }),
+      };
+
+      const listing = service.listCloudDirectoryForUi('docs');
+
+      expect(listing.folderPath).toBe('docs');
+      expect(listing.items.map(item => item.id)).toEqual(['nested', 'docsA']);
+      expect(listing.localStates.docsA.availability).toBe('offline');
+      expect(listing.localStates.nestedB).toBeUndefined();
+      expect(listing.total).toBe(2);
+    });
+
+    it('listCloudTransferItemsForUi 只返回上传或下载未完成的文件', () => {
+      (service as any).itemsManager = {
+        getByType: jest.fn((type: string) => type === 'cloud_file'
+          ? [
+            cloudFile('done', 'done.txt', 'completed', 'completed'),
+            cloudFile('uploadPending', 'upload.txt', 'pending', 'completed'),
+            cloudFile('downloadPending', 'download.txt', 'completed', 'pending'),
+            cloudFile('downloadError', 'error.txt', 'completed', 'error'),
+          ]
+          : []),
+      };
+
+      const items = service.listCloudTransferItemsForUi();
+
+      expect(items.map(item => item.id)).toEqual(['downloadPending', 'downloadError', 'uploadPending']);
+    });
+
+    it('目录索引构建后复用缓存，并支持 changedIds 增量移动条目', () => {
+      const records: Record<string, any> = {
+        docs: cloudFolder('docs', 'docs'),
+        docsA: cloudFile('docsA', 'docs/a.txt'),
+      };
+      const getByType = jest.fn((type: string) => {
+        if (type === 'cloud_folder') return [records.docs];
+        if (type === 'cloud_file') return [records.docsA];
+        return [];
+      });
+      (service as any).itemsManager = {
+        getByType,
+        getByIdIncludeDeleted: jest.fn((id: string) => records[id] ?? null),
+      };
+
+      expect(service.listCloudDirectoryForUi('docs').items.map(item => item.id)).toEqual(['docsA']);
+      expect(getByType).toHaveBeenCalledTimes(2);
+
+      getByType.mockClear();
+      expect(service.listCloudDirectoryForUi('docs').items.map(item => item.id)).toEqual(['docsA']);
+      expect(getByType).not.toHaveBeenCalled();
+
+      records.docsA = cloudFile('docsA', 'docs2/a.txt');
+      (service as any).updateCloudDirectoryIndexCache({ changedIds: ['docsA'] });
+
+      expect(service.listCloudDirectoryForUi('docs').items.map(item => item.id)).toEqual([]);
+      expect(service.listCloudDirectoryForUi('docs2').items.map(item => item.id)).toEqual(['docsA']);
+      expect(getByType).not.toHaveBeenCalled();
     });
   });
 

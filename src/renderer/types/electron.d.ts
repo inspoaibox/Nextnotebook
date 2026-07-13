@@ -456,9 +456,26 @@ export interface CloudDriveAPI {
   resumeItem: (itemId: string) => Promise<boolean>;
   cancelUpload: (itemId: string) => Promise<boolean>;
   clearCompleted: () => Promise<{ cleared: string[] }>;
+  listFolders: () => Promise<{ items: unknown[] }>;
+  listTransferItems: () => Promise<{ items: unknown[] }>;
+  getLocalStatesByIds: (itemIds: string[]) => Promise<Record<string, { availability: 'online_only' | 'local' | 'offline' }>>;
+  listDirectory: (folderPath: string) => Promise<{
+    folderPath: string;
+    items: unknown[];
+    localStates?: Record<string, { availability: 'online_only' | 'local' | 'offline' }>;
+    total?: number;
+    at?: number;
+  }>;
   listItems: () => Promise<{ items: unknown[] }>;
+  downloadFile: (itemId: string) => Promise<boolean>;
+  pauseDownload: (itemId: string) => Promise<boolean>;
+  resumeDownload: (itemId: string) => Promise<boolean>;
+  cancelDownload: (itemId: string) => Promise<boolean>;
+  retryDownload: (itemId: string) => Promise<boolean>;
+  retryAllDownloads: () => Promise<{ enqueued: number }>;
+  clearCompletedDownloads: () => Promise<{ cleared: string[] }>;
   onDownloadProgress: (callback: (progress: unknown) => void) => () => void;
-  onItemsChanged: (callback: () => void) => () => void;
+  onItemsChanged: (callback: (event: unknown) => void) => () => void;
   onUploadProgress: (callback: (progress: unknown) => void) => () => void;
   onWatchingChange: (callback: (watching: boolean) => void) => () => void;
 }

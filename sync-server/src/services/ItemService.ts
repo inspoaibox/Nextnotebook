@@ -199,6 +199,41 @@ export class ItemService {
     return true;
   }
 
+  hasCloudPathConflict(id: string, newRelativePath: string): boolean {
+    this.prepareUserScope();
+    const normalizedNewRelativePath = this.normalizeCloudPath(newRelativePath);
+    if (!normalizedNewRelativePath) {
+      return false;
+    }
+
+    const existing = this.getItem(id);
+    const movingIds = new Set<string>([id]);
+    const targetPaths = new Set<string>([normalizedNewRelativePath]);
+    if (existing && existing.deleted_time === null && existing.type === 'cloud_folder') {
+      const oldPayload = this.parsePayload(existing.payload);
+      const oldRelativePath = this.normalizeCloudPath(String(oldPayload.relative_path || ''));
+      for (const descendant of this.getCloudDescendants(oldRelativePath)) {
+        movingIds.add(descendant.id);
+        const descendantPayload = this.parsePayload(descendant.payload);
+        const currentRelativePath = this.normalizeCloudPath(String(descendantPayload.relative_path || ''));
+        if (!currentRelativePath.startsWith(oldRelativePath + '/')) continue;
+        const suffix = currentRelativePath.substring(oldRelativePath.length);
+        targetPaths.add(normalizedNewRelativePath + suffix);
+      }
+    }
+
+    for (const item of this.getActiveCloudItems()) {
+      if (movingIds.has(item.id)) continue;
+      const payload = this.parsePayload(item.payload);
+      const relativePath = this.normalizeCloudPath(String(payload.relative_path || ''));
+      if (relativePath && targetPaths.has(relativePath)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   moveCloudItem(id: string, newRelativePath: string, newParentFolderId: string | null): boolean {
     this.prepareUserScope();
     const db = getDatabase();
@@ -213,7 +248,7 @@ export class ItemService {
     const now = Date.now();
     const remoteRev = now.toString();
     const oldPayload = this.parsePayload(existing.payload);
-    const oldRelativePath = String(oldPayload.relative_path || '');
+    const oldRelativePath = this.normalizeCloudPath(String(oldPayload.relative_path || ''));
     const normalizedNewRelativePath = this.normalizeCloudPath(newRelativePath);
     if (!normalizedNewRelativePath) {
       return false;
@@ -247,6 +282,21 @@ export class ItemService {
             descendantPayload.relative_path.split('/').pop() || descendantPayload.filename;
         }
         updates.push({ item: descendant, payload: descendantPayload });
+      }
+    }
+
+    const movingIds = new Set(updates.map(entry => entry.item.id));
+    const targetPaths = new Set(
+      updates
+        .map(entry => this.normalizeCloudPath(String(entry.payload.relative_path || '')))
+        .filter(Boolean)
+    );
+    for (const item of this.getActiveCloudItems()) {
+      if (movingIds.has(item.id)) continue;
+      const payload = this.parsePayload(item.payload);
+      const relativePath = this.normalizeCloudPath(String(payload.relative_path || ''));
+      if (relativePath && targetPaths.has(relativePath)) {
+        return false;
       }
     }
 
@@ -417,6 +467,7 @@ export class ItemService {
 
   private normalizeCloudPath(relativePath: string): string {
     return String(relativePath || '')
+      .replace(/\\/g, '/')
       .split('/')
       .map(seg => seg.trim())
       .filter(Boolean)
@@ -425,6 +476,24 @@ export class ItemService {
 
   private computeContentHash(payload: string): string {
     return crypto.createHash('sha256').update(payload).digest('hex').substring(0, 16);
+  }
+
+  private getActiveCloudItems(): ItemBase[] {
+    const db = getDatabase();
+    if (this.userId) {
+      return db.prepare(`
+        SELECT * FROM items
+        WHERE user_id = ?
+          AND deleted_time IS NULL
+          AND type IN ('cloud_file', 'cloud_folder')
+      `).all(this.userId) as ItemBase[];
+    }
+
+    return db.prepare(`
+      SELECT * FROM items
+      WHERE deleted_time IS NULL
+        AND type IN ('cloud_file', 'cloud_folder')
+    `).all() as ItemBase[];
   }
 
   private getCloudDescendants(prefix: string): ItemBase[] {

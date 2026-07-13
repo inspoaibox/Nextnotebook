@@ -4,10 +4,13 @@
 
 const API_BASE = 'http://127.0.0.1:27183';
 const VAULT_AUTH_STORAGE_KEY = 'muchengVaultAuthToken';
+const PASSKEY_ENABLED_STORAGE_KEY = 'muchengPasskeyEnabled';
 const VAULT_AUTH_HEADER = 'X-Mucheng-Extension-Token';
 const VAULT_EXTENSION_ID_HEADER = 'X-Mucheng-Extension-Id';
 const VAULT_PROMPT_TTL = 10 * 60 * 1000;
 const VAULT_PENDING_PROMPT_TTL = 2 * 60 * 1000;
+const PASSKEY_PAGE_SCRIPT_ID = 'mucheng-passkey-page';
+const PASSKEY_BRIDGE_SCRIPT_ID = 'mucheng-passkey-bridge';
 const vaultPromptCache = new Map();
 const vaultPendingPrompts = new Map();
 let vaultPairPromise = null;
@@ -18,10 +21,141 @@ function storageGet(key) {
   });
 }
 
+function storageGetRaw(key) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([key], (result) => resolve(result[key]));
+  });
+}
+
 function storageSet(key, value) {
   return new Promise((resolve) => {
     chrome.storage.local.set({ [key]: value }, resolve);
   });
+}
+
+async function isPasskeyEnabled() {
+  return (await storageGetRaw(PASSKEY_ENABLED_STORAGE_KEY)) === true;
+}
+
+function registerContentScripts(scripts) {
+  return new Promise((resolve, reject) => {
+    chrome.scripting.registerContentScripts(scripts, () => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function getRegisteredContentScripts(ids) {
+  return new Promise((resolve, reject) => {
+    chrome.scripting.getRegisteredContentScripts({ ids }, (scripts) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message));
+        return;
+      }
+      resolve(scripts || []);
+    });
+  });
+}
+
+async function unregisterContentScripts(ids) {
+  const scripts = await getRegisteredContentScripts(ids);
+  const registeredIds = scripts.map(script => script.id).filter(id => ids.includes(id));
+  if (registeredIds.length === 0) {
+    return;
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.scripting.unregisterContentScripts({ ids: registeredIds }, () => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+async function applyPasskeyContentScriptRegistration() {
+  const enabled = await isPasskeyEnabled();
+  await unregisterContentScripts([PASSKEY_PAGE_SCRIPT_ID, PASSKEY_BRIDGE_SCRIPT_ID]);
+
+  if (!enabled) {
+    return false;
+  }
+
+  await registerContentScripts([
+    {
+      id: PASSKEY_BRIDGE_SCRIPT_ID,
+      matches: ['http://*/*', 'https://*/*'],
+      js: ['passkey-bridge.js'],
+      runAt: 'document_start',
+      allFrames: true,
+      matchAboutBlank: false,
+    },
+    {
+      id: PASSKEY_PAGE_SCRIPT_ID,
+      matches: ['http://*/*', 'https://*/*'],
+      js: ['passkey-page.js'],
+      runAt: 'document_start',
+      allFrames: true,
+      matchAboutBlank: false,
+      world: 'MAIN',
+    },
+  ]);
+  return true;
+}
+
+function sendMessageToTab(tabId, message) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, message, () => {
+      resolve(!chrome.runtime.lastError);
+    });
+  });
+}
+
+async function notifyPasskeyStateChanged(enabled) {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs
+    .filter(tab => typeof tab.id === 'number' && isHttpUrl(tab.url))
+    .map(tab => sendMessageToTab(tab.id, { action: 'passkeyConfigChanged', enabled })));
+}
+
+async function injectPasskeyScriptsIntoTab(tabId) {
+  if (typeof tabId !== 'number') return;
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || !isHttpUrl(tab.url)) return;
+
+  await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    files: ['passkey-bridge.js'],
+  });
+  await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    files: ['passkey-page.js'],
+    world: 'MAIN',
+  });
+}
+
+async function setPasskeyEnabled(enabled, tabId) {
+  const nextEnabled = enabled === true;
+  await storageSet(PASSKEY_ENABLED_STORAGE_KEY, nextEnabled);
+  await applyPasskeyContentScriptRegistration();
+  await notifyPasskeyStateChanged(nextEnabled);
+  if (nextEnabled && typeof tabId === 'number') {
+    try {
+      await injectPasskeyScriptsIntoTab(tabId);
+    } catch (error) {
+      console.warn('Failed to inject passkey scripts into current tab:', error);
+    }
+  }
+  return nextEnabled;
 }
 
 async function pairVaultExtension() {
@@ -131,6 +265,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'vaultGetFolders') {
     queryVaultFolders().then(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getPasskeyEnabled') {
+    isPasskeyEnabled()
+      .then(enabled => sendResponse({ success: true, enabled }))
+      .catch(e => sendResponse({ success: false, enabled: false, error: e.message }));
+    return true;
+  }
+
+  if (request.action === 'setPasskeyEnabled') {
+    setPasskeyEnabled(request.enabled === true, request.tabId)
+      .then(enabled => sendResponse({ success: true, enabled }))
+      .catch(e => sendResponse({ success: false, error: e.message || '通行密钥设置失败' }));
     return true;
   }
 
@@ -437,6 +585,10 @@ async function postPasskeyRequest(path, request) {
 
 async function handlePasskeyCreate(request, sender) {
   try {
+    if (!(await isPasskeyEnabled())) {
+      return { success: false, fallbackToNative: true, error: '暮城笔记通行密钥功能已关闭' };
+    }
+
     const connected = await checkConnection();
     if (!connected) {
       return { success: false, fallbackToNative: true, error: '暮城笔记未运行' };
@@ -457,6 +609,10 @@ async function handlePasskeyCreate(request, sender) {
 
 async function handlePasskeyGet(request, sender) {
   try {
+    if (!(await isPasskeyEnabled())) {
+      return { success: false, fallbackToNative: true, error: '暮城笔记通行密钥功能已关闭' };
+    }
+
     const connected = await checkConnection();
     if (!connected) {
       return { success: false, fallbackToNative: true, error: '暮城笔记未运行' };
@@ -475,8 +631,22 @@ async function handlePasskeyGet(request, sender) {
   }
 }
 
+chrome.runtime.onStartup?.addListener(() => {
+  applyPasskeyContentScriptRegistration().catch((error) => {
+    console.warn('Failed to apply passkey content script registration on startup:', error);
+  });
+});
+
+applyPasskeyContentScriptRegistration().catch((error) => {
+  console.warn('Failed to apply passkey content script registration:', error);
+});
+
 // 创建右键菜单
 chrome.runtime.onInstalled.addListener(() => {
+  applyPasskeyContentScriptRegistration().catch((error) => {
+    console.warn('Failed to apply passkey content script registration on install:', error);
+  });
+
   chrome.contextMenus.create({
     id: 'clip-selection',
     title: '保存选中内容到暮城笔记',

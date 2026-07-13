@@ -1,5 +1,5 @@
 import { ipcMain, IpcMainInvokeEvent, BrowserWindow, app } from 'electron';
-import { SyncEngine, SyncResult, SyncOptions, ServerIdentifier } from '@core/sync/SyncEngine';
+import { SyncEngine, SyncResult, SyncOptions, ServerIdentifier, CloudItemsChangedHint } from '@core/sync/SyncEngine';
 import { SyncScheduler, SyncState } from '@core/sync/SyncScheduler';
 import { WebDAVAdapter } from '@core/sync/WebDAVAdapter';
 import { ServerAdapter } from '@core/sync/ServerAdapter';
@@ -285,11 +285,11 @@ export async function initializeSyncService(config: SyncServiceConfig): Promise<
           console.warn('[SyncService] onCloudFileConflict 处理失败:', err);
         }
       },
-      onCloudItemsChanged: () => {
+      onCloudItemsChanged: (hint?: CloudItemsChangedHint) => {
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires
           const { getCloudDriveService } = require('./CloudDriveService') as typeof import('./CloudDriveService');
-          getCloudDriveService()?.notifyItemsChanged();
+          getCloudDriveService()?.notifyItemsChanged(hint);
         } catch (err) {
           console.warn('[SyncService] onCloudItemsChanged 处理失败:', err);
         }

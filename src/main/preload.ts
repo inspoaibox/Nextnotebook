@@ -457,6 +457,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resumeItem: (itemId: string) => ipcRenderer.invoke('cloud-drive:resumeItem', itemId),
     cancelUpload: (itemId: string) => ipcRenderer.invoke('cloud-drive:cancelUpload', itemId),
     clearCompleted: () => ipcRenderer.invoke('cloud-drive:clearCompleted'),
+    listFolders: () => ipcRenderer.invoke('cloud-drive:listFolders'),
+    listTransferItems: () => ipcRenderer.invoke('cloud-drive:listTransferItems'),
+    getLocalStatesByIds: (itemIds: string[]) => ipcRenderer.invoke('cloud-drive:getLocalStatesByIds', itemIds),
+    listDirectory: (folderPath: string) => ipcRenderer.invoke('cloud-drive:listDirectory', folderPath),
     listItems: () => ipcRenderer.invoke('cloud-drive:listItems'),
     // Phase 2：下载控制（与上传侧一一对应，独立队列）
     downloadFile: (itemId: string) => ipcRenderer.invoke('cloud-drive:downloadFile', itemId),
@@ -478,8 +482,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('cloud-drive:downloadProgress', handler);
       return () => ipcRenderer.removeListener('cloud-drive:downloadProgress', handler);
     },
-    onItemsChanged: (callback: () => void) => {
-      const handler = () => callback();
+    onItemsChanged: (callback: (event: unknown) => void) => {
+      const handler = (_event: unknown, payload: unknown) => callback(payload);
       ipcRenderer.on('cloud-drive:itemsChanged', handler);
       return () => ipcRenderer.removeListener('cloud-drive:itemsChanged', handler);
     },

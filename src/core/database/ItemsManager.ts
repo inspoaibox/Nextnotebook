@@ -379,7 +379,12 @@ export class ItemsManager {
       ]
     );
 
-    return this.getById(item.id);
+    return {
+      ...item,
+      deleted_time: item.deleted_time ?? null,
+      sync_status: 'clean',
+      local_rev: existing.local_rev,
+    };
   }
 
   // 从远端同步标记删除（直接设置 deleted_time，不改变 local_rev）

@@ -49,6 +49,7 @@ function validateCloudRelativePath(relativePath: unknown): string {
     throw createError('Invalid relative path', 400);
   }
   const normalized = relativePath
+    .replace(/\\/g, '/')
     .split('/')
     .map(seg => seg.trim())
     .filter(Boolean)
@@ -277,6 +278,9 @@ router.post('/:id/move', (req, res, next) => {
         ? req.body.parent_folder_id ?? null
         : null;
     const itemService = new ItemService(req.userId);
+    if (itemService.hasCloudPathConflict(req.params.id, relativePath)) {
+      throw createError('Cloud item target path already exists', 409, 'CLOUD_PATH_CONFLICT');
+    }
     const moved = itemService.moveCloudItem(req.params.id, relativePath, parentFolderId);
 
     if (!moved) {

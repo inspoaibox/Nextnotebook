@@ -9,6 +9,7 @@ import {
 } from '../vault/VaultPasskeyFieldCrypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 export interface SyncResult {
   success: boolean;
@@ -31,6 +32,12 @@ export interface SyncProgress {
 
 export type SyncProgressCallback = (progress: SyncProgress) => void;
 
+export interface CloudItemsChangedHint {
+  changedIds?: string[];
+  deletedIds?: string[];
+  full?: boolean;
+}
+
 // 服务器标识信息（用于区分不同的同步后端）
 export interface ServerIdentifier {
   type: 'webdav' | 'server';
@@ -49,11 +56,13 @@ export interface SyncOptions {
   onCloudFileChanged?: (itemId: string) => void;       // 元数据已更新，需触发下载
   onCloudItemDeleted?: (itemId: string) => void;       // 远端删除，需删除本地文件
   onCloudFileConflict?: (itemId: string, conflictPath: string) => void;  // 冲突副本已生成
-  onCloudItemsChanged?: () => void;                    // cloud 元数据已变化，需刷新 UI
+  onCloudItemsChanged?: (hint?: CloudItemsChangedHint) => void; // cloud 元数据已变化，需刷新 UI
   passkeyFieldSecret?: string | null;                  // passkey 私钥字段级同步加密密钥
 }
 
 export class SyncEngine {
+  private static readonly CLOUD_CALLBACK_FLUSH_SIZE = 200;
+  private static readonly VERBOSE_REMOTE_CHANGE_LOGS = false;
   private adapter: StorageAdapter;
   private itemsManager: ItemsManager;
   private options: SyncOptions;
@@ -65,8 +74,12 @@ export class SyncEngine {
   private onCloudFileChanged: ((itemId: string) => void) | null = null;
   private onCloudItemDeleted: ((itemId: string) => void) | null = null;
   private onCloudFileConflict: ((itemId: string, conflictPath: string) => void) | null = null;
-  private onCloudItemsChanged: (() => void) | null = null;
+  private onCloudItemsChanged: ((hint?: CloudItemsChangedHint) => void) | null = null;
   private passkeyFieldSecret: string | null = null;
+  private pendingCloudFileChangedIds = new Set<string>();
+  private pendingCloudChangedItemIds = new Set<string>();
+  private pendingCloudDeletedItemIds = new Set<string>();
+  private cloudItemsChangedPending = false;
 
   constructor(
     adapter: StorageAdapter,
@@ -103,6 +116,152 @@ export class SyncEngine {
   setResourcesDir(dir: string): void {
     this.resourcesDir = dir;
     console.log('[SyncEngine] Resources directory set:', dir);
+  }
+
+  private getResourceExtensionFromMime(mimeType?: string): string | null {
+    const mime = String(mimeType || '').toLowerCase();
+    if (mime.includes('webp')) return '.webp';
+    if (mime.includes('jpeg') || mime.includes('jpg')) return '.jpg';
+    if (mime.includes('png')) return '.png';
+    if (mime.includes('gif')) return '.gif';
+    if (mime.includes('svg')) return '.svg';
+    if (mime.includes('pdf')) return '.pdf';
+    if (mime.includes('json')) return '.json';
+    if (mime.startsWith('text/')) return '.txt';
+    if (mime.includes('zip')) return '.zip';
+    return null;
+  }
+
+  private getExtensionFromResourceFilename(filename?: string): string | null {
+    let value = String(filename || '').trim();
+    if (!value) return null;
+    try {
+      value = new URL(value).pathname;
+    } catch {
+      value = value.split(/[?#]/)[0];
+    }
+    value = value.split(/[?#]/)[0];
+    const ext = path.extname(path.basename(value)).toLowerCase();
+    return /^\.[a-z0-9]{1,12}$/.test(ext) ? ext : null;
+  }
+
+  private getResourceExtensionCandidates(payload: Pick<ResourcePayload, 'filename' | 'mime_type'>): string[] {
+    const candidates: string[] = [];
+    const add = (ext: string | null) => {
+      if (!ext) return;
+      const normalized = ext.toLowerCase();
+      if (/^\.[a-z0-9]{1,12}$/.test(normalized) && !candidates.includes(normalized)) {
+        candidates.push(normalized);
+      }
+    };
+
+    add(this.getResourceExtensionFromMime(payload.mime_type));
+    add(this.getExtensionFromResourceFilename(payload.filename));
+    add('.bin');
+    return candidates;
+  }
+
+  private getResourcePathCandidates(itemId: string, payload: ResourcePayload): string[] {
+    if (!this.resourcesDir) return [];
+    return this.getResourceExtensionCandidates(payload)
+      .map(ext => path.join(this.resourcesDir as string, `${itemId}${ext}`));
+  }
+
+  private fileMatchesResourcePayload(filePath: string, payload: ResourcePayload): boolean {
+    try {
+      const stat = fs.statSync(filePath);
+      if (payload.size && stat.size !== payload.size) return false;
+      if (!payload.file_hash) return true;
+      const data = fs.readFileSync(filePath);
+      const hash = crypto.createHash('sha256').update(data).digest('hex');
+      return hash === payload.file_hash;
+    } catch {
+      return false;
+    }
+  }
+
+  private findResourceFileByPayload(itemId: string, payload: ResourcePayload): string | null {
+    if (!this.resourcesDir || !fs.existsSync(this.resourcesDir)) return null;
+
+    for (const filePath of this.getResourcePathCandidates(itemId, payload)) {
+      if (fs.existsSync(filePath)) return filePath;
+    }
+
+    let files: string[] = [];
+    try {
+      files = fs.readdirSync(this.resourcesDir);
+    } catch {
+      return null;
+    }
+
+    const directPrefix = `${itemId}.`;
+    for (const file of files) {
+      if (!file.startsWith(directPrefix)) continue;
+      const filePath = path.join(this.resourcesDir, file);
+      if (this.fileMatchesResourcePayload(filePath, payload)) return filePath;
+    }
+
+    if (!payload.file_hash) return null;
+    for (const file of files) {
+      const filePath = path.join(this.resourcesDir, file);
+      if (this.fileMatchesResourcePayload(filePath, payload)) return filePath;
+    }
+    return null;
+  }
+
+  private ensureResourceFileForItem(itemId: string, payload: ResourcePayload): string | null {
+    if (!this.resourcesDir) return null;
+    const existing = this.findResourceFileByPayload(itemId, payload);
+    if (!existing) return null;
+    if (path.basename(existing).startsWith(`${itemId}.`)) return existing;
+
+    const ext = path.extname(existing).toLowerCase() || this.getResourceExtensionCandidates(payload)[0] || '.bin';
+    const targetPath = path.join(this.resourcesDir, `${itemId}${ext}`);
+    if (!fs.existsSync(targetPath)) {
+      fs.copyFileSync(existing, targetPath);
+    }
+    return targetPath;
+  }
+
+  private copyResourceFileForConflictCopy(sourceItem: ItemBase, conflictItem: ItemBase, conflictPayload: ResourcePayload): void {
+    if (sourceItem.type !== 'resource' || conflictItem.type !== 'resource') return;
+    try {
+      const sourcePayload = JSON.parse(sourceItem.payload) as ResourcePayload;
+      const sourceFile = this.findResourceFileByPayload(sourceItem.id, sourcePayload);
+      if (!sourceFile || !this.resourcesDir) return;
+      const ext = path.extname(sourceFile).toLowerCase() || this.getResourceExtensionCandidates(conflictPayload)[0] || '.bin';
+      const targetPath = path.join(this.resourcesDir, `${conflictItem.id}${ext}`);
+      if (!fs.existsSync(targetPath)) {
+        fs.copyFileSync(sourceFile, targetPath);
+      }
+    } catch (err) {
+      console.warn(`[SyncEngine] 复制资源冲突副本文件失败 ${sourceItem.id}:`, err);
+    }
+  }
+
+  private async downloadResourceFile(remoteItem: ItemBase): Promise<void> {
+    if (remoteItem.type !== 'resource' || !this.resourcesDir) return;
+    try {
+      const payload = JSON.parse(remoteItem.payload) as ResourcePayload;
+      if (!fs.existsSync(this.resourcesDir)) {
+        fs.mkdirSync(this.resourcesDir, { recursive: true });
+      }
+
+      for (const filePath of this.getResourcePathCandidates(remoteItem.id, payload)) {
+        if (fs.existsSync(filePath)) return;
+      }
+
+      for (const ext of this.getResourceExtensionCandidates(payload)) {
+        const resourceId = `${remoteItem.id}${ext}`;
+        const fileData = await this.adapter.getResource(resourceId);
+        if (fileData) {
+          fs.writeFileSync(path.join(this.resourcesDir, resourceId), fileData);
+          return;
+        }
+      }
+    } catch (resourceError) {
+      console.error(`[SyncEngine] Error downloading resource file for ${remoteItem.id}:`, resourceError);
+    }
   }
 
   // 设置服务器标识（用于独立存储游标）
@@ -316,12 +475,11 @@ export class SyncEngine {
           if (item.type === 'resource' && this.resourcesDir) {
             try {
               const payload = JSON.parse(item.payload) as ResourcePayload;
-              // 从 item.id 和 payload.filename 获取文件扩展名
-              const ext = path.extname(payload.filename).toLowerCase() || '.bin';
-              const resourceFilePath = path.join(this.resourcesDir, `${item.id}${ext}`);
-              
-              if (fs.existsSync(resourceFilePath)) {
+              const resourceFilePath = this.ensureResourceFileForItem(item.id, payload);
+
+              if (resourceFilePath && fs.existsSync(resourceFilePath)) {
                 const fileData = fs.readFileSync(resourceFilePath);
+                const ext = path.extname(resourceFilePath).toLowerCase() || this.getResourceExtensionCandidates(payload)[0] || '.bin';
                 const resourceId = `${item.id}${ext}`;
                 const uploadSuccess = await this.adapter.putResource(resourceId, fileData, payload.mime_type);
                 if (!uploadSuccess) {
@@ -332,7 +490,7 @@ export class SyncEngine {
                 }
               } else {
                 resourceUploadFailed = true;
-                console.warn(`[SyncEngine] Resource file not found: ${resourceFilePath}`);
+                console.warn(`[SyncEngine] Resource file not found for item ${item.id}`);
               }
             } catch (resourceError) {
               resourceUploadFailed = true;
@@ -451,13 +609,14 @@ export class SyncEngine {
           if (localItem?.sync_status === 'deleted') {
             const localDeleteTime = localItem.deleted_time ?? localItem.updated_time;
             if (remoteItem.deleted_time === null && remoteItem.updated_time > localDeleteTime) {
-              this.itemsManager.upsertFromPlainItem(remoteItem, 'clean');
+              const remoteItemForStorage = this.prepareCloudFileForDownload(remoteItem);
+              this.itemsManager.upsertFromPlainItem(remoteItemForStorage, 'clean');
               count++;
               restoredPendingDelete++;
-              if (remoteItem.type === 'cloud_file') {
-                this.notifyCloudFileChanged(remoteItem);
+              if (remoteItemForStorage.type === 'cloud_file') {
+                this.queueCloudFileChanged(remoteItemForStorage, true);
               }
-              if (this.onCloudItemsChanged) this.onCloudItemsChanged();
+              if (remoteItemForStorage.type === 'cloud_folder') this.queueCloudItemsChanged(remoteItemForStorage.id);
             } else {
               skippedPendingDelete++;
             }
@@ -469,7 +628,7 @@ export class SyncEngine {
               this.itemsManager.markDeletedFromRemote(remoteItem.id, remoteItem.deleted_time);
               count++;
               this.notifyCloudItemDeleted(remoteItem.id);
-              if (this.onCloudItemsChanged) this.onCloudItemsChanged();
+              this.queueCloudItemDeleted(remoteItem.id);
             }
             continue;
           }
@@ -481,23 +640,25 @@ export class SyncEngine {
 
           if (!shouldUpsert) continue;
 
+          const remoteItemForStorage = this.prepareCloudFileForDownload(remoteItem);
           if (!localItem) {
-            this.itemsManager.createWithId(remoteItem);
+            this.itemsManager.createWithId(remoteItemForStorage);
           } else if (localItem.deleted_time !== null) {
-            this.itemsManager.upsertFromPlainItem(remoteItem, 'clean');
+            this.itemsManager.upsertFromPlainItem(remoteItemForStorage, 'clean');
           } else {
-            this.itemsManager.updateFromRemote(remoteItem);
+            this.itemsManager.updateFromRemote(remoteItemForStorage);
           }
           count++;
 
-          if (remoteItem.type === 'cloud_file') {
-            this.notifyCloudFileChanged(remoteItem);
+          if (remoteItemForStorage.type === 'cloud_file') {
+            this.queueCloudFileChanged(remoteItemForStorage, true);
           }
-          if (this.onCloudItemsChanged) this.onCloudItemsChanged();
+          if (remoteItemForStorage.type === 'cloud_folder') this.queueCloudItemsChanged(remoteItemForStorage.id);
         } catch (error) {
           errors.push(`Error backfilling cloud item ${remoteItem.id}: ${(error as Error).message}`);
         }
       }
+      this.flushCloudChangeCallbacks();
 
       if (count > 0 || skippedModified > 0 || skippedPendingDelete > 0 || restoredPendingDelete > 0) {
         console.log(
@@ -601,11 +762,7 @@ export class SyncEngine {
                   }
                 }
                 if ((remoteItem.type === 'cloud_file' || remoteItem.type === 'cloud_folder') && this.onCloudItemsChanged) {
-                  try {
-                    this.onCloudItemsChanged();
-                  } catch (err) {
-                    console.warn(`[SyncEngine] onCloudItemsChanged 回调失败 ${remoteItem.id}:`, err);
-                  }
+                  this.queueCloudItemDeleted(remoteItem.id);
                 }
               }
               continue;
@@ -625,9 +782,12 @@ export class SyncEngine {
               continue;
             }
 
+            const remoteItemForStorage = this.prepareCloudFileForDownload(remoteItem);
+            let wroteRemoteItem = false;
             if (!localItem) {
               // 本地没有，直接创建
-              this.itemsManager.createWithId(remoteItem);
+              this.itemsManager.createWithId(remoteItemForStorage);
+              wroteRemoteItem = true;
               count++;
             } else if (localItem.content_hash !== remoteItem.content_hash) {
               // 内容不同，检查冲突
@@ -640,12 +800,17 @@ export class SyncEngine {
                 const conflictPayload = JSON.parse(localItem.payload);
                 conflictPayload.title = `${conflictPayload.title || 'Untitled'} (冲突副本)`;
                 conflictPayload.is_conflict = true;
-                this.itemsManager.create(localItem.type, conflictPayload);
-                this.itemsManager.updateFromRemote(remoteItem);
+                const conflictItem = this.itemsManager.create(localItem.type, conflictPayload);
+                if (localItem.type === 'resource') {
+                  this.copyResourceFileForConflictCopy(localItem, conflictItem, conflictPayload as ResourcePayload);
+                }
+                this.itemsManager.updateFromRemote(remoteItemForStorage);
+                wroteRemoteItem = true;
                 conflicts++;
               } else {
                 // 远端更新，覆盖本地
-                this.itemsManager.updateFromRemote(remoteItem);
+                this.itemsManager.updateFromRemote(remoteItemForStorage);
+                wroteRemoteItem = true;
               }
               count++;
             }
@@ -662,47 +827,22 @@ export class SyncEngine {
 
             // 同时下载资源文件
             if (remoteItem.type === 'resource' && this.resourcesDir) {
-              try {
-                const payload = JSON.parse(remoteItem.payload) as ResourcePayload;
-                const ext = path.extname(payload.filename).toLowerCase() || '.bin';
-                const resourceId = `${remoteItem.id}${ext}`;
-                const resourceFilePath = path.join(this.resourcesDir, resourceId);
-
-                if (!fs.existsSync(resourceFilePath)) {
-                  if (!fs.existsSync(this.resourcesDir)) {
-                    fs.mkdirSync(this.resourcesDir, { recursive: true });
-                  }
-                  const fileData = await this.adapter.getResource(resourceId);
-                  if (fileData) {
-                    fs.writeFileSync(resourceFilePath, fileData);
-                  }
-                }
-              } catch (resourceError) {
-                console.error(`[SyncEngine] Error downloading resource for ${remoteItem.id}:`, resourceError);
-              }
+              await this.downloadResourceFile(remoteItem);
             }
 
             // Phase 2：cloud_file 元数据已写入本地，触发物理文件下载（与增量分支一致）
             // SyncEngine 不知道 watched_root_path，故只发回调；实际下载由 CloudDriveScheduler 执行。
-            if (remoteItem.type === 'cloud_file' && this.onCloudFileChanged) {
-              try {
-                this.markCloudFileForDownload(remoteItem);
-                this.onCloudFileChanged(remoteItem.id);
-              } catch (err) {
-                console.warn(`[SyncEngine] onCloudFileChanged 回调失败 ${remoteItem.id}:`, err);
-              }
+            if (remoteItemForStorage.type === 'cloud_file') {
+              this.queueCloudFileChanged(remoteItemForStorage, wroteRemoteItem);
             }
-            if ((remoteItem.type === 'cloud_file' || remoteItem.type === 'cloud_folder') && this.onCloudItemsChanged) {
-              try {
-                this.onCloudItemsChanged();
-              } catch (err) {
-                console.warn(`[SyncEngine] onCloudItemsChanged 回调失败 ${remoteItem.id}:`, err);
-              }
+            if (remoteItemForStorage.type === 'cloud_folder') {
+              this.queueCloudItemsChanged(remoteItemForStorage.id);
             }
           } catch (error) {
             errors.push(`Error processing item ${encryptedRemoteItem.id}: ${(error as Error).message}`);
           }
         }
+        this.flushCloudChangeCallbacks();
 
         // 全量拉取完成后，将游标设置为服务器最新的 change_id
         // 这样后续增量同步就能正常工作
@@ -774,13 +914,15 @@ export class SyncEngine {
             const result = await this.processRemoteChange(change);
             if (result.success && !result.skipped) {
               count++;
-              this.reportProgress({ 
-                phase: 'pulling', 
-                message: `正在下载... (${count}/${totalChanges})`,
-                current: count,
-                total: totalChanges,
-                detail: `下载: ${change.type}`
-              });
+              if (count % 50 === 0 || count === totalChanges) {
+                this.reportProgress({
+                  phase: 'pulling',
+                  message: `正在下载... (${count}/${totalChanges})`,
+                  current: count,
+                  total: totalChanges,
+                  detail: `下载: ${change.type}`
+                });
+              }
             }
             if (result.conflict) {
               conflicts++;
@@ -794,6 +936,7 @@ export class SyncEngine {
             batchSuccessful = false;
           }
         }
+        this.flushCloudChangeCallbacks();
 
         // 每批次处理完成后更新本地游标（增量更新，避免重复处理）
         if (nextCursor && batchSuccessful) {
@@ -834,7 +977,9 @@ export class SyncEngine {
   }> {
     // 使用包含已删除项的查询，确保能找到本地已存在的数据
     const localItem = this.itemsManager.getByIdIncludeDeleted(change.item_id);
-    console.log(`[SyncEngine] processRemoteChange: item_id=${change.item_id}, type=${change.type}, deleted=${change.deleted_time !== null}, localExists=${!!localItem}, localSyncStatus=${localItem?.sync_status}, localHash=${localItem?.content_hash?.substring(0, 8)}, remoteHash=${change.content_hash?.substring(0, 8)}`);
+    if (SyncEngine.VERBOSE_REMOTE_CHANGE_LOGS) {
+      console.log(`[SyncEngine] processRemoteChange: item_id=${change.item_id}, type=${change.type}, deleted=${change.deleted_time !== null}, localExists=${!!localItem}, localSyncStatus=${localItem?.sync_status}, localHash=${localItem?.content_hash?.substring(0, 8)}, remoteHash=${change.content_hash?.substring(0, 8)}`);
+    }
 
     // 简化逻辑：远端标记删除，本地直接删除
     if (change.deleted_time !== null) {
@@ -850,12 +995,8 @@ export class SyncEngine {
             console.warn(`[SyncEngine] onCloudItemDeleted 回调失败 ${change.item_id}:`, err);
           }
         }
-        if ((change.type === 'cloud_file' || change.type === 'cloud_folder') && this.onCloudItemsChanged) {
-          try {
-            this.onCloudItemsChanged();
-          } catch (err) {
-            console.warn(`[SyncEngine] onCloudItemsChanged 回调失败 ${change.item_id}:`, err);
-          }
+        if (change.type === 'cloud_file' || change.type === 'cloud_folder') {
+          this.queueCloudItemDeleted(change.item_id);
         }
       }
       // 本地没有数据，不需要处理（已删除的数据不需要创建）
@@ -898,52 +1039,28 @@ export class SyncEngine {
       return { success: true, conflict: false };
     }
     const remoteItem = this.restoreItemFromRemote(encryptedRemoteItem);
+    const remoteItemForStorage = this.prepareCloudFileForDownload(remoteItem);
 
     // 如果是资源类型，下载资源文件
     if (change.type === 'resource' && this.resourcesDir) {
-      try {
-        const payload = JSON.parse(remoteItem.payload) as ResourcePayload;
-        const ext = path.extname(payload.filename).toLowerCase() || '.bin';
-        const resourceId = `${remoteItem.id}${ext}`;
-        const resourceFilePath = path.join(this.resourcesDir, resourceId);
-        
-        if (!fs.existsSync(this.resourcesDir)) {
-          fs.mkdirSync(this.resourcesDir, { recursive: true });
-        }
-        
-        const fileData = await this.adapter.getResource(resourceId);
-        if (fileData) {
-          fs.writeFileSync(resourceFilePath, fileData);
-        }
-      } catch (resourceError) {
-        console.error(`[SyncEngine] Error downloading resource file for ${change.item_id}:`, resourceError);
-      }
+      await this.downloadResourceFile(remoteItem);
     }
 
     // 写入本地
     if (localItem && localItem.deleted_time === null) {
-      this.itemsManager.updateFromRemote(remoteItem);
+      this.itemsManager.updateFromRemote(remoteItemForStorage);
     } else {
-      this.itemsManager.createWithId(remoteItem);
+      this.itemsManager.createWithId(remoteItemForStorage);
     }
 
     // Phase 2：cloud_file 元数据已写入本地，触发物理文件下载
     // SyncEngine 不知道 watched_root_path，故只发回调；实际下载由 CloudDriveScheduler 执行。
     // download_state=pending 在此处标记：远端 file_hash 与本地不同即视为需下载。
-    if (change.type === 'cloud_file' && this.onCloudFileChanged) {
-      try {
-        this.markCloudFileForDownload(remoteItem);
-        this.onCloudFileChanged(remoteItem.id);
-      } catch (err) {
-        console.warn(`[SyncEngine] onCloudFileChanged 回调失败 ${remoteItem.id}:`, err);
-      }
+    if (remoteItemForStorage.type === 'cloud_file') {
+      this.queueCloudFileChanged(remoteItemForStorage, true);
     }
-    if ((change.type === 'cloud_file' || change.type === 'cloud_folder') && this.onCloudItemsChanged) {
-      try {
-        this.onCloudItemsChanged();
-      } catch (err) {
-        console.warn(`[SyncEngine] onCloudItemsChanged 回调失败 ${remoteItem.id}:`, err);
-      }
+    if (remoteItemForStorage.type === 'cloud_folder') {
+      this.queueCloudItemsChanged(remoteItemForStorage.id);
     }
 
     return { success: true, conflict: false };
@@ -956,29 +1073,109 @@ export class SyncEngine {
    */
   private markCloudFileForDownload(remoteItem: ItemBase): void {
     try {
-      const payload = JSON.parse(remoteItem.payload) as import('@shared/types').CloudFilePayload;
-      // 仅在 file_hash 存在时才校验；上传中 file_hash 可能尚未回填
-      if (payload.file_hash) {
-        payload.download_state = 'pending';
-        payload.download_error = null;
-        // 注意：downloaded_size 不清零——Scheduler 的 runDownload 会基于断点续传
-        this.itemsManager.updateFromRemote({
-          ...remoteItem,
-          payload: JSON.stringify(payload),
-        });
+      const nextItem = this.prepareCloudFileForDownload(remoteItem);
+      if (nextItem !== remoteItem) {
+        this.itemsManager.updateFromRemote(nextItem);
       }
     } catch (err) {
       console.warn(`[SyncEngine] markCloudFileForDownload 失败 ${remoteItem.id}:`, err);
     }
   }
 
-  private notifyCloudFileChanged(remoteItem: ItemBase): void {
-    if (remoteItem.type !== 'cloud_file' || !this.onCloudFileChanged) return;
+  private prepareCloudFileForDownload(remoteItem: ItemBase): ItemBase {
+    if (remoteItem.type !== 'cloud_file') return remoteItem;
     try {
-      this.markCloudFileForDownload(remoteItem);
-      this.onCloudFileChanged(remoteItem.id);
+      const payload = JSON.parse(remoteItem.payload) as import('@shared/types').CloudFilePayload;
+      // 仅在 file_hash 存在时才校验；上传中 file_hash 可能尚未回填
+      if (!payload.file_hash) return remoteItem;
+      return {
+        ...remoteItem,
+        payload: JSON.stringify({
+          ...payload,
+          download_state: 'pending',
+          download_error: null,
+          // 注意：downloaded_size 不清零——Scheduler 的 runDownload 会基于断点续传
+        }),
+      };
+    } catch {
+      return remoteItem;
+    }
+  }
+
+  private queueCloudFileChanged(remoteItem: ItemBase, alreadyMarkedForDownload = false): void {
+    if (remoteItem.type !== 'cloud_file') return;
+    try {
+      if (!alreadyMarkedForDownload) {
+        this.markCloudFileForDownload(remoteItem);
+      }
+      if (this.onCloudFileChanged) {
+        this.pendingCloudFileChangedIds.add(remoteItem.id);
+      }
+      this.queueCloudItemsChanged(remoteItem.id);
+      if (this.pendingCloudFileChangedIds.size >= SyncEngine.CLOUD_CALLBACK_FLUSH_SIZE) {
+        this.flushCloudChangeCallbacks();
+      }
     } catch (err) {
-      console.warn(`[SyncEngine] onCloudFileChanged 回调失败 ${remoteItem.id}:`, err);
+      console.warn(`[SyncEngine] queueCloudFileChanged 失败 ${remoteItem.id}:`, err);
+    }
+  }
+
+  private queueCloudItemsChanged(itemId?: string): void {
+    this.cloudItemsChangedPending = true;
+    if (itemId) {
+      this.pendingCloudChangedItemIds.add(itemId);
+      this.pendingCloudDeletedItemIds.delete(itemId);
+    }
+  }
+
+  private queueCloudItemDeleted(itemId: string): void {
+    this.cloudItemsChangedPending = true;
+    this.pendingCloudDeletedItemIds.add(itemId);
+    this.pendingCloudChangedItemIds.delete(itemId);
+  }
+
+  private updateFromRemoteAfterCloudConflict(remoteItem: ItemBase): void {
+    const remoteItemForStorage = this.prepareCloudFileForDownload(remoteItem);
+    this.itemsManager.updateFromRemote(remoteItemForStorage);
+    if (remoteItemForStorage.type === 'cloud_file') {
+      this.queueCloudFileChanged(remoteItemForStorage, true);
+    } else if (remoteItemForStorage.type === 'cloud_folder') {
+      this.queueCloudItemsChanged(remoteItemForStorage.id);
+    }
+  }
+
+  private flushCloudChangeCallbacks(): void {
+    if (this.onCloudFileChanged && this.pendingCloudFileChangedIds.size > 0) {
+      const ids = Array.from(this.pendingCloudFileChangedIds);
+      this.pendingCloudFileChangedIds.clear();
+      for (const id of ids) {
+        try {
+          this.onCloudFileChanged(id);
+        } catch (err) {
+          console.warn(`[SyncEngine] onCloudFileChanged 回调失败 ${id}:`, err);
+        }
+      }
+    } else {
+      this.pendingCloudFileChangedIds.clear();
+    }
+
+    if (this.cloudItemsChangedPending && this.onCloudItemsChanged) {
+      const hint: CloudItemsChangedHint = {
+        changedIds: Array.from(this.pendingCloudChangedItemIds),
+        deletedIds: Array.from(this.pendingCloudDeletedItemIds),
+      };
+      this.pendingCloudChangedItemIds.clear();
+      this.pendingCloudDeletedItemIds.clear();
+      this.cloudItemsChangedPending = false;
+      try {
+        this.onCloudItemsChanged(hint);
+      } catch (err) {
+        console.warn('[SyncEngine] onCloudItemsChanged 回调失败:', err);
+      }
+    } else {
+      this.pendingCloudChangedItemIds.clear();
+      this.pendingCloudDeletedItemIds.clear();
+      this.cloudItemsChangedPending = false;
     }
   }
 
@@ -1098,6 +1295,45 @@ export class SyncEngine {
     }
   }
 
+  private tryResolveEquivalentCloudFileConflict(localItem: ItemBase, remoteItem: ItemBase): boolean {
+    if (localItem.type !== 'cloud_file' || remoteItem.type !== 'cloud_file') {
+      return false;
+    }
+
+    try {
+      const localPayload = JSON.parse(localItem.payload) as Record<string, any>;
+      const remotePayload = JSON.parse(remoteItem.payload) as Record<string, any>;
+      const localFileHash = String(localPayload.file_hash || '');
+      const remoteFileHash = String(remotePayload.file_hash || '');
+      if (!localFileHash || !remoteFileHash || localFileHash !== remoteFileHash) {
+        return false;
+      }
+
+      const localDownloadCompleted = localPayload.download_state === 'completed';
+      const mergedPayload = {
+        ...remotePayload,
+        download_state: localDownloadCompleted
+          ? 'completed'
+          : (remotePayload.download_state || localPayload.download_state || 'completed'),
+        downloaded_size: localDownloadCompleted
+          ? (localPayload.downloaded_size ?? remotePayload.size ?? 0)
+          : (remotePayload.downloaded_size ?? 0),
+        downloaded_at: localDownloadCompleted
+          ? (localPayload.downloaded_at ?? Date.now())
+          : (remotePayload.downloaded_at ?? null),
+        download_error: localDownloadCompleted ? null : (remotePayload.download_error ?? null),
+      };
+
+      this.itemsManager.updateFromRemote({
+        ...remoteItem,
+        payload: JSON.stringify(mergedPayload),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // 处理冲突
   private async handleConflict(localItem: ItemBase, remoteChange: RemoteChange): Promise<{
     success: boolean;
@@ -1115,10 +1351,14 @@ export class SyncEngine {
       return { success: true, conflict: false };
     }
 
+    if (this.tryResolveEquivalentCloudFileConflict(localItem, remoteItem)) {
+      return { success: true, conflict: false };
+    }
+
     switch (this.options.conflictStrategy) {
       case 'remote-wins':
         // 远端覆盖本地（使用专门的同步更新方法）
-        this.itemsManager.updateFromRemote(remoteItem);
+        this.updateFromRemoteAfterCloudConflict(remoteItem);
         return { success: true, conflict: true };
 
       case 'local-wins':
@@ -1162,10 +1402,13 @@ export class SyncEngine {
           }
         }
 
-        this.itemsManager.create(localItem.type, conflictPayload);
+        const conflictItem = this.itemsManager.create(localItem.type, conflictPayload);
+        if (localItem.type === 'resource') {
+          this.copyResourceFileForConflictCopy(localItem, conflictItem, conflictPayload as ResourcePayload);
+        }
 
-        // 用远端版本覆盖原记录（使用专门的同步更新方法）
-        this.itemsManager.updateFromRemote(remoteItem);
+        // 用远端版本覆盖原记录（cloud_file 必须进入下载队列，避免本地旧文件继续回写）
+        this.updateFromRemoteAfterCloudConflict(remoteItem);
 
         return { success: true, conflict: true };
       }

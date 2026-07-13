@@ -35,6 +35,9 @@ const FIXED_JWT_REFRESH_SECRET = 'integration-test-jwt-refresh-secret-aaaaaaaaaa
  * config.ts 在模块加载时读取 process.env，所以晚于 config.ts 的 env 修改无效。
  */
 function applyEnvForTest(testDir: string): void {
+  fs.mkdirSync(testDir, { recursive: true });
+  fs.mkdirSync(path.join(testDir, 'resources'), { recursive: true });
+  fs.mkdirSync(path.join(testDir, 'uploads'), { recursive: true });
   process.env.NODE_ENV = 'test';
   process.env.DATABASE_PATH = path.join(testDir, 'sync.db');
   process.env.RESOURCES_PATH = path.join(testDir, 'resources');
@@ -99,7 +102,7 @@ interface MintedToken {
 
 function mintToken(userId: string): MintedToken {
   const pair = tokenService.generateTokenPair(
-    `${TEST_SYNC_KEY_FP}-${userId}`,
+    userId,
     `${TEST_SYNC_KEY_FP}-${userId}`,
     'user',
     'integration-test',
@@ -289,7 +292,7 @@ describe('GET /status 断点续传 + POST /complete 未完成应 409', () => {
       .post(`/api/resources/upload/${sessionId}/complete`)
       .set(authHeader(token.accessToken));
     expect(complete.status).toBe(409);
-    expect(complete.body.error.code).toBe('INCOMPLETE');
+    expect(complete.body.code).toBe('INCOMPLETE');
   });
 
   it('乱序补齐剩余分块后 status 升序返回 [0,1,2]', async () => {
@@ -463,7 +466,7 @@ describe('参数校验 / 大小限制', () => {
       .set(authHeader(token.accessToken))
       .send({ item_id: ITEM_ID_VALID, total_size: 2_000_000, chunk_size: 1024 });
     expect(res.status).toBe(413);
-    expect(res.body.error.code).toBe('FILE_TOO_LARGE');
+    expect(res.body.code).toBe('FILE_TOO_LARGE');
   });
 
   it('chunk_size 超单块上限 → 下调到服务端上限并返回实际分块', async () => {

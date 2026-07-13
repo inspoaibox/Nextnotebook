@@ -655,10 +655,29 @@
       color: #4b5563;
       overflow: hidden;
     }
-    .vault-site span:last-child {
+    .vault-site #vault-site-url {
+      flex: 1 1 auto;
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .vault-passkey-inline {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: #6b7280;
+      font-size: 12px;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    .vault-passkey-inline input {
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      cursor: pointer;
     }
     .vault-actions {
       display: flex;
@@ -1271,6 +1290,10 @@
       <div class="vault-site">
         <span>🌐</span>
         <span id="vault-site-url">当前网站</span>
+        <label class="vault-passkey-inline" title="开启后接管网页通行密钥请求；关闭时使用浏览器/系统原生流程">
+          <input id="vault-passkey-enabled" type="checkbox">
+          <span>通行密钥</span>
+        </label>
       </div>
       <div class="vault-actions">
         <button id="vault-add-toggle" class="vault-secondary-btn" type="button">➕ 手动添加账号</button>

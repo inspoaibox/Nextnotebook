@@ -1467,6 +1467,15 @@ export class ClipperService {
               // 生成资源 ID
               const resourceId = crypto.randomUUID();
               const filename = `${resourceId}${ext}`;
+              let originalFilename = filename;
+              try {
+                const urlBasename = path.basename(new URL(imageUrl).pathname);
+                if (urlBasename) {
+                  originalFilename = urlBasename;
+                }
+              } catch {
+                originalFilename = filename;
+              }
               
               // 保存到资源目录
               const resourcesDir = path.join(app.getPath('userData'), 'resources');
@@ -1482,7 +1491,7 @@ export class ClipperService {
                 const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
                 const payload = {
                   _id: resourceId,
-                  filename: path.basename(imageUrl) || filename,
+                  filename: originalFilename,
                   mime_type: contentType || `image/${ext.slice(1)}`,
                   size: buffer.length,
                   note_id: noteId,

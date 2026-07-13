@@ -74,6 +74,8 @@ export interface UseCloudDriveReturn {
   uploadProgress: CloudUploadProgress[];
   /** 当前网盘元数据快照（文件 + 文件夹） */
   cloudItems: CloudDriveItemSnapshot[];
+  /** 网盘元数据变更版本号，用于按需目录刷新 */
+  cloudItemsRevision: number;
   /** 是否正在加载配置 */
   loading: boolean;
 
@@ -89,6 +91,8 @@ export interface UseCloudDriveReturn {
   refreshConfig: () => Promise<void>;
   /** 从主进程重新拉取一次 cloud_file 列表，水合到 uploadProgress（合并：保留实时进度事件中的更新） */
   refreshProgress: () => Promise<void>;
+  /** 按目录读取直接子项 */
+  listDirectory: (folderPath: string) => Promise<CloudDriveDirectoryListing>;
   /** 更新配置（部分字段） */
   updateConfig: (patch: Partial<CloudDriveConfig>) => Promise<void>;
 
@@ -146,6 +150,42 @@ export interface CloudDriveItemSnapshot {
   remote_rev?: string | null;
 }
 
+export interface CloudDriveDirectoryListing {
+  folderPath: string;
+  items: CloudDriveItemSnapshot[];
+  localStates?: Record<string, CloudLocalAvailability>;
+  total?: number;
+  at?: number;
+}
+
+interface CloudDriveItemsChangedEvent {
+  at?: number;
+  full?: boolean;
+  changed?: CloudDriveItemSnapshot[];
+  deletedIds?: string[];
+}
+
+const normalizeLocalStates = (
+  local: Record<string, { availability?: CloudLocalAvailability } | CloudLocalAvailability> | undefined
+): Record<string, CloudLocalAvailability> => {
+  const next: Record<string, CloudLocalAvailability> = {};
+  for (const [id, state] of Object.entries(local || {})) {
+    next[id] = typeof state === 'string' ? state : state.availability || 'local';
+  }
+  return next;
+};
+
+const normalizeCloudPath = (value: string | null | undefined): string =>
+  String(value || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+
+const parentCloudPath = (value: string | null | undefined): string => {
+  const normalized = normalizeCloudPath(value);
+  if (!normalized) return '';
+  const parts = normalized.split('/');
+  parts.pop();
+  return parts.join('/');
+};
+
 export const useCloudDrive = (): UseCloudDriveReturn => {
   const [config, setConfig] = useState<CloudDriveConfig>(DEFAULT_CLOUD_DRIVE_CONFIG);
   const [isWatching, setIsWatching] = useState(false);
@@ -155,12 +195,36 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
   const [uploadSpeedBps, setUploadSpeedBps] = useState<Record<string, number>>({});
   const [downloadSpeedBps, setDownloadSpeedBps] = useState<Record<string, number>>({});
   const [localStates, setLocalStates] = useState<Record<string, CloudLocalAvailability>>({});
+  const [cloudItemsRevision, setCloudItemsRevision] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // 防止重复初始化
   const initializedRef = useRef(false);
   const uploadSpeedRef = useRef<Record<string, { bytes: number; ts: number }>>({});
   const downloadSpeedRef = useRef<Record<string, { bytes: number; ts: number }>>({});
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cloudItemsSignatureRef = useRef('');
+
+  const updateCloudItemsSnapshot = useCallback((items: CloudDriveItemSnapshot[]) => {
+    const signature = items
+      .map(item => {
+        const payload = item.payload as Partial<CloudFilePayload & CloudFolderPayload>;
+        return [
+          item.id,
+          item.type,
+          item.sync_status ?? '',
+          item.remote_rev ?? '',
+          payload.relative_path ?? '',
+          payload.name ?? '',
+          payload.filename ?? '',
+        ].join(':');
+      })
+      .join('|');
+    if (signature === cloudItemsSignatureRef.current) return;
+    cloudItemsSignatureRef.current = signature;
+    setCloudItems(items);
+    setCloudItemsRevision(prev => prev + 1);
+  }, []);
 
   // 刷新配置
   const refreshConfig = useCallback(async () => {
@@ -186,23 +250,52 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
   // 水合：把主进程的 cloud_file 元数据快照合并进 uploadProgress / downloadProgress
   const refreshProgress = useCallback(async () => {
     const api = getElectronAPI();
-    if (!api?.cloudDrive?.listItems) return;
+    if (!api?.cloudDrive) return;
     try {
-      const resp = await api.cloudDrive.listItems();
-      const items: CloudDriveItemSnapshot[] = resp?.items ?? [];
-      const fileItems = items.filter(
-        (it): it is CloudDriveItemSnapshot & { type: 'cloud_file'; payload: CloudFilePayload } => it.type === 'cloud_file'
-      );
-      setCloudItems(items);
+      let fileItems: Array<CloudDriveItemSnapshot & { type: 'cloud_file'; payload: CloudFilePayload }> = [];
+      const supportsLightweightRefresh = Boolean(api.cloudDrive.listFolders && api.cloudDrive.listTransferItems);
+
+      if (supportsLightweightRefresh) {
+        const [foldersResp, transfersResp] = await Promise.all([
+          api.cloudDrive.listFolders(),
+          api.cloudDrive.listTransferItems(),
+        ]);
+        const folderItems: CloudDriveItemSnapshot[] = foldersResp?.items ?? [];
+        const transferItems: CloudDriveItemSnapshot[] = transfersResp?.items ?? [];
+        updateCloudItemsSnapshot(folderItems);
+        fileItems = transferItems.filter(
+          (it): it is CloudDriveItemSnapshot & { type: 'cloud_file'; payload: CloudFilePayload } => it.type === 'cloud_file'
+        );
+
+        if (api.cloudDrive.getLocalStatesByIds && fileItems.length > 0) {
+          const local = await api.cloudDrive.getLocalStatesByIds(fileItems.map(item => item.id));
+          const next = normalizeLocalStates(local);
+          setLocalStates(prev => ({ ...prev, ...next }));
+        }
+      } else {
+        if (!api.cloudDrive.listItems) return;
+        const resp = await api.cloudDrive.listItems();
+        const items: CloudDriveItemSnapshot[] = resp?.items ?? [];
+        updateCloudItemsSnapshot(items);
+        fileItems = items.filter(
+          (it): it is CloudDriveItemSnapshot & { type: 'cloud_file'; payload: CloudFilePayload } => it.type === 'cloud_file'
+        );
+
+        if (api?.cloudDrive?.getLocalStates) {
+          const local = await api.cloudDrive.getLocalStates();
+          setLocalStates(normalizeLocalStates(local));
+        }
+      }
       setUploadProgress(prev => {
         // 主进程快照为准，但保留实时进度事件中已有的最新状态
+        const liveMap = new Map(prev.map(p => [p.file_id, p]));
         const snapshotMap = new Map<string, CloudUploadProgress>();
         for (const it of fileItems) {
           snapshotMap.set(it.id, filePayloadToProgress(it.id, it.payload));
         }
         const merged: CloudUploadProgress[] = [];
         for (const [id, snap] of snapshotMap) {
-          const live = prev.find(p => p.file_id === id);
+          const live = liveMap.get(id);
           merged.push(live ?? snap);
         }
         return merged;
@@ -211,6 +304,7 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
       // 本地已上传的文件 download_state 缺省为 'completed'，过滤掉以免把上传镜像当成下载任务；
       // 但已在实时事件中出现的 completed 条目（刚从云端下载完）要保留。
       setDownloadProgress(prev => {
+        const liveMap = new Map(prev.map(p => [p.file_id, p]));
         const liveIds = new Set(prev.map(p => p.file_id));
         const snapshotMap = new Map<string, CloudDownloadProgress>();
         for (const it of fileItems) {
@@ -223,24 +317,142 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
         }
         const merged: CloudDownloadProgress[] = [];
         for (const [id, snap] of snapshotMap) {
-          const live = prev.find(p => p.file_id === id);
+          const live = liveMap.get(id);
           merged.push(live ?? snap);
         }
         return merged;
       });
-
-      if (api?.cloudDrive?.getLocalStates) {
-        const local = await api.cloudDrive.getLocalStates();
-        const next: Record<string, CloudLocalAvailability> = {};
-        for (const [id, state] of Object.entries(local || {})) {
-          next[id] = (state as { availability?: CloudLocalAvailability }).availability || 'local';
-        }
-        setLocalStates(next);
-      }
     } catch (err) {
       console.error('[useCloudDrive] 拉取进度列表失败:', err);
     }
-  }, []);
+  }, [updateCloudItemsSnapshot]);
+
+  const listDirectory = useCallback(async (folderPath: string): Promise<CloudDriveDirectoryListing> => {
+    const api = getElectronAPI();
+    const normalizedFolder = normalizeCloudPath(folderPath);
+    if (api?.cloudDrive?.listDirectory) {
+      try {
+        const resp = await api.cloudDrive.listDirectory(normalizedFolder);
+        const items: CloudDriveItemSnapshot[] = resp?.items ?? [];
+        const nextLocalStates = normalizeLocalStates(resp?.localStates);
+        if (Object.keys(nextLocalStates).length > 0) {
+          setLocalStates(prev => ({ ...prev, ...nextLocalStates }));
+        }
+        return {
+          folderPath: resp?.folderPath ?? normalizedFolder,
+          items,
+          localStates: nextLocalStates,
+          total: resp?.total ?? items.length,
+          at: resp?.at,
+        };
+      } catch (err) {
+        console.error('[useCloudDrive] 按目录读取失败，回退本地快照:', err);
+      }
+    }
+
+    const items = cloudItems.filter(item => {
+      const payload = item.payload as CloudFilePayload | CloudFolderPayload;
+      return parentCloudPath(payload.relative_path) === normalizedFolder;
+    });
+    return {
+      folderPath: normalizedFolder,
+      items,
+      total: items.length,
+      at: Date.now(),
+    };
+  }, [cloudItems]);
+
+  const scheduleRefreshProgress = useCallback((delayMs = 500) => {
+    if (refreshTimerRef.current) return;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      void refreshProgress();
+    }, delayMs);
+  }, [refreshProgress]);
+
+  const applyItemsChangedEvent = useCallback((event: CloudDriveItemsChangedEvent | undefined) => {
+    if (!event || event.full || (!event.changed && !event.deletedIds)) {
+      scheduleRefreshProgress(500);
+      return;
+    }
+
+    const changedItems = event.changed ?? [];
+    const deletedIds = new Set(event.deletedIds ?? []);
+    if (changedItems.length === 0 && deletedIds.size === 0) return;
+    const supportsDirectoryListing = Boolean(getElectronAPI()?.cloudDrive?.listDirectory);
+    setCloudItemsRevision(prev => prev + 1);
+
+    setCloudItems(prev => {
+      const next = new Map(prev.map(item => [item.id, item]));
+      for (const id of deletedIds) {
+        next.delete(id);
+      }
+      for (const item of changedItems) {
+        if (supportsDirectoryListing && item.type !== 'cloud_folder') continue;
+        next.set(item.id, item);
+      }
+      return Array.from(next.values());
+    });
+
+    const changedFiles = changedItems.filter(
+      (it): it is CloudDriveItemSnapshot & { type: 'cloud_file'; payload: CloudFilePayload } => it.type === 'cloud_file'
+    );
+
+    if (changedFiles.length > 0 || deletedIds.size > 0) {
+      setUploadProgress(prev => {
+        const next = new Map(prev.map(item => [item.file_id, item]));
+        for (const id of deletedIds) {
+          next.delete(id);
+        }
+        for (const item of changedFiles) {
+          const live = next.get(item.id);
+          const snapshot = filePayloadToProgress(item.id, item.payload);
+          next.set(item.id, live?.state === 'uploading' ? live : snapshot);
+        }
+        return Array.from(next.values());
+      });
+
+      setDownloadProgress(prev => {
+        const next = new Map(prev.map(item => [item.file_id, item]));
+        for (const id of deletedIds) {
+          next.delete(id);
+        }
+        for (const item of changedFiles) {
+          const dl = item.payload.download_state ?? 'pending';
+          const isInteresting =
+            dl === 'pending' ||
+            dl === 'downloading' ||
+            dl === 'paused' ||
+            dl === 'error' ||
+            next.has(item.id);
+          if (isInteresting) {
+            const live = next.get(item.id);
+            const snapshot = filePayloadToDownloadProgress(item.id, item.payload);
+            next.set(item.id, live?.state === 'downloading' ? live : snapshot);
+          }
+        }
+        return Array.from(next.values());
+      });
+
+      setLocalStates(prev => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of deletedIds) {
+          if (id in next) {
+            delete next[id];
+            changed = true;
+          }
+        }
+        for (const item of changedFiles) {
+          if (!(item.id in next)) {
+            next[item.id] = 'online_only';
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [scheduleRefreshProgress]);
 
   // 初始化：读取配置 + 水合进度 + 监听事件
   useEffect(() => {
@@ -252,8 +464,9 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
 
     // 监听上传进度（主进程通过 IPC 推送）
     const api = getElectronAPI();
+    const disposers: Array<() => void> = [];
     if (api?.cloudDrive?.onUploadProgress) {
-      api.cloudDrive.onUploadProgress((progress: CloudUploadProgress) => {
+      const dispose = api.cloudDrive.onUploadProgress((progress: CloudUploadProgress) => {
         const now = Date.now();
         const last = uploadSpeedRef.current[progress.file_id];
         if (last && progress.uploaded_bytes >= last.bytes && now > last.ts) {
@@ -276,10 +489,11 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
           setUploadSpeedBps(prev => ({ ...prev, [progress.file_id]: 0 }));
         }
       });
+      if (typeof dispose === 'function') disposers.push(dispose);
     }
     // 监听下载进度（主进程通过 IPC 推送）
     if (api?.cloudDrive?.onDownloadProgress) {
-      api.cloudDrive.onDownloadProgress((progress: CloudDownloadProgress) => {
+      const dispose = api.cloudDrive.onDownloadProgress((progress: CloudDownloadProgress) => {
         const now = Date.now();
         const last = downloadSpeedRef.current[progress.file_id];
         if (last && progress.downloaded_bytes >= last.bytes && now > last.ts) {
@@ -305,33 +519,43 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
             if (current === 'local') return prev;
             return { ...prev, [progress.file_id]: 'local' };
           });
-          void refreshProgress();
+          scheduleRefreshProgress(1000);
         }
         if (progress.state === 'completed' || progress.state === 'error' || progress.state === 'paused') {
           setDownloadSpeedBps(prev => ({ ...prev, [progress.file_id]: 0 }));
         }
       });
+      if (typeof dispose === 'function') disposers.push(dispose);
     }
     if (api?.cloudDrive?.onItemsChanged) {
-      api.cloudDrive.onItemsChanged(() => {
-        void refreshProgress();
+      const dispose = api.cloudDrive.onItemsChanged((event: CloudDriveItemsChangedEvent | undefined) => {
+        applyItemsChangedEvent(event);
       });
+      if (typeof dispose === 'function') disposers.push(dispose);
     }
     // 监听监听状态变化
     if (api?.cloudDrive?.onWatchingChange) {
-      api.cloudDrive.onWatchingChange((watching: boolean) => {
+      const dispose = api.cloudDrive.onWatchingChange((watching: boolean) => {
         setIsWatching(watching);
       });
+      if (typeof dispose === 'function') disposers.push(dispose);
     }
-  }, [refreshConfig, refreshProgress]);
+    return () => {
+      disposers.forEach(dispose => dispose());
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+  }, [refreshConfig, refreshProgress, scheduleRefreshProgress, applyItemsChangedEvent]);
 
   useEffect(() => {
     if (!isWatching) return;
     const timer = setInterval(() => {
-      void refreshProgress();
+      scheduleRefreshProgress(0);
     }, 2000);
     return () => clearInterval(timer);
-  }, [isWatching, refreshProgress]);
+  }, [isWatching, scheduleRefreshProgress]);
 
   // 选择监听根目录
   const selectWatchedFolder = useCallback(async () => {
@@ -611,6 +835,8 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     try {
       const ok = await api.cloudDrive.setLocalAvailability(itemId, availability);
       if (ok) {
+        setLocalStates(prev => ({ ...prev, [itemId]: availability }));
+        setCloudItemsRevision(prev => prev + 1);
         await refreshProgress();
       }
       return ok;
@@ -628,6 +854,9 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     if (!api?.cloudDrive?.setFolderLocalAvailability) return 0;
     try {
       const changed = await api.cloudDrive.setFolderLocalAvailability(folderPath, availability);
+      if ((changed ?? 0) > 0) {
+        setCloudItemsRevision(prev => prev + 1);
+      }
       await refreshProgress();
       return changed ?? 0;
     } catch (err) {
@@ -663,6 +892,7 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     isWatching,
     uploadProgress,
     cloudItems,
+    cloudItemsRevision,
     downloadProgress,
     uploadSpeedBps,
     downloadSpeedBps,
@@ -674,6 +904,7 @@ export const useCloudDrive = (): UseCloudDriveReturn => {
     scanNow,
     refreshConfig,
     refreshProgress,
+    listDirectory,
     updateConfig,
     retryFailed,
     retryItem,

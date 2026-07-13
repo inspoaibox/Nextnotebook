@@ -6,6 +6,7 @@ const API_BASE = 'http://127.0.0.1:27183';
 const VAULT_AUTH_STORAGE_KEY = 'muchengVaultAuthToken';
 const VAULT_PASSWORD_GENERATOR_SETTINGS_KEY = 'muchengVaultPasswordGeneratorSettings';
 const VAULT_REGISTRATION_SETTINGS_KEY = 'muchengVaultRegistrationSettings';
+const VAULT_PASSKEY_ENABLED_STORAGE_KEY = 'muchengPasskeyEnabled';
 const VAULT_DEFAULT_PASSWORD_SYMBOLS = '!@#$%^&*()-_=+[]{};:,.?';
 const VAULT_AUTH_HEADER = 'X-Mucheng-Extension-Token';
 const VAULT_EXTENSION_ID_HEADER = 'X-Mucheng-Extension-Id';
@@ -20,6 +21,19 @@ function storageGet(key) {
 function storageSet(key, value) {
   return new Promise((resolve) => {
     chrome.storage.local.set({ [key]: value }, resolve);
+  });
+}
+
+function sendRuntimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message));
+        return;
+      }
+      resolve(response || {});
+    });
   });
 }
 
@@ -140,6 +154,7 @@ const vaultSiteUrlEl = document.getElementById('vault-site-url');
 const vaultListEl = document.getElementById('vault-list');
 const vaultAddToggleBtn = document.getElementById('vault-add-toggle');
 const vaultCaptureBtn = document.getElementById('vault-capture-btn');
+const vaultPasskeyEnabledInput = document.getElementById('vault-passkey-enabled');
 const vaultAddPanel = document.getElementById('vault-add-panel');
 const vaultAddNameInput = document.getElementById('vault-add-name');
 const vaultAddUsernameInput = document.getElementById('vault-add-username');
@@ -1450,6 +1465,48 @@ function saveVaultPasswordGeneratorSettings() {
   storageSet(VAULT_PASSWORD_GENERATOR_SETTINGS_KEY, getVaultPasswordOptions()).catch((e) => {
     console.warn('Failed to save password generator settings:', e);
   });
+}
+
+async function loadVaultPasskeySetting() {
+  if (!vaultPasskeyEnabledInput) return;
+
+  try {
+    const result = await sendRuntimeMessage({ action: 'getPasskeyEnabled' });
+    vaultPasskeyEnabledInput.checked = result?.enabled === true;
+  } catch (e) {
+    console.warn('Failed to load passkey setting from background:', e);
+    const saved = await storageGet(VAULT_PASSKEY_ENABLED_STORAGE_KEY);
+    vaultPasskeyEnabledInput.checked = saved === true;
+  }
+}
+
+async function handleVaultPasskeyToggle() {
+  if (!vaultPasskeyEnabledInput) return;
+
+  const enabled = vaultPasskeyEnabledInput.checked;
+  vaultPasskeyEnabledInput.disabled = true;
+
+  try {
+    const tab = await getActiveTab();
+    const result = await sendRuntimeMessage({
+      action: 'setPasskeyEnabled',
+      enabled,
+      tabId: tab?.id,
+    });
+    if (!result?.success) {
+      throw new Error(result?.error || '通行密钥设置失败');
+    }
+    vaultPasskeyEnabledInput.checked = result.enabled === true;
+    showMessage(
+      result.enabled ? '通行密钥接管已开启' : '通行密钥接管已关闭',
+      'success',
+    );
+  } catch (e) {
+    vaultPasskeyEnabledInput.checked = !enabled;
+    showMessage(e.message || '通行密钥设置失败', 'error');
+  } finally {
+    vaultPasskeyEnabledInput.disabled = false;
+  }
 }
 
 function normalizeVaultPasswordCharacters(value, avoidConfusing) {
@@ -3115,6 +3172,7 @@ function switchTab(tabName) {
 async function init() {
   await loadVaultPasswordGeneratorSettings();
   await loadVaultRegistrationSettings();
+  await loadVaultPasskeySetting();
 
   const tab = await getActiveTab();
   currentPageUrl = tab?.url || '';
@@ -3198,6 +3256,7 @@ bookmarkSearchClearBtn?.addEventListener('click', () => {
 });
 vaultAddToggleBtn?.addEventListener('click', () => toggleVaultAddPanel());
 vaultCaptureBtn?.addEventListener('click', fillVaultAddFormFromPage);
+vaultPasskeyEnabledInput?.addEventListener('change', handleVaultPasskeyToggle);
 vaultGeneratePasswordBtn?.addEventListener('click', () => toggleVaultPasswordTool());
 vaultPasswordRefreshBtn?.addEventListener('click', () => {
   refreshVaultGeneratedPassword();
