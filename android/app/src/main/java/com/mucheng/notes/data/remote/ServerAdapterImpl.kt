@@ -77,6 +77,7 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(5, TimeUnit.MINUTES)
             .build()
     }
     
@@ -456,25 +457,26 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
         
         try {
             android.util.Log.d("ServerAdapter", "Request: $method $url, hasToken=${token != null}")
-            val response = client.newCall(requestBuilder.build()).execute()
-            
-            // 处理 401 错误，尝试刷新 token（使用并发保护）
-            if (response.code == 401 && retry && refreshToken != null) {
-                android.util.Log.w("ServerAdapter", "Got 401, attempting token refresh")
-                val refreshed = safeRefreshToken()
-                if (refreshed) {
-                    return@withContext request(method, path, body, false, parser)
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                // 处理 401 错误，尝试刷新 token（使用并发保护）
+                if (response.code == 401 && retry && refreshToken != null) {
+                    android.util.Log.w("ServerAdapter", "Got 401, attempting token refresh")
+                    response.close()
+                    val refreshed = safeRefreshToken()
+                    if (refreshed) {
+                        return@withContext request(method, path, body, false, parser)
+                    }
+                    android.util.Log.e("ServerAdapter", "Token refresh failed, relogin may be required")
                 }
-                android.util.Log.e("ServerAdapter", "Token refresh failed, relogin may be required")
-            }
-            
-            if (response.isSuccessful) {
-                val responseBody = response.body?.string() ?: "{}"
-                parser(responseBody)
-            } else {
-                val errorBody = response.body?.string() ?: ""
-                android.util.Log.e("ServerAdapter", "Request failed: $method $path -> ${response.code} ${response.message}, body: $errorBody")
-                null
+
+                if (response.isSuccessful) {
+                    val responseBody = response.body?.string() ?: "{}"
+                    parser(responseBody)
+                } else {
+                    val errorBody = response.body?.string() ?: ""
+                    android.util.Log.e("ServerAdapter", "Request failed: $method $path -> ${response.code} ${response.message}, body: $errorBody")
+                    null
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e("ServerAdapter", "Request error: $method $path -> ${e.javaClass.simpleName}: ${e.message}")
@@ -504,6 +506,26 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
         return request("GET", "/api/items/$id") { responseBody ->
             json.decodeFromString<ItemEntity>(responseBody)
         }
+    }
+
+    override suspend fun getItems(ids: List<String>): Map<String, ItemEntity?> {
+        val uniqueIds = ids.distinct().filter { it.isNotBlank() }
+        if (uniqueIds.isEmpty()) return emptyMap()
+
+        val body = json.encodeToString(mapOf("ids" to uniqueIds))
+        val result = request("POST", "/api/items/batch-get", body) { responseBody ->
+            @Serializable
+            data class BatchGetResult(val items: List<ItemEntity> = emptyList())
+            json.decodeFromString<BatchGetResult>(responseBody).items
+        }
+
+        if (result != null) {
+            val itemsById = result.associateBy { it.id }
+            return uniqueIds.associateWith { id -> itemsById[id] }
+        }
+
+        android.util.Log.w("ServerAdapter", "batch-get unavailable, falling back to single item requests")
+        return uniqueIds.associateWith { id -> getItem(id) }
     }
     
     override suspend fun putItem(item: ItemEntity): Result<String> = withContext(Dispatchers.IO) {
@@ -569,11 +591,12 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
                 requestBuilder.addHeader("Authorization", "Bearer $it")
             }
             
-            val response = client.newCall(requestBuilder.build()).execute()
-            if (response.isSuccessful) {
-                Result.success(System.currentTimeMillis().toString())
-            } else {
-                Result.failure(Exception("上传失败: ${response.code}"))
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                if (response.isSuccessful) {
+                    Result.success(System.currentTimeMillis().toString())
+                } else {
+                    Result.failure(Exception("上传失败: ${response.code}"))
+                }
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -589,12 +612,13 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
                 requestBuilder.addHeader("Authorization", "Bearer $it")
             }
             
-            val response = client.newCall(requestBuilder.build()).execute()
-            if (response.isSuccessful) {
-                val data = response.body?.bytes() ?: ByteArray(0)
-                Result.success(data)
-            } else {
-                Result.failure(Exception("下载失败: ${response.code}"))
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                if (response.isSuccessful) {
+                    val data = response.body?.bytes() ?: ByteArray(0)
+                    Result.success(data)
+                } else {
+                    Result.failure(Exception("下载失败: ${response.code}"))
+                }
             }
         } catch (e: Exception) {
             Result.failure(e)

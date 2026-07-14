@@ -64,6 +64,20 @@ interface WebDAVAdapter {
      * 获取单个项目
      */
     suspend fun getItem(id: String): ItemEntity?
+
+    /**
+     * 批量获取项目。
+     *
+     * WebDAV 等不支持批量接口的适配器使用默认逐条实现；自建服务器适配器可覆盖为
+     * 单次 HTTP 请求，避免增量同步一页 changes 触发大量 N+1 请求。
+     */
+    suspend fun getItems(ids: List<String>): Map<String, ItemEntity?> {
+        val result = mutableMapOf<String, ItemEntity?>()
+        for (id in ids.distinct()) {
+            result[id] = getItem(id)
+        }
+        return result
+    }
     
     /**
      * 上传项目

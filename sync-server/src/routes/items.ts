@@ -182,6 +182,29 @@ router.post('/batch', (req, res, next) => {
   }
 });
 
+// POST /api/items/batch-get - 批量获取数据项（增量同步使用）
+router.post('/batch-get', (req, res, next) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids)) {
+      throw createError('Ids must be an array', 400);
+    }
+
+    if (ids.length > 100) {
+      throw createError('Batch size exceeds limit (100)', 400);
+    }
+
+    ids.forEach(validateItemId);
+
+    const itemService = new ItemService(req.userId);
+    const items = itemService.getItems(ids);
+    res.json({ items });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/items/:id - 获取单个数据项
 router.get('/:id', (req, res, next) => {
   try {

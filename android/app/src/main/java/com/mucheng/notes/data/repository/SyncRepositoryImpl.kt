@@ -9,9 +9,12 @@ import com.mucheng.notes.domain.model.SyncStatus
 import com.mucheng.notes.domain.repository.SyncRepository
 import com.mucheng.notes.security.SecureSyncStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,31 +31,37 @@ class SyncRepositoryImpl @Inject constructor(
     
     override suspend fun sync(): SyncResult {
         _syncStatus.value = SyncStatus.SYNCING
-        
-        // 在同步前从 SharedPreferences 加载配置并设置到 SyncEngine
-        // 这样无论从哪里调用 sync()，都能正确加载配置
-        val config = loadSyncConfig()
-        if (config == null) {
-            _syncStatus.value = SyncStatus.FAILED
-            return SyncResult(error = "同步未配置")
+
+        val result = try {
+            // 在同步前从 SharedPreferences 加载配置并设置到 SyncEngine
+            // 这样无论从哪里调用 sync()，都能正确加载配置
+            val config = loadSyncConfig()
+                ?: return SyncResult(error = "同步未配置").also {
+                    _syncStatus.value = SyncStatus.FAILED
+                }
+
+            if (!config.enabled) {
+                return SyncResult(error = "同步已禁用").also {
+                    _syncStatus.value = SyncStatus.FAILED
+                }
+            }
+
+            // 设置配置到 SyncEngine（会初始化适配器和 token）
+            syncEngine.setConfig(config)
+
+            withTimeout(SYNC_TIMEOUT_MS) {
+                syncEngine.sync()
+            }
+        } catch (e: TimeoutCancellationException) {
+            SyncResult(error = "同步超时，请检查网络连接或网盘文件数量")
+        } catch (e: CancellationException) {
+            _syncStatus.value = SyncStatus.IDLE
+            throw e
+        } catch (e: Exception) {
+            SyncResult(error = e.message ?: "同步失败")
         }
-        
-        if (!config.enabled) {
-            _syncStatus.value = SyncStatus.FAILED
-            return SyncResult(error = "同步已禁用")
-        }
-        
-        // 设置配置到 SyncEngine（会初始化适配器和 token）
-        syncEngine.setConfig(config)
-        
-        val result = syncEngine.sync()
-        
-        _syncStatus.value = if (result.success) {
-            SyncStatus.SUCCESS
-        } else {
-            SyncStatus.FAILED
-        }
-        
+
+        _syncStatus.value = if (result.success) SyncStatus.SUCCESS else SyncStatus.FAILED
         return result
     }
     
@@ -106,5 +115,9 @@ class SyncRepositoryImpl @Inject constructor(
     
     override fun observeSyncStatus(): Flow<SyncStatus> {
         return _syncStatus.asStateFlow()
+    }
+
+    companion object {
+        private const val SYNC_TIMEOUT_MS = 15 * 60 * 1000L
     }
 }

@@ -32,6 +32,7 @@ import com.mucheng.notes.domain.model.payload.VaultPasskey
 import com.mucheng.notes.security.PasskeyPrivateKeyFieldCrypto
 import com.mucheng.notes.security.SecureSyncStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -79,6 +80,7 @@ class SyncEngine @Inject constructor(
      * 必须与桌面端 CONFLICT_SUFFIX 保持一致。
      */
     private val CONFLICT_SUFFIX = " (冲突副本)"
+    private val MAX_PULL_CHANGE_ITERATIONS = 100
 
     // 资源缓存目录
     private val resourceCacheDir: File by lazy {
@@ -86,6 +88,8 @@ class SyncEngine @Inject constructor(
             if (!it.exists()) it.mkdirs() 
         }
     }
+
+    private var syncRunAllItemsCache: List<ItemEntity>? = null
 
     // SharedPreferences for local sync cursor storage
     private val prefs: SharedPreferences by lazy {
@@ -221,6 +225,21 @@ class SyncEngine @Inject constructor(
         }
     }
 
+    private suspend fun listAllItemsForCurrentSync(adapter: WebDAVAdapter): List<ItemEntity> {
+        syncRunAllItemsCache?.let { cached ->
+            android.util.Log.d("SyncEngine", "Reusing cached /api/items/all result: ${cached.size} items")
+            return cached
+        }
+
+        val items = adapter.listAllItems()
+        syncRunAllItemsCache = items
+        return items
+    }
+
+    private fun rethrowIfCancellation(e: Exception) {
+        if (e is CancellationException) throw e
+    }
+
     private fun getPasskeyFieldSecret(): String? {
         val cfg = config ?: return null
         return cfg.serverSyncKey ?: cfg.password ?: cfg.apiKey
@@ -263,6 +282,7 @@ class SyncEngine @Inject constructor(
         val errors = mutableListOf<String>()
         
         try {
+            syncRunAllItemsCache = null
             android.util.Log.d("SyncEngine", "Starting sync...")
 
             if (cfg.type == "server" && cfg.syncModules.cloudDrive) {
@@ -285,10 +305,16 @@ class SyncEngine @Inject constructor(
             val pushResult = pushChanges(cfg)
             pushed += pushResult.count
             errors.addAll(pushResult.errors)
+            if (pushResult.count > 0) {
+                syncRunAllItemsCache = null
+            }
 
             val passkeyProtectionResult = protectRemotePasskeyPayloads(cfg)
             pushed += passkeyProtectionResult.count
             errors.addAll(passkeyProtectionResult.errors)
+            if (passkeyProtectionResult.count > 0) {
+                syncRunAllItemsCache = null
+            }
             
             // 2. Pull 远端变更
             val pullResult = pullChanges(cfg)
@@ -309,6 +335,8 @@ class SyncEngine @Inject constructor(
                 error = errors.firstOrNull(),
                 duration = System.currentTimeMillis() - startTime
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("SyncEngine", "Sync failed: ${e.message}")
             e.printStackTrace()
@@ -316,6 +344,8 @@ class SyncEngine @Inject constructor(
                 error = e.message ?: "同步失败",
                 duration = System.currentTimeMillis() - startTime
             )
+        } finally {
+            syncRunAllItemsCache = null
         }
     }
 
@@ -334,7 +364,7 @@ class SyncEngine @Inject constructor(
             var skippedLocalModified = 0
             var skippedPendingDelete = 0
             var restoredPendingDelete = 0
-            val remoteItems = adapter.listAllItems()
+            val remoteItems = listAllItemsForCurrentSync(adapter)
                 .filter { it.type == ItemType.CLOUD_FILE.value || it.type == ItemType.CLOUD_FOLDER.value }
             val remoteFolders = remoteItems.count { it.type == ItemType.CLOUD_FOLDER.value }
             val remoteFiles = remoteItems.count { it.type == ItemType.CLOUD_FILE.value }
@@ -391,6 +421,7 @@ class SyncEngine @Inject constructor(
             )
             count
         } catch (e: Exception) {
+            rethrowIfCancellation(e)
             android.util.Log.w("SyncEngine", "Cloud drive metadata backfill skipped: ${e.message}")
             0
         }
@@ -502,6 +533,7 @@ class SyncEngine @Inject constructor(
                             val ext = getExtensionFromFilename(payload.filename)
                             adapter.deleteResource("${item.id}$ext")
                         } catch (e: Exception) {
+                            rethrowIfCancellation(e)
                             android.util.Log.w("SyncEngine", "Failed to delete remote resource file: ${e.message}")
                         }
                     } else if (item.type == "cloud_file" && adapter.hasChunkedUpload()) {
@@ -513,6 +545,7 @@ class SyncEngine @Inject constructor(
                         try {
                             adapter.deleteResource(item.id)
                         } catch (e: Exception) {
+                            rethrowIfCancellation(e)
                             android.util.Log.w("SyncEngine", "Failed to delete remote cloud_file binary: ${e.message}")
                         }
                     }
@@ -580,6 +613,7 @@ class SyncEngine @Inject constructor(
                             itemToUpload = freshItem.copy(encryptionApplied = 0)
                         }
                     } catch (e: Exception) {
+                        rethrowIfCancellation(e)
                         errors.add("Failed to upload cloud file binary for item ${item.id}: ${e.message}")
                         continue
                     }
@@ -622,6 +656,7 @@ class SyncEngine @Inject constructor(
                                 android.util.Log.w("SyncEngine", "No local cache found for resource item: ${item.id}")
                             }
                         } catch (e: Exception) {
+                            rethrowIfCancellation(e)
                             resourceUploadFailed = true
                             android.util.Log.w("SyncEngine", "Failed to upload resource file: ${e.message}")
                         }
@@ -681,6 +716,7 @@ class SyncEngine @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
+                rethrowIfCancellation(e)
                 errors.add("Error protecting remote passkey item ${localItem.id}: ${e.message}")
             }
         }
@@ -833,6 +869,8 @@ class SyncEngine @Inject constructor(
                 )
             )
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.w(
                 "SyncEngine",
@@ -955,11 +993,21 @@ class SyncEngine @Inject constructor(
         // 1. 游标为 null（新客户端首次同步）
         // 2. 游标已过期（长时间离线，变更日志已被清理）
         val cursorExpired = if (cursor != null) {
-            try { adapter.isCursorExpired(cursor) } catch (e: Exception) { false }
+            try {
+                adapter.isCursorExpired(cursor)
+            } catch (e: Exception) {
+                rethrowIfCancellation(e)
+                false
+            }
         } else false
 
         if ((cursor == null || cursorExpired)) {
-            val remoteHasData = try { adapter.hasData() } catch (e: Exception) { false }
+            val remoteHasData = try {
+                adapter.hasData()
+            } catch (e: Exception) {
+                rethrowIfCancellation(e)
+                false
+            }
 
             if (remoteHasData) {
                 if (cursorExpired) {
@@ -969,7 +1017,7 @@ class SyncEngine @Inject constructor(
                     android.util.Log.d("SyncEngine", "No cursor and remote has data — performing full pull")
                 }
 
-                val allItems = adapter.listAllItems()
+                val allItems = listAllItemsForCurrentSync(adapter)
                 val filteredItems = allItems.filter { it.type in enabledTypes }
                 android.util.Log.d("SyncEngine", "Full pull: ${filteredItems.size} items (filtered from ${allItems.size})")
 
@@ -1044,6 +1092,7 @@ class SyncEngine @Inject constructor(
                                     )
                                 }
                             } catch (e: Exception) {
+                                rethrowIfCancellation(e)
                                 android.util.Log.w("SyncEngine", "Failed to download resource: ${e.message}")
                             }
                         }
@@ -1068,6 +1117,7 @@ class SyncEngine @Inject constructor(
                                     )
                                 }
                             } catch (e: Exception) {
+                                rethrowIfCancellation(e)
                                 android.util.Log.w(
                                     "SyncEngine",
                                     "Failed to download cloud file ${remoteItem.id}: ${e.message}"
@@ -1075,6 +1125,7 @@ class SyncEngine @Inject constructor(
                             }
                         }
                     } catch (e: Exception) {
+                        rethrowIfCancellation(e)
                         android.util.Log.e("SyncEngine", "Error processing full pull item ${encryptedRemoteItem.id}: ${e.message}")
                     }
                 }
@@ -1098,15 +1149,27 @@ class SyncEngine @Inject constructor(
 
         // ✅ 增量同步：有游标时走变更日志路径
         var nextCursor = cursor
+        var iterations = 0
         
         do {
-            val result = adapter.listChanges(nextCursor)
+            val requestCursor = nextCursor
+            iterations++
+            if (iterations > MAX_PULL_CHANGE_ITERATIONS) {
+                throw IllegalStateException("远端变更分页超过上限，已停止以避免无限同步")
+            }
+
+            val result = adapter.listChanges(requestCursor)
             android.util.Log.d("SyncEngine", "Got ${result.changes.size} changes, hasMore=${result.hasMore}")
 
-            for (change in result.changes) {
-                if (change.type !in enabledTypes) continue
+            val changesToSync = result.changes.filter { it.type in enabledTypes }
+            val itemIdsToFetch = changesToSync
+                .filter { it.deletedTime == null }
+                .map { it.itemId }
+                .distinct()
+            val remoteItemsById = adapter.getItems(itemIdsToFetch)
 
-                val encryptedRemoteItem = adapter.getItem(change.itemId)
+            for (change in changesToSync) {
+                val encryptedRemoteItem = remoteItemsById[change.itemId]
                 if (encryptedRemoteItem == null) {
                     if (change.deletedTime != null) {
                         if (applyRemoteDeletedItem(
@@ -1190,6 +1253,7 @@ class SyncEngine @Inject constructor(
                             )
                         }
                     } catch (e: Exception) {
+                        rethrowIfCancellation(e)
                         android.util.Log.w("SyncEngine", "Failed to download resource: ${e.message}")
                     }
                 }
@@ -1212,6 +1276,7 @@ class SyncEngine @Inject constructor(
                             )
                         }
                     } catch (e: Exception) {
+                        rethrowIfCancellation(e)
                         android.util.Log.w(
                             "SyncEngine",
                             "Failed to download cloud file ${remoteItem.id}: ${e.message}"
@@ -1223,7 +1288,15 @@ class SyncEngine @Inject constructor(
                 count++
             }
 
-            nextCursor = result.nextCursor
+            val newCursor = result.nextCursor
+            if (result.hasMore && newCursor == requestCursor) {
+                throw IllegalStateException("远端变更游标未前进，已停止以避免无限同步")
+            }
+            if (result.hasMore && newCursor == null) {
+                throw IllegalStateException("远端变更仍有更多数据但未返回下一游标")
+            }
+
+            nextCursor = newCursor
         } while (result.hasMore && nextCursor != null)
 
         // ✅ 更新本地同步游标

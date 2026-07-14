@@ -44,6 +44,29 @@ export class ItemService {
     return row || null;
   }
 
+  getItems(ids: string[]): ItemBase[] {
+    this.prepareUserScope();
+    const uniqueIds = Array.from(new Set(ids)).filter(Boolean);
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    const db = getDatabase();
+    const placeholders = uniqueIds.map(() => '?').join(',');
+
+    if (this.userId) {
+      return db.prepare(`
+        SELECT * FROM items
+        WHERE id IN (${placeholders}) AND user_id = ?
+      `).all(...uniqueIds, this.userId) as ItemBase[];
+    }
+
+    return db.prepare(`
+      SELECT * FROM items
+      WHERE id IN (${placeholders})
+    `).all(...uniqueIds) as ItemBase[];
+  }
+
   // 创建或更新数据项
   putItem(item: Partial<ItemBase> & { id: string; type: string; payload: string; content_hash: string }): { remoteRev: string } {
     this.prepareUserScope();
