@@ -548,8 +548,44 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
         }
     }
     
-    override suspend fun deleteItem(id: String): Boolean {
-        return request("POST", "/api/items/$id/soft-delete") { true } ?: false
+    override suspend fun deleteItem(id: String): Boolean = withContext(Dispatchers.IO) {
+        val path = "/api/items/$id/soft-delete"
+        val url = "${getBaseUrl()}$path"
+
+        suspend fun softDeleteOnce(): Pair<Int, Boolean> {
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .post("{}".toRequestBody("application/json".toMediaType()))
+            accessToken?.let {
+                requestBuilder.addHeader("Authorization", "Bearer $it")
+            }
+
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                if (response.isSuccessful || response.code == 404) {
+                    return@softDeleteOnce response.code to true
+                }
+                val errorBody = response.body?.string() ?: ""
+                android.util.Log.e(
+                    "ServerAdapter",
+                    "Request failed: POST $path -> ${response.code} ${response.message}, body: $errorBody"
+                )
+                return@softDeleteOnce response.code to false
+            }
+        }
+
+        try {
+            android.util.Log.d("ServerAdapter", "Request: POST $url, hasToken=${accessToken != null}")
+            var (code, deleted) = softDeleteOnce()
+            if (!deleted && code == 401 && refreshToken != null && safeRefreshToken()) {
+                val retry = softDeleteOnce()
+                code = retry.first
+                deleted = retry.second
+            }
+            deleted
+        } catch (e: Exception) {
+            android.util.Log.e("ServerAdapter", "Request error: POST $path -> ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
     }
     
     override suspend fun listChanges(cursor: String?, limit: Int): ChangeListResult {

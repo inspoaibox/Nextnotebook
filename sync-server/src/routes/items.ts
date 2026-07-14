@@ -281,11 +281,7 @@ router.post('/:id/soft-delete', (req, res, next) => {
     const itemService = new ItemService(req.userId);
     const deleted = itemService.softDeleteItem(req.params.id);
 
-    if (!deleted) {
-      throw createError('Item not found', 404);
-    }
-
-    res.json({ success: true });
+    res.json({ success: true, deleted });
   } catch (error) {
     next(error);
   }
