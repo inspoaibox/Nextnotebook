@@ -80,7 +80,11 @@ class SyncEngine @Inject constructor(
      * 必须与桌面端 CONFLICT_SUFFIX 保持一致。
      */
     private val CONFLICT_SUFFIX = " (冲突副本)"
-    private val MAX_PULL_CHANGE_ITERATIONS = 100
+    private val MAX_PULL_CHANGE_ITERATIONS = 5000
+    private val FULL_ITEMS_FALLBACK_PAGE_THRESHOLD = 2
+    private val KEY_CLOUD_DRIVE_BACKFILL_SIGNATURE = "cloud_drive_backfill_signature"
+    private val KEY_CLOUD_DRIVE_BACKFILL_COMPLETED = "cloud_drive_backfill_completed"
+    private val KEY_CLOUD_DRIVE_BACKFILL_REMOTE_ACTIVE_COUNT = "cloud_drive_backfill_remote_active_count"
 
     // 资源缓存目录
     private val resourceCacheDir: File by lazy {
@@ -90,6 +94,7 @@ class SyncEngine @Inject constructor(
     }
 
     private var syncRunAllItemsCache: List<ItemEntity>? = null
+    private var syncRunAllItemsByIdCache: Map<String, ItemEntity>? = null
 
     // SharedPreferences for local sync cursor storage
     private val prefs: SharedPreferences by lazy {
@@ -233,7 +238,82 @@ class SyncEngine @Inject constructor(
 
         val items = adapter.listAllItems()
         syncRunAllItemsCache = items
+        syncRunAllItemsByIdCache = items.associateBy { it.id }
         return items
+    }
+
+    private suspend fun allItemsByIdForCurrentSync(adapter: WebDAVAdapter): Map<String, ItemEntity> {
+        syncRunAllItemsByIdCache?.let { return it }
+        return listAllItemsForCurrentSync(adapter).associateBy { it.id }.also {
+            syncRunAllItemsByIdCache = it
+        }
+    }
+
+    private fun clearSyncRunAllItemsCache() {
+        syncRunAllItemsCache = null
+        syncRunAllItemsByIdCache = null
+    }
+
+    private suspend fun fetchItemsForChanges(
+        adapter: WebDAVAdapter,
+        ids: List<String>,
+        preferFullItemsFallback: Boolean
+    ): Map<String, ItemEntity?> {
+        val uniqueIds = ids.distinct().filter { it.isNotBlank() }
+        if (uniqueIds.isEmpty()) return emptyMap()
+
+        if (adapter is ServerAdapterImpl) {
+            syncRunAllItemsByIdCache?.let { allItemsById ->
+                return uniqueIds.associateWith { id -> allItemsById[id] }
+            }
+        }
+
+        val fetched = adapter.getItems(uniqueIds).toMutableMap()
+        val missingFromBatch = uniqueIds.filterNot { fetched.containsKey(it) }
+        if (missingFromBatch.isEmpty()) return uniqueIds.associateWith { id -> fetched[id] }
+
+        if (adapter is ServerAdapterImpl && preferFullItemsFallback) {
+            val allItemsById = allItemsByIdForCurrentSync(adapter)
+            var resolvedFromAll = 0
+
+            for (id in missingFromBatch) {
+                val item = allItemsById[id]
+                if (item != null) {
+                    fetched[id] = item
+                    resolvedFromAll++
+                }
+            }
+
+            val stillMissing = uniqueIds.filterNot { fetched.containsKey(it) }
+            android.util.Log.w(
+                "SyncEngine",
+                "Resolved $resolvedFromAll/${missingFromBatch.size} batch-missing items via cached /api/items/all"
+            )
+
+            if (stillMissing.isEmpty()) {
+                return uniqueIds.associateWith { id -> fetched[id] }
+            }
+
+            android.util.Log.w(
+                "SyncEngine",
+                "Cached /api/items/all did not include ${stillMissing.size} changed items; falling back to single requests"
+            )
+            for (id in stillMissing) {
+                fetched[id] = adapter.getItem(id)
+            }
+            return uniqueIds.associateWith { id -> fetched[id] }
+        }
+
+        if (adapter is ServerAdapterImpl) {
+            android.util.Log.w(
+                "SyncEngine",
+                "Batch fetch missing ${missingFromBatch.size} item(s); using single requests for small incremental sync"
+            )
+        }
+        for (id in missingFromBatch) {
+            fetched[id] = adapter.getItem(id)
+        }
+        return uniqueIds.associateWith { id -> fetched[id] }
     }
 
     private fun rethrowIfCancellation(e: Exception) {
@@ -282,11 +362,21 @@ class SyncEngine @Inject constructor(
         val errors = mutableListOf<String>()
         
         try {
-            syncRunAllItemsCache = null
+            clearSyncRunAllItemsCache()
             android.util.Log.d("SyncEngine", "Starting sync...")
 
+            if (cfg.type == "server" && !cfg.syncModules.cloudDrive) {
+                markCloudDriveBackfillRequired(cfg)
+            }
+
             if (cfg.type == "server" && cfg.syncModules.cloudDrive) {
-                pulled += backfillCloudDriveMetadata(cfg)
+                if (shouldRunCloudDriveBackfill(cfg)) {
+                    val backfilled = backfillCloudDriveMetadata(cfg)
+                    pulled += backfilled
+                    if (syncRunAllItemsCache != null) {
+                        markCloudDriveBackfillCompleted(cfg)
+                    }
+                }
 
                 val scanResult = cloudDriveDirectoryScanner.scanAndReconcile()
                 if (scanResult.error != null) {
@@ -306,25 +396,20 @@ class SyncEngine @Inject constructor(
             pushed += pushResult.count
             errors.addAll(pushResult.errors)
             if (pushResult.count > 0) {
-                syncRunAllItemsCache = null
+                clearSyncRunAllItemsCache()
             }
 
             val passkeyProtectionResult = protectRemotePasskeyPayloads(cfg)
             pushed += passkeyProtectionResult.count
             errors.addAll(passkeyProtectionResult.errors)
             if (passkeyProtectionResult.count > 0) {
-                syncRunAllItemsCache = null
+                clearSyncRunAllItemsCache()
             }
             
             // 2. Pull 远端变更
             val pullResult = pullChanges(cfg)
             pulled += pullResult.count
             conflicts = pullResult.conflicts
-
-            if (cfg.type == "server" && cfg.syncModules.cloudDrive) {
-                pulled += backfillCloudDriveMetadata(cfg)
-            }
-            
             android.util.Log.d("SyncEngine", "Sync completed: pushed=$pushed, pulled=$pulled, conflicts=$conflicts")
             
             SyncResult(
@@ -345,8 +430,75 @@ class SyncEngine @Inject constructor(
                 duration = System.currentTimeMillis() - startTime
             )
         } finally {
-            syncRunAllItemsCache = null
+            clearSyncRunAllItemsCache()
         }
+    }
+
+    private suspend fun shouldRunCloudDriveBackfill(cfg: SyncConfig): Boolean {
+        if (cfg.type != "server" || !cfg.syncModules.cloudDrive) return false
+
+        val signature = cloudDriveBackfillSignature(cfg)
+        val savedSignature = prefs.getString(KEY_CLOUD_DRIVE_BACKFILL_SIGNATURE, null)
+        val completed = prefs.getBoolean(KEY_CLOUD_DRIVE_BACKFILL_COMPLETED, false)
+
+        if (!completed || savedSignature != signature) {
+            android.util.Log.d(
+                "SyncEngine",
+                "Cloud drive metadata backfill required: completed=$completed, scopeChanged=${savedSignature != signature}"
+            )
+            return true
+        }
+
+        val lastRemoteActiveCount = prefs.getInt(KEY_CLOUD_DRIVE_BACKFILL_REMOTE_ACTIVE_COUNT, 0)
+        if (lastRemoteActiveCount > 0 && localCloudDriveItemCount() == 0) {
+            android.util.Log.d(
+                "SyncEngine",
+                "Cloud drive metadata backfill required: local cloud metadata is empty"
+            )
+            return true
+        }
+
+        android.util.Log.d("SyncEngine", "Cloud drive metadata backfill skipped: already completed")
+        return false
+    }
+
+    private suspend fun localCloudDriveItemCount(): Int {
+        return itemDao.countByType(ItemType.CLOUD_FILE.value) +
+            itemDao.countByType(ItemType.CLOUD_FOLDER.value)
+    }
+
+    private fun markCloudDriveBackfillCompleted(cfg: SyncConfig) {
+        val activeRemoteCloudItems = syncRunAllItemsCache
+            ?.count {
+                (it.type == ItemType.CLOUD_FILE.value || it.type == ItemType.CLOUD_FOLDER.value) &&
+                    it.deletedTime == null
+            }
+            ?: 0
+
+        prefs.edit()
+            .putString(KEY_CLOUD_DRIVE_BACKFILL_SIGNATURE, cloudDriveBackfillSignature(cfg))
+            .putBoolean(KEY_CLOUD_DRIVE_BACKFILL_COMPLETED, true)
+            .putInt(KEY_CLOUD_DRIVE_BACKFILL_REMOTE_ACTIVE_COUNT, activeRemoteCloudItems)
+            .apply()
+        android.util.Log.d(
+            "SyncEngine",
+            "Cloud drive metadata backfill marked complete: activeRemoteCloudItems=$activeRemoteCloudItems"
+        )
+    }
+
+    private fun markCloudDriveBackfillRequired(cfg: SyncConfig) {
+        prefs.edit()
+            .putString(KEY_CLOUD_DRIVE_BACKFILL_SIGNATURE, cloudDriveBackfillSignature(cfg))
+            .putBoolean(KEY_CLOUD_DRIVE_BACKFILL_COMPLETED, false)
+            .apply()
+        android.util.Log.d("SyncEngine", "Cloud drive metadata backfill marked required")
+    }
+
+    private fun cloudDriveBackfillSignature(cfg: SyncConfig): String {
+        val account = cfg.serverUsername ?: cfg.username ?: ""
+        val raw = listOf("server", cfg.url.trimEnd('/'), cfg.syncPath.trim('/'), account)
+            .joinToString("|")
+        return computeContentHash(raw)
     }
 
     /**
@@ -1166,7 +1318,13 @@ class SyncEngine @Inject constructor(
                 .filter { it.deletedTime == null }
                 .map { it.itemId }
                 .distinct()
-            val remoteItemsById = adapter.getItems(itemIdsToFetch)
+            val preferFullItemsFallback =
+                result.hasMore || iterations >= FULL_ITEMS_FALLBACK_PAGE_THRESHOLD
+            val remoteItemsById = fetchItemsForChanges(
+                adapter,
+                itemIdsToFetch,
+                preferFullItemsFallback
+            )
 
             for (change in changesToSync) {
                 val encryptedRemoteItem = remoteItemsById[change.itemId]

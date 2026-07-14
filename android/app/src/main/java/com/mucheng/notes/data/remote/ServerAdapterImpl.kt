@@ -524,8 +524,8 @@ class ServerAdapterImpl @Inject constructor() : WebDAVAdapter {
             return uniqueIds.associateWith { id -> itemsById[id] }
         }
 
-        android.util.Log.w("ServerAdapter", "batch-get unavailable, falling back to single item requests")
-        return uniqueIds.associateWith { id -> getItem(id) }
+        android.util.Log.w("ServerAdapter", "batch-get unavailable; caller will choose fallback fetch strategy")
+        return emptyMap()
     }
     
     override suspend fun putItem(item: ItemEntity): Result<String> = withContext(Dispatchers.IO) {
