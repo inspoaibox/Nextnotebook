@@ -16,6 +16,7 @@ module.exports = {
       '@renderer': path.resolve(__dirname, 'src/renderer'),
       '@core': path.resolve(__dirname, 'src/core'),
       '@shared': path.resolve(__dirname, 'src/shared'),
+      '@univerjs/icons$': path.resolve(__dirname, 'node_modules/@univerjs/icons/dist/esm/index.js'),
     },
     fallback: {
       "path": false,
@@ -31,7 +32,14 @@ module.exports = {
     rules: [
       {
         test: /\.tsx?$/,
-        use: 'ts-loader',
+        use: {
+          loader: 'ts-loader',
+          options: {
+            compilerOptions: {
+              module: 'ESNext',
+            },
+          },
+        },
         exclude: /node_modules/,
       },
       {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -37,22 +38,6 @@ fun ExcelScreen(
     }
 
     when {
-        uiState.selectedNote != null && uiState.isEditing -> {
-            // 编辑模式
-            ExcelEditorView(
-                note = uiState.selectedNote!!,
-                selectedSheetIndex = uiState.selectedSheetIndex,
-                selectedCell = uiState.selectedCell,
-                onBack = { viewModel.exitEditMode() },
-                onSelectSheet = { viewModel.selectSheet(it) },
-                onSelectCell = { row, col -> viewModel.selectCell(row, col) },
-                onCellChange = { row, col, value -> viewModel.updateCell(row, col, value) },
-                getCellDisplayValue = { row, col ->
-                    val sheet = uiState.selectedNote?.payload?.sheets?.getOrNull(uiState.selectedSheetIndex)
-                    sheet?.let { viewModel.getCellDisplayValue(it, row, col) } ?: ""
-                }
-            )
-        }
         uiState.selectedNote != null -> {
             // 预览模式
             ExcelPreviewView(
@@ -60,7 +45,6 @@ fun ExcelScreen(
                 selectedSheetIndex = uiState.selectedSheetIndex,
                 onBack = { viewModel.backToList() },
                 onSelectSheet = { viewModel.selectSheet(it) },
-                onEdit = { viewModel.enterEditMode() },
                 getCellDisplayValue = { row, col ->
                     val sheet = uiState.selectedNote?.payload?.sheets?.getOrNull(uiState.selectedSheetIndex)
                     sheet?.let { viewModel.getCellDisplayValue(it, row, col) } ?: ""
@@ -78,7 +62,6 @@ fun ExcelScreen(
         }
     }
 }
-
 /**
  * Excel 预览视图（只读，显示实际数据）
  */
@@ -89,7 +72,6 @@ private fun ExcelPreviewView(
     selectedSheetIndex: Int,
     onBack: () -> Unit,
     onSelectSheet: (Int) -> Unit,
-    onEdit: () -> Unit,
     getCellDisplayValue: (Int, Int) -> String
 ) {
     val currentSheet = note.payload.sheets.getOrNull(selectedSheetIndex)
@@ -100,15 +82,9 @@ private fun ExcelPreviewView(
                 title = { Text(note.payload.title.ifEmpty { "未命名" }) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
-                actions = {
-                    // 编辑按钮
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = "编辑")
-                    }
-                }
             )
         },
         bottomBar = {
@@ -170,7 +146,7 @@ private fun ExcelListView(
                 title = { Text("Excel 笔记") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 }
             )
@@ -266,82 +242,6 @@ private fun ExcelNoteCard(
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.outline
             )
-        }
-    }
-}
-
-/**
- * Excel 编辑器视图
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ExcelEditorView(
-    note: ExcelNoteItem,
-    selectedSheetIndex: Int,
-    selectedCell: com.mucheng.notes.presentation.viewmodel.CellPosition,
-    onBack: () -> Unit,
-    onSelectSheet: (Int) -> Unit,
-    onSelectCell: (Int, Int) -> Unit,
-    onCellChange: (Int, Int, String) -> Unit,
-    getCellDisplayValue: (Int, Int) -> String
-) {
-    val currentSheet = note.payload.sheets.getOrNull(selectedSheetIndex)
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(note.payload.title.ifEmpty { "未命名" }) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                }
-            )
-        },
-        bottomBar = {
-            // 工作表标签
-            if (note.payload.sheets.isNotEmpty()) {
-                Surface(
-                    tonalElevation = 2.dp
-                ) {
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        itemsIndexed(note.payload.sheets) { index, sheet ->
-                            FilterChip(
-                                selected = index == selectedSheetIndex,
-                                onClick = { onSelectSheet(index) },
-                                label = { Text(sheet.name) }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (currentSheet != null) {
-                SpreadsheetView(
-                    sheet = currentSheet,
-                    selectedCell = selectedCell,
-                    onCellSelect = onSelectCell,
-                    onCellChange = onCellChange,
-                    getCellDisplayValue = getCellDisplayValue
-                )
-            } else {
-                Text(
-                    text = "无工作表",
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
         }
     }
 }

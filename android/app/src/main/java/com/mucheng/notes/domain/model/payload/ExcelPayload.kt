@@ -38,7 +38,9 @@ data class ExcelSheet(
     @SerialName("row_heights") val rowHeights: List<JsonElement> = emptyList(),
     @SerialName("frozen_rows") val frozenRows: Int = 0,
     @SerialName("frozen_columns") val frozenColumns: Int = 0,
-    @SerialName("merged_cells") val mergedCells: List<MergedCell> = emptyList()
+    @SerialName("merged_cells") val mergedCells: List<MergedCell> = emptyList(),
+    @SerialName("hidden_rows") val hiddenRows: List<Int> = emptyList(),
+    @SerialName("hidden_columns") val hiddenColumns: List<Int> = emptyList()
 ) {
     /** 获取列宽（Double），兼容整数和浮点数 */
     fun getColumnWidth(index: Int): Double =
@@ -77,6 +79,7 @@ data class ExcelCell(
     @SerialName("column_index") val columnIndex: Int = 0,
     // JsonElement 兼容 string | number | boolean | null
     val value: JsonElement? = null,
+    @SerialName("display_value") val displayValue: JsonElement? = null,
     val formula: String? = null,
     // CellStyle 用 JsonElement 避免 NumberFormat sealed class 解析问题
     val style: JsonElement? = null

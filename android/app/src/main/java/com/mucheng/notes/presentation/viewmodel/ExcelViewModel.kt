@@ -8,16 +8,14 @@ import com.mucheng.notes.domain.model.payload.ExcelSheet
 import com.mucheng.notes.domain.model.payload.ExcelRow
 import com.mucheng.notes.domain.model.payload.ExcelCell
 import com.mucheng.notes.domain.repository.ItemRepository
+import com.mucheng.notes.presentation.excel.formatCellDisplayValue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.doubleOrNull
 import javax.inject.Inject
 
 /**
@@ -223,17 +221,7 @@ class ExcelViewModel @Inject constructor(
     fun getCellDisplayValue(sheet: ExcelSheet, row: Int, col: Int): String {
         val rowData = sheet.rows.find { it.rowIndex == row } ?: return ""
         val cell = rowData.cells.find { it.columnIndex == col } ?: return ""
-        
-        val value = cell.value ?: return ""
-        return when (value) {
-            is JsonNull -> ""
-            is JsonPrimitive -> {
-                value.doubleOrNull?.toString()
-                    ?: value.booleanOrNull?.let { if (it) "TRUE" else "FALSE" }
-                    ?: value.content
-            }
-            else -> value.toString()
-        }
+        return formatCellDisplayValue(cell)
     }
 
     /**

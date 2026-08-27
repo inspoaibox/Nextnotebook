@@ -462,6 +462,7 @@ class PayloadCompatibilityTest : StringSpec({
         val cell = ExcelCell(
             columnIndex = 0,
             value = kotlinx.serialization.json.JsonPrimitive("test"),
+            displayValue = kotlinx.serialization.json.JsonPrimitive("test"),
             formula = null,
             style = null
         )
@@ -469,7 +470,9 @@ class PayloadCompatibilityTest : StringSpec({
         val jsonStr = json.encodeToString(cell)
         
         jsonStr shouldContain "\"column_index\""
+        jsonStr shouldContain "\"display_value\""
         jsonStr shouldNotContain "\"columnIndex\""
+        jsonStr shouldNotContain "\"displayValue\""
     }
     
     /**

@@ -597,6 +597,12 @@ export interface ExcelNotePayload {
   is_locked: boolean;
   lock_password_hash: string | null;
   tags: string[];
+  // Desktop spreadsheet engine. Legacy payloads omit these fields.
+  engine?: 'legacy' | 'univer';
+  format_version?: number;
+  // Univer's serializable workbook snapshot. The legacy sheets mirror remains so
+  // existing mobile clients can continue to read the same synchronized item.
+  univer_snapshot?: Record<string, unknown> | null;
   sheets: ExcelSheet[];
   active_sheet_index: number;
 }
@@ -611,6 +617,8 @@ export interface ExcelSheet {
   frozen_rows: number;
   frozen_columns: number;
   merged_cells?: MergedCell[];  // 合并单元格区域
+  hidden_rows?: number[];
+  hidden_columns?: number[];
 }
 
 // 合并单元格区域
@@ -631,6 +639,7 @@ export interface ExcelRow {
 export interface ExcelCell {
   column_index: number;
   value: CellValue;
+  display_value?: CellValue;
   formula: string | null;
   style: CellStyle | null;
 }
@@ -642,10 +651,16 @@ export type CellValue = string | number | boolean | null;
 export interface CellStyle {
   font_bold: boolean;
   font_italic: boolean;
+  font_size?: number | null;
+  font_family?: string | null;
   font_color: string | null;
   background_color: string | null;
   text_align: 'left' | 'center' | 'right';
   vertical_align: 'top' | 'middle' | 'bottom';
+  underline?: boolean;
+  strikethrough?: boolean;
+  wrap_text?: boolean;
+  border_color?: string | null;
   number_format: NumberFormat | null;
 }
 
@@ -661,10 +676,16 @@ export type NumberFormat =
 export const DEFAULT_CELL_STYLE: CellStyle = {
   font_bold: false,
   font_italic: false,
+  font_size: null,
+  font_family: null,
   font_color: null,
   background_color: null,
   text_align: 'left',
   vertical_align: 'middle',
+  underline: false,
+  strikethrough: false,
+  wrap_text: false,
+  border_color: null,
   number_format: null,
 };
 
@@ -677,6 +698,9 @@ export const createDefaultExcelNotePayload = (title: string = '未命名表格')
   is_locked: false,
   lock_password_hash: null,
   tags: [],
+  engine: 'univer',
+  format_version: 2,
+  univer_snapshot: null,
   sheets: [createDefaultExcelSheet('Sheet1')],
   active_sheet_index: 0,
 });

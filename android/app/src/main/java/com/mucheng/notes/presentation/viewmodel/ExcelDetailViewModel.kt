@@ -8,20 +8,17 @@ import com.mucheng.notes.domain.model.payload.ExcelRow
 import com.mucheng.notes.domain.model.payload.ExcelCell
 import com.mucheng.notes.domain.model.payload.MergedCell
 import com.mucheng.notes.domain.repository.ItemRepository
+import com.mucheng.notes.presentation.excel.formatCellDisplayValue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import javax.inject.Inject
@@ -127,6 +124,7 @@ class ExcelDetailViewModel @Inject constructor(
                                     ExcelCell(
                                         columnIndex = c["column_index"]?.jsonPrimitive?.intOrNull ?: 0,
                                         value = c["value"],
+                                        displayValue = c["display_value"],
                                         formula = c["formula"]?.jsonPrimitive?.contentOrNull,
                                         style = c["style"]
                                     )
@@ -146,6 +144,12 @@ class ExcelDetailViewModel @Inject constructor(
                         rowHeights = s["row_heights"]?.jsonArray ?: emptyList(),
                         frozenRows = s["frozen_rows"]?.jsonPrimitive?.intOrNull ?: 0,
                         frozenColumns = s["frozen_columns"]?.jsonPrimitive?.intOrNull ?: 0,
+                        hiddenRows = (s["hidden_rows"]?.jsonArray ?: emptyList()).mapNotNull {
+                            it.jsonPrimitive.intOrNull
+                        },
+                        hiddenColumns = (s["hidden_columns"]?.jsonArray ?: emptyList()).mapNotNull {
+                            it.jsonPrimitive.intOrNull
+                        },
                         mergedCells = (s["merged_cells"]?.jsonArray ?: emptyList()).mapNotNull { mEl ->
                             try {
                                 val m = mEl.jsonObject
@@ -262,17 +266,7 @@ class ExcelDetailViewModel @Inject constructor(
     fun getCellDisplayValue(sheet: ExcelSheet, row: Int, col: Int): String {
         val rowData = sheet.rows.find { it.rowIndex == row } ?: return ""
         val cell = rowData.cells.find { it.columnIndex == col } ?: return ""
-        
-        val value = cell.value ?: return ""
-        return when (value) {
-            is JsonNull -> ""
-            is JsonPrimitive -> {
-                value.doubleOrNull?.toString()
-                    ?: value.booleanOrNull?.let { if (it) "TRUE" else "FALSE" }
-                    ?: value.content
-            }
-            else -> value.toString()
-        }
+        return formatCellDisplayValue(cell)
     }
 
     /**

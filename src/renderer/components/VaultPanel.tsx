@@ -124,7 +124,14 @@ const styles = `
     letter-spacing: 0.5px;
     white-space: nowrap;
   }
-  
+
+  .vault-notes-box {
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   .secure-input-wrapper {
     background: #f9fafb;
     border: 1px solid #d1d5db;

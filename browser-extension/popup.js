@@ -1730,13 +1730,18 @@ function pickVaultRegistrationValue(list) {
   return list[getSecureRandomIndex(list.length)];
 }
 
-function getVaultRegistrationCountryCode(value) {
+function inferVaultRegistrationCountryCode(value) {
   const input = String(value || '').trim().toLowerCase();
-  if (!input) return vaultRegisterCountrySelect?.value || 'en_US';
+  if (!input) return '';
 
   for (const [code, config] of Object.entries(VAULT_REGISTRATION_COUNTRIES)) {
     if (code.toLowerCase() === input || config.label.toLowerCase() === input) return code;
-    if ((config.aliases || []).some(alias => alias.toLowerCase() === input || input.includes(alias.toLowerCase()))) {
+    if ((config.aliases || []).some((alias) => {
+      const normalizedAlias = String(alias || '').trim().toLowerCase();
+      if (!normalizedAlias) return false;
+      if (normalizedAlias === input) return true;
+      return normalizedAlias.length > 2 && input.includes(normalizedAlias);
+    })) {
       return code;
     }
   }
@@ -1748,7 +1753,33 @@ function getVaultRegistrationCountryCode(value) {
   if (/germany|deutschland|德国/.test(input)) return 'de';
   if (/france|法国/.test(input)) return 'fr';
   if (/russia|россия|俄罗斯/.test(input)) return 'ru';
-  return vaultRegisterCountrySelect?.value || 'en_US';
+  return '';
+}
+
+function getVaultRegistrationSelectedCountryCode() {
+  const selected = vaultRegisterCountrySelect?.value || '';
+  return VAULT_REGISTRATION_COUNTRIES[selected] ? selected : 'en_US';
+}
+
+function getVaultRegistrationCountryCode(value) {
+  return inferVaultRegistrationCountryCode(value) || getVaultRegistrationSelectedCountryCode();
+}
+
+function inferVaultRegistrationCapturedLocationCountryCode(captured = {}) {
+  const directCountry = inferVaultRegistrationCountryCode(captured.country);
+  if (directCountry) return directCountry;
+
+  const region = String(captured.region || '').trim().toLowerCase();
+  const city = String(captured.city || '').trim().toLowerCase();
+  if (!region && !city) return '';
+
+  for (const [code, config] of Object.entries(VAULT_REGISTRATION_COUNTRIES)) {
+    const hasRegion = region && (config.regions || []).some(value => String(value).trim().toLowerCase() === region);
+    const hasCity = city && (config.cities || []).some(value => String(value).trim().toLowerCase() === city);
+    if (hasRegion || hasCity) return code;
+  }
+
+  return '';
 }
 
 function formatVaultRegistrationFullName(firstName, lastName, countryCode) {
@@ -1930,17 +1961,20 @@ function shouldShowVaultRegistrationDetail(profile, role) {
 }
 
 function generateVaultRegistrationProfile(captured = {}, options = {}) {
-  const countryCode = getVaultRegistrationCountryCode(captured.country || captured.region);
+  const explicitCountryCode = options.country ? getVaultRegistrationCountryCode(options.country) : '';
+  const capturedLocationCountryCode = inferVaultRegistrationCapturedLocationCountryCode(captured);
+  const countryCode = explicitCountryCode || capturedLocationCountryCode || getVaultRegistrationCountryCode(captured.country || captured.region);
   const config = VAULT_REGISTRATION_COUNTRIES[countryCode] || VAULT_REGISTRATION_COUNTRIES.en_US;
   const roles = normalizeVaultRegistrationRoles(captured, options);
+  const canUseCapturedLocation = !explicitCountryCode || capturedLocationCountryCode === countryCode;
   const splitName = splitVaultRegistrationName(captured.fullName, countryCode);
   const firstName = captured.firstName || splitName.firstName || pickVaultRegistrationValue(config.firstNames);
   const lastName = captured.lastName || splitName.lastName || pickVaultRegistrationValue(config.lastNames);
   const fullName = captured.fullName || formatVaultRegistrationFullName(firstName, lastName, countryCode);
-  const region = captured.region || pickVaultRegistrationValue(config.regions);
-  const city = captured.city || pickVaultRegistrationValue(config.cities);
-  const postalCode = captured.postalCode || generateVaultRegistrationPostalCode(countryCode);
-  const address = captured.address || generateVaultRegistrationAddress(countryCode, region, city, postalCode);
+  const region = (canUseCapturedLocation && captured.region) || pickVaultRegistrationValue(config.regions);
+  const city = (canUseCapturedLocation && captured.city) || pickVaultRegistrationValue(config.cities);
+  const postalCode = (canUseCapturedLocation && captured.postalCode) || generateVaultRegistrationPostalCode(countryCode);
+  const address = (canUseCapturedLocation && captured.address) || generateVaultRegistrationAddress(countryCode, region, city, postalCode);
   const explicit = getVaultRegistrationExplicitInputs();
   const needsEmail = roles.has('email');
   const needsPhone = roles.has('phone');
@@ -1950,7 +1984,8 @@ function generateVaultRegistrationProfile(captured = {}, options = {}) {
   const phone = needsPhone
     ? (explicit.phone || captured.phone || generateVaultRegistrationPhone(countryCode))
     : (explicit.phone || captured.phone || '');
-  const usernameForField = explicit.username || captured.username || generateVaultRegistrationUsername(email, firstName, lastName, countryCode);
+  const usernameAsEmail = !roles.has('email') ? (explicit.email || captured.email || '') : '';
+  const usernameForField = explicit.username || captured.username || usernameAsEmail || generateVaultRegistrationUsername(email, firstName, lastName, countryCode);
   const username = roles.has('username')
     ? usernameForField
     : (email || phone || usernameForField);
@@ -2433,7 +2468,9 @@ async function fillVaultAddFormFromPage() {
 
     const credential = result.credential;
     lastVaultCapturedCredential = credential;
-    const profile = generateVaultRegistrationProfile(credential);
+    const profile = generateVaultRegistrationProfile(credential, {
+      country: vaultRegisterCountrySelect?.value,
+    });
     vaultAddNameInput.value = credential.title || getDefaultVaultEntryName();
     vaultAddUrlInput.value = credential.url || currentPageUrl || '';
     if (vaultAddUriNameInput) {
@@ -2461,7 +2498,10 @@ async function generateVaultRegistrationForPopup(fillPage = false) {
       lastVaultCapturedCredential = captured;
     }
 
-    const profile = generateVaultRegistrationProfile(captured, { generatePassword: true });
+    const profile = generateVaultRegistrationProfile(captured, {
+      generatePassword: true,
+      country: vaultRegisterCountrySelect?.value,
+    });
     applyVaultRegistrationProfileToPopup(profile);
     saveVaultRegistrationSettings();
 
@@ -3286,10 +3326,10 @@ vaultAddPasswordViewBtn?.addEventListener('click', toggleVaultAddPasswordVisibil
 vaultRegisterCountrySelect?.addEventListener('change', () => {
   saveVaultRegistrationSettings();
   if (lastVaultRegistrationProfile) {
-    const profile = generateVaultRegistrationProfile({
-      ...(lastVaultCapturedCredential || {}),
+    const profile = generateVaultRegistrationProfile(lastVaultCapturedCredential || {}, {
+      generatePassword: true,
       country: vaultRegisterCountrySelect.value,
-    }, { generatePassword: true });
+    });
     applyVaultRegistrationProfileToPopup(profile);
   }
 });

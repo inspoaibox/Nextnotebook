@@ -27,7 +27,7 @@ import { useFeatureSettings } from './hooks/useFeatureSettings';
 import { itemsApi, noteHistoryApi, notesApi, parsePayload } from './services/itemsApi';
 import { syncApi } from './services/syncApi';
 import { aiSettingsApi } from './services/aiApi';
-import { ItemBase, NotePayload } from '@shared/types';
+import { createDefaultExcelNotePayload, ItemBase, NotePayload } from '@shared/types';
 
 const { Sider, Content, Footer } = Layout;
 
@@ -1108,35 +1108,14 @@ const App: React.FC = () => {
       if (tool === 'excel-create') {
         // 创建新的 Excel 笔记
         try {
-          const api = getElectronAPI();
-          if (api?.items?.create) {
-            const payload = {
-              title: '新建 Excel 笔记',
-              folder_id: selectedFolderId === 'uncategorized' ? null : selectedFolderId,
-              is_pinned: false,
-              is_locked: false,
-              lock_password_hash: null,
-              tags: [],
-              sheets: [
-                {
-                  id: crypto.randomUUID(),
-                  name: 'Sheet1',
-                  rows: [],
-                  column_widths: {},
-                  row_heights: {},
-                  frozen_rows: 0,
-                  frozen_columns: 0,
-                },
-              ],
-              active_sheet_index: 0,
-            };
-            const newNote = await api.items.create('excel_note', payload);
-            if (newNote) {
-              setSelectedNoteId(newNote.id);
-              setCurrentTool(null);
-              await refresh();
-              message.success('Excel 笔记已创建');
-            }
+          const payload = createDefaultExcelNotePayload('新建 Excel 笔记');
+          payload.folder_id = selectedFolderId === 'uncategorized' ? null : selectedFolderId;
+          const newNote = await itemsApi.create('excel_note', payload);
+          if (newNote) {
+            setSelectedNoteId(newNote.id);
+            setCurrentTool(null);
+            await refresh();
+            message.success('Excel 笔记已创建');
           }
         } catch (err) {
           console.error('Failed to create Excel note:', err);
@@ -1436,7 +1415,7 @@ const App: React.FC = () => {
               <Content style={{ padding: 0, background: isDarkMode ? '#141414' : '#fff' }}>
                 {/* 根据笔记类型显示不同编辑器 */}
                 {currentNote?.type === 'excel_note' ? (
-                  <ExcelEditorPanel noteId={selectedNoteId} />
+                  <ExcelEditorPanel noteId={selectedNoteId} isDarkMode={isDarkMode} />
                 ) : (
                   <Editor
                     noteId={selectedNoteId}
